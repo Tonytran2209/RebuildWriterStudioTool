@@ -19,7 +19,8 @@ export const DEFAULT_MODELS: AIModel[] = [
 ];
 
 export const DEFAULT_CONFIG: AppConfig = {
-  railwayUrl: '',
+  railwayUrl: 'https://rebuildwriterstudiotool-production.up.railway.app',
+  actionSources: [],
   stepConfigs: {
     1: { modelId: '', fileAccess: { kb: [], action: [], rules: [] } },
     2: { modelId: '', fileAccess: { kb: [], action: [], rules: [] } },

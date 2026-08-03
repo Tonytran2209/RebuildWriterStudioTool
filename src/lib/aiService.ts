@@ -71,8 +71,10 @@ function getDemoKey(prompt: string): string {
 export async function callAI(req: AIRequest): Promise<AIResponse> {
   const { model, prompt, systemPrompt, contextDocs } = req;
 
-  // Resolve railway URL — prop → localStorage → empty
-  const railwayUrl = req.railwayUrl || localStorage.getItem('writer:railwayUrl') || '';
+  // Resolve railway URL — prop → localStorage → hardcoded production URL
+  const railwayUrl = req.railwayUrl
+    || localStorage.getItem('writer:railwayUrl')
+    || 'https://rebuildwriterstudiotool-production.up.railway.app';
 
   if (railwayUrl) {
     try {

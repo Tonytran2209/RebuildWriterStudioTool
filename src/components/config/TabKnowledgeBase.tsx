@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useState } from 'react';
-import type { DocumentFile, FileCategory, KbSubTab } from '../../types';
+import type { ActionDataSource, DocumentFile, FileCategory, KbSubTab } from '../../types';
+import ActionPlanTab from './ActionPlanTab';
 
 const FILE_ICONS: Record<string, { icon: string; color: string }> = {
   pdf: { icon: '📄', color: 'text-red-500' },
@@ -36,6 +37,8 @@ const SUBTAB_META: Record<KbSubTab, { label: string; color: string; bg: string; 
 interface Props {
   files: DocumentFile[];
   onChange: (files: DocumentFile[]) => void;
+  actionSources: ActionDataSource[];
+  onActionSourcesChange: (sources: ActionDataSource[]) => void;
 }
 
 function generateId() {
@@ -48,7 +51,7 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function TabKnowledgeBase({ files, onChange }: Props) {
+export default function TabKnowledgeBase({ files, onChange, actionSources, onActionSourcesChange }: Props) {
   const [activeSubTab, setActiveSubTab] = useState<KbSubTab>('kb');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -95,86 +98,90 @@ export default function TabKnowledgeBase({ files, onChange }: Props) {
         ))}
       </div>
 
-      {/* Upload zone */}
-      <div
-        onDragOver={e => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={e => { e.preventDefault(); setDragging(false); handleFileInput(e.dataTransfer.files); }}
-        onClick={() => fileInputRef.current?.click()}
-        className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${meta.bg} ${meta.border} ${dragging ? 'scale-[0.99] opacity-80' : ''}`}
-      >
-        <div className="text-2xl mb-2">☁</div>
-        <p className="text-xs font-bold text-slate-700">{meta.uploadLabel}</p>
-        <p className="text-[11px] text-slate-400 mt-0.5">{meta.uploadHint}</p>
-        <p className="text-[10px] text-slate-300 mt-2">Kéo thả hoặc nhấp để chọn file</p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={meta.accept}
-          className="hidden"
-          onChange={e => handleFileInput(e.target.files)}
-        />
-      </div>
-
-      {/* File table */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <h4 className="text-xs font-bold text-slate-800">
-            {meta.label} Files <span className="text-slate-400 font-normal">({catFiles.length})</span>
-          </h4>
-          {catFiles.length > 0 && (
-            <span className="text-[10px] text-slate-400">{catFiles.reduce((a, f) => a, '')} tổng cộng</span>
-          )}
-        </div>
-
-        {catFiles.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="text-2xl mb-2">📂</div>
-            <p className="text-xs text-slate-400">Chưa có file nào. Tải lên tài liệu ở trên.</p>
+      {/* Action Plan subtab — multi-mode data input */}
+      {activeSubTab === 'action' ? (
+        <ActionPlanTab sources={actionSources} onChange={onActionSourcesChange} />
+      ) : (
+        <>
+          {/* Upload zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={e => { e.preventDefault(); setDragging(false); handleFileInput(e.dataTransfer.files); }}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${meta.bg} ${meta.border} ${dragging ? 'scale-[0.99] opacity-80' : ''}`}
+          >
+            <div className="text-2xl mb-2">☁</div>
+            <p className="text-xs font-bold text-slate-700">{meta.uploadLabel}</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">{meta.uploadHint}</p>
+            <p className="text-[10px] text-slate-300 mt-2">Kéo thả hoặc nhấp để chọn file</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={meta.accept}
+              className="hidden"
+              onChange={e => handleFileInput(e.target.files)}
+            />
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="text-[10px] text-slate-400 uppercase border-b border-slate-200">
-                  <th className="pb-2 font-bold pl-1">Tên File</th>
-                  <th className="pb-2 font-bold">Kích thước</th>
-                  <th className="pb-2 font-bold">Ngày tải lên</th>
-                  <th className="pb-2 font-bold text-right pr-1">Hành động</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200/60">
-                {catFiles.map(f => {
-                  const iconMeta = FILE_ICONS[f.fileType] || FILE_ICONS.txt;
-                  return (
-                    <tr key={f.id} className="group hover:bg-white transition-colors">
-                      <td className="py-2.5 pl-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`text-sm ${iconMeta.color}`}>{iconMeta.icon}</span>
-                          <span className="font-semibold text-slate-800 truncate max-w-[200px]">{f.name}</span>
-                        </div>
-                      </td>
-                      <td className="py-2.5 text-slate-500 font-mono text-[11px]">{f.size}</td>
-                      <td className="py-2.5 text-slate-500">{f.uploadedAt}</td>
-                      <td className="py-2.5 text-right pr-1">
-                        <button
-                          onClick={() => removeFile(f.id)}
-                          className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </td>
+
+          {/* File table */}
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <h4 className="text-xs font-bold text-slate-800">
+                {meta.label} Files <span className="text-slate-400 font-normal">({catFiles.length})</span>
+              </h4>
+            </div>
+
+            {catFiles.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-2xl mb-2">📂</div>
+                <p className="text-xs text-slate-400">Chưa có file nào. Tải lên tài liệu ở trên.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="text-[10px] text-slate-400 uppercase border-b border-slate-200">
+                      <th className="pb-2 font-bold pl-1">Tên File</th>
+                      <th className="pb-2 font-bold">Kích thước</th>
+                      <th className="pb-2 font-bold">Ngày tải lên</th>
+                      <th className="pb-2 font-bold text-right pr-1">Hành động</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/60">
+                    {catFiles.map(f => {
+                      const iconMeta = FILE_ICONS[f.fileType] || FILE_ICONS.txt;
+                      return (
+                        <tr key={f.id} className="group hover:bg-white transition-colors">
+                          <td className="py-2.5 pl-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-sm ${iconMeta.color}`}>{iconMeta.icon}</span>
+                              <span className="font-semibold text-slate-800 truncate max-w-[200px]">{f.name}</span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 text-slate-500 font-mono text-[11px]">{f.size}</td>
+                          <td className="py-2.5 text-slate-500">{f.uploadedAt}</td>
+                          <td className="py-2.5 text-right pr-1">
+                            <button
+                              onClick={() => removeFile(f.id)}
+                              className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }

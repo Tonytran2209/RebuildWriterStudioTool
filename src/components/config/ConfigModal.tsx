@@ -78,7 +78,12 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
               <TabModels config={localConfig} onChange={setLocalConfig} />
             )}
             {activeTab === 'knowledge-base' && (
-              <TabKnowledgeBase files={localFiles} onChange={setLocalFiles} />
+              <TabKnowledgeBase
+                files={localFiles}
+                onChange={setLocalFiles}
+                actionSources={localConfig.actionSources ?? []}
+                onActionSourcesChange={sources => setLocalConfig(c => ({ ...c, actionSources: sources }))}
+              />
             )}
           </div>
 

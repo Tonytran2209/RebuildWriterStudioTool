@@ -38,6 +38,7 @@ export interface AppConfig {
   railwayUrl: string;
   stepConfigs: Record<number, StepConfig>;
   models: AIModel[];
+  actionSources: ActionDataSource[];
 }
 
 export interface OutlineSection {
@@ -81,3 +82,46 @@ export interface ContentType {
 
 export type ActiveTab = 'step-setup' | 'models' | 'knowledge-base';
 export type KbSubTab = 'kb' | 'action' | 'rules';
+
+// ── Action Plan — multi-source data input ────────────────────────────────────
+
+export type ActionSourceType =
+  | 'file'       // upload CSV/XLSX/JSON/PDF
+  | 'paste'      // paste raw CSV, JSON, plain text
+  | 'url'        // REST API endpoint hoặc RSS feed
+  | 'gsheet'     // Google Sheets public URL
+  | 'manual'     // nhập bảng thủ công
+  | 'supabase'   // SQL query trên Supabase đã kết nối
+  | 'airtable';  // Airtable API
+
+export interface ManualRow {
+  id: string;
+  cells: string[];
+}
+
+export interface ActionDataSource {
+  id: string;
+  name: string;
+  sourceType: ActionSourceType;
+  addedAt: string;
+  // Chung
+  preview?: string;       // vài dòng đầu để hiển thị
+  rowCount?: number;
+  // File
+  fileType?: string;
+  size?: string;
+  // Paste / Manual
+  content?: string;       // raw text hoặc CSV string
+  // URL / GSheet
+  url?: string;
+  headers?: Record<string, string>;   // custom request headers cho API
+  // Manual table
+  columns?: string[];
+  rows?: ManualRow[];
+  // Supabase
+  query?: string;
+  // Airtable
+  airtableKey?: string;
+  airtableBase?: string;
+  airtableTable?: string;
+}
