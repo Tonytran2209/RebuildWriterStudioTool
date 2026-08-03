@@ -10,6 +10,12 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
+// ─── Root ────────────────────────────────────────────────────────────────────
+
+app.get('/', (_req, res) => {
+  res.json({ name: 'Writer Studio Backend', status: 'running', version: '1.0.0' });
+});
+
 // ─── Health ──────────────────────────────────────────────────────────────────
 
 app.get('/health', async (_req, res) => {
