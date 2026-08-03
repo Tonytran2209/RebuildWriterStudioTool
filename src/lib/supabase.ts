@@ -1,13 +1,28 @@
 import { createClient } from '@supabase/supabase-js';
-import { projectId, publicAnonKey } from '../../utils/supabase/info';
 
-const SUPABASE_URL = `https://${projectId}.supabase.co`;
-const TABLE = 'kv_store_48d8062f';
+/**
+ * Frontend Supabase client — uses PUBLISHABLE_KEY (safe for browser).
+ *
+ * For local dev: set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env
+ * For Railway/Vercel: set the same vars in the service environment.
+ */
 
-// Singleton client — created once, reused across the app
-export const supabase = createClient(SUPABASE_URL, publicAnonKey);
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL as string | undefined ??
+  'https://zjyxhqgjnyfexmdvfnjr.supabase.co';
 
-// ── KV helpers (mirrors the edge-function kv_store API) ──────────────────────
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined ??
+  'sb_publishable_y_fdriMaj_0HuSUBLehuTA_r-VJkQaU';
+
+const TABLE = 'kv_store';
+
+// Singleton client
+export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: { persistSession: false },
+});
+
+// ── KV helpers ────────────────────────────────────────────────────────────────
 
 export async function kvGet<T = any>(key: string): Promise<T | null> {
   const { data, error } = await supabase

@@ -1,32 +1,41 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const TABLE = 'kv_store_48d8062f';
+/**
+ * New Supabase key naming (supabase-js v2.x + @supabase/server):
+ *   SUPABASE_URL            — project URL
+ *   SUPABASE_SECRET_KEY     — replaces SERVICE_ROLE_KEY (full DB access, server-only)
+ *   SUPABASE_PUBLISHABLE_KEY — replaces ANON_KEY (safe to expose to clients)
+ *   SUPABASE_JWKS_URL       — for JWT verification via @supabase/server
+ */
 
-// Singleton — Railway giữ process sống, tạo 1 lần dùng mãi
+const TABLE = 'kv_store';
+
+// Singleton — created once when Railway boots, reused for all requests
 let _client: SupabaseClient | null = null;
 
 function getClient(): SupabaseClient {
   if (_client) return _client;
 
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = process.env.SUPABASE_SECRET_KEY;       // formerly SERVICE_ROLE_KEY
 
-  if (!url || !key) {
-    throw new Error(
-      'Thiếu SUPABASE_URL hoặc SUPABASE_SERVICE_ROLE_KEY trong Railway environment variables.'
-    );
-  }
+  if (!url) throw new Error('Missing SUPABASE_URL in Railway environment variables.');
+  if (!key) throw new Error('Missing SUPABASE_SECRET_KEY in Railway environment variables.');
 
   _client = createClient(url, key, {
-    auth: { persistSession: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
   });
 
   return _client;
 }
 
+// ── KV operations ────────────────────────────────────────────────────────────
+
 export async function kvGet<T = any>(key: string): Promise<T | null> {
-  const sb = getClient();
-  const { data, error } = await sb
+  const { data, error } = await getClient()
     .from(TABLE)
     .select('value')
     .eq('key', key)
@@ -37,8 +46,7 @@ export async function kvGet<T = any>(key: string): Promise<T | null> {
 }
 
 export async function kvSet(key: string, value: unknown): Promise<void> {
-  const sb = getClient();
-  const { error } = await sb
+  const { error } = await getClient()
     .from(TABLE)
     .upsert({ key, value }, { onConflict: 'key' });
 
@@ -46,14 +54,12 @@ export async function kvSet(key: string, value: unknown): Promise<void> {
 }
 
 export async function kvDelete(key: string): Promise<void> {
-  const sb = getClient();
-  const { error } = await sb.from(TABLE).delete().eq('key', key);
+  const { error } = await getClient().from(TABLE).delete().eq('key', key);
   if (error) throw new Error(`kvDelete(${key}): ${error.message}`);
 }
 
 export async function kvGetByPrefix(prefix: string): Promise<{ key: string; value: any }[]> {
-  const sb = getClient();
-  const { data, error } = await sb
+  const { data, error } = await getClient()
     .from(TABLE)
     .select('key, value')
     .like('key', `${prefix}%`);
@@ -62,11 +68,9 @@ export async function kvGetByPrefix(prefix: string): Promise<{ key: string; valu
   return data ?? [];
 }
 
-// Kiểm tra kết nối — dùng ở /health endpoint
 export async function checkConnection(): Promise<boolean> {
   try {
-    const sb = getClient();
-    const { error } = await sb.from(TABLE).select('key').limit(1);
+    const { error } = await getClient().from(TABLE).select('key').limit(1);
     return !error;
   } catch {
     return false;
