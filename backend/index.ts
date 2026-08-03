@@ -2,22 +2,16 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { generate, getAvailableProviders } from './providers.ts';
 import { kvGet, kvSet, kvGetByPrefix, checkConnection } from './supabase.ts';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// DIST_PATH env var set by Railway start command; fallback to sibling dist/ of cwd
+const DIST = process.env.DIST_PATH
+  ? path.resolve(process.cwd(), process.env.DIST_PATH)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
 
-// Try multiple candidate paths to find dist/index.html (tsx ESM resolves __dirname differently per env)
-const DIST_CANDIDATES = [
-  path.resolve(__dirname, '../dist'),
-  path.resolve(process.cwd(), '../dist'),
-  path.resolve(process.cwd(), 'dist'),
-  '/app/dist',
-];
-const DIST = DIST_CANDIDATES.find(p => fs.existsSync(path.join(p, 'index.html'))) ?? DIST_CANDIDATES[0];
-console.log(`[static] dist resolved to: ${DIST}`);
+console.log(`[static] serving frontend from: ${DIST}`);
 
 const app = express();
 const PORT = process.env.PORT || 3000;

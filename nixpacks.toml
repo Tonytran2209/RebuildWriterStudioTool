@@ -10,4 +10,4 @@ cmds = ["cd backend && npm install"]
 cmds = []
 
 [start]
-cmd = "cd backend && node_modules/.bin/tsx index.ts"
+cmd = "DIST_PATH=dist node backend/node_modules/.bin/tsx backend/index.ts"
