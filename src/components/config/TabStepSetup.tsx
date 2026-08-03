@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AppConfig, DocumentFile } from '../../types';
 import { STEP_LABELS } from '../../lib/defaultData';
+import { pingRailway } from '../../lib/db';
 
 interface Props {
   config: AppConfig;
@@ -14,9 +15,36 @@ const CATEGORY_META = {
   rules: { label: 'Rules & Guidelines', color: 'text-amber-600', border: 'border-amber-100', bg: 'bg-amber-50/40' },
 };
 
+type PingState = 'idle' | 'pinging' | 'ok' | 'fail';
+
 export default function TabStepSetup({ config, files, onChange }: Props) {
-  const [railwayUrl, setRailwayUrl] = useState(config.railwayUrl);
+  const [railwayUrl, setRailwayUrl] = useState(
+    config.railwayUrl || localStorage.getItem('writer:railwayUrl') || ''
+  );
+  const [pingState, setPingState] = useState<PingState>('idle');
+  const [providers, setProviders] = useState<Record<string, boolean> | null>(null);
   const enabledModels = config.models.filter(m => m.enabled);
+
+  const handleSaveRailway = async () => {
+    const url = railwayUrl.trim();
+    onChange({ ...config, railwayUrl: url });
+    if (url) localStorage.setItem('writer:railwayUrl', url);
+    else localStorage.removeItem('writer:railwayUrl');
+
+    if (url) {
+      setPingState('pinging');
+      const result = await pingRailway(url);
+      if (result.ok) {
+        setPingState('ok');
+        setProviders(result.providers ?? null);
+      } else {
+        setPingState('fail');
+        setProviders(null);
+      }
+    } else {
+      setPingState('idle');
+    }
+  };
 
   const updateStepModel = (step: number, modelId: string) => {
     onChange({
@@ -45,10 +73,6 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
     });
   };
 
-  const saveRailwayUrl = () => {
-    onChange({ ...config, railwayUrl });
-  };
-
   return (
     <div className="space-y-5">
       {/* Info banner */}
@@ -62,25 +86,53 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
       </div>
 
       {/* Railway URL */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
         <div>
           <h3 className="text-xs font-bold text-slate-800">Railway Backend URL</h3>
-          <p className="text-[11px] text-slate-400">Kết nối với Railway để gọi API AI thực. Để trống để dùng Demo Mode.</p>
+          <p className="text-[11px] text-slate-400">Nhập URL Railway backend để kết nối AI thực. Để trống để dùng Demo Mode.</p>
         </div>
         <div className="flex gap-2">
           <input
             value={railwayUrl}
             onChange={e => setRailwayUrl(e.target.value)}
-            placeholder="https://your-app.railway.app"
+            onKeyDown={e => e.key === 'Enter' && handleSaveRailway()}
+            placeholder="https://writer-studio-backend.railway.app"
             className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 transition-all"
           />
           <button
-            onClick={saveRailwayUrl}
-            className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-all"
+            onClick={handleSaveRailway}
+            disabled={pingState === 'pinging'}
+            className="px-3 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white text-xs font-semibold rounded-xl transition-all whitespace-nowrap"
           >
-            Lưu
+            {pingState === 'pinging' ? 'Đang test...' : 'Lưu & Test'}
           </button>
         </div>
+
+        {/* Connection status */}
+        {pingState === 'ok' && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center gap-2 text-xs font-bold text-emerald-700">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              Railway backend đã kết nối thành công
+            </div>
+            {providers && (
+              <div className="grid grid-cols-3 gap-1.5">
+                {Object.entries(providers).map(([p, active]) => (
+                  <div key={p} className={`flex items-center gap-1.5 text-[10px] font-semibold px-2 py-1 rounded-lg ${active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                    {p.charAt(0).toUpperCase() + p.slice(1)}
+                    {active ? ' ✓' : ' —'}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {pingState === 'fail' && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">
+            <strong>Không kết nối được.</strong> Kiểm tra lại URL và đảm bảo backend đang chạy trên Railway.
+          </div>
+        )}
       </div>
 
       {/* Step cards */}

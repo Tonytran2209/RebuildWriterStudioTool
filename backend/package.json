@@ -1,0 +1,32 @@
+{
+  "name": "writer-studio-backend",
+  "version": "1.0.0",
+  "description": "Railway backend for Writer AI Studio — AI proxy + Supabase integration",
+  "main": "index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "tsx index.ts",
+    "dev": "tsx watch index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@google/generative-ai": "^0.24.0",
+    "@supabase/supabase-js": "^2.49.8",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "groq-sdk": "^0.15.0",
+    "openai": "^4.100.0",
+    "tsx": "^4.19.4"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  }
+}

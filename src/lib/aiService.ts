@@ -19,7 +19,7 @@ const DEMO_RESPONSES: Record<string, string> = {
 
 **I. Giới thiệu tổng quan**
 - Bối cảnh thị trường và lý do so sánh
-- Tiêu chí đánh giá chính
+- Tiêu chí đánh giá chính được sử dụng
 
 **II. Tổng quan sản phẩm**
 - Thông số kỹ thuật và tính năng nổi bật
@@ -27,38 +27,56 @@ const DEMO_RESPONSES: Record<string, string> = {
 
 **III. Phân tích chi tiết theo tiêu chí**
 - Hiệu năng và tốc độ xử lý
-- Chất lượng và độ bền
-- Giá trị so với chi phí
+- Chất lượng, độ bền và thiết kế
+- Giá trị so với chi phí đầu tư
 
 **IV. Ưu điểm & Nhược điểm**
 - Bảng so sánh trực quan
-- Kịch bản sử dụng phù hợp
+- Kịch bản sử dụng phù hợp cho từng nhóm người dùng
 
 **V. Kết luận & Khuyến nghị**
-- Lời khuyên theo từng nhóm người dùng
-- Điểm đánh giá tổng thể`,
+- Lời khuyên theo nhu cầu cụ thể
+- Điểm đánh giá tổng thể (thang 10)`,
 
-  draft: `# So sánh toàn diện: Sản phẩm A và Sản phẩm B (2026)
+  draft: `# Tiêu đề bài viết
 
-Khi thị trường ngày càng có nhiều lựa chọn, việc ra quyết định đúng đắn trở nên quan trọng hơn bao giờ hết. Bài viết này cung cấp góc nhìn khách quan, dựa trên dữ liệu thực tế để giúp bạn đưa ra lựa chọn phù hợp.
+Mở đầu hấp dẫn thu hút độc giả ngay từ những dòng đầu tiên. Đặt vấn đề rõ ràng và nêu lý do tại sao bài viết này quan trọng với người đọc.
 
-## Tổng quan nhanh
+## Phần 1: Tổng quan
 
-Cả hai sản phẩm đều nhắm đến phân khúc người dùng chuyên nghiệp, nhưng với triết lý thiết kế và định vị thị trường khác nhau...`,
+Nội dung phần mở đầu chi tiết, cung cấp bối cảnh cần thiết để độc giả hiểu được vấn đề đang được đề cập.
 
-  angle: `**Góc độ đề xuất:** *"Chi phí ẩn mà 90% người dùng không biết khi so sánh hai sản phẩm này"*
+## Phần 2: Phân tích chuyên sâu
 
-Thay vì so sánh thông số bề mặt, hãy đi sâu vào tổng chi phí sở hữu (TCO), giá trị lâu dài và những điểm mà các bài review thông thường bỏ qua.
+Đây là phần nội dung chính của bài viết. Trình bày các luận điểm theo thứ tự logic, có dẫn chứng cụ thể và số liệu thực tế.
 
-**Từ khóa gợi ý:** so sánh [A] vs [B], [A] có tốt không, nên mua [A] hay [B], đánh giá [B] 2026`,
+## Kết luận
+
+Tóm tắt các điểm chính và đưa ra lời khuyên hoặc kêu gọi hành động rõ ràng.`,
+
+  angle: `**Góc độ đề xuất:** *"Điều mà 90% người dùng bỏ qua khi đưa ra quyết định này"*
+
+Thay vì tiếp cận từ góc độ thông thường, hãy khai thác khía cạnh ít được đề cập nhưng có tác động lớn nhất đến quyết định của người dùng.
+
+**Từ khóa gợi ý bổ sung:** review chi tiết, so sánh toàn diện, kinh nghiệm thực tế, đánh giá khách quan 2026`,
 };
 
+function getDemoKey(prompt: string): string {
+  const p = prompt.toLowerCase();
+  if (p.includes('dàn bài') || p.includes('outline')) return 'outline';
+  if (p.includes('bài viết') || p.includes('draft') || p.includes('viết')) return 'draft';
+  return 'angle';
+}
+
 export async function callAI(req: AIRequest): Promise<AIResponse> {
-  const { model, prompt, systemPrompt, contextDocs, railwayUrl } = req;
+  const { model, prompt, systemPrompt, contextDocs } = req;
+
+  // Resolve railway URL — prop → localStorage → empty
+  const railwayUrl = req.railwayUrl || localStorage.getItem('writer:railwayUrl') || '';
 
   if (railwayUrl) {
     try {
-      const res = await fetch(`${railwayUrl}/api/generate`, {
+      const res = await fetch(`${railwayUrl.replace(/\/$/, '')}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -69,24 +87,23 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
           contextDocs,
         }),
       });
-      if (!res.ok) throw new Error(`Railway API error: ${res.status}`);
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText })) as any;
+        throw new Error(err.error || `Railway error ${res.status}`);
+      }
+
       return res.json();
-    } catch (err) {
-      console.warn('Railway API call failed, falling back to demo mode:', err);
+    } catch (err: any) {
+      // Re-throw with clear message — UI will show it
+      throw new Error(`Railway: ${err.message}`);
     }
   }
 
-  // Demo mode: simulate network delay + return placeholder
-  await new Promise(r => setTimeout(r, 1200 + Math.random() * 800));
-
-  const key = prompt.toLowerCase().includes('dàn bài') || prompt.toLowerCase().includes('outline')
-    ? 'outline'
-    : prompt.toLowerCase().includes('draft') || prompt.toLowerCase().includes('bài viết')
-    ? 'draft'
-    : 'angle';
-
+  // Demo mode — simulate delay + return placeholder
+  await new Promise(r => setTimeout(r, 1200 + Math.random() * 600));
   return {
-    content: DEMO_RESPONSES[key] || `[Demo] Phản hồi từ **${model.name}**. Kết nối Railway backend để kích hoạt AI thực.`,
+    content: DEMO_RESPONSES[getDemoKey(prompt)],
     model: model.id,
     usage: { inputTokens: 450, outputTokens: 280 },
   };

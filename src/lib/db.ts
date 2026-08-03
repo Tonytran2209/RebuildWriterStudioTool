@@ -1,14 +1,35 @@
-import { projectId } from '../../utils/supabase/info';
+import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import type { Article, AppConfig, DocumentFile } from '../types';
 
-const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-48d8062f`;
+/**
+ * Priority: if RAILWAY_URL is stored in localStorage, call Railway backend.
+ * Otherwise fall back to Supabase edge function directly.
+ */
+function getBaseUrl(): string {
+  const railwayUrl = localStorage.getItem('writer:railwayUrl');
+  if (railwayUrl) return railwayUrl.replace(/\/$/, '');
+  return `https://${projectId}.supabase.co/functions/v1/make-server-48d8062f`;
+}
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-  });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+  const base = getBaseUrl();
+  const isSupabase = base.includes('supabase.co');
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string>),
+  };
+
+  // Supabase edge functions require anon key auth
+  if (isSupabase) {
+    headers['Authorization'] = `Bearer ${publicAnonKey}`;
+  }
+
+  const res = await fetch(`${base}${path}`, { ...options, headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API ${res.status}: ${text}`);
+  }
   return res.json();
 }
 
@@ -30,3 +51,15 @@ export const saveConfig = (config: AppConfig): Promise<{ ok: boolean }> =>
 export const fetchFiles = (): Promise<DocumentFile[]> => api('/files');
 export const saveFiles = (files: DocumentFile[]): Promise<{ ok: boolean }> =>
   api('/files', { method: 'POST', body: JSON.stringify(files) });
+
+// Ping Railway backend to check availability
+export async function pingRailway(url: string): Promise<{ ok: boolean; providers?: Record<string, boolean> }> {
+  try {
+    const res = await fetch(`${url.replace(/\/$/, '')}/health`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return { ok: false };
+    const data = await res.json();
+    return { ok: true, providers: data.providers };
+  } catch {
+    return { ok: false };
+  }
+}
