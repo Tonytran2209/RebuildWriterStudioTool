@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "DIST_PATH=dist node backend/node_modules/.bin/tsx backend/index.ts"
+startCommand = "bash start.sh"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
