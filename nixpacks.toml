@@ -1,8 +1,5 @@
 providers = ["node"]
 
-[variables]
-NODE_ENV = "development"
-
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 
