@@ -1,16 +1,19 @@
 providers = ["node"]
 
+[variables]
+NODE_ENV = "development"
+
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = [
-  "npm install --include=optional",
+  "npm install",
   "cd backend && npm install"
 ]
 
 [phases.build]
-cmds = ["NODE_ENV=development npm run build"]
+cmds = ["npm run build"]
 
 [start]
 cmd = "bash start.sh"
