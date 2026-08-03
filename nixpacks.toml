@@ -5,12 +5,12 @@ nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = [
-  "rm -f package-lock.json && npm install",
-  "cd backend && rm -f package-lock.json && npm install"
+  "npm install --include=optional",
+  "cd backend && npm install"
 ]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["NODE_ENV=development npm run build"]
 
 [start]
 cmd = "bash start.sh"
