@@ -1,0 +1,10 @@
+{
+  "description": "Create, manage, and enhance written content seamlessly with AI model integrations and cloud database connectivity for efficient writer workflows.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Writer AI Studio - Advanced Workspace Setup</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f5f8;
+            color: #334155;
+        }
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden">
+
+    <!-- LEFT SIDEBAR -->
+    <aside class="w-72 bg-[#ebedf3] border-r border-slate-200/80 p-3 flex flex-col shrink-0">
+        <div class="space-y-3 mb-4">
+            <div class="flex items-center justify-between px-2 pt-1">
+                <div class="flex items-center space-x-2">
+                    <div class="w-7 h-7 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs">W</div>
+                    <span class="font-bold text-sm text-slate-800">Writer Studio</span>
+                </div>
+                <button onclick="toggleConfigModal()" title="Cấu hình Input & DB Rules" class="w-8 h-8 rounded-xl bg-white text-slate-600 hover:text-indigo-600 border border-slate-200/80 flex items-center justify-center transition-all shadow-sm">
+                    <i class="fa-solid fa-sliders text-xs"></i>
+                </button>
+            </div>
+
+            <button class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs py-2.5 px-4 rounded-2xl shadow-sm transition-all flex items-center justify-center space-x-2">
+                <i class="fa-solid fa-plus"></i>
+                <span>Tạo bài viết mới</span>
+            </button>
+
+            <div class="relative">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                <input type="text" placeholder="Tìm kiếm bài viết..." class="w-full bg-white border border-slate-200/80 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 transition-all placeholder:text-slate-400">
+            </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto space-y-1.5 pr-1">
+            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1">Bài viết gần đây</div>
+            <div class="bg-white rounded-2xl p-3 border border-slate-200/80 shadow-sm cursor-pointer space-y-1">
+                <div class="flex justify-between items-start">
+                    <h4 class="text-xs font-bold text-slate-800 line-clamp-1">So sánh Sản phẩm A & B</h4>
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-1"></span>
+                </div>
+                <div class="flex items-center justify-between text-[10px] text-slate-400">
+                    <span>Step 1/4</span>
+                    <span>Vừa xong</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="pt-2 border-t border-slate-200/80 mt-auto">
+            <button onclick="toggleConfigModal()" class="w-full bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold py-2 px-3 rounded-xl transition-all border border-slate-200/80 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-microchip text-indigo-600"></i>
+                    <span>Cấu hình Model & Rules DB</span>
+                </div>
+                <i class="fa-solid fa-chevron-right text-[10px] text-slate-400"></i>
+            </button>
+        </div>
+    </aside>
+
+    <!-- MAIN WORKSPACE -->
+    <div class="flex-1 flex flex-col h-full overflow-hidden">
+        <header class="bg-white border-b border-slate-200/80 px-6 py-3 flex items-center justify-between shrink-0 shadow-sm z-10">
+            <div class="bg-[#eaedf3] p-1.5 rounded-2xl flex items-center space-x-1 shadow-sm">
+                <button onclick="switchStep(1)" id="step-btn-1" class="step-btn px-4 py-2 text-xs font-semibold text-slate-800 bg-white rounded-xl shadow-sm transition-all flex items-center space-x-2">
+                    <span class="w-4 h-4 rounded-full bg-slate-900 text-white text-[10px] flex items-center justify-center font-bold">1</span>
+                    <span>Content Type</span>
+                </button>
+                <button onclick="switchStep(2)" id="step-btn-2" class="step-btn px-4 py-2 text-xs font-medium text-slate-500 rounded-xl hover:text-slate-800 transition-all flex items-center space-x-2">
+                    <span class="w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-[10px] flex items-center justify-center font-bold">2</span>
+                    <span>Core Idea & Angle</span>
+                </button>
+                <button onclick="switchStep(3)" id="step-btn-3" class="step-btn px-4 py-2 text-xs font-medium text-slate-500 rounded-xl hover:text-slate-800 transition-all flex items-center space-x-2">
+                    <span class="w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-[10px] flex items-center justify-center font-bold">3</span>
+                    <span>Draft Outline</span>
+                </button>
+                <button onclick="switchStep(4)" id="step-btn-4" class="step-btn px-4 py-2 text-xs font-medium text-slate-500 rounded-xl hover:text-slate-800 transition-all flex items-center space-x-2">
+                    <span class="w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-[10px] flex items-center justify-center font-bold">4</span>
+                    <span>First Draft & Audit</span>
+                </button>
+            </div>
+
+            <div class="flex items-center space-x-3 text-xs">
+                <span class="bg-indigo-50 border border-indigo-200 text-indigo-700 font-medium px-2.5 py-1 rounded-xl flex items-center space-x-1.5">
+                    <i class="fa-solid fa-brain text-indigo-500 text-[11px]"></i>
+                    <span id="current-step-model">Model: Claude 3.5 Sonnet</span>
+                </span>
+                <div class="flex items-center space-x-1.5 text-slate-500">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span class="font-medium text-[11px]">Ready</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-hidden relative p-6">
+            <div id="step-1" class="step-workspace h-full flex flex-col gap-5">
+                <div class="bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col">
+                    <div class="bg-white rounded-2xl p-6 flex-1 overflow-y-auto space-y-6 shadow-sm">
+                        <h2 class="text-base font-bold text-slate-800">Step 1: Content Type Selection</h2>
+                        <p class="text-xs text-slate-500">Chọn định dạng nội dung để kích hoạt Model và Bộ tài liệu đã được gán riêng cho Step 1.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ================= MODAL: CẤU HÌNH INPUT & DB RULES ================= -->
+    <div id="config-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-6">
+        <div class="bg-[#ebedf3] w-full max-w-5xl rounded-3xl p-1.5 shadow-2xl border border-slate-200/80 max-h-[92vh] flex flex-col">
+            <div class="bg-white rounded-2xl p-6 space-y-6 flex-1 overflow-y-auto">
+                
+                <!-- Modal Header -->
+                <div class="flex justify-between items-center border-b border-slate-100 pb-4">
+                    <div>
+                        <h2 class="text-base font-bold text-slate-800">Cấu hình Rules DB & Phân quyền AI Model</h2>
+                        <p class="text-xs font-medium text-slate-400">Quản lý kho tài liệu, Model tích hợp và thiết lập luật truy xuất cho từng Step</p>
+                    </div>
+                    <button onclick="toggleConfigModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-all">
+                        <i class="fa-solid fa-xmark text-sm"></i>
+                    </button>
+                </div>
+
+                <!-- MAIN TABS -->
+                <div class="flex justify-center">
+                    <div class="bg-[#eaedf3] p-1.5 rounded-2xl flex items-center space-x-1 shadow-sm w-full">
+                        <button onclick="switchMainTab(this, 'tab-step-setup')" class="main-tab-btn flex-1 py-2 text-xs font-semibold text-slate-800 bg-white rounded-xl shadow-sm transition-all text-center">
+                            <i class="fa-solid fa-diagram-project mr-1.5"></i> Phân quyền AI theo Step
+                        </button>
+                        <button onclick="switchMainTab(this, 'tab-models')" class="main-tab-btn flex-1 py-2 text-xs font-medium text-slate-500 rounded-xl hover:text-slate-800 transition-all text-center">
+                            <i class="fa-solid fa-microchip mr-1.5"></i> Quản lý AI Models
+                        </button>
+                        <button onclick="switchMainTab(this, 'tab-kb')" class="main-tab-btn flex-1 py-2 text-xs font-medium text-slate-500 rounded-xl hover:text-slate-800 transition-all text-center">
+                            <i class="fa-solid fa-database mr-1.5"></i> Kho dữ liệu Quy chuẩn (3 Tabs)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- TAB CONTENTS -->
+                <div class="space-y-6">
+                    
+                    <!-- ================= TAB 1: PHÂN QUYỀN AI THEO STEP ================= -->
+                    <div id="tab-step-setup" class="main-tab-content space-y-4">
+                        <div class="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-3.5 text-xs text-indigo-900 flex items-start space-x-2.5">
+                            <i class="fa-solid fa-circle-info text-indigo-500 mt-0.5 text-sm"></i>
+                            <div>
+                                <strong class="font-semibold block">Quy tắc liên kết Model & Dữ liệu:</strong>
+                                Ở mỗi Step, bạn có thể chọn 1 **AI Model** đã tích hợp ở Tab 2 và **tích chọn trực tiếp các File tài liệu quy chuẩn** được phép đọc (lấy dữ liệu từ 3 kho: KB, Action Plan, Rules).
+                            </div>
+                        </div>
+
+                        <div class="space-y-4">
+                            <!-- Step Card Container 1 -->
+                            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                                <div class="flex items-center justify-between border-b border-slate-200/80 pb-3">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">1</span>
+                                        <span class="text-xs font-bold text-slate-800">Step 1: Content Type Selection</span>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-[11px] font-semibold text-slate-500"><i class="fa-solid fa-brain mr-1"></i>Chọn AI Model:</span>
+                                        <select class="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-slate-800">
+                                            <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+                                            <option value="claude-3-opus">Claude 3 Opus</option>
+                                            <option value="gpt-4o">GPT-4o</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- File Selectors by Category -->
+                                <div class="space-y-2">
+                                    <span class="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">Tài liệu quy chuẩn được cấp phép cho Step 1:</span>
+                                    
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <!-- KB Files -->
+                                        <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                                            <span class="text-[10px] font-bold text-indigo-600 block border-b pb-1"><i class="fa-solid fa-book mr-1"></i>Knowledge Base</span>
+                                            <div class="space-y-1">
+                                                <label class="flex items-center space-x-2 text-xs cursor-pointer">
+                                                    <input type="checkbox" checked class="rounded border-slate-300 text-slate-900 focus:ring-slate-800">
+                                                    <span class="text-slate-700 text-[11px] truncate">Bang_gia_Sua_doi_2026.pdf</span>
+                                                </label>
+                                                <label class="flex items-center space-x-2 text-xs cursor-pointer">
+                                                    <input type="checkbox" class="rounded border-slate-300 text-slate-900 focus:ring-slate-800">
+                                                    <span class="text-slate-700 text-[11px] truncate">Phan_tich_doi_thu.docx</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <!-- Action Plan Files -->
+                                        <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                                            <span class="text-[10px] font-bold text-emerald-600 block border-b pb-1"><i class="fa-solid fa-list-check mr-1"></i>Action Plan</span>
+                                            <div class="space-y-1">
+                                                <label class="flex items-center space-x-2 text-xs cursor-pointer">
+                                                    <input type="checkbox" checked class="rounded border-slate-300 text-slate-900 focus:ring-slate-800">
+                                                    <span class="text-slate-700 text-[11px] truncate">SEO_Keyword_Strategy.csv</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <!-- Rules Files -->
+                                        <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                                            <span class="text-[10px] font-bold text-amber-600 block border-b pb-1"><i class="fa-solid fa-gavel mr-1"></i>Rules & Guidelines</span>
+                                            <div class="space-y-1">
+                                                <label class="flex items-center space-x-2 text-xs cursor-pointer">
+                                                    <input type="checkbox" class="rounded border-slate-300 text-slate-900 focus:ring-slate-800">
+                                                    <span class="text-slate-700 text-[11px] truncate">Tone_of_Voice_B2B.txt</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Step Card Container 4 (Example Power Model) -->
+                            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                                <div class="flex items-center justify-between border-b border-slate-200/80 pb-3">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">4</span>
+                                        <span class="text-xs font-bold text-slate-800">Step 4: Long-form Writing & Audit</span>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-[11px] font-semibold text-slate-500"><i class="fa-solid fa-brain mr-1"></i>Chọn AI Model:</span>
+                                        <select class="bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs text-slate-700 font-semibold focus:outline-none focus:ring-2 focus:ring-slate-800">
+                                            <option value="claude-3-opus" selected>Claude 3 Opus (Tối ưu văn phong dài)</option>
+                                            <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+                                            <option value="gpt-4o">GPT-4o</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-2">
+                                    <span class="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">Tài liệu quy chuẩn được cấp phép cho Step 4:</span>
+                                    
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                                            <span class="text-[10px] font-bold text-indigo-600 block border-b pb-1">Knowledge Base</span>
+                                            <div class="space-y-1">
+                                                <label class="flex items-center space-x-2 text-xs cursor-pointer">
+                                                    <input type="checkbox" checked class="rounded border-slate-300 text-slate-900 focus:ring-slate-800">
+                                                    <span class="text-slate-700 text-[11px] truncate">Bang_gia_Sua_doi_2026.pdf</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                                            <span class="text-[10px] font-bold text-emerald-600 block border-b pb-1">Action Plan</span>
+                                            <div class="space-y-1">
+                                                <label class="flex items-center space-x-2 text-xs cursor-pointer">
+                                                    <input type="checkbox" checked class="rounded border-slate-300 text-slate-900 focus:ring-slate-800">
+                                                    <span class="text-slate-700 text-[11px] truncate">SEO_Keyword_Strategy.csv</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        <div class="bg-white p-3 rounded-xl border border-slate-200 space-y-1.5">
+                                            <span class="text-[10px] font-bold text-amber-600 block border-b pb-1">Rules & Guidelines</span>
+                                            <div class="space-y-1">
+                                                <label class="flex items-center space-x-2 text-xs cursor-pointer">
+                                                    <input type="checkbox" checked class="rounded border-slate-300 text-slate-900 focus:ring-slate-800">
+                                                    <span class="text-slate-700 text-[11px] truncate">Tone_of_Voice_B2B.txt</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ================= TAB 2: QUẢN LÝ AI MODELS ================= -->
+                    <div id="tab-models" class="main-tab-content hidden space-y-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <div>
+                                <h3 class="text-xs font-bold text-slate-800">Tích hợp & Kích hoạt Model AI</h3>
+                                <p class="text-[11px] text-slate-400">Bật/tắt các Model để hiển thị trong menu cấu hình từng Step</p>
+                            </div>
+                            <button class="px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 transition-all">+ Cấu hình Provider API Key</button>
+                        </div>
+
+                        <!-- Provider 1: Anthropic -->
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                            <div class="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fa-solid fa-cube text-indigo-600 text-sm"></i>
+                                    <span class="text-xs font-bold text-slate-800">Anthropic Claude Models</span>
+                                </div>
+                                <span class="text-[10px] bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-md">API Active</span>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200">
+                                    <div>
+                                        <h4 class="text-xs font-bold text-slate-800">Claude 3 Opus</h4>
+                                        <p class="text-[10px] text-slate-400">Năng lực tư duy & viết bài sâu sắc nhất.</p>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" checked class="sr-only peer">
+                                        <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
+                                    </label>
+                                </div>
+
+                                <div class="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200">
+                                    <div>
+                                        <h4 class="text-xs font-bold text-slate-800">Claude 3.5 Sonnet</h4>
+                                        <p class="text-[10px] text-slate-400">Tốc độ cực nhanh, xử lý dữ liệu chuẩn xác.</p>
+                                    </div>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" checked class="sr-only peer">
+                                        <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Provider 2: OpenAI -->
+                        <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                            <div class="flex items-center justify-between border-b border-slate-200/60 pb-2">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fa-solid fa-bolt text-emerald-600 text-sm"></i>
+                                    <span class="text-xs font-bold text-slate-800">OpenAI Models</span>
+                                </div>
+                                <span class="text-[10px] bg-emerald-100 text-emerald-700 font-semibold px-2 py-0.5 rounded-md">API Active</span>
+                            </div>
+
+                            <div class="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200">
+                                <div>
+                                    <h4 class="text-xs font-bold text-slate-800">GPT-4o</h4>
+                                    <p class="text-[10px] text-slate-400">Model tổng hợp dữ liệu đa năng.</p>
+                                </div>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" checked class="sr-only peer">
+                                    <div class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900"></div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ================= TAB 3: KHO DỮ LIỆU QUY CHUẨN (3 SUB-TABS) ================= -->
+                    <div id="tab-kb" class="main-tab-content hidden space-y-4">
+                        
+                        <!-- SUB TABS NAVIGATION FOR DATA SOURCES -->
+                        <div class="flex space-x-2 border-b border-slate-200 pb-2">
+                            <button onclick="switchKbSubTab(this, 'subtab-kb')" class="kb-subtab-btn px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-white transition-all">
+                                <i class="fa-solid fa-book mr-1"></i> 1. Knowledge Base
+                            </button>
+                            <button onclick="switchKbSubTab(this, 'subtab-action')" class="kb-subtab-btn px-4 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-all">
+                                <i class="fa-solid fa-list-check mr-1"></i> 2. Action Plan
+                            </button>
+                            <button onclick="switchKbSubTab(this, 'subtab-rules')" class="kb-subtab-btn px-4 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-all">
+                                <i class="fa-solid fa-gavel mr-1"></i> 3. Rules & Guidelines
+                            </button>
+                        </div>
+
+                        <!-- SUB TAB 1: KNOWLEDGE BASE -->
+                        <div id="subtab-kb" class="kb-subtab-content space-y-4">
+                            <!-- Upload Area KB -->
+                            <div class="border-2 border-dashed border-indigo-200 hover:border-indigo-500 bg-indigo-50/30 rounded-2xl p-4 text-center cursor-pointer transition-all">
+                                <i class="fa-solid fa-cloud-arrow-up text-xl text-indigo-500 mb-1"></i>
+                                <p class="text-xs font-bold text-slate-700">Tải lên tài liệu Knowledge Base (.pdf, .docx)</p>
+                                <p class="text-[10px] text-slate-400">Tài liệu kiến thức cốt lõi, bảng giá, thông tin sản phẩm</p>
+                            </div>
+
+                            <!-- Listing KB Table -->
+                            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                                <h4 class="text-xs font-bold text-slate-800 mb-3 px-1">Danh sách Knowledge Base Files</h4>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-xs">
+                                        <thead>
+                                            <tr class="text-[10px] text-slate-400 uppercase border-b border-slate-200">
+                                                <th class="pb-2 font-bold">Tên File</th>
+                                                <th class="pb-2 font-bold">Kích thước</th>
+                                                <th class="pb-2 font-bold">Ngày tải lên</th>
+                                                <th class="pb-2 font-bold text-right">Hành động</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-200/60">
+                                            <tr>
+                                                <td class="py-2.5 font-semibold text-slate-800 flex items-center space-x-2">
+                                                    <i class="fa-solid fa-file-pdf text-red-500"></i>
+                                                    <span>Bang_gia_Sua_doi_2026.pdf</span>
+                                                </td>
+                                                <td class="py-2.5 text-slate-500">2.4 MB</td>
+                                                <td class="py-2.5 text-slate-500">01/08/2026</td>
+                                                <td class="py-2.5 text-right">
+                                                    <button class="text-slate-400 hover:text-red-500 text-xs"><i class="fa-solid fa-trash"></i></button>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td class="py-2.5 font-semibold text-slate-800 flex items-center space-x-2">
+                                                    <i class="fa-solid fa-file-word text-blue-500"></i>
+                                                    <span>Phan_tich_doi_thu.docx</span>
+                                                </td>
+                                                <td class="py-2.5 text-slate-500">1.1 MB</td>
+                                                <td class="py-2.5 text-slate-500">28/07/2026</td>
+                                                <td class="py-2.5 text-right">
+                                                    <button class="text-slate-400 hover:text-red-500 text-xs"><i class="fa-solid fa-trash"></i></button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SUB TAB 2: ACTION PLAN -->
+                        <div id="subtab-action" class="kb-subtab-content hidden space-y-4">
+                            <!-- Upload Area Action Plan -->
+                            <div class="border-2 border-dashed border-emerald-200 hover:border-emerald-500 bg-emerald-50/30 rounded-2xl p-4 text-center cursor-pointer transition-all">
+                                <i class="fa-solid fa-cloud-arrow-up text-xl text-emerald-500 mb-1"></i>
+                                <p class="text-xs font-bold text-slate-700">Tải lên file Action Plan (.csv, .xlsx)</p>
+                                <p class="text-[10px] text-slate-400">Chứa danh sách từ khóa, kế hoạch thực thi, lộ trình nội dung</p>
+                            </div>
+
+                            <!-- Listing Action Plan Table -->
+                            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                                <h4 class="text-xs font-bold text-slate-800 mb-3 px-1">Danh sách Action Plan Files</h4>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-xs">
+                                        <thead>
+                                            <tr class="text-[10px] text-slate-400 uppercase border-b border-slate-200">
+                                                <th class="pb-2 font-bold">Tên File</th>
+                                                <th class="pb-2 font-bold">Kích thước</th>
+                                                <th class="pb-2 font-bold">Ngày tải lên</th>
+                                                <th class="pb-2 font-bold text-right">Hành động</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-200/60">
+                                            <tr>
+                                                <td class="py-2.5 font-semibold text-slate-800 flex items-center space-x-2">
+                                                    <i class="fa-solid fa-file-csv text-emerald-600"></i>
+                                                    <span>SEO_Keyword_Strategy.csv</span>
+                                                </td>
+                                                <td class="py-2.5 text-slate-500">512 KB</td>
+                                                <td class="py-2.5 text-slate-500">02/08/2026</td>
+                                                <td class="py-2.5 text-right">
+                                                    <button class="text-slate-400 hover:text-red-500 text-xs"><i class="fa-solid fa-trash"></i></button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SUB TAB 3: RULES & GUIDELINES -->
+                        <div id="subtab-rules" class="kb-subtab-content hidden space-y-4">
+                            <!-- Upload Area Rules -->
+                            <div class="border-2 border-dashed border-amber-200 hover:border-amber-500 bg-amber-50/30 rounded-2xl p-4 text-center cursor-pointer transition-all">
+                                <i class="fa-solid fa-cloud-arrow-up text-xl text-amber-500 mb-1"></i>
+                                <p class="text-xs font-bold text-slate-700">Tải lên file Rules & Tone Guidelines (.txt, .md, .docx)</p>
+                                <p class="text-[10px] text-slate-400">Quy tắc viết văn phong, định dạng bắt buộc, từ ngữ cấm sử dụng</p>
+                            </div>
+
+                            <!-- Listing Rules Table -->
+                            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3">
+                                <h4 class="text-xs font-bold text-slate-800 mb-3 px-1">Danh sách Rules & Guidelines Files</h4>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-xs">
+                                        <thead>
+                                            <tr class="text-[10px] text-slate-400 uppercase border-b border-slate-200">
+                                                <th class="pb-2 font-bold">Tên File</th>
+                                                <th class="pb-2 font-bold">Kích thước</th>
+                                                <th class="pb-2 font-bold">Ngày tải lên</th>
+                                                <th class="pb-2 font-bold text-right">Hành động</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-200/60">
+                                            <tr>
+                                                <td class="py-2.5 font-semibold text-slate-800 flex items-center space-x-2">
+                                                    <i class="fa-solid fa-file-lines text-amber-500"></i>
+                                                    <span>Tone_of_Voice_B2B.txt</span>
+                                                </td>
+                                                <td class="py-2.5 text-slate-500">45 KB</td>
+                                                <td class="py-2.5 text-slate-500">15/07/2026</td>
+                                                <td class="py-2.5 text-right">
+                                                    <button class="text-slate-400 hover:text-red-500 text-xs"><i class="fa-solid fa-trash"></i></button>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                    <button onclick="toggleConfigModal()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-all">Hủy</button>
+                    <button onclick="toggleConfigModal()" class="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-sm transition-all">Lưu cấu hình Model & Rules</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS -->
+    <script>
+        const stepModels = {
+            1: "Model: Claude 3.5 Sonnet",
+            2: "Model: Claude 3 Opus",
+            3: "Model: Claude 3.5 Sonnet",
+            4: "Model: Claude 3 Opus"
+        };
+
+        function switchStep(stepNumber) {
+            const buttons = document.querySelectorAll('.step-btn');
+            const workspaces = document.querySelectorAll('.step-workspace');
+            const modelIndicator = document.getElementById('current-step-model');
+
+            if (modelIndicator && stepModels[stepNumber]) {
+                modelIndicator.textContent = stepModels[stepNumber];
+            }
+
+            buttons.forEach((btn, index) => {
+                const badge = btn.querySelector('span:first-child');
+                if (index + 1 === stepNumber) {
+                    btn.className = "step-btn px-4 py-2 text-xs font-semibold text-slate-800 bg-white rounded-xl shadow-sm transition-all flex items-center space-x-2";
+                    badge.className = "w-4 h-4 rounded-full bg-slate-900 text-white text-[10px] flex items-center justify-center font-bold";
+                } else {
+                    btn.className = "step-btn px-4 py-2 text-xs font-medium text-slate-500 rounded-xl hover:text-slate-800 transition-all flex items-center space-x-2";
+                    badge.className = "w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-[10px] flex items-center justify-center font-bold";
+                }
+            });
+        }
+
+        function toggleConfigModal() {
+            document.getElementById('config-modal').classList.toggle('hidden');
+        }
+
+        // Switch Main Tabs inside Modal
+        function switchMainTab(element, tabId) {
+            const buttons = document.querySelectorAll('.main-tab-btn');
+            const contents = document.querySelectorAll('.main-tab-content');
+
+            buttons.forEach(btn => {
+                btn.className = "main-tab-btn flex-1 py-2 text-xs font-medium text-slate-500 rounded-xl hover:text-slate-800 transition-all text-center";
+            });
+            element.className = "main-tab-btn flex-1 py-2 text-xs font-semibold text-slate-800 bg-white rounded-xl shadow-sm transition-all text-center";
+
+            contents.forEach(content => {
+                if (content.id === tabId) {
+                    content.classList.remove('hidden');
+                } else {
+                    content.classList.add('hidden');
+                }
+            });
+        }
+
+        // Switch Sub-tabs in Knowledge Base Tab
+        function switchKbSubTab(element, subTabId) {
+            const buttons = document.querySelectorAll('.kb-subtab-btn');
+            const contents = document.querySelectorAll('.kb-subtab-content');
+
+            buttons.forEach(btn => {
+                btn.className = "kb-subtab-btn px-4 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-all";
+            });
+            element.className = "kb-subtab-btn px-4 py-1.5 rounded-xl text-xs font-bold bg-slate-900 text-white transition-all";
+
+            contents.forEach(content => {
+                if (content.id === subTabId) {
+                    content.classList.remove('hidden');
+                } else {
+                    content.classList.add('hidden');
+                }
+            });
+        }
+    </script>
+</body>
+</html>
