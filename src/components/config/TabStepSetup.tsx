@@ -29,8 +29,8 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
   const [providers, setProviders] = useState<Record<string, boolean> | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const enabledModels = config.models.filter(m => m.enabled);
+  const actionSources = config.actionSources ?? [];
 
-  // Auto-ping backend on mount
   useEffect(() => {
     pingRailway(RAILWAY_URL).then(result => {
       setBackendOk(result.ok);
@@ -48,11 +48,11 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
     });
   };
 
-  const toggleFile = (step: number, category: 'kb' | 'action' | 'rules', fileId: string) => {
-    const current = config.stepConfigs[step]?.fileAccess?.[category] || [];
-    const updated = current.includes(fileId)
-      ? current.filter(id => id !== fileId)
-      : [...current, fileId];
+  const toggleItem = (step: number, category: 'kb' | 'action' | 'rules', itemId: string) => {
+    const current = config.stepConfigs[step]?.fileAccess?.[category] ?? [];
+    const updated = current.includes(itemId)
+      ? current.filter(id => id !== itemId)
+      : [...current, itemId];
     onChange({
       ...config,
       stepConfigs: {
@@ -75,14 +75,12 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
       }`}>
         <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
           backendOk === null ? 'bg-slate-300 animate-pulse' :
-          backendOk          ? 'bg-emerald-500' :
-                               'bg-red-500'
+          backendOk          ? 'bg-emerald-500' : 'bg-red-500'
         }`} />
         <div className="flex-1 min-w-0">
           <p className={`text-xs font-bold ${
             backendOk === null ? 'text-slate-500' :
-            backendOk          ? 'text-emerald-800' :
-                                 'text-red-700'
+            backendOk          ? 'text-emerald-800' : 'text-red-700'
           }`}>
             {backendOk === null ? 'Đang kiểm tra kết nối AI backend...' :
              backendOk          ? 'AI Backend đang hoạt động' :
@@ -90,18 +88,15 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
           </p>
           <p className="text-[10px] text-slate-400 font-mono truncate">{RAILWAY_URL}</p>
         </div>
-
-        {/* Provider pills */}
         {backendOk && providers && (
           <div className="flex items-center gap-1.5 shrink-0">
             {Object.entries(PROVIDER_META).map(([id, meta]) => {
               const active = providers[id] ?? false;
               return (
                 <span key={id} title={`${meta.name}: ${active ? 'Sẵn sàng' : 'Chưa có API key'}`}
-                  className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border transition-all ${
+                  className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border ${
                     active ? `bg-white border-slate-200 ${meta.color}` : 'bg-slate-100 border-transparent text-slate-300'
-                  }`}
-                >
+                  }`}>
                   {meta.icon}
                 </span>
               );
@@ -130,12 +125,9 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
 
       {/* Step cards */}
       {[1, 2, 3, 4].map(step => {
-        const stepCfg = config.stepConfigs[step] || { modelId: '', fileAccess: { kb: [], action: [], rules: [] } };
-        const stepFiles = {
-          kb:     files.filter(f => f.category === 'kb'),
-          action: files.filter(f => f.category === 'action'),
-          rules:  files.filter(f => f.category === 'rules'),
-        };
+        const stepCfg = config.stepConfigs[step] ?? { modelId: '', fileAccess: { kb: [], action: [], rules: [] } };
+        const kbFiles    = files.filter(f => f.category === 'kb');
+        const rulesFiles = files.filter(f => f.category === 'rules');
 
         return (
           <div key={step} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
@@ -162,31 +154,65 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
             <div>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tài liệu được cấp phép:</span>
               <div className="grid grid-cols-3 gap-2 mt-2">
-                {(['kb', 'action', 'rules'] as const).map(cat => {
-                  const meta = CATEGORY_META[cat];
-                  const catFiles = stepFiles[cat];
-                  const selected = stepCfg.fileAccess?.[cat] || [];
-                  return (
-                    <div key={cat} className={`p-3 rounded-xl border ${meta.border} ${meta.bg} space-y-1.5`}>
-                      <span className={`text-[10px] font-bold block border-b border-current/20 pb-1 ${meta.color}`}>{meta.label}</span>
-                      {catFiles.length === 0 ? (
-                        <p className="text-[10px] text-slate-400 italic">Chưa có file</p>
-                      ) : (
-                        catFiles.map(f => (
-                          <label key={f.id} className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={selected.includes(f.id)}
-                              onChange={() => toggleFile(step, cat, f.id)}
-                              className="rounded border-slate-300 text-slate-900 focus:ring-slate-800 w-3 h-3"
-                            />
-                            <span className="text-[10px] text-slate-700 truncate">{f.name}</span>
-                          </label>
-                        ))
-                      )}
-                    </div>
-                  );
-                })}
+
+                {/* KB */}
+                <div className={`p-3 rounded-xl border ${CATEGORY_META.kb.border} ${CATEGORY_META.kb.bg} space-y-1.5`}>
+                  <span className={`text-[10px] font-bold block border-b border-current/20 pb-1 ${CATEGORY_META.kb.color}`}>Knowledge Base</span>
+                  {kbFiles.length === 0 ? (
+                    <p className="text-[10px] text-slate-400 italic">Chưa có file</p>
+                  ) : kbFiles.map(f => {
+                    const selected = stepCfg.fileAccess?.kb ?? [];
+                    return (
+                      <label key={f.id} className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={selected.includes(f.id)}
+                          onChange={() => toggleItem(step, 'kb', f.id)}
+                          className="rounded border-slate-300 text-slate-900 focus:ring-slate-800 w-3 h-3" />
+                        <span className="text-[10px] text-slate-700 truncate">{f.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {/* Action Plan — dùng actionSources từ config */}
+                <div className={`p-3 rounded-xl border ${CATEGORY_META.action.border} ${CATEGORY_META.action.bg} space-y-1.5`}>
+                  <span className={`text-[10px] font-bold block border-b border-current/20 pb-1 ${CATEGORY_META.action.color}`}>Action Plan</span>
+                  {actionSources.length === 0 ? (
+                    <p className="text-[10px] text-slate-400 italic">Chưa có nguồn dữ liệu</p>
+                  ) : actionSources.map(s => {
+                    const selected = stepCfg.fileAccess?.action ?? [];
+                    const icons: Record<string, string> = {
+                      file: '📁', paste: '📋', url: '🔗', gsheet: '📊', manual: '✏️', supabase: '🗄️', airtable: '🔌',
+                    };
+                    return (
+                      <label key={s.id} className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={selected.includes(s.id)}
+                          onChange={() => toggleItem(step, 'action', s.id)}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3 h-3" />
+                        <span className="text-[9px] shrink-0">{icons[s.sourceType] ?? '📄'}</span>
+                        <span className="text-[10px] text-slate-700 truncate">{s.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {/* Rules */}
+                <div className={`p-3 rounded-xl border ${CATEGORY_META.rules.border} ${CATEGORY_META.rules.bg} space-y-1.5`}>
+                  <span className={`text-[10px] font-bold block border-b border-current/20 pb-1 ${CATEGORY_META.rules.color}`}>Rules & Guidelines</span>
+                  {rulesFiles.length === 0 ? (
+                    <p className="text-[10px] text-slate-400 italic">Chưa có file</p>
+                  ) : rulesFiles.map(f => {
+                    const selected = stepCfg.fileAccess?.rules ?? [];
+                    return (
+                      <label key={f.id} className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="checkbox" checked={selected.includes(f.id)}
+                          onChange={() => toggleItem(step, 'rules', f.id)}
+                          className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3 h-3" />
+                        <span className="text-[10px] text-slate-700 truncate">{f.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+
               </div>
             </div>
           </div>
