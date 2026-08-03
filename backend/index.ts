@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { generate, getAvailableProviders } from './providers.ts';
-import { kvGet, kvSet, kvGetByPrefix } from './supabase.ts';
+import { kvGet, kvSet, kvGetByPrefix, checkConnection } from './supabase.ts';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,12 +12,14 @@ app.use(express.json({ limit: '10mb' }));
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 
-app.get('/health', (_req, res) => {
+app.get('/health', async (_req, res) => {
+  const [supabaseOk] = await Promise.all([checkConnection()]);
   res.json({
     status: 'ok',
     version: '1.0.0',
     providers: getAvailableProviders(),
-    supabase: !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
+    supabase: supabaseOk,
+    supabaseUrl: process.env.SUPABASE_URL ?? null,
   });
 });
 

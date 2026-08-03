@@ -10,7 +10,7 @@
     "format": "oxfmt"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.48.0",
+    "@supabase/supabase-js": "^2.112.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
