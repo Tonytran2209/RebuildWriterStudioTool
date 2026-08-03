@@ -1,4 +1,3 @@
-# Build Vite frontend, then serve via Express backend
 providers = ["node"]
 
 [phases.setup]
@@ -6,8 +5,9 @@ nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = [
+  "rm -f package-lock.json",
   "npm install",
-  "cd backend && npm install"
+  "cd backend && rm -f package-lock.json && npm install"
 ]
 
 [phases.build]
