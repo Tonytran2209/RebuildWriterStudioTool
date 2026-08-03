@@ -1,14 +1,17 @@
-# Tell nixpacks to build and run the Express backend, not the Vite frontend
+# Build Vite frontend, then serve via Express backend
 providers = ["node"]
 
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 
 [phases.install]
-cmds = ["cd backend && npm install"]
+cmds = [
+  "npm install",
+  "cd backend && npm install"
+]
 
 [phases.build]
-cmds = []
+cmds = ["npm run build"]
 
 [start]
-cmd = "cd backend && npm start"
+cmd = "cd backend && node_modules/.bin/tsx index.ts"

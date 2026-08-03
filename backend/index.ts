@@ -1,8 +1,13 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { generate, getAvailableProviders } from './providers.ts';
 import { kvGet, kvSet, kvGetByPrefix, checkConnection } from './supabase.ts';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DIST = path.resolve(__dirname, '../dist');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,11 +15,9 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
-// ─── Root ────────────────────────────────────────────────────────────────────
+// ─── Serve Vite frontend static files ────────────────────────────────────────
 
-app.get('/', (_req, res) => {
-  res.json({ name: 'Writer Studio Backend', status: 'running', version: '1.0.0' });
-});
+app.use(express.static(DIST));
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 
@@ -176,6 +179,12 @@ app.post('/api/files', async (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── SPA fallback — serve index.html for all non-API routes ─────────────────
+
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(DIST, 'index.html'));
 });
 
 // ─── Start ───────────────────────────────────────────────────────────────────
