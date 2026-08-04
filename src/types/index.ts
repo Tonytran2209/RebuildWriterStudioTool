@@ -62,6 +62,42 @@ export interface OutlineSection {
 
 export type ArticleStatus = 'planning' | 'in_progress' | 'review' | 'done';
 
+export interface ContentTypeSuggestion {
+  id: string;
+  label: string;
+  description: string;
+  audience?: string;
+  format?: string;
+  matchedDocs?: string[];
+  ruleRefs?: string[];
+  icon?: string;
+}
+
+export interface CoreIdeaRating {
+  overall: number;
+  seoPotential: number;
+  audienceFit: number;
+  docSupport: number;
+  uniqueness: number;
+}
+
+export interface CoreIdeaSuggestion {
+  id: string;
+  title: string;
+  angleLabel: string;
+  angleDescription: string;
+  mainArgument: string;
+  primaryKeyword: string;
+  secondaryKeywords: string[];
+  targetAudience: string;
+  recommendedTone: string;
+  recommendedWordCount: number;
+  rating: CoreIdeaRating;
+  ratingRationale: string;
+  matchedDocs: string[];
+  ruleRefs: string[];
+}
+
 export interface Article {
   id: string;
   title: string;
@@ -71,6 +107,7 @@ export interface Article {
   updatedAt: string;
   // Step 1 data
   contentType?: string;
+  contentTypeSuggestions?: ContentTypeSuggestion[];
   // Step 2 data
   topic?: string;
   keywords?: string;
@@ -78,6 +115,8 @@ export interface Article {
   angle?: string;
   wordCount?: number;
   tone?: string;
+  coreIdeaSuggestions?: CoreIdeaSuggestion[];
+  selectedCoreIdeaId?: string;
   // Step 3 data
   outline?: OutlineSection[];
   // Step 4 data

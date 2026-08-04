@@ -1,5 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import type { Article, AIModel, AppConfig, DocumentFile } from "../../types";
+import type {
+  Article,
+  AIModel,
+  AppConfig,
+  DocumentFile,
+  CoreIdeaSuggestion,
+} from "../../types";
 import { callAI } from "../../lib/aiService";
 import {
   collectStepDocs,
@@ -7,29 +13,6 @@ import {
   buildRoleSystemPrompt,
   describeBundle,
 } from "../../lib/docContext";
-
-interface CoreIdeaSuggestion {
-  id: string;
-  title: string;
-  angleLabel: string;
-  angleDescription: string;
-  mainArgument: string;
-  primaryKeyword: string;
-  secondaryKeywords: string[];
-  targetAudience: string;
-  recommendedTone: string;
-  recommendedWordCount: number;
-  rating: {
-    overall: number;
-    seoPotential: number;
-    audienceFit: number;
-    docSupport: number;
-    uniqueness: number;
-  };
-  ratingRationale: string;
-  matchedDocs: string[];
-  ruleRefs: string[];
-}
 
 interface Props {
   article: Article;
@@ -121,10 +104,10 @@ export default function Step2CoreIdea({
   onNext,
   onPrev,
 }: Props) {
-  const [ideas, setIdeas] = useState<CoreIdeaSuggestion[]>([]);
+  const ideas = article.coreIdeaSuggestions ?? [];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(article.selectedCoreIdeaId ?? null);
   const autoRequestedRef = useRef<string | null>(null);
 
   const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
@@ -190,7 +173,7 @@ export default function Step2CoreIdea({
       const parsed = extractJson(res.content);
       const normalized = normalizeIdeas(parsed);
       if (normalized.length < 3) throw new Error(`AI chỉ trả về ${normalized.length} idea hợp lệ (yêu cầu ≥3).`);
-      setIdeas(normalized);
+      onUpdate({ coreIdeaSuggestions: normalized });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
@@ -199,19 +182,25 @@ export default function Step2CoreIdea({
     }
   };
 
-  // Auto-fetch when entering step (once per contentType + doc bundle combination)
+  // First-time scan only — cache in article.coreIdeaSuggestions.
+  // Re-scan only when user explicitly clicks "Đề xuất lại".
   useEffect(() => {
-    const key = `${article.contentType || ""}::${bundle.totalCount}`;
+    const key = `${article.contentType || ""}`;
     if (autoRequestedRef.current === key) return;
     if (!article.contentType || !bundle.totalCount) return;
+    if (ideas.length > 0) {
+      autoRequestedRef.current = key;
+      return;
+    }
     autoRequestedRef.current = key;
     fetchIdeas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [article.contentType, bundle.totalCount]);
+  }, [article.contentType, bundle.totalCount, ideas.length]);
 
   const handleSelect = (idea: CoreIdeaSuggestion) => {
     setSelectedId(idea.id);
     onUpdate({
+      selectedCoreIdeaId: idea.id,
       topic: idea.title,
       angle: idea.angleLabel,
       keywords: [idea.primaryKeyword, ...idea.secondaryKeywords].filter(Boolean).join(", "),

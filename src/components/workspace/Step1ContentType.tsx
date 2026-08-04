@@ -1,5 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import type { Article, AIModel, AppConfig, DocumentFile } from "../../types";
+import type {
+  Article,
+  AIModel,
+  AppConfig,
+  DocumentFile,
+  ContentTypeSuggestion,
+} from "../../types";
 import { callAI } from "../../lib/aiService";
 import {
   collectStepDocs,
@@ -7,17 +13,6 @@ import {
   buildRoleSystemPrompt,
   describeBundle,
 } from "../../lib/docContext";
-
-interface ContentTypeSuggestion {
-  id: string;
-  label: string;
-  description: string;
-  audience?: string;
-  format?: string;
-  matchedDocs?: string[];
-  ruleRefs?: string[];
-  icon?: string;
-}
 
 interface Props {
   article: Article;
@@ -86,7 +81,7 @@ export default function Step1ContentType({
   onNext,
 }: Props) {
   const selected = article.contentType;
-  const [suggestions, setSuggestions] = useState<ContentTypeSuggestion[]>([]);
+  const suggestions = article.contentTypeSuggestions ?? [];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customLabel, setCustomLabel] = useState("");
@@ -133,7 +128,7 @@ export default function Step1ContentType({
       const parsed = extractJson(res.content);
       const normalized = normalizeSuggestions(parsed);
       if (!normalized.length) throw new Error("AI không trả về đề xuất hợp lệ.");
-      setSuggestions(normalized);
+      onUpdate({ contentTypeSuggestions: normalized });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
@@ -142,13 +137,16 @@ export default function Step1ContentType({
     }
   };
 
+  // First-time scan only — cache in article.contentTypeSuggestions.
+  // Explicit user click on "Đề xuất lại" is the only way to re-scan afterwards.
   useEffect(() => {
     if (autoRequestedRef.current) return;
     if (!bundle.totalCount) return;
+    if (suggestions.length > 0) return;
     autoRequestedRef.current = true;
     fetchSuggestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bundle.totalCount]);
+  }, [bundle.totalCount, suggestions.length]);
 
   const handleSelect = (label: string) => onUpdate({ contentType: label });
 
