@@ -84,6 +84,7 @@ interface EvidenceIndex {
   kbOriginalNames: string[];
   ruleOriginalNames: string[];
   actionText: string;
+  actionByName: Map<string, string>;
   kbByName: Map<string, string>;
   rulesByName: Map<string, string>;
 }
@@ -138,15 +139,19 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       const scheduleQuoteExists = evidenceQuoteExists(evidence.actionText, scheduleEvidence);
       const scheduleQuoteCoversPeriod = scheduleQuote.includes(canonical(wave)) &&
         scheduleQuote.includes(canonical(timeframe));
+      const verifiedActionTypeEvidence = typeGroup
+        ? findTypeEvidence(evidence.actionByName, typeGroup)
+        : undefined;
       const verifiedKbEvidence = typeGroup ? findTypeEvidence(evidence.kbByName, typeGroup) : undefined;
       const verifiedRuleEvidence = typeGroup ? findTypeEvidence(evidence.rulesByName, typeGroup) : undefined;
-      // Reject ungrounded values instead of allowing the model to invent a date, keyword or type.
+      // Action Plan is authoritative for the available choices. KB and Rules enrich
+      // the description but must not hide a valid type/wave/timeline combination.
       if (
         !typeGroup || !wave || !timeframe || !keywords.length ||
         !waveExists || !timeframeExists || !labelExists || !keywordsExist ||
         !actionQuote || !actionQuoteExists ||
         !scheduleQuote || !scheduleQuoteExists || !scheduleQuoteCoversPeriod ||
-        !verifiedKbEvidence || !verifiedRuleEvidence
+        !verifiedActionTypeEvidence
       ) return null;
       return {
         id: `sg-${idx}-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
@@ -246,15 +251,18 @@ export default function Step1ContentType({
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
-          "Tổng hợp CHÍNH XÁC Content Type từ Knowledge Base + Rules, rồi ánh xạ Action Plan theo Type A, Type B, Type C.",
+          "Tổng hợp ĐẦY ĐỦ Content Type A/B/C từ toàn bộ Action Plan được cấp quyền; dùng Knowledge Base + Rules để bổ sung mô tả và kiểm chứng.",
           "",
           "QUY TẮC PHÂN LOẠI (bắt buộc):",
-          "- Nhận diện tên Content Type và typeGroup (A/B/C) từ CẢ Knowledge Base và Rules; không dùng Action Plan làm nguồn duy nhất để phân loại type.",
-          "- KB và Rules định nghĩa taxonomy/tiêu chí Type A/B/C; topic cụ thể lấy từ Action Plan. Không yêu cầu topic phải xuất hiện trong KB/Rules.",
+          "- Action Plan là nguồn sự thật cho danh sách lựa chọn: nhận diện tên Content Type, typeGroup (A/B/C), topic, wave, timeline và keywords trực tiếp từ TOÀN BỘ Action Plan.",
+          "- Knowledge Base và Rules chỉ dùng để bổ sung mô tả/tiêu chí. Không loại bỏ một lựa chọn hợp lệ chỉ vì KB hoặc Rules không có dòng ghi nguyên văn Type A/B/C.",
           "- `wave` là PUBLISHING WAVE từ tiêu đề section, ví dụ `Wave 1`/`Wave 2`; KHÔNG dùng W2/W3/W4/W5 vì đó là execution week của từng row.",
           "- `timeframe` là mốc đi cùng publishing wave trong tiêu đề section. Cả wave và timeframe PHẢI sao chép nguyên văn từ cùng một tiêu đề/đoạn Action Plan, tuyệt đối không tự quy đổi quý/năm.",
           "- Mỗi loại gắn với đúng bộ keywords mà Action Plan chỉ định cho loại/wave đó. Trích nguyên văn, không thêm bớt từ khóa không có trong tài liệu.",
           "- Chỉ trả về lựa chọn có đủ nhóm + wave + timeframe + ít nhất 1 keyword. Bỏ qua mục thiếu dữ liệu thay vì suy đoán.",
+          "- PHẢI quét từ đầu đến cuối TẤT CẢ tài liệu Action Plan được cấp quyền, qua TẤT CẢ publishing wave và TẤT CẢ timeline/tháng.",
+          "- Trả về MỌI tổ hợp content type + topic + publishing wave + timeline có trong tài liệu; không dừng sau Wave 1, không giới hạn ở Tháng 7, không chỉ trả Type A/B.",
+          "- Trước khi trả JSON, tự đối chiếu lại toàn bộ Action Plan để bảo đảm không bỏ sót Type A, Type B hoặc Type C ở bất kỳ wave/timeline nào.",
           "- matchedDocs chỉ chứa chính xác tên tài liệu Action Plan làm căn cứ cho lựa chọn; không đặt tên KB hoặc Rules vào matchedDocs.",
           "- kbRefs và ruleRefs phải chứa chính xác tên file KB và Rules dùng để nhận diện Content Type.",
           "- kbEvidence và ruleEvidence là các đoạn trích nguyên văn mô tả tiêu chí taxonomy dùng để suy ra Type A/B/C.",
@@ -277,7 +285,7 @@ export default function Step1ContentType({
         `TÀI LIỆU ĐƯỢC PHÂN QUYỀN ĐỌC Ở STEP 1 (${describeBundle(bundle)}):`,
         "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 1 từ Supabase.",
         "",
-        "Yêu cầu: Tổng hợp các loại nội dung từ Action Plan, phân loại đúng Type A/B/C, gán đúng wave + mốc thời gian + keywords cho từng loại.",
+        "Yêu cầu: Đọc toàn bộ các Action Plan đã được cấp quyền trong Supabase và tổng hợp đầy đủ mọi Content Type A/B/C của tất cả wave và timeline. Phân loại đúng nhóm, gán đúng wave + mốc thời gian + keywords cho từng lựa chọn; tuyệt đối không giới hạn ở Tháng 7 / Wave 1.",
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
       ].join("\n");
 
@@ -286,7 +294,7 @@ export default function Step1ContentType({
         railwayUrl,
         prompt,
         systemPrompt,
-        maxTokens: 8000,
+        maxTokens: 16000,
         temperature: 0.1,
         stepNumber: 1,
       });
@@ -297,12 +305,13 @@ export default function Step1ContentType({
         kbOriginalNames: bundle.knowledgeBase.map(doc => doc.name),
         ruleOriginalNames: bundle.rules.map(doc => doc.name),
         actionText: bundle.actionPlan.map(doc => doc.content ?? "").join("\n"),
+        actionByName: new Map(bundle.actionPlan.map(doc => [canonical(doc.name), doc.content ?? ""])),
         kbByName: new Map(bundle.knowledgeBase.map(doc => [canonical(doc.name), doc.content ?? ""])),
         rulesByName: new Map(bundle.rules.map(doc => [canonical(doc.name), doc.content ?? ""])),
       };
       const normalized = normalizeSuggestions(parsed, evidence);
       if (!normalized.length) {
-        throw new Error("Toàn bộ đề xuất bị từ chối vì thiếu dẫn chứng KB/Rules hoặc có timeframe/keyword không tồn tại nguyên văn trong Action Plan.");
+        throw new Error("Toàn bộ đề xuất bị từ chối vì thiếu dẫn chứng Type A/B/C, timeframe hoặc keyword trong Action Plan.");
       }
       onUpdate({
         contentTypeSuggestions: normalized,
@@ -329,7 +338,7 @@ export default function Step1ContentType({
   };
 
   // First-time scan only — cache in article.contentTypeSuggestions.
-  // Explicit user click on "Đề xuất lại" is the only way to re-scan afterwards.
+  // Explicit user click on "Tổng hợp lại toàn bộ" is the only way to re-scan afterwards.
   useEffect(() => {
     if (autoRequestedRef.current === sourceFingerprint) return;
     if (!bundle.totalCount) return;
@@ -373,7 +382,7 @@ export default function Step1ContentType({
                 disabled={loading || !bundle.totalCount}
                 className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
               >
-                {loading ? "Đang phân tích..." : visibleSuggestions.length ? "Đề xuất lại" : "Lấy đề xuất"}
+                {loading ? "Đang quét toàn bộ..." : visibleSuggestions.length ? "Tổng hợp lại toàn bộ" : "Tổng hợp toàn bộ"}
               </button>
             </div>
 
