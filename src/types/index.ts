@@ -114,7 +114,10 @@ export interface Article {
   updatedAt: string;
   // Step 1 data
   contentType?: string;
+  selectedContentTypeSuggestionId?: string;
   contentTypeSuggestions?: ContentTypeSuggestion[];
+  contentTypeSourceFingerprint?: string;
+  contentTypeScannedAt?: string;
   // Step 2 data
   topic?: string;
   keywords?: string;
@@ -170,6 +173,7 @@ export interface ActionDataSource {
   size?: string;
   // Paste / Manual
   content?: string;       // raw text hoặc CSV string
+  contentUpdatedAt?: string; // dùng để phát hiện Action Plan quý mới
   // URL / GSheet
   url?: string;
   headers?: Record<string, string>;   // custom request headers cho API

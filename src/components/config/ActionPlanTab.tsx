@@ -44,20 +44,65 @@ const SOURCE_ICONS: Record<ActionSourceType, string> = {
 
 // ── sub-forms ─────────────────────────────────────────────────────────────────
 
-function FileForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
+function FileForm({ onAdd }: { onAdd: (sources: ActionDataSource[]) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
-  const handle = (list: FileList | null) => {
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState('');
+
+  const extractFileContent = async (file: File, ext: string): Promise<string> => {
+    if (['csv', 'tsv', 'json', 'txt', 'xml', 'md'].includes(ext)) return file.text();
+    if (ext === 'xlsx') {
+      const { default: readXlsxFile } = await import('read-excel-file/browser');
+      const sheets = await readXlsxFile(file);
+      return sheets.map(({ sheet, data }) => {
+        const csv = data.map(row => row.map(cell => {
+          const value = cell == null ? '' : String(cell);
+          return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+        }).join(',')).join('\n');
+        return `[Sheet: ${sheet}]\n${csv}`;
+      }).join('\n\n');
+    }
+    if (ext === 'pdf') {
+      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const worker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs?url');
+      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
+      const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+      const pages: string[] = [];
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        const page = await pdf.getPage(pageNumber);
+        const text = await page.getTextContent();
+        pages.push(`[Trang ${pageNumber}]\n${text.items.map(item => 'str' in item ? item.str : '').join(' ')}`);
+      }
+      return pages.join('\n\n');
+    }
+    throw new Error(`Định dạng .${ext} chưa được hỗ trợ.`);
+  };
+
+  const handle = async (list: FileList | null) => {
     if (!list) return;
-    Array.from(list).forEach(f => {
-      const ext = f.name.split('.').pop()?.toLowerCase() ?? 'csv';
-      onAdd({
-        id: uid(), name: f.name, sourceType: 'file', addedAt: now(),
-        fileType: ext, size: formatBytes(f.size),
-        preview: `Tệp ${ext.toUpperCase()} — ${formatBytes(f.size)}`,
-      });
-    });
+    setReading(true);
+    setError('');
+    try {
+      const extracted: ActionDataSource[] = [];
+      for (const f of Array.from(list)) {
+        const ext = f.name.split('.').pop()?.toLowerCase() ?? 'csv';
+        const content = (await extractFileContent(f, ext)).trim();
+        if (!content) throw new Error(`${f.name} không có nội dung văn bản để AI phân tích.`);
+        extracted.push({
+          id: uid(), name: f.name, sourceType: 'file', addedAt: now(), contentUpdatedAt: now(),
+          fileType: ext, size: formatBytes(f.size), content,
+          preview: csvPreview(content), rowCount: countRows(content),
+        });
+      }
+      onAdd(extracted);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReading(false);
+      if (ref.current) ref.current.value = '';
+    }
   };
 
   return (
@@ -65,14 +110,15 @@ function FileForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
       onDragOver={e => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
       onDrop={e => { e.preventDefault(); setDragging(false); handle(e.dataTransfer.files); }}
-      onClick={() => ref.current?.click()}
+      onClick={() => !reading && ref.current?.click()}
       className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all
         bg-emerald-50/30 border-emerald-200 hover:border-emerald-500 ${dragging ? 'scale-[0.99] opacity-75' : ''}`}
     >
       <div className="text-3xl mb-2">📁</div>
-      <p className="text-xs font-bold text-slate-700">Kéo thả hoặc nhấp để chọn file</p>
+      <p className="text-xs font-bold text-slate-700">{reading ? 'Đang trích xuất nội dung...' : 'Kéo thả hoặc nhấp để chọn file'}</p>
       <p className="text-[11px] text-slate-400 mt-1">CSV · XLSX · JSON · PDF · TXT · XML</p>
-      <input ref={ref} type="file" multiple accept=".csv,.xlsx,.xls,.json,.pdf,.txt,.xml,.tsv" className="hidden" onChange={e => handle(e.target.files)} />
+      <input ref={ref} type="file" multiple accept=".csv,.xlsx,.json,.pdf,.txt,.xml,.tsv" className="hidden" onChange={e => handle(e.target.files)} />
+      {error && <p className="text-[11px] text-red-600 mt-2">{error}</p>}
     </div>
   );
 }
@@ -86,7 +132,7 @@ function PasteForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
     if (!content.trim()) return;
     onAdd({
       id: uid(), name: name || `Paste ${fmt.toUpperCase()} ${shortDate()}`,
-      sourceType: 'paste', addedAt: now(), content,
+      sourceType: 'paste', addedAt: now(), contentUpdatedAt: now(), content,
       preview: csvPreview(content), rowCount: countRows(content),
     });
     setName(''); setContent('');
@@ -129,6 +175,7 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
   const [headers, setHeaders] = useState<Record<string, string>>({});
   const [fetching, setFetching] = useState(false);
   const [preview, setPreview] = useState('');
+  const [fetchedContent, setFetchedContent] = useState('');
 
   const addHeader = () => {
     if (!headerKey) return;
@@ -141,7 +188,9 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
     setFetching(true);
     try {
       const res = await fetch(url, { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
+      setFetchedContent(text);
       setPreview(text.slice(0, 500));
     } catch (e: any) {
       setPreview(`Lỗi: ${e.message}`);
@@ -153,9 +202,9 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
     onAdd({
       id: uid(), name: name || url, sourceType: 'url', addedAt: now(),
       url, headers: Object.keys(headers).length ? headers : undefined,
-      preview: preview || url,
+      contentUpdatedAt: now(), content: fetchedContent || undefined, preview: preview || url,
     });
-    setName(''); setUrl(''); setHeaders({}); setPreview('');
+    setName(''); setUrl(''); setHeaders({}); setPreview(''); setFetchedContent('');
   };
 
   return (
@@ -200,6 +249,7 @@ function GSheetForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
   const [url, setUrl] = useState('');
   const [fetching, setFetching] = useState(false);
   const [preview, setPreview] = useState('');
+  const [sheetContent, setSheetContent] = useState('');
   const [error, setError] = useState('');
 
   const sheetId = extractSheetId(url);
@@ -212,6 +262,7 @@ function GSheetForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
       const res = await fetch(csvUrl);
       if (!res.ok) throw new Error('Không thể tải — đảm bảo sheet được chia sẻ công khai.');
       const text = await res.text();
+      setSheetContent(text);
       setPreview(csvPreview(text, 5));
     } catch (e: any) { setError(e.message); }
     finally { setFetching(false); }
@@ -222,10 +273,10 @@ function GSheetForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
     onAdd({
       id: uid(), name: name || `Google Sheets — ${sheetId.slice(0, 8)}`,
       sourceType: 'gsheet', addedAt: now(),
-      url: csvUrl!, preview: preview || 'Google Sheets data source',
-      rowCount: preview ? countRows(preview) : undefined,
+      url: csvUrl!, contentUpdatedAt: now(), content: sheetContent || undefined, preview: preview || 'Google Sheets data source',
+      rowCount: sheetContent ? countRows(sheetContent) : undefined,
     });
-    setName(''); setUrl(''); setPreview('');
+    setName(''); setUrl(''); setPreview(''); setSheetContent('');
   };
 
   return (
@@ -272,7 +323,7 @@ function ManualForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
     onAdd({
       id: uid(), name: name || `Bảng thủ công ${shortDate()}`,
       sourceType: 'manual', addedAt: now(),
-      columns, rows, content, preview: csvPreview(content, 4),
+      columns, rows, content, contentUpdatedAt: now(), preview: csvPreview(content, 4),
       rowCount: rows.length,
     });
     setName(''); setRows([{ id: uid(), cells: columns.map(() => '') }]);
@@ -414,6 +465,7 @@ export default function ActionPlanTab({ sources = [], onChange }: Props) {
   const [mode, setMode] = useState<ActionSourceType>('file');
 
   const addSource = (s: ActionDataSource) => onChange([s, ...sources]);
+  const addSources = (newSources: ActionDataSource[]) => onChange([...newSources, ...sources]);
   const removeSource = (id: string) => onChange(sources.filter(s => s.id !== id));
 
   return (
@@ -442,7 +494,7 @@ export default function ActionPlanTab({ sources = [], onChange }: Props) {
 
       {/* Active form */}
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-        {mode === 'file'     && <FileForm     onAdd={addSource} />}
+        {mode === 'file'     && <FileForm     onAdd={addSources} />}
         {mode === 'paste'    && <PasteForm    onAdd={addSource} />}
         {mode === 'url'      && <UrlForm      onAdd={addSource} />}
         {mode === 'gsheet'   && <GSheetForm   onAdd={addSource} />}

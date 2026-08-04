@@ -12,6 +12,7 @@ import {
   collectStepDocs,
   buildDocContextBlock,
   buildRoleSystemPrompt,
+  buildActionPlanFingerprint,
   describeBundle,
 } from "../../lib/docContext";
 
@@ -41,7 +42,7 @@ function normalizeGroup(v: unknown): ContentTypeGroup | undefined {
   return m ? (m[1] as ContentTypeGroup) : undefined;
 }
 
-function normalizeSuggestions(parsed: unknown): ContentTypeSuggestion[] {
+function normalizeSuggestions(parsed: unknown, actionPlanNames: Set<string>): ContentTypeSuggestion[] {
   if (!Array.isArray(parsed)) throw new Error("Phản hồi AI không phải mảng.");
   return parsed
     .map((item, idx) => {
@@ -52,17 +53,25 @@ function normalizeSuggestions(parsed: unknown): ContentTypeSuggestion[] {
       if (!label || !description) return null;
       const arr = (key: string): string[] =>
         Array.isArray(obj[key]) ? (obj[key] as unknown[]).map(String).filter(Boolean) : [];
+      const typeGroup = normalizeGroup(obj.typeGroup ?? obj.type);
+      const wave = String(obj.wave ?? "").trim();
+      const timeframe = String(obj.timeframe ?? "").trim();
+      const keywords = arr("keywords").map(keyword => keyword.trim()).filter(Boolean);
+      const matchedDocs = arr("matchedDocs").map(name => name.trim()).filter(Boolean);
+      const referencesActionPlan = matchedDocs.some(name => actionPlanNames.has(name.toLocaleLowerCase()));
+      // A selectable suggestion must be traceable to one exact Action Plan slot.
+      if (!typeGroup || !wave || !timeframe || !keywords.length || !referencesActionPlan) return null;
       return {
         id: `sg-${idx}-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
         label,
         description,
-        keywords: arr("keywords"),
-        typeGroup: normalizeGroup(obj.typeGroup ?? obj.type),
-        wave: obj.wave ? String(obj.wave) : undefined,
-        timeframe: obj.timeframe ? String(obj.timeframe) : undefined,
+        keywords,
+        typeGroup,
+        wave,
+        timeframe,
         audience: obj.audience ? String(obj.audience) : undefined,
         format: obj.format ? String(obj.format) : undefined,
-        matchedDocs: arr("matchedDocs"),
+        matchedDocs,
         ruleRefs: arr("ruleRefs"),
         icon: obj.icon ? String(obj.icon) : undefined,
       } as ContentTypeSuggestion;
@@ -92,10 +101,14 @@ export default function Step1ContentType({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [customLabel, setCustomLabel] = useState("");
-  const autoRequestedRef = useRef(false);
+  const autoRequestedRef = useRef<string | null>(null);
 
   const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
   const contextBlock = useMemo(() => buildDocContextBlock(bundle), [bundle]);
+  const sourceFingerprint = useMemo(() => buildActionPlanFingerprint(bundle), [bundle]);
+  const scanIsStale = Boolean(
+    suggestions.length && article.contentTypeSourceFingerprint !== sourceFingerprint,
+  );
 
   // Group suggestions by Type A/B/C; anything without a group falls to "other".
   const grouped = useMemo(() => {
@@ -128,7 +141,8 @@ export default function Step1ContentType({
           "- Mỗi Content Type PHẢI được gán đúng typeGroup (A/B/C) theo cách Action Plan phân loại. Không tự bịa nhóm.",
           "- Mỗi loại thuộc một WAVE (đợt triển khai) gắn với một MỐC THỜI GIAN cụ thể (timeframe) — trích đúng từ Action Plan.",
           "- Mỗi loại gắn với đúng bộ keywords mà Action Plan chỉ định cho loại/wave đó. Trích nguyên văn, không thêm bớt từ khóa không có trong tài liệu.",
-          "- Nếu Action Plan không nêu rõ nhóm/wave/timeframe cho một mục, để trống trường đó thay vì suy đoán.",
+          "- Chỉ trả về lựa chọn có đủ nhóm + wave + timeframe + ít nhất 1 keyword. Bỏ qua mục thiếu dữ liệu thay vì suy đoán.",
+          "- matchedDocs phải chứa chính xác tên của ít nhất một tài liệu Action Plan làm căn cứ cho lựa chọn.",
           "",
           "NGUYÊN TẮC QUÉT DỮ LIỆU:",
           "- Đọc kỹ toàn bộ Action Plan (là nguồn phân loại cơ bản). Action Plan được cập nhật định kỳ mỗi 3 tháng — luôn phản ánh đúng nội dung file hiện tại, không dùng dữ liệu cũ ghi nhớ.",
@@ -150,9 +164,18 @@ export default function Step1ContentType({
 
       const res = await callAI({ model, railwayUrl, prompt, systemPrompt });
       const parsed = extractJson(res.content);
-      const normalized = normalizeSuggestions(parsed);
-      if (!normalized.length) throw new Error("AI không trả về đề xuất hợp lệ.");
-      onUpdate({ contentTypeSuggestions: normalized });
+      const actionPlanNames = new Set(bundle.actionPlan.map(doc => doc.name.toLocaleLowerCase()));
+      const normalized = normalizeSuggestions(parsed, actionPlanNames);
+      if (!normalized.length) {
+        throw new Error("AI không trả về lựa chọn có đủ Type, Wave, mốc thời gian và keywords theo Action Plan.");
+      }
+      onUpdate({
+        contentTypeSuggestions: normalized,
+        contentTypeSourceFingerprint: sourceFingerprint,
+        contentTypeScannedAt: new Date().toISOString(),
+        contentType: undefined,
+        selectedContentTypeSuggestionId: undefined,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
@@ -164,15 +187,18 @@ export default function Step1ContentType({
   // First-time scan only — cache in article.contentTypeSuggestions.
   // Explicit user click on "Đề xuất lại" is the only way to re-scan afterwards.
   useEffect(() => {
-    if (autoRequestedRef.current) return;
+    if (autoRequestedRef.current === sourceFingerprint) return;
     if (!bundle.totalCount) return;
-    if (suggestions.length > 0) return;
-    autoRequestedRef.current = true;
+    if (suggestions.length > 0 && !scanIsStale) return;
+    autoRequestedRef.current = sourceFingerprint;
     fetchSuggestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bundle.totalCount, suggestions.length]);
+  }, [bundle.totalCount, suggestions.length, scanIsStale, sourceFingerprint]);
 
-  const handleSelect = (label: string) => onUpdate({ contentType: label });
+  const handleSelect = (suggestion: ContentTypeSuggestion) => onUpdate({
+    contentType: suggestion.label,
+    selectedContentTypeSuggestionId: suggestion.id,
+  });
 
   const handleUseCustom = () => {
     const trimmed = customLabel.trim();
@@ -181,7 +207,10 @@ export default function Step1ContentType({
     setCustomLabel("");
   };
 
-  const selectedSuggestion = suggestions.find(s => s.label === selected);
+  const selectedSuggestion = suggestions.find(s =>
+    s.id === article.selectedContentTypeSuggestionId ||
+    (!article.selectedContentTypeSuggestionId && s.label === selected),
+  );
 
   return (
     <div className="h-full flex flex-col gap-4 animate-fade-in-up">
@@ -203,6 +232,18 @@ export default function Step1ContentType({
                 {loading ? "Đang phân tích..." : suggestions.length ? "Đề xuất lại" : "Lấy đề xuất"}
               </button>
             </div>
+
+            {article.contentTypeScannedAt && !loading && (
+              <div className={`rounded-xl border px-3 py-2 text-[11px] ${
+                scanIsStale
+                  ? "bg-amber-50 border-amber-200 text-amber-700"
+                  : "bg-emerald-50 border-emerald-200 text-emerald-700"
+              }`}>
+                {scanIsStale
+                  ? "Action Plan đã thay đổi — AI đang cần quét lại dữ liệu quý mới."
+                  : `Đã quét Action Plan lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")}.`}
+              </div>
+            )}
 
             {!bundle.totalCount && (
               <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
@@ -232,6 +273,13 @@ export default function Step1ContentType({
                   const items = grouped.byGroup[g];
                   if (!items.length) return null;
                   const meta = GROUP_META[g];
+                  const waves = Object.entries(
+                    items.reduce<Record<string, ContentTypeSuggestion[]>>((acc, item) => {
+                      const key = `${item.wave}|||${item.timeframe}`;
+                      (acc[key] ??= []).push(item);
+                      return acc;
+                    }, {}),
+                  );
                   return (
                     <div key={g} className="space-y-2.5">
                       <div className="flex items-center gap-2">
@@ -239,11 +287,23 @@ export default function Step1ContentType({
                         <span className={`text-xs font-bold ${meta.accent}`}>{meta.title}</span>
                         <span className="text-[10px] text-slate-400">· {items.length} loại</span>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {items.map(s => (
-                          <SuggestionCard key={s.id} s={s} isSelected={selected === s.label} onSelect={handleSelect} groupBadge={meta.badge} />
-                        ))}
-                      </div>
+                      {waves.map(([waveKey, waveItems]) => {
+                        const [wave, timeframe] = waveKey.split("|||");
+                        return (
+                          <div key={waveKey} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2.5">
+                            <div className="flex flex-wrap items-center gap-2 px-0.5">
+                              <span className={`text-[10px] font-bold border rounded-full px-2 py-0.5 ${meta.badge}`}>{wave}</span>
+                              <span className="text-[10px] font-semibold text-slate-600">{timeframe}</span>
+                              <span className="text-[10px] text-slate-400">· {waveItems.length} lựa chọn</span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {waveItems.map(s => (
+                                <SuggestionCard key={s.id} s={s} isSelected={selectedSuggestion?.id === s.id} onSelect={handleSelect} groupBadge={meta.badge} />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -257,7 +317,7 @@ export default function Step1ContentType({
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       {grouped.other.map(s => (
-                        <SuggestionCard key={s.id} s={s} isSelected={selected === s.label} onSelect={handleSelect} groupBadge="bg-slate-100 text-slate-600 border-slate-200" />
+                        <SuggestionCard key={s.id} s={s} isSelected={selectedSuggestion?.id === s.id} onSelect={handleSelect} groupBadge="bg-slate-100 text-slate-600 border-slate-200" />
                       ))}
                     </div>
                   </div>
@@ -327,12 +387,12 @@ function SuggestionCard({
 }: {
   s: ContentTypeSuggestion;
   isSelected: boolean;
-  onSelect: (label: string) => void;
+  onSelect: (suggestion: ContentTypeSuggestion) => void;
   groupBadge: string;
 }) {
   return (
     <button
-      onClick={() => onSelect(s.label)}
+      onClick={() => onSelect(s)}
       className={`text-left p-4 rounded-2xl border-2 transition-all space-y-2.5 ${
         isSelected
           ? "border-slate-900 bg-slate-900/[0.02] ring-2 ring-slate-900 ring-offset-1 shadow-md"

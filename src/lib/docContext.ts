@@ -4,6 +4,7 @@ export interface DocRef {
   name: string;
   meta?: string;
   preview?: string;
+  content?: string;
 }
 
 export interface DocBundle {
@@ -54,6 +55,7 @@ function formatActionSource(src: ActionDataSource): DocRef {
     name: src.name,
     meta: metaParts.join(" · "),
     preview: src.preview?.slice(0, 240),
+    content: src.content?.trim(),
   };
 }
 
@@ -94,9 +96,23 @@ function formatSection(title: string, role: string, docs: DocRef[]): string {
   if (!docs.length) return `\n[${title}] — ${role}\n(trống — không có tài liệu được cấp cho vai trò này)`;
   const lines = docs.map(d => {
     const base = `- ${d.name}${d.meta ? ` (${d.meta})` : ""}`;
+    if (d.content) return `${base}\n  Nội dung đầy đủ:\n${d.content}`;
     return d.preview ? `${base}\n  Preview: ${d.preview}` : base;
   });
   return `\n[${title}] — ${role}\n${lines.join("\n")}`;
+}
+
+export function buildActionPlanFingerprint(bundle: DocBundle): string {
+  const source = bundle.actionPlan
+    .map(doc => `${doc.name}\n${doc.meta ?? ""}\n${doc.content ?? doc.preview ?? ""}`)
+    .sort()
+    .join("\n---\n");
+  let hash = 2166136261;
+  for (let i = 0; i < source.length; i += 1) {
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `ap-${(hash >>> 0).toString(16)}-${source.length}`;
 }
 
 export function buildDocContextBlock(bundle: DocBundle): string {
