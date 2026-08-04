@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import type { ActionDataSource, ActionSourceType, ManualRow } from '../../types';
+import { extractDocumentText } from '../../lib/fileText';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,35 +52,6 @@ function FileForm({ onAdd }: { onAdd: (sources: ActionDataSource[]) => void }) {
   const [reading, setReading] = useState(false);
   const [error, setError] = useState('');
 
-  const extractFileContent = async (file: File, ext: string): Promise<string> => {
-    if (['csv', 'tsv', 'json', 'txt', 'xml', 'md'].includes(ext)) return file.text();
-    if (ext === 'xlsx') {
-      const { default: readXlsxFile } = await import('read-excel-file/browser');
-      const sheets = await readXlsxFile(file);
-      return sheets.map(({ sheet, data }) => {
-        const csv = data.map(row => row.map(cell => {
-          const value = cell == null ? '' : String(cell);
-          return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-        }).join(',')).join('\n');
-        return `[Sheet: ${sheet}]\n${csv}`;
-      }).join('\n\n');
-    }
-    if (ext === 'pdf') {
-      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-      const worker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs?url');
-      pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
-      const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
-      const pages: string[] = [];
-      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-        const page = await pdf.getPage(pageNumber);
-        const text = await page.getTextContent();
-        pages.push(`[Trang ${pageNumber}]\n${text.items.map(item => 'str' in item ? item.str : '').join(' ')}`);
-      }
-      return pages.join('\n\n');
-    }
-    throw new Error(`Định dạng .${ext} chưa được hỗ trợ.`);
-  };
-
   const handle = async (list: FileList | null) => {
     if (!list) return;
     setReading(true);
@@ -88,7 +60,7 @@ function FileForm({ onAdd }: { onAdd: (sources: ActionDataSource[]) => void }) {
       const extracted: ActionDataSource[] = [];
       for (const f of Array.from(list)) {
         const ext = f.name.split('.').pop()?.toLowerCase() ?? 'csv';
-        const content = (await extractFileContent(f, ext)).trim();
+        const content = (await extractDocumentText(f)).trim();
         if (!content) throw new Error(`${f.name} không có nội dung văn bản để AI phân tích.`);
         extracted.push({
           id: uid(), name: f.name, sourceType: 'file', addedAt: now(), contentUpdatedAt: now(),

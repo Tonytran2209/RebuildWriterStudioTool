@@ -20,6 +20,8 @@ export interface DocumentFile {
   uploadedAt: string;
   category: FileCategory;
   fileType: FileType;
+  content?: string;
+  contentUpdatedAt?: string;
 }
 
 export interface StepFileAccess {
@@ -76,7 +78,11 @@ export interface ContentTypeSuggestion {
   audience?: string;
   format?: string;
   matchedDocs?: string[];
+  kbRefs?: string[];
   ruleRefs?: string[];
+  kbEvidence?: string;
+  ruleEvidence?: string;
+  actionPlanEvidence?: string;
   icon?: string;
 }
 

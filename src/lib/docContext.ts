@@ -42,6 +42,7 @@ function formatFile(file: DocumentFile): DocRef {
   return {
     name: file.name,
     meta: `${file.fileType.toUpperCase()} · ${file.size}`,
+    content: file.content?.trim(),
   };
 }
 
@@ -103,8 +104,12 @@ function formatSection(title: string, role: string, docs: DocRef[]): string {
 }
 
 export function buildActionPlanFingerprint(bundle: DocBundle): string {
-  const source = bundle.actionPlan
-    .map(doc => `${doc.name}\n${doc.meta ?? ""}\n${doc.content ?? doc.preview ?? ""}`)
+  const source = [
+    ...bundle.knowledgeBase.map(doc => ({ ...doc, role: "kb" })),
+    ...bundle.actionPlan.map(doc => ({ ...doc, role: "action" })),
+    ...bundle.rules.map(doc => ({ ...doc, role: "rules" })),
+  ]
+    .map(doc => `${doc.role}\n${doc.name}\n${doc.meta ?? ""}\n${doc.content ?? doc.preview ?? ""}`)
     .sort()
     .join("\n---\n");
   let hash = 2166136261;

@@ -42,7 +42,20 @@ function normalizeGroup(v: unknown): ContentTypeGroup | undefined {
   return m ? (m[1] as ContentTypeGroup) : undefined;
 }
 
-function normalizeSuggestions(parsed: unknown, actionPlanNames: Set<string>): ContentTypeSuggestion[] {
+function canonical(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim();
+}
+
+interface EvidenceIndex {
+  actionPlanNames: Set<string>;
+  kbNames: Set<string>;
+  ruleNames: Set<string>;
+  actionText: string;
+  kbByName: Map<string, string>;
+  rulesByName: Map<string, string>;
+}
+
+function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): ContentTypeSuggestion[] {
   if (!Array.isArray(parsed)) throw new Error("Phản hồi AI không phải mảng.");
   return parsed
     .map((item, idx) => {
@@ -58,9 +71,41 @@ function normalizeSuggestions(parsed: unknown, actionPlanNames: Set<string>): Co
       const timeframe = String(obj.timeframe ?? "").trim();
       const keywords = arr("keywords").map(keyword => keyword.trim()).filter(Boolean);
       const matchedDocs = arr("matchedDocs").map(name => name.trim()).filter(Boolean);
-      const referencesActionPlan = matchedDocs.some(name => actionPlanNames.has(name.toLocaleLowerCase()));
-      // A selectable suggestion must be traceable to one exact Action Plan slot.
-      if (!typeGroup || !wave || !timeframe || !keywords.length || !referencesActionPlan) return null;
+      const kbRefs = arr("kbRefs").map(name => name.trim()).filter(Boolean);
+      const ruleRefs = arr("ruleRefs").map(name => name.trim()).filter(Boolean);
+      const kbEvidence = String(obj.kbEvidence ?? "").trim();
+      const ruleEvidence = String(obj.ruleEvidence ?? "").trim();
+      const actionPlanEvidence = String(obj.actionPlanEvidence ?? "").trim();
+      const referencesActionPlan = matchedDocs.some(name => evidence.actionPlanNames.has(canonical(name)));
+      const referencesKb = kbRefs.some(name => evidence.kbNames.has(canonical(name)));
+      const referencesRules = ruleRefs.some(name => evidence.ruleNames.has(canonical(name)));
+      const referencedKbText = canonical(kbRefs.map(name => evidence.kbByName.get(canonical(name)) ?? "").join("\n"));
+      const referencedRuleText = canonical(ruleRefs.map(name => evidence.rulesByName.get(canonical(name)) ?? "").join("\n"));
+      const timeframeExists = canonical(evidence.actionText).includes(canonical(timeframe));
+      const waveExists = canonical(evidence.actionText).includes(canonical(wave));
+      const keywordsExist = keywords.every(keyword => canonical(evidence.actionText).includes(canonical(keyword)));
+      const actionQuote = canonical(actionPlanEvidence);
+      const actionQuoteExists = Boolean(actionQuote) && canonical(evidence.actionText).includes(actionQuote);
+      const actionQuoteCoversMapping = actionQuote.includes(canonical(wave)) &&
+        actionQuote.includes(canonical(timeframe)) &&
+        keywords.every(keyword => actionQuote.includes(canonical(keyword)));
+      const kbQuote = canonical(kbEvidence);
+      const ruleQuote = canonical(ruleEvidence);
+      const kbQuoteExists = Boolean(kbQuote) && referencedKbText.includes(kbQuote);
+      const ruleQuoteExists = Boolean(ruleQuote) && referencedRuleText.includes(ruleQuote);
+      const typeExists = typeGroup
+        ? new RegExp(`(?:type|loại)[\\s:_-]*${typeGroup.toLocaleLowerCase()}\\b`).test(ruleQuote)
+        : false;
+      const labelExists = kbQuote.includes(canonical(label));
+      const ruleMapsLabel = ruleQuote.includes(canonical(label));
+      // Reject ungrounded values instead of allowing the model to invent a date, keyword or type.
+      if (
+        !typeGroup || !wave || !timeframe || !keywords.length ||
+        !referencesActionPlan || !referencesKb || !referencesRules ||
+        !waveExists || !timeframeExists || !keywordsExist ||
+        !actionQuoteExists || !actionQuoteCoversMapping ||
+        !kbQuoteExists || !ruleQuoteExists || !typeExists || !labelExists || !ruleMapsLabel
+      ) return null;
       return {
         id: `sg-${idx}-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
         label,
@@ -72,7 +117,11 @@ function normalizeSuggestions(parsed: unknown, actionPlanNames: Set<string>): Co
         audience: obj.audience ? String(obj.audience) : undefined,
         format: obj.format ? String(obj.format) : undefined,
         matchedDocs,
-        ruleRefs: arr("ruleRefs"),
+        kbRefs,
+        ruleRefs,
+        kbEvidence,
+        ruleEvidence,
+        actionPlanEvidence,
         icon: obj.icon ? String(obj.icon) : undefined,
       } as ContentTypeSuggestion;
     })
@@ -130,19 +179,32 @@ export default function Step1ContentType({
       setError("Cần ít nhất 1 tài liệu Knowledge Base hoặc Action Plan để AI đề xuất loại nội dung.");
       return;
     }
+    if (!bundle.actionPlan.some(doc => doc.content)) {
+      setError("Action Plan chưa có nội dung có thể kiểm chứng. Vui lòng tải lại file để AI đọc chính xác timeframe và keywords.");
+      return;
+    }
+    if (!bundle.knowledgeBase.some(doc => doc.content) || !bundle.rules.some(doc => doc.content)) {
+      setError("Step 1 cần nội dung thật của cả Knowledge Base và Rules. Vui lòng tải lại các file cũ chưa được trích xuất nội dung.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
-          "Tổng hợp CHÍNH XÁC các loại nội dung (Content Type) từ Action Plan và phân loại theo 3 nhóm chính: Type A, Type B, Type C.",
+          "Tổng hợp CHÍNH XÁC Content Type từ Knowledge Base + Rules, rồi ánh xạ Action Plan theo Type A, Type B, Type C.",
           "",
           "QUY TẮC PHÂN LOẠI (bắt buộc):",
-          "- Mỗi Content Type PHẢI được gán đúng typeGroup (A/B/C) theo cách Action Plan phân loại. Không tự bịa nhóm.",
-          "- Mỗi loại thuộc một WAVE (đợt triển khai) gắn với một MỐC THỜI GIAN cụ thể (timeframe) — trích đúng từ Action Plan.",
+          "- Nhận diện tên Content Type và typeGroup (A/B/C) từ CẢ Knowledge Base và Rules; không dùng Action Plan làm nguồn duy nhất để phân loại type.",
+          "- Tên Content Type và chuỗi Type A/B/C phải tồn tại nguyên văn trong KB hoặc Rules được dẫn nguồn.",
+          "- Mỗi loại thuộc một WAVE gắn với một MỐC THỜI GIAN — wave và timeframe PHẢI sao chép nguyên văn từ Action Plan, tuyệt đối không tự quy đổi quý/năm.",
           "- Mỗi loại gắn với đúng bộ keywords mà Action Plan chỉ định cho loại/wave đó. Trích nguyên văn, không thêm bớt từ khóa không có trong tài liệu.",
           "- Chỉ trả về lựa chọn có đủ nhóm + wave + timeframe + ít nhất 1 keyword. Bỏ qua mục thiếu dữ liệu thay vì suy đoán.",
           "- matchedDocs phải chứa chính xác tên của ít nhất một tài liệu Action Plan làm căn cứ cho lựa chọn.",
+          "- kbRefs và ruleRefs phải chứa chính xác tên file KB và Rules dùng để nhận diện Content Type.",
+          "- kbEvidence phải là đoạn trích nguyên văn KB chứa tên Content Type; ruleEvidence phải là đoạn trích nguyên văn Rules chứa đồng thời tên Content Type và Type A/B/C tương ứng.",
+          "- actionPlanEvidence phải là một đoạn/hàng nguyên văn chứa đồng thời wave, timeframe và toàn bộ keywords trả về; không ghép dữ liệu từ các dòng khác nhau.",
+          "- Không dùng kiến thức ghi nhớ hoặc năm từ ví dụ. Nếu file ghi 2026 thì không được trả về 2024.",
           "",
           "NGUYÊN TẮC QUÉT DỮ LIỆU:",
           "- Đọc kỹ toàn bộ Action Plan (là nguồn phân loại cơ bản). Action Plan được cập nhật định kỳ mỗi 3 tháng — luôn phản ánh đúng nội dung file hiện tại, không dùng dữ liệu cũ ghi nhớ.",
@@ -150,7 +212,7 @@ export default function Step1ContentType({
           "",
           "Trả về DUY NHẤT một mảng JSON hợp lệ, không kèm markdown fences hay text giải thích.",
           "Mỗi phần tử schema:",
-          `{ "label": string (tên loại nội dung), "typeGroup": "A" | "B" | "C", "wave": string (tên/số wave, VD "Wave 1"), "timeframe": string (mốc thời gian, VD "Q1 2026" hoặc "Tháng 1-3"), "description": string (2-3 câu: định dạng, mục đích, giá trị), "keywords": string[] (bộ từ khóa Action Plan gán cho loại này — trích đúng), "matchedDocs": string[] (tên tài liệu KB/Action đã dùng — nội bộ), "ruleRefs": string[] (tên rule áp dụng — nội bộ) }`,
+          `{ "label": string, "typeGroup": "A" | "B" | "C", "wave": string, "timeframe": string (chép nguyên văn), "description": string, "keywords": string[] (chép nguyên văn), "matchedDocs": string[] (tên Action Plan), "kbRefs": string[] (tên KB), "ruleRefs": string[] (tên Rules), "kbEvidence": string (trích nguyên văn KB), "ruleEvidence": string (trích nguyên văn Rules), "actionPlanEvidence": string (trích nguyên văn một hàng/đoạn Action Plan) }`,
         ].join("\n"),
       );
 
@@ -164,10 +226,17 @@ export default function Step1ContentType({
 
       const res = await callAI({ model, railwayUrl, prompt, systemPrompt });
       const parsed = extractJson(res.content);
-      const actionPlanNames = new Set(bundle.actionPlan.map(doc => doc.name.toLocaleLowerCase()));
-      const normalized = normalizeSuggestions(parsed, actionPlanNames);
+      const evidence: EvidenceIndex = {
+        actionPlanNames: new Set(bundle.actionPlan.map(doc => canonical(doc.name))),
+        kbNames: new Set(bundle.knowledgeBase.map(doc => canonical(doc.name))),
+        ruleNames: new Set(bundle.rules.map(doc => canonical(doc.name))),
+        actionText: bundle.actionPlan.map(doc => doc.content ?? "").join("\n"),
+        kbByName: new Map(bundle.knowledgeBase.map(doc => [canonical(doc.name), doc.content ?? ""])),
+        rulesByName: new Map(bundle.rules.map(doc => [canonical(doc.name), doc.content ?? ""])),
+      };
+      const normalized = normalizeSuggestions(parsed, evidence);
       if (!normalized.length) {
-        throw new Error("AI không trả về lựa chọn có đủ Type, Wave, mốc thời gian và keywords theo Action Plan.");
+        throw new Error("Toàn bộ đề xuất bị từ chối vì thiếu dẫn chứng KB/Rules hoặc có timeframe/keyword không tồn tại nguyên văn trong Action Plan.");
       }
       onUpdate({
         contentTypeSuggestions: normalized,

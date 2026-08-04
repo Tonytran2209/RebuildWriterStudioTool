@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useState } from 'react';
 import type { ActionDataSource, DocumentFile, FileCategory, KbSubTab } from '../../types';
 import ActionPlanTab from './ActionPlanTab';
+import { extractDocumentText } from '../../lib/fileText';
 
 const FILE_ICONS: Record<string, { icon: string; color: string }> = {
   pdf: { icon: '📄', color: 'text-red-500' },
@@ -18,7 +19,7 @@ const SUBTAB_META: Record<KbSubTab, { label: string; color: string; bg: string; 
     label: '1. Knowledge Base', color: 'text-indigo-600', bg: 'bg-indigo-50/30', border: 'border-indigo-200 hover:border-indigo-500',
     uploadLabel: 'Tải lên tài liệu Knowledge Base (.pdf, .docx)',
     uploadHint: 'Tài liệu kiến thức cốt lõi, bảng giá, thông tin sản phẩm, phân tích đối thủ',
-    accept: '.pdf,.docx,.doc,.json', category: 'kb',
+    accept: '.pdf,.docx,.json', category: 'kb',
   },
   action: {
     label: '2. Action Plan', color: 'text-emerald-600', bg: 'bg-emerald-50/30', border: 'border-emerald-200 hover:border-emerald-500',
@@ -55,24 +56,40 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
   const [activeSubTab, setActiveSubTab] = useState<KbSubTab>('kb');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [readError, setReadError] = useState('');
 
   const meta = SUBTAB_META[activeSubTab];
   const catFiles = files.filter(f => f.category === meta.category);
 
-  const handleFileInput = (fileList: FileList | null) => {
+  const handleFileInput = async (fileList: FileList | null) => {
     if (!fileList) return;
-    const newFiles: DocumentFile[] = Array.from(fileList).map(f => {
-      const ext = f.name.split('.').pop()?.toLowerCase() || 'txt';
-      return {
-        id: generateId(),
-        name: f.name,
-        size: formatBytes(f.size),
-        uploadedAt: new Date().toLocaleDateString('vi-VN'),
-        category: meta.category,
-        fileType: ext as DocumentFile['fileType'],
-      };
-    });
-    onChange([...files, ...newFiles]);
+    setReading(true);
+    setReadError('');
+    try {
+      const newFiles: DocumentFile[] = [];
+      for (const f of Array.from(fileList)) {
+        const ext = f.name.split('.').pop()?.toLowerCase() || 'txt';
+        const content = (await extractDocumentText(f)).trim();
+        if (!content) throw new Error(`${f.name} không có nội dung văn bản để AI phân tích.`);
+        newFiles.push({
+          id: generateId(),
+          name: f.name,
+          size: formatBytes(f.size),
+          uploadedAt: new Date().toLocaleDateString('vi-VN'),
+          category: meta.category,
+          fileType: ext as DocumentFile['fileType'],
+          content,
+          contentUpdatedAt: new Date().toISOString(),
+        });
+      }
+      onChange([...files, ...newFiles]);
+    } catch (error: unknown) {
+      setReadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setReading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const removeFile = (id: string) => {
@@ -108,11 +125,11 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
             onDragOver={e => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
             onDrop={e => { e.preventDefault(); setDragging(false); handleFileInput(e.dataTransfer.files); }}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => !reading && fileInputRef.current?.click()}
             className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${meta.bg} ${meta.border} ${dragging ? 'scale-[0.99] opacity-80' : ''}`}
           >
             <div className="text-2xl mb-2">☁</div>
-            <p className="text-xs font-bold text-slate-700">{meta.uploadLabel}</p>
+            <p className="text-xs font-bold text-slate-700">{reading ? 'Đang trích xuất nội dung tài liệu...' : meta.uploadLabel}</p>
             <p className="text-[11px] text-slate-400 mt-0.5">{meta.uploadHint}</p>
             <p className="text-[10px] text-slate-300 mt-2">Kéo thả hoặc nhấp để chọn file</p>
             <input
@@ -123,6 +140,7 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
               className="hidden"
               onChange={e => handleFileInput(e.target.files)}
             />
+            {readError && <p className="text-[11px] text-red-600 mt-2">{readError}</p>}
           </div>
 
           {/* File table */}
