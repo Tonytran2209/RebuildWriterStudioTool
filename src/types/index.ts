@@ -66,6 +66,7 @@ export interface ContentTypeSuggestion {
   id: string;
   label: string;
   description: string;
+  keywords?: string[];
   audience?: string;
   format?: string;
   matchedDocs?: string[];

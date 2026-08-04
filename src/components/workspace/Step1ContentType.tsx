@@ -24,19 +24,6 @@ interface Props {
   onNext: () => void;
 }
 
-const CARD_COLORS = [
-  "border-violet-200 hover:border-violet-400 bg-violet-50/40",
-  "border-amber-200 hover:border-amber-400 bg-amber-50/40",
-  "border-blue-200 hover:border-blue-400 bg-blue-50/40",
-  "border-emerald-200 hover:border-emerald-400 bg-emerald-50/40",
-  "border-pink-200 hover:border-pink-400 bg-pink-50/40",
-  "border-orange-200 hover:border-orange-400 bg-orange-50/40",
-  "border-teal-200 hover:border-teal-400 bg-teal-50/40",
-  "border-slate-200 hover:border-slate-400 bg-slate-50",
-];
-
-const DEFAULT_ICONS = ["◎", "★", "⇄", "◈", "✉", "◉", "⬡", "▶"];
-
 function extractJson(raw: string): unknown {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const body = (fenced ? fenced[1] : raw).trim();
@@ -61,6 +48,7 @@ function normalizeSuggestions(parsed: unknown): ContentTypeSuggestion[] {
         id: `sg-${idx}-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
         label,
         description,
+        keywords: arr("keywords"),
         audience: obj.audience ? String(obj.audience) : undefined,
         format: obj.format ? String(obj.format) : undefined,
         matchedDocs: arr("matchedDocs"),
@@ -112,7 +100,7 @@ export default function Step1ContentType({
           "",
           "Trả về DUY NHẤT một mảng JSON hợp lệ, không kèm markdown fences hay text giải thích.",
           "Mỗi phần tử schema:",
-          `{ "label": string, "description": string (2-3 câu: định dạng, mục đích, giá trị), "audience": string, "format": string (VD "Bài blog 1200 từ"), "matchedDocs": string[] (tên tài liệu KB/Action đã dùng), "ruleRefs": string[] (tên rule/guideline áp dụng), "icon": string (1 emoji/glyph) }`,
+          `{ "label": string, "description": string (2-3 câu: định dạng, mục đích, giá trị), "keywords": string[] (3-6 từ khóa chắt lọc cốt lõi, sát với loại nội dung, có căn cứ trong tài liệu), "matchedDocs": string[] (tên tài liệu KB/Action đã dùng — dùng nội bộ, không hiển thị), "ruleRefs": string[] (tên rule/guideline áp dụng — dùng nội bộ) }`,
         ].join("\n"),
       );
 
@@ -166,39 +154,25 @@ export default function Step1ContentType({
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">Step 1: Content Type Selection</h2>
+                <h2 className="text-base font-bold text-slate-800 mb-1">Step 1 — Content Type</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  AI phân tích tài liệu theo 3 vai trò — <b>KB</b> (nền tảng), <b>Action</b> (phân loại), <b>Rules</b> (bắt buộc) — rồi đề xuất loại nội dung phù hợp kèm mô tả chi tiết.
+                  AI đề xuất loại nội dung phù hợp kèm mô tả và từ khóa chắt lọc. Chọn 1 để sang Step 2.
                 </p>
               </div>
               <button
                 onClick={fetchSuggestions}
                 disabled={loading || !bundle.totalCount}
-                className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
+                className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
               >
-                {loading ? "Đang phân tích..." : suggestions.length ? "↻ Đề xuất lại" : "✨ Lấy đề xuất từ AI"}
+                {loading ? "Đang phân tích..." : suggestions.length ? "Đề xuất lại" : "Lấy đề xuất"}
               </button>
             </div>
 
-            {/* Doc context summary — grouped by role */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tài liệu AI được đọc ở Step 1</span>
-                <span className="text-[10px] font-mono text-slate-500">{describeBundle(bundle)} · Model: {model.name}</span>
+            {!bundle.totalCount && (
+              <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
+                Chưa có tài liệu nào được phân quyền cho Step 1. Mở <span className="font-semibold">Cấu hình → Step Setup</span> để gán tài liệu.
               </div>
-
-              {bundle.totalCount ? (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <RoleColumn title="Knowledge Base" tone="indigo" hint="Nền tảng" docs={bundle.knowledgeBase} />
-                  <RoleColumn title="Action Plan" tone="emerald" hint="Phân loại" docs={bundle.actionPlan} />
-                  <RoleColumn title="Rules & Guidelines" tone="amber" hint="Bắt buộc" docs={bundle.rules} />
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500">
-                  Chưa có tài liệu nào được phân quyền cho Step 1. Mở <span className="font-semibold">Cấu hình → Step Setup</span> để gán tài liệu.
-                </p>
-              )}
-            </div>
+            )}
 
             {error && (
               <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-xs text-rose-700">{error}</div>
@@ -218,51 +192,35 @@ export default function Step1ContentType({
 
             {!loading && suggestions.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {suggestions.map((s, i) => {
+                {suggestions.map(s => {
                   const isSelected = selected === s.label;
                   return (
                     <button
                       key={s.id}
                       onClick={() => handleSelect(s.label)}
-                      className={`text-left p-4 rounded-2xl border-2 transition-all space-y-2 ${CARD_COLORS[i % CARD_COLORS.length]} ${
-                        isSelected ? "ring-2 ring-slate-900 ring-offset-1 border-transparent shadow-md" : ""
+                      className={`text-left p-4 rounded-2xl border-2 transition-all space-y-2.5 ${
+                        isSelected
+                          ? "border-slate-900 bg-slate-900/[0.02] ring-2 ring-slate-900 ring-offset-1 shadow-md"
+                          : "border-slate-200 bg-white hover:border-slate-400 hover:shadow-sm"
                       }`}
                     >
-                      <div className="flex items-start justify-between">
-                        <div className="text-xl">{s.icon || DEFAULT_ICONS[i % DEFAULT_ICONS.length]}</div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="text-sm font-bold text-slate-800 leading-tight">{s.label}</div>
                         {isSelected && (
-                          <div className="flex items-center space-x-1 text-[10px] font-bold text-slate-800">
-                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
-                            </svg>
-                            <span>Đã chọn</span>
-                          </div>
+                          <span className="shrink-0 text-[10px] font-bold text-slate-900">✓ Đã chọn</span>
                         )}
                       </div>
-                      <div className="text-sm font-bold text-slate-800 leading-tight">{s.label}</div>
                       <div className="text-[11px] text-slate-600 leading-relaxed">{s.description}</div>
-                      {(s.audience || s.format) && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {s.format && (
-                            <span className="text-[10px] font-semibold text-slate-700 bg-white/70 border border-slate-200 rounded-full px-2 py-0.5">
-                              {s.format}
+                      {s.keywords && s.keywords.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {s.keywords.map((kw, i) => (
+                            <span
+                              key={i}
+                              className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full px-2 py-0.5"
+                            >
+                              {kw}
                             </span>
-                          )}
-                          {s.audience && (
-                            <span className="text-[10px] font-semibold text-slate-700 bg-white/70 border border-slate-200 rounded-full px-2 py-0.5">
-                              👥 {s.audience}
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {s.matchedDocs && s.matchedDocs.length > 0 && (
-                        <div className="text-[10px] text-indigo-700 pt-1">
-                          <span className="font-bold">KB/Action:</span> {s.matchedDocs.join(", ")}
-                        </div>
-                      )}
-                      {s.ruleRefs && s.ruleRefs.length > 0 && (
-                        <div className="text-[10px] text-amber-700">
-                          <span className="font-bold">Rules áp dụng:</span> {s.ruleRefs.join(", ")}
+                          ))}
                         </div>
                       )}
                     </button>
@@ -273,7 +231,7 @@ export default function Step1ContentType({
 
             {!loading && suggestions.length === 0 && !error && bundle.totalCount > 0 && (
               <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
-                Nhấn <span className="font-semibold">"Lấy đề xuất từ AI"</span> để AI phân tích tài liệu và gợi ý loại nội dung.
+                Nhấn <span className="font-semibold">"Lấy đề xuất"</span> để AI phân tích tài liệu và gợi ý loại nội dung.
               </div>
             )}
 
@@ -316,44 +274,11 @@ export default function Step1ContentType({
         <button
           onClick={onNext}
           disabled={!selected}
-          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all flex items-center space-x-2"
+          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all"
         >
-          <span>Tiếp tục → Core Idea & Angle</span>
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
+          Tiếp tục — Core Idea & Angle
         </button>
       </div>
-    </div>
-  );
-}
-
-const TONE_STYLE: Record<string, { text: string; bg: string; border: string }> = {
-  indigo:  { text: "text-indigo-700",  bg: "bg-indigo-50/70",  border: "border-indigo-200" },
-  emerald: { text: "text-emerald-700", bg: "bg-emerald-50/70", border: "border-emerald-200" },
-  amber:   { text: "text-amber-700",   bg: "bg-amber-50/70",   border: "border-amber-200" },
-};
-
-function RoleColumn({ title, tone, hint, docs }: { title: string; tone: string; hint: string; docs: { name: string; meta?: string }[] }) {
-  const style = TONE_STYLE[tone];
-  return (
-    <div className={`${style.bg} border ${style.border} rounded-xl p-2.5`}>
-      <div className="flex items-center justify-between mb-1.5">
-        <span className={`text-[10px] font-bold ${style.text} uppercase tracking-wider`}>{title}</span>
-        <span className="text-[9px] font-mono text-slate-500">{hint}</span>
-      </div>
-      {docs.length === 0 ? (
-        <div className="text-[10px] text-slate-400 italic">Chưa cấp tài liệu</div>
-      ) : (
-        <ul className="space-y-0.5 max-h-24 overflow-y-auto">
-          {docs.map((d, i) => (
-            <li key={i} className="text-[10px] text-slate-700 leading-relaxed">
-              • {d.name}
-              {d.meta && <span className="text-slate-400 ml-1">({d.meta})</span>}
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }
