@@ -5,6 +5,7 @@ import type {
   AppConfig,
   DocumentFile,
   ContentTypeSuggestion,
+  ContentTypeGroup,
 } from "../../types";
 import { callAI } from "../../lib/aiService";
 import {
@@ -33,6 +34,13 @@ function extractJson(raw: string): unknown {
   return JSON.parse(body.slice(start, end + 1));
 }
 
+function normalizeGroup(v: unknown): ContentTypeGroup | undefined {
+  const s = String(v ?? "").trim().toUpperCase();
+  if (s === "A" || s === "B" || s === "C") return s;
+  const m = s.match(/\b(A|B|C)\b/);
+  return m ? (m[1] as ContentTypeGroup) : undefined;
+}
+
 function normalizeSuggestions(parsed: unknown): ContentTypeSuggestion[] {
   if (!Array.isArray(parsed)) throw new Error("Phản hồi AI không phải mảng.");
   return parsed
@@ -49,6 +57,9 @@ function normalizeSuggestions(parsed: unknown): ContentTypeSuggestion[] {
         label,
         description,
         keywords: arr("keywords"),
+        typeGroup: normalizeGroup(obj.typeGroup ?? obj.type),
+        wave: obj.wave ? String(obj.wave) : undefined,
+        timeframe: obj.timeframe ? String(obj.timeframe) : undefined,
         audience: obj.audience ? String(obj.audience) : undefined,
         format: obj.format ? String(obj.format) : undefined,
         matchedDocs: arr("matchedDocs"),
@@ -58,6 +69,14 @@ function normalizeSuggestions(parsed: unknown): ContentTypeSuggestion[] {
     })
     .filter((v): v is ContentTypeSuggestion => v !== null);
 }
+
+const GROUP_META: Record<ContentTypeGroup, { title: string; accent: string; badge: string; ring: string }> = {
+  A: { title: "Type A", accent: "text-violet-700",  badge: "bg-violet-100 text-violet-700 border-violet-200",   ring: "bg-violet-500" },
+  B: { title: "Type B", accent: "text-emerald-700", badge: "bg-emerald-100 text-emerald-700 border-emerald-200", ring: "bg-emerald-500" },
+  C: { title: "Type C", accent: "text-amber-700",   badge: "bg-amber-100 text-amber-700 border-amber-200",       ring: "bg-amber-500" },
+};
+
+const GROUP_ORDER: ContentTypeGroup[] = ["A", "B", "C"];
 
 export default function Step1ContentType({
   article,
@@ -78,6 +97,17 @@ export default function Step1ContentType({
   const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
   const contextBlock = useMemo(() => buildDocContextBlock(bundle), [bundle]);
 
+  // Group suggestions by Type A/B/C; anything without a group falls to "other".
+  const grouped = useMemo(() => {
+    const byGroup: Record<ContentTypeGroup, ContentTypeSuggestion[]> = { A: [], B: [], C: [] };
+    const other: ContentTypeSuggestion[] = [];
+    suggestions.forEach(s => {
+      if (s.typeGroup && byGroup[s.typeGroup]) byGroup[s.typeGroup].push(s);
+      else other.push(s);
+    });
+    return { byGroup, other };
+  }, [suggestions]);
+
   const fetchSuggestions = async () => {
     if (!bundle.totalCount) {
       setError("Chưa có tài liệu nào được phân quyền cho Step 1. Vui lòng mở Cấu hình → Step Setup để gán tài liệu.");
@@ -92,15 +122,21 @@ export default function Step1ContentType({
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
-          "Đề xuất 4-8 loại nội dung (Content Type) mà người viết có thể sản xuất từ tài liệu được cấp.",
-          "- Ưu tiên phân loại theo Action Plan (nếu có).",
-          "- Dùng Knowledge Base để mô tả cụ thể chủ đề/độ sâu có thể khai thác.",
-          "- Bắt buộc kiểm chứng mọi đề xuất với Rules & Guidelines; ghi rõ rule nào áp dụng ở trường ruleRefs.",
-          "- Không đề xuất loại nội dung mà tài liệu không hỗ trợ.",
+          "Tổng hợp CHÍNH XÁC các loại nội dung (Content Type) từ Action Plan và phân loại theo 3 nhóm chính: Type A, Type B, Type C.",
+          "",
+          "QUY TẮC PHÂN LOẠI (bắt buộc):",
+          "- Mỗi Content Type PHẢI được gán đúng typeGroup (A/B/C) theo cách Action Plan phân loại. Không tự bịa nhóm.",
+          "- Mỗi loại thuộc một WAVE (đợt triển khai) gắn với một MỐC THỜI GIAN cụ thể (timeframe) — trích đúng từ Action Plan.",
+          "- Mỗi loại gắn với đúng bộ keywords mà Action Plan chỉ định cho loại/wave đó. Trích nguyên văn, không thêm bớt từ khóa không có trong tài liệu.",
+          "- Nếu Action Plan không nêu rõ nhóm/wave/timeframe cho một mục, để trống trường đó thay vì suy đoán.",
+          "",
+          "NGUYÊN TẮC QUÉT DỮ LIỆU:",
+          "- Đọc kỹ toàn bộ Action Plan (là nguồn phân loại cơ bản). Action Plan được cập nhật định kỳ mỗi 3 tháng — luôn phản ánh đúng nội dung file hiện tại, không dùng dữ liệu cũ ghi nhớ.",
+          "- Dùng Knowledge Base để mô tả chủ đề/độ sâu. Kiểm chứng với Rules & Guidelines (ghi ở ruleRefs).",
           "",
           "Trả về DUY NHẤT một mảng JSON hợp lệ, không kèm markdown fences hay text giải thích.",
           "Mỗi phần tử schema:",
-          `{ "label": string, "description": string (2-3 câu: định dạng, mục đích, giá trị), "keywords": string[] (3-6 từ khóa chắt lọc cốt lõi, sát với loại nội dung, có căn cứ trong tài liệu), "matchedDocs": string[] (tên tài liệu KB/Action đã dùng — dùng nội bộ, không hiển thị), "ruleRefs": string[] (tên rule/guideline áp dụng — dùng nội bộ) }`,
+          `{ "label": string (tên loại nội dung), "typeGroup": "A" | "B" | "C", "wave": string (tên/số wave, VD "Wave 1"), "timeframe": string (mốc thời gian, VD "Q1 2026" hoặc "Tháng 1-3"), "description": string (2-3 câu: định dạng, mục đích, giá trị), "keywords": string[] (bộ từ khóa Action Plan gán cho loại này — trích đúng), "matchedDocs": string[] (tên tài liệu KB/Action đã dùng — nội bộ), "ruleRefs": string[] (tên rule áp dụng — nội bộ) }`,
         ].join("\n"),
       );
 
@@ -108,7 +144,7 @@ export default function Step1ContentType({
         `TÀI LIỆU ĐƯỢC PHÂN QUYỀN ĐỌC Ở STEP 1 (${describeBundle(bundle)}):`,
         contextBlock,
         "",
-        "Yêu cầu: Đề xuất các loại nội dung phù hợp có thể sản xuất từ những tài liệu trên.",
+        "Yêu cầu: Tổng hợp các loại nội dung từ Action Plan, phân loại đúng Type A/B/C, gán đúng wave + mốc thời gian + keywords cho từng loại.",
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
       ].join("\n");
 
@@ -156,7 +192,7 @@ export default function Step1ContentType({
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">Step 1 — Content Type</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  AI đề xuất loại nội dung phù hợp kèm mô tả và từ khóa chắt lọc. Chọn 1 để sang Step 2.
+                  AI tổng hợp Content Type từ Action Plan, phân theo <b>Type A / B / C</b> — mỗi loại gắn wave, mốc thời gian và bộ keyword riêng. Chọn 1 để sang Step 2.
                 </p>
               </div>
               <button
@@ -191,41 +227,41 @@ export default function Step1ContentType({
             )}
 
             {!loading && suggestions.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {suggestions.map(s => {
-                  const isSelected = selected === s.label;
+              <div className="space-y-5">
+                {GROUP_ORDER.map(g => {
+                  const items = grouped.byGroup[g];
+                  if (!items.length) return null;
+                  const meta = GROUP_META[g];
                   return (
-                    <button
-                      key={s.id}
-                      onClick={() => handleSelect(s.label)}
-                      className={`text-left p-4 rounded-2xl border-2 transition-all space-y-2.5 ${
-                        isSelected
-                          ? "border-slate-900 bg-slate-900/[0.02] ring-2 ring-slate-900 ring-offset-1 shadow-md"
-                          : "border-slate-200 bg-white hover:border-slate-400 hover:shadow-sm"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="text-sm font-bold text-slate-800 leading-tight">{s.label}</div>
-                        {isSelected && (
-                          <span className="shrink-0 text-[10px] font-bold text-slate-900">✓ Đã chọn</span>
-                        )}
+                    <div key={g} className="space-y-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-1.5 h-1.5 rounded-full ${meta.ring}`} />
+                        <span className={`text-xs font-bold ${meta.accent}`}>{meta.title}</span>
+                        <span className="text-[10px] text-slate-400">· {items.length} loại</span>
                       </div>
-                      <div className="text-[11px] text-slate-600 leading-relaxed">{s.description}</div>
-                      {s.keywords && s.keywords.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pt-0.5">
-                          {s.keywords.map((kw, i) => (
-                            <span
-                              key={i}
-                              className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full px-2 py-0.5"
-                            >
-                              {kw}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </button>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {items.map(s => (
+                          <SuggestionCard key={s.id} s={s} isSelected={selected === s.label} onSelect={handleSelect} groupBadge={meta.badge} />
+                        ))}
+                      </div>
+                    </div>
                   );
                 })}
+
+                {grouped.other.length > 0 && (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                      <span className="text-xs font-bold text-slate-600">Chưa phân nhóm</span>
+                      <span className="text-[10px] text-slate-400">· {grouped.other.length} loại</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {grouped.other.map(s => (
+                        <SuggestionCard key={s.id} s={s} isSelected={selected === s.label} onSelect={handleSelect} groupBadge="bg-slate-100 text-slate-600 border-slate-200" />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -280,5 +316,67 @@ export default function Step1ContentType({
         </button>
       </div>
     </div>
+  );
+}
+
+function SuggestionCard({
+  s,
+  isSelected,
+  onSelect,
+  groupBadge,
+}: {
+  s: ContentTypeSuggestion;
+  isSelected: boolean;
+  onSelect: (label: string) => void;
+  groupBadge: string;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(s.label)}
+      className={`text-left p-4 rounded-2xl border-2 transition-all space-y-2.5 ${
+        isSelected
+          ? "border-slate-900 bg-slate-900/[0.02] ring-2 ring-slate-900 ring-offset-1 shadow-md"
+          : "border-slate-200 bg-white hover:border-slate-400 hover:shadow-sm"
+      }`}
+    >
+      {/* Wave + timeframe */}
+      {(s.wave || s.timeframe) && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {s.wave && (
+            <span className={`text-[10px] font-bold border rounded-full px-2 py-0.5 ${groupBadge}`}>
+              {s.wave}
+            </span>
+          )}
+          {s.timeframe && (
+            <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
+              {s.timeframe}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm font-bold text-slate-800 leading-tight">{s.label}</div>
+        {isSelected && <span className="shrink-0 text-[10px] font-bold text-slate-900">✓ Đã chọn</span>}
+      </div>
+
+      <div className="text-[11px] text-slate-600 leading-relaxed">{s.description}</div>
+
+      {s.keywords && s.keywords.length > 0 && (
+        <div className="pt-0.5 space-y-1">
+          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Keywords · Action Plan</div>
+          <div className="flex flex-wrap gap-1">
+            {s.keywords.map((kw, i) => (
+              <span
+                key={i}
+                className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full px-2 py-0.5"
+              >
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </button>
   );
 }

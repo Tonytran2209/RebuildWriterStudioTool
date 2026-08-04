@@ -62,11 +62,17 @@ export interface OutlineSection {
 
 export type ArticleStatus = 'planning' | 'in_progress' | 'review' | 'done';
 
+export type ContentTypeGroup = 'A' | 'B' | 'C';
+
 export interface ContentTypeSuggestion {
   id: string;
   label: string;
   description: string;
   keywords?: string[];
+  // Phân loại theo Action Plan: Type A/B/C — mỗi wave gắn với mốc thời gian
+  typeGroup?: ContentTypeGroup;
+  wave?: string;
+  timeframe?: string;
   audience?: string;
   format?: string;
   matchedDocs?: string[];
