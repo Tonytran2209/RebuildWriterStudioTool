@@ -62,6 +62,26 @@ async function callOpenAI(req: GenerateRequest): Promise<GenerateResponse> {
   }
   messages.push({ role: 'user', content: req.prompt });
 
+  if (req.modelId.startsWith('gpt-5.')) {
+    const input = messages.map(message => ({
+      role: message.role,
+      content: message.content,
+    }));
+    const response = await client.responses.create({
+      model: req.modelId,
+      input,
+      max_output_tokens: req.maxTokens ?? 4096,
+    });
+    return {
+      content: response.output_text,
+      model: response.model,
+      usage: {
+        inputTokens: response.usage?.input_tokens ?? 0,
+        outputTokens: response.usage?.output_tokens ?? 0,
+      },
+    };
+  }
+
   const res = await client.chat.completions.create({
     model: req.modelId,
     messages,
@@ -85,7 +105,7 @@ async function callGoogle(req: GenerateRequest): Promise<GenerateResponse> {
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
-  const modelId = req.modelId.replace('gemini-2-0-flash', 'gemini-2.0-flash').replace('gemini-1-5-pro', 'gemini-1.5-pro');
+  const modelId = req.modelId;
   const model = genAI.getGenerativeModel({ model: modelId });
 
   const contextBlock = req.contextDocs?.length
@@ -114,6 +134,10 @@ async function callGoogle(req: GenerateRequest): Promise<GenerateResponse> {
 // ── Mistral ──────────────────────────────────────────────────────────────────
 
 async function callMistral(req: GenerateRequest): Promise<GenerateResponse> {
+  const systemContent = [
+    req.systemPrompt ?? '',
+    req.contextDocs?.length ? '\n\n=== TÀI LIỆU THAM KHẢO ===\n' + req.contextDocs.join('\n\n---\n\n') : '',
+  ].filter(Boolean).join('\n');
   const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -123,7 +147,7 @@ async function callMistral(req: GenerateRequest): Promise<GenerateResponse> {
     body: JSON.stringify({
       model: req.modelId,
       messages: [
-        ...(req.systemPrompt ? [{ role: 'system', content: req.systemPrompt }] : []),
+        ...(systemContent ? [{ role: 'system', content: systemContent }] : []),
         { role: 'user', content: req.prompt },
       ],
       max_tokens: req.maxTokens ?? 4096,
@@ -144,6 +168,41 @@ async function callMistral(req: GenerateRequest): Promise<GenerateResponse> {
   };
 }
 
+// ── Together AI (OpenAI-compatible) ─────────────────────────────────────────
+
+async function callTogether(req: GenerateRequest): Promise<GenerateResponse> {
+  const systemContent = [
+    req.systemPrompt ?? '',
+    req.contextDocs?.length ? '\n\n=== TÀI LIỆU THAM KHẢO ===\n' + req.contextDocs.join('\n\n---\n\n') : '',
+  ].filter(Boolean).join('\n');
+  const res = await fetch('https://api.together.xyz/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.TOGETHER_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: req.modelId,
+      messages: [
+        ...(systemContent ? [{ role: 'system', content: systemContent }] : []),
+        { role: 'user', content: req.prompt },
+      ],
+      max_tokens: req.maxTokens ?? 4096,
+      temperature: req.temperature ?? 0.7,
+    }),
+  });
+  if (!res.ok) throw new Error(`Together API error: ${await res.text()}`);
+  const data = await res.json() as any;
+  return {
+    content: data.choices[0]?.message?.content ?? '',
+    model: data.model,
+    usage: {
+      inputTokens: data.usage?.prompt_tokens ?? 0,
+      outputTokens: data.usage?.completion_tokens ?? 0,
+    },
+  };
+}
+
 // ── Groq ─────────────────────────────────────────────────────────────────────
 
 async function callGroq(req: GenerateRequest): Promise<GenerateResponse> {
@@ -151,6 +210,7 @@ async function callGroq(req: GenerateRequest): Promise<GenerateResponse> {
   const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
   const groqModelMap: Record<string, string> = {
+    'groq-gpt-oss-120b': 'openai/gpt-oss-120b',
     'llama-3-70b-groq': 'llama3-70b-8192',
     'llama-3-8b-groq': 'llama3-8b-8192',
     'mixtral-8x7b-groq': 'mixtral-8x7b-32768',
@@ -185,6 +245,7 @@ export async function generate(req: GenerateRequest): Promise<GenerateResponse> 
     case 'openai':    return callOpenAI(req);
     case 'google':    return callGoogle(req);
     case 'mistral':   return callMistral(req);
+    case 'together':  return callTogether(req);
     case 'groq':      return callGroq(req);
     default:
       throw new Error(`Unknown provider: ${req.provider}`);

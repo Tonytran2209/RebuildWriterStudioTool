@@ -218,9 +218,9 @@ export default function Step2CoreIdea({
 
   return (
     <div className="h-full flex flex-col gap-4 animate-fade-in-up">
-      <div className="bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
-        <div className="bg-white rounded-2xl p-6 flex-1 overflow-y-auto shadow-sm">
-          <div className="max-w-6xl mx-auto space-y-5">
+      <div className="bg-white rounded-2xl border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="p-5 md:p-6 flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">Step 2 — Core Idea & Angle</h2>
@@ -242,9 +242,9 @@ export default function Step2CoreIdea({
             )}
 
             {loading && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-3">
                 {[0, 1, 2].map(i => (
-                  <div key={i} className="border-2 border-slate-100 rounded-2xl p-4 space-y-3">
+                  <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-3">
                     <div className="flex justify-between items-start">
                       <div className="ai-loading h-3 w-20" />
                       <div className="ai-loading h-6 w-10" />
@@ -263,7 +263,7 @@ export default function Step2CoreIdea({
             )}
 
             {!loading && ideas.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="space-y-3">
                 {ideas.map(idea => {
                   const isSelected = selectedId === idea.id;
                   const tag = ratingTag(idea.rating.overall);
@@ -271,10 +271,10 @@ export default function Step2CoreIdea({
                     <button
                       key={idea.id}
                       onClick={() => handleSelect(idea)}
-                      className={`text-left rounded-2xl border-2 transition-all flex flex-col ${
+                      className={`w-full text-left rounded-xl border transition-all flex flex-col ${
                         isSelected
-                          ? "border-slate-900 bg-slate-900/[0.02] ring-2 ring-slate-900 ring-offset-2 shadow-lg"
-                          : "border-slate-200 bg-white hover:border-slate-400 hover:shadow-md"
+                          ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900"
+                          : "border-slate-200 bg-white hover:border-slate-400"
                       }`}
                     >
                       {/* Top: angle + tag + rating number */}
@@ -303,7 +303,7 @@ export default function Step2CoreIdea({
                       </div>
 
                       {/* Main argument */}
-                      <div className="mx-4 mb-3 bg-slate-50 border-l-4 border-slate-800 rounded-r-lg px-3 py-2">
+                      <div className="mx-4 mb-3 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
                         <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Main Argument</div>
                         <p className="text-[11px] text-slate-700 leading-relaxed">{idea.mainArgument}</p>
                       </div>

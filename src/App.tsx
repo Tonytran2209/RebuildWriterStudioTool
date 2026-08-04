@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Article, AppConfig, DocumentFile } from './types';
-import { DEFAULT_CONFIG } from './lib/defaultData';
+import { DEFAULT_CONFIG, mergeWithLatestModelCatalog } from './lib/defaultData';
 import * as db from './lib/db';
 import Sidebar from './components/Sidebar';
 import StepNav from './components/StepNav';
@@ -54,7 +54,7 @@ export default function App() {
           setActiveId(remoteArticles[0].id);
         }
         if (remoteConfig) {
-          setConfig(remoteConfig);
+          setConfig(mergeWithLatestModelCatalog(remoteConfig));
           // Restore railwayUrl to localStorage for aiService
           if (remoteConfig.railwayUrl) {
             localStorage.setItem('writer:railwayUrl', remoteConfig.railwayUrl);
