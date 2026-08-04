@@ -41,11 +41,23 @@ export interface AppConfig {
   actionSources: ActionDataSource[];
 }
 
+export type SearchIntent = 'informational' | 'commercial' | 'transactional' | 'navigational';
+
+export interface EvidenceRef {
+  source: string;
+  note?: string;
+  role?: 'kb' | 'action' | 'rules';
+}
+
 export interface OutlineSection {
   id: string;
   heading: string;
   notes: string;
   level: 'h2' | 'h3';
+  keywords?: string[];
+  searchIntent?: SearchIntent;
+  evidence?: EvidenceRef[];
+  ruleRefs?: string[];
 }
 
 export type ArticleStatus = 'planning' | 'in_progress' | 'review' | 'done';
