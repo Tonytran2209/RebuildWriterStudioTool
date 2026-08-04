@@ -1,6 +1,12 @@
-import { useState, useRef } from 'react';
-import type { Article, AIModel } from '../../types';
+import { useState, useMemo, useRef } from 'react';
+import type { Article, AIModel, AppConfig, DocumentFile } from '../../types';
 import { callAI } from '../../lib/aiService';
+import {
+  collectStepDocs,
+  buildDocContextBlock,
+  buildRoleSystemPrompt,
+  describeBundle,
+} from '../../lib/docContext';
 
 function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -19,13 +25,16 @@ function calcReadability(text: string) {
 
 interface Props {
   article: Article;
+  config: AppConfig;
+  files: DocumentFile[];
   model: AIModel;
   railwayUrl: string;
   onUpdate: (updates: Partial<Article>) => void;
   onPrev: () => void;
 }
 
-export default function Step4Draft({ article, model, railwayUrl, onUpdate, onPrev }: Props) {
+export default function Step4Draft({ article, config, files, model, railwayUrl, onUpdate, onPrev }: Props) {
+  const bundle = useMemo(() => collectStepDocs(4, config, files), [config, files]);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -51,12 +60,34 @@ export default function Step4Draft({ article, model, railwayUrl, onUpdate, onPre
       const outlineText = (article.outline || [])
         .map(s => `${s.level === 'h2' ? '## ' : '### '}${s.heading}${s.notes ? ` (${s.notes})` : ''}`)
         .join('\n');
-      const res = await callAI({
-        model,
-        railwayUrl,
-        prompt: `Viết bài "${article.topic}" theo dàn bài:\n${outlineText}\n\nTừ khóa: ${article.keywords}. Giọng văn: ${article.tone}. Số từ: ~${targetWords}.`,
-        systemPrompt: 'Bạn là chuyên gia content marketing người Việt. Viết bài SEO chuẩn, tự nhiên, có headings rõ ràng.',
-      });
+
+      const systemPrompt = buildRoleSystemPrompt(
+        [
+          'Viết bài hoàn chỉnh theo dàn bài và tài liệu được cấp.',
+          '- Knowledge Base là nguồn dữ liệu duy nhất cho số liệu, dẫn chứng, thông tin sản phẩm. KHÔNG bịa dữ liệu.',
+          '- Action Plan xác định định hướng nội dung và các mục bắt buộc.',
+          '- Rules & Guidelines quyết định tone of voice, từ ngữ cấm, cấu trúc câu, quy tắc SEO. PHẢI tuân thủ tuyệt đối.',
+          '- Khi dùng thông tin từ KB, nêu tự nhiên trong văn bản (không cần footnote).',
+          '- Nếu KB không có dữ liệu cho một mục, viết mục đó ở dạng khung và ghi chú "[Cần bổ sung dữ liệu]".',
+        ].join('\n'),
+      );
+      const userPrompt = [
+        `TÀI LIỆU STEP 4 (${describeBundle(bundle)}):`,
+        buildDocContextBlock(bundle),
+        '',
+        'THÔNG TIN BÀI VIẾT:',
+        `- Chủ đề: "${article.topic}"`,
+        `- Giọng văn: ${article.tone || ''}`,
+        `- Từ khóa: ${article.keywords || ''}`,
+        `- Số từ mục tiêu: ~${targetWords}`,
+        '',
+        'DÀN BÀI:',
+        outlineText,
+        '',
+        'Yêu cầu: Viết bài hoàn chỉnh theo dàn bài trên, tuân thủ toàn bộ Rules & Guidelines.',
+      ].join('\n');
+
+      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt });
       onUpdate({ draft: res.content });
       if (editorRef.current) editorRef.current.innerText = res.content;
     } finally {

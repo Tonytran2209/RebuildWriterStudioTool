@@ -223,6 +223,8 @@ export default function App() {
               {article.currentStep === 2 && (
                 <Step2CoreIdea
                   article={article}
+                  config={config}
+                  files={files}
                   model={currentModel || config.models[0]}
                   railwayUrl={config.railwayUrl}
                   onUpdate={u => handleUpdateArticle(article.id, u)}
@@ -233,6 +235,8 @@ export default function App() {
               {article.currentStep === 3 && (
                 <Step3Outline
                   article={article}
+                  config={config}
+                  files={files}
                   model={currentModel || config.models[0]}
                   railwayUrl={config.railwayUrl}
                   onUpdate={u => handleUpdateArticle(article.id, u)}
@@ -243,6 +247,8 @@ export default function App() {
               {article.currentStep === 4 && (
                 <Step4Draft
                   article={article}
+                  config={config}
+                  files={files}
                   model={currentModel || config.models[0]}
                   railwayUrl={config.railwayUrl}
                   onUpdate={u => handleUpdateArticle(article.id, u)}

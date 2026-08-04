@@ -1,6 +1,12 @@
-import { useState } from 'react';
-import type { Article, AIModel, OutlineSection } from '../../types';
+import { useState, useMemo } from 'react';
+import type { Article, AIModel, AppConfig, DocumentFile, OutlineSection } from '../../types';
 import { callAI } from '../../lib/aiService';
+import {
+  collectStepDocs,
+  buildDocContextBlock,
+  buildRoleSystemPrompt,
+  describeBundle,
+} from '../../lib/docContext';
 
 function generateId() {
   return Math.random().toString(36).slice(2, 9);
@@ -8,6 +14,8 @@ function generateId() {
 
 interface Props {
   article: Article;
+  config: AppConfig;
+  files: DocumentFile[];
   model: AIModel;
   railwayUrl: string;
   onUpdate: (updates: Partial<Article>) => void;
@@ -15,19 +23,39 @@ interface Props {
   onPrev: () => void;
 }
 
-export default function Step3Outline({ article, model, railwayUrl, onUpdate, onNext, onPrev }: Props) {
+export default function Step3Outline({ article, config, files, model, railwayUrl, onUpdate, onNext, onPrev }: Props) {
   const [generating, setGenerating] = useState(false);
   const outline = article.outline || [];
+
+  const bundle = useMemo(() => collectStepDocs(3, config, files), [config, files]);
 
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      const res = await callAI({
-        model,
-        railwayUrl,
-        prompt: `Tạo dàn bài chi tiết cho bài viết "${article.topic}". Góc độ: ${article.angle}. Giọng văn: ${article.tone}. Số từ: ${article.wordCount || 1500}. Từ khóa: ${article.keywords}`,
-        systemPrompt: 'Trả về dàn bài có cấu trúc rõ ràng với các heading H2 và H3.',
-      });
+      const systemPrompt = buildRoleSystemPrompt(
+        [
+          'Tạo dàn bài (outline) chi tiết dựa trên tài liệu được cấp và thông tin bài viết.',
+          '- Knowledge Base cung cấp nội dung/luận điểm cho từng mục.',
+          '- Action Plan xác định cấu trúc mẫu và các mục bắt buộc phải có.',
+          '- Rules & Guidelines quyết định định dạng heading, độ sâu H2/H3, quy tắc đặt tiêu đề.',
+          '- Chỉ trả về dàn bài dạng markdown với heading H2 (## ) và H3 (### ). Không viết đoạn văn.',
+        ].join('\n'),
+      );
+      const userPrompt = [
+        `TÀI LIỆU STEP 3 (${describeBundle(bundle)}):`,
+        buildDocContextBlock(bundle),
+        '',
+        'THÔNG TIN BÀI VIẾT:',
+        `- Chủ đề: "${article.topic}"`,
+        `- Góc độ: ${article.angle || '(chưa chọn)'}`,
+        `- Giọng văn: ${article.tone || '(chưa chọn)'}`,
+        `- Số từ mục tiêu: ${article.wordCount || 1500}`,
+        `- Từ khóa: ${article.keywords || ''}`,
+        '',
+        'Yêu cầu: Trả về dàn bài markdown, các mục H2/H3 rõ ràng, mỗi mục có 1 dòng ghi chú ngắn về nội dung.',
+      ].join('\n');
+
+      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt });
 
       // Parse the outline text into structured sections
       const lines = res.content.split('\n').filter((l: string) => l.trim());

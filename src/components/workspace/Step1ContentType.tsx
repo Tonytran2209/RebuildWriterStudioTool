@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import type {
-  Article,
-  AIModel,
-  AppConfig,
-  DocumentFile,
-  ActionDataSource,
-} from "../../types";
+import type { Article, AIModel, AppConfig, DocumentFile } from "../../types";
 import { callAI } from "../../lib/aiService";
+import {
+  collectStepDocs,
+  buildDocContextBlock,
+  buildRoleSystemPrompt,
+  describeBundle,
+} from "../../lib/docContext";
 
 interface ContentTypeSuggestion {
   id: string;
@@ -15,6 +15,7 @@ interface ContentTypeSuggestion {
   audience?: string;
   format?: string;
   matchedDocs?: string[];
+  ruleRefs?: string[];
   icon?: string;
 }
 
@@ -27,12 +28,6 @@ interface Props {
   onUpdate: (updates: Partial<Article>) => void;
   onNext: () => void;
 }
-
-const CATEGORY_LABEL: Record<string, string> = {
-  kb: "Knowledge Base",
-  action: "Action Plan",
-  rules: "Rules & Guidelines",
-};
 
 const CARD_COLORS = [
   "border-violet-200 hover:border-violet-400 bg-violet-50/40",
@@ -65,52 +60,20 @@ function normalizeSuggestions(parsed: unknown): ContentTypeSuggestion[] {
       const label = String(obj.label ?? obj.name ?? "").trim();
       const description = String(obj.description ?? obj.summary ?? "").trim();
       if (!label || !description) return null;
-      const matched = Array.isArray(obj.matchedDocs)
-        ? (obj.matchedDocs as unknown[]).map(String).filter(Boolean)
-        : [];
+      const arr = (key: string): string[] =>
+        Array.isArray(obj[key]) ? (obj[key] as unknown[]).map(String).filter(Boolean) : [];
       return {
         id: `sg-${idx}-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
         label,
         description,
         audience: obj.audience ? String(obj.audience) : undefined,
         format: obj.format ? String(obj.format) : undefined,
-        matchedDocs: matched,
+        matchedDocs: arr("matchedDocs"),
+        ruleRefs: arr("ruleRefs"),
         icon: obj.icon ? String(obj.icon) : undefined,
       } as ContentTypeSuggestion;
     })
     .filter((v): v is ContentTypeSuggestion => v !== null);
-}
-
-function buildDocContext(
-  files: DocumentFile[],
-  actionSources: ActionDataSource[],
-  fileAccess: { kb: string[]; action: string[]; rules: string[] },
-): { text: string; count: number } {
-  const lines: string[] = [];
-
-  (["kb", "action", "rules"] as const).forEach(cat => {
-    const ids = fileAccess[cat] ?? [];
-    if (!ids.length) return;
-    lines.push(`\n[${CATEGORY_LABEL[cat]}]`);
-    ids.forEach(id => {
-      if (cat === "action") {
-        const src = actionSources.find(s => s.id === id);
-        if (src) {
-          const meta = [
-            `nguồn: ${src.sourceType}`,
-            src.rowCount ? `${src.rowCount} dòng` : "",
-            src.columns?.length ? `cột: ${src.columns.join(", ")}` : "",
-          ].filter(Boolean).join(" · ");
-          lines.push(`- ${src.name}${meta ? ` (${meta})` : ""}${src.preview ? `\n  Preview: ${src.preview.slice(0, 240)}` : ""}`);
-          return;
-        }
-      }
-      const file = files.find(f => f.id === id);
-      if (file) lines.push(`- ${file.name} (${file.fileType.toUpperCase()}, ${file.size})`);
-    });
-  });
-
-  return { text: lines.join("\n"), count: lines.filter(l => l.startsWith("- ")).length };
 }
 
 export default function Step1ContentType({
@@ -129,37 +92,41 @@ export default function Step1ContentType({
   const [customLabel, setCustomLabel] = useState("");
   const autoRequestedRef = useRef(false);
 
-  const fileAccess = config.stepConfigs[1]?.fileAccess ?? { kb: [], action: [], rules: [] };
-  const actionSources = config.actionSources ?? [];
-
-  const docContext = useMemo(
-    () => buildDocContext(files, actionSources, fileAccess),
-    [files, actionSources, fileAccess],
-  );
+  const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
+  const contextBlock = useMemo(() => buildDocContextBlock(bundle), [bundle]);
 
   const fetchSuggestions = async () => {
-    if (!docContext.count) {
+    if (!bundle.totalCount) {
       setError("Chưa có tài liệu nào được phân quyền cho Step 1. Vui lòng mở Cấu hình → Step Setup để gán tài liệu.");
+      return;
+    }
+    if (!bundle.actionPlan.length && !bundle.knowledgeBase.length) {
+      setError("Cần ít nhất 1 tài liệu Knowledge Base hoặc Action Plan để AI đề xuất loại nội dung.");
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const systemPrompt = [
-        "Bạn là chiến lược gia nội dung. Dựa trên danh sách tài liệu người dùng cho phép đọc ở bước 1,",
-        "hãy đề xuất 4-8 loại nội dung (Content Type) phù hợp nhất có thể sản xuất từ các tài liệu đó.",
-        "Chỉ đề xuất những loại thực sự khớp với tài liệu — không bịa nội dung.",
-        "Trả về DUY NHẤT một mảng JSON hợp lệ, không kèm text giải thích, mỗi phần tử có schema:",
-        `{ "label": string, "description": string (2-3 câu mô tả rõ định dạng, mục đích và giá trị mang lại), "audience": string, "format": string (ví dụ "Bài blog dài 1200 từ", "Carousel 8 slide"), "matchedDocs": string[] (tên các tài liệu liên quan), "icon": string (1 ký tự emoji hoặc glyph) }`,
-      ].join(" ");
+      const systemPrompt = buildRoleSystemPrompt(
+        [
+          "Đề xuất 4-8 loại nội dung (Content Type) mà người viết có thể sản xuất từ tài liệu được cấp.",
+          "- Ưu tiên phân loại theo Action Plan (nếu có).",
+          "- Dùng Knowledge Base để mô tả cụ thể chủ đề/độ sâu có thể khai thác.",
+          "- Bắt buộc kiểm chứng mọi đề xuất với Rules & Guidelines; ghi rõ rule nào áp dụng ở trường ruleRefs.",
+          "- Không đề xuất loại nội dung mà tài liệu không hỗ trợ.",
+          "",
+          "Trả về DUY NHẤT một mảng JSON hợp lệ, không kèm markdown fences hay text giải thích.",
+          "Mỗi phần tử schema:",
+          `{ "label": string, "description": string (2-3 câu: định dạng, mục đích, giá trị), "audience": string, "format": string (VD "Bài blog 1200 từ"), "matchedDocs": string[] (tên tài liệu KB/Action đã dùng), "ruleRefs": string[] (tên rule/guideline áp dụng), "icon": string (1 emoji/glyph) }`,
+        ].join("\n"),
+      );
 
       const prompt = [
-        `Tài liệu được phân quyền đọc ở Step 1 (${docContext.count} mục):`,
-        docContext.text,
+        `TÀI LIỆU ĐƯỢC PHÂN QUYỀN ĐỌC Ở STEP 1 (${describeBundle(bundle)}):`,
+        contextBlock,
         "",
         "Yêu cầu: Đề xuất các loại nội dung phù hợp có thể sản xuất từ những tài liệu trên.",
-        "Mỗi đề xuất phải có mô tả đầy đủ: (1) loại nội dung là gì, (2) khai thác tài liệu nào, (3) phục vụ mục đích/độc giả nào.",
-        "Chỉ trả về JSON array, không markdown, không giải thích.",
+        "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
       ].join("\n");
 
       const res = await callAI({ model, railwayUrl, prompt, systemPrompt });
@@ -177,15 +144,13 @@ export default function Step1ContentType({
 
   useEffect(() => {
     if (autoRequestedRef.current) return;
-    if (!docContext.count) return;
+    if (!bundle.totalCount) return;
     autoRequestedRef.current = true;
     fetchSuggestions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docContext.count]);
+  }, [bundle.totalCount]);
 
-  const handleSelect = (label: string) => {
-    onUpdate({ contentType: label });
-  };
+  const handleSelect = (label: string) => onUpdate({ contentType: label });
 
   const handleUseCustom = () => {
     const trimmed = customLabel.trim();
@@ -205,45 +170,44 @@ export default function Step1ContentType({
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">Step 1: Content Type Selection</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  AI phân tích các tài liệu được phân quyền đọc ở Step 1 và đề xuất loại nội dung phù hợp nhất kèm mô tả chi tiết.
+                  AI phân tích tài liệu theo 3 vai trò — <b>KB</b> (nền tảng), <b>Action</b> (phân loại), <b>Rules</b> (bắt buộc) — rồi đề xuất loại nội dung phù hợp kèm mô tả chi tiết.
                 </p>
               </div>
               <button
                 onClick={fetchSuggestions}
-                disabled={loading || !docContext.count}
+                disabled={loading || !bundle.totalCount}
                 className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
               >
                 {loading ? "Đang phân tích..." : suggestions.length ? "↻ Đề xuất lại" : "✨ Lấy đề xuất từ AI"}
               </button>
             </div>
 
-            {/* Doc context summary */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-1">
+            {/* Doc context summary — grouped by role */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tài liệu AI được đọc ở Step 1</span>
-                <span className="text-[10px] font-mono text-slate-500">
-                  {docContext.count} mục · Model: {model.name}
-                </span>
+                <span className="text-[10px] font-mono text-slate-500">{describeBundle(bundle)} · Model: {model.name}</span>
               </div>
-              {docContext.count ? (
-                <pre className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap font-sans mt-1 max-h-32 overflow-y-auto">
-                  {docContext.text.trim()}
-                </pre>
+
+              {bundle.totalCount ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <RoleColumn title="Knowledge Base" tone="indigo" hint="Nền tảng" docs={bundle.knowledgeBase} />
+                  <RoleColumn title="Action Plan" tone="emerald" hint="Phân loại" docs={bundle.actionPlan} />
+                  <RoleColumn title="Rules & Guidelines" tone="amber" hint="Bắt buộc" docs={bundle.rules} />
+                </div>
               ) : (
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-slate-500">
                   Chưa có tài liệu nào được phân quyền cho Step 1. Mở <span className="font-semibold">Cấu hình → Step Setup</span> để gán tài liệu.
                 </p>
               )}
             </div>
 
             {error && (
-              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-xs text-rose-700">
-                {error}
-              </div>
+              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-xs text-rose-700">{error}</div>
             )}
 
             {loading && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[0, 1, 2, 3].map(i => (
                   <div key={i} className="border-2 border-slate-100 rounded-2xl p-4 space-y-2">
                     <div className="ai-loading h-4 w-3/5" />
@@ -294,8 +258,13 @@ export default function Step1ContentType({
                         </div>
                       )}
                       {s.matchedDocs && s.matchedDocs.length > 0 && (
-                        <div className="text-[10px] text-slate-500 pt-1">
-                          <span className="font-bold">Dựa trên:</span> {s.matchedDocs.join(", ")}
+                        <div className="text-[10px] text-indigo-700 pt-1">
+                          <span className="font-bold">KB/Action:</span> {s.matchedDocs.join(", ")}
+                        </div>
+                      )}
+                      {s.ruleRefs && s.ruleRefs.length > 0 && (
+                        <div className="text-[10px] text-amber-700">
+                          <span className="font-bold">Rules áp dụng:</span> {s.ruleRefs.join(", ")}
                         </div>
                       )}
                     </button>
@@ -304,7 +273,7 @@ export default function Step1ContentType({
               </div>
             )}
 
-            {!loading && suggestions.length === 0 && !error && docContext.count > 0 && (
+            {!loading && suggestions.length === 0 && !error && bundle.totalCount > 0 && (
               <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
                 Nhấn <span className="font-semibold">"Lấy đề xuất từ AI"</span> để AI phân tích tài liệu và gợi ý loại nội dung.
               </div>
@@ -357,6 +326,36 @@ export default function Step1ContentType({
           </svg>
         </button>
       </div>
+    </div>
+  );
+}
+
+const TONE_STYLE: Record<string, { text: string; bg: string; border: string }> = {
+  indigo:  { text: "text-indigo-700",  bg: "bg-indigo-50/70",  border: "border-indigo-200" },
+  emerald: { text: "text-emerald-700", bg: "bg-emerald-50/70", border: "border-emerald-200" },
+  amber:   { text: "text-amber-700",   bg: "bg-amber-50/70",   border: "border-amber-200" },
+};
+
+function RoleColumn({ title, tone, hint, docs }: { title: string; tone: string; hint: string; docs: { name: string; meta?: string }[] }) {
+  const style = TONE_STYLE[tone];
+  return (
+    <div className={`${style.bg} border ${style.border} rounded-xl p-2.5`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className={`text-[10px] font-bold ${style.text} uppercase tracking-wider`}>{title}</span>
+        <span className="text-[9px] font-mono text-slate-500">{hint}</span>
+      </div>
+      {docs.length === 0 ? (
+        <div className="text-[10px] text-slate-400 italic">Chưa cấp tài liệu</div>
+      ) : (
+        <ul className="space-y-0.5 max-h-24 overflow-y-auto">
+          {docs.map((d, i) => (
+            <li key={i} className="text-[10px] text-slate-700 leading-relaxed">
+              • {d.name}
+              {d.meta && <span className="text-slate-400 ml-1">({d.meta})</span>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

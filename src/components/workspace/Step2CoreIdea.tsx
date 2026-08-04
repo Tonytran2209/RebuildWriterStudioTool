@@ -1,6 +1,12 @@
-import { useState } from 'react';
-import type { Article, AIModel } from '../../types';
+import { useState, useMemo } from 'react';
+import type { Article, AIModel, AppConfig, DocumentFile } from '../../types';
 import { callAI } from '../../lib/aiService';
+import {
+  collectStepDocs,
+  buildDocContextBlock,
+  buildRoleSystemPrompt,
+  describeBundle,
+} from '../../lib/docContext';
 
 const TONES = [
   { id: 'professional', label: 'Chuyên nghiệp' },
@@ -24,6 +30,8 @@ const WORD_COUNTS = [600, 1000, 1500, 2000, 3000];
 
 interface Props {
   article: Article;
+  config: AppConfig;
+  files: DocumentFile[];
   model: AIModel;
   railwayUrl: string;
   onUpdate: (updates: Partial<Article>) => void;
@@ -31,21 +39,40 @@ interface Props {
   onPrev: () => void;
 }
 
-export default function Step2CoreIdea({ article, model, railwayUrl, onUpdate, onNext, onPrev }: Props) {
+export default function Step2CoreIdea({ article, config, files, model, railwayUrl, onUpdate, onNext, onPrev }: Props) {
   const [loadingAngle, setLoadingAngle] = useState(false);
   const [suggestedAngle, setSuggestedAngle] = useState('');
+
+  const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
 
   const handleSuggestAngle = async () => {
     if (!article.topic) return;
     setLoadingAngle(true);
     setSuggestedAngle('');
     try {
-      const res = await callAI({
-        model,
-        railwayUrl,
-        prompt: `Đề xuất góc độ viết bài cho chủ đề: "${article.topic}". Loại nội dung: ${article.contentType}. Từ khóa: ${article.keywords}`,
-        systemPrompt: 'Bạn là chuyên gia content marketing. Đề xuất góc độ và từ khóa phụ hấp dẫn.',
-      });
+      const systemPrompt = buildRoleSystemPrompt(
+        [
+          'Đề xuất góc độ (angle) và từ khóa phụ để triển khai chủ đề người dùng cung cấp.',
+          '- Dùng Knowledge Base làm căn cứ chuyên môn cho góc độ.',
+          '- Đối chiếu Action Plan để đảm bảo góc độ nằm trong định hướng đã duyệt.',
+          '- Tuân thủ Rules & Guidelines về tone, brand voice, cấu trúc bắt buộc.',
+          '- Nếu tài liệu không đủ để đề xuất góc độ có căn cứ, nói rõ và gợi ý tài liệu còn thiếu.',
+        ].join('\n'),
+      );
+      const userPrompt = [
+        `TÀI LIỆU STEP 2 (${describeBundle(bundle)}):`,
+        buildDocContextBlock(bundle),
+        '',
+        'THÔNG TIN BÀI VIẾT:',
+        `- Chủ đề: "${article.topic}"`,
+        `- Loại nội dung: ${article.contentType || '(chưa chọn)'}`,
+        `- Từ khóa: ${article.keywords || '(chưa nhập)'}`,
+        `- Độc giả: ${article.targetAudience || '(chưa nhập)'}`,
+        '',
+        'Yêu cầu: Đưa ra 1-2 góc độ tiếp cận độc đáo kèm giải thích ngắn, và danh sách từ khóa phụ.',
+      ].join('\n');
+
+      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt });
       setSuggestedAngle(res.content);
     } finally {
       setLoadingAngle(false);
