@@ -51,6 +51,27 @@ function canonical(value: string): string {
     .trim();
 }
 
+function sourceContains(source: string, value: string): boolean {
+  const needle = canonical(value);
+  return Boolean(needle) && canonical(source).includes(needle);
+}
+
+function evidenceQuoteExists(source: string, quote: string): boolean {
+  const normalizedSource = canonical(source);
+  const normalizedQuote = canonical(quote);
+  if (!normalizedQuote) return false;
+  if (normalizedSource.includes(normalizedQuote)) return true;
+
+  // Models sometimes preserve a verbatim PDF row but add line breaks or an ellipsis
+  // between its cells. Require a meaningful literal fragment instead of rejecting the
+  // entire result solely because the full multi-column row was not contiguous.
+  return quote
+    .split(/\r?\n|\.{3}|…/)
+    .map(part => canonical(part))
+    .filter(part => part.length >= 16)
+    .some(part => normalizedSource.includes(part));
+}
+
 function extractDocumentYear(text: string): number | undefined {
   const header = text.slice(0, 2500);
   const match = header.match(/\b(20\d{2})\b/);
@@ -75,8 +96,17 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       const label = String(obj.label ?? obj.name ?? "").trim();
       const description = String(obj.description ?? obj.summary ?? "").trim();
       if (!label || !description) return null;
-      const arr = (key: string): string[] =>
-        Array.isArray(obj[key]) ? (obj[key] as unknown[]).map(String).filter(Boolean) : [];
+      const arr = (key: string): string[] => {
+        const value = obj[key];
+        if (Array.isArray(value)) return value.map(String).map(item => item.trim()).filter(Boolean);
+        // Some providers serialize list fields as comma/newline-separated strings even
+        // when the requested JSON schema says string[]. Normalize that shape, then let
+        // the evidence checks below reject every value not found in its source document.
+        if (typeof value === "string") {
+          return value.split(/[,;\n]/).map(item => item.trim()).filter(Boolean);
+        }
+        return [];
+      };
       const typeGroup = normalizeGroup(obj.typeGroup ?? obj.type);
       const wave = String(obj.wave ?? "").trim();
       const timeframe = String(obj.timeframe ?? "").trim();
@@ -93,21 +123,18 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       const referencesRules = ruleRefs.some(name => evidence.ruleNames.has(canonical(name)));
       const referencedKbText = canonical(kbRefs.map(name => evidence.kbByName.get(canonical(name)) ?? "").join("\n"));
       const referencedRuleText = canonical(ruleRefs.map(name => evidence.rulesByName.get(canonical(name)) ?? "").join("\n"));
-      const timeframeExists = canonical(evidence.actionText).includes(canonical(timeframe));
-      const waveExists = canonical(evidence.actionText).includes(canonical(wave));
-      const keywordsExist = keywords.every(keyword => canonical(evidence.actionText).includes(canonical(keyword)));
+      const timeframeExists = sourceContains(evidence.actionText, timeframe);
+      const waveExists = sourceContains(evidence.actionText, wave);
+      const labelExists = sourceContains(evidence.actionText, label);
+      const keywordsExist = keywords.every(keyword => sourceContains(evidence.actionText, keyword));
       const actionQuote = canonical(actionPlanEvidence);
-      const actionQuoteExists = Boolean(actionQuote) && canonical(evidence.actionText).includes(actionQuote);
-      const actionQuoteCoversTopic = actionQuote.includes(canonical(label)) &&
-        keywords.every(keyword => actionQuote.includes(canonical(keyword)));
+      const actionQuoteExists = evidenceQuoteExists(evidence.actionText, actionPlanEvidence);
       const scheduleQuote = canonical(scheduleEvidence);
-      const scheduleQuoteExists = Boolean(scheduleQuote) && canonical(evidence.actionText).includes(scheduleQuote);
-      const scheduleQuoteCoversPeriod = scheduleQuote.includes(canonical(wave)) &&
-        scheduleQuote.includes(canonical(timeframe));
+      const scheduleQuoteExists = evidenceQuoteExists(evidence.actionText, scheduleEvidence);
       const kbQuote = canonical(kbEvidence);
       const ruleQuote = canonical(ruleEvidence);
-      const kbQuoteExists = Boolean(kbQuote) && referencedKbText.includes(kbQuote);
-      const ruleQuoteExists = Boolean(ruleQuote) && referencedRuleText.includes(ruleQuote);
+      const kbQuoteExists = evidenceQuoteExists(referencedKbText, kbEvidence);
+      const ruleQuoteExists = evidenceQuoteExists(referencedRuleText, ruleEvidence);
       const typeExists = typeGroup
         ? new RegExp(`(?:type|loại|comparison type)[\\s:_-]*${typeGroup.toLocaleLowerCase()}\\b`).test(`${kbQuote}\n${ruleQuote}`)
         : false;
@@ -115,9 +142,9 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       if (
         !typeGroup || !wave || !timeframe || !keywords.length ||
         !referencesActionPlan || !referencesKb || !referencesRules ||
-        !waveExists || !timeframeExists || !keywordsExist ||
-        !actionQuoteExists || !actionQuoteCoversTopic ||
-        !scheduleQuoteExists || !scheduleQuoteCoversPeriod ||
+        !waveExists || !timeframeExists || !labelExists || !keywordsExist ||
+        !actionQuote || !actionQuoteExists ||
+        !scheduleQuote || !scheduleQuoteExists ||
         !kbQuoteExists || !ruleQuoteExists || !typeExists
       ) return null;
       return {
@@ -179,17 +206,18 @@ export default function Step1ContentType({
   const scanIsStale = Boolean(
     suggestions.length && article.contentTypeSourceFingerprint !== sourceFingerprint,
   );
+  const visibleSuggestions = scanIsStale ? [] : suggestions;
 
   // Group suggestions by Type A/B/C; anything without a group falls to "other".
   const grouped = useMemo(() => {
     const byGroup: Record<ContentTypeGroup, ContentTypeSuggestion[]> = { A: [], B: [], C: [] };
     const other: ContentTypeSuggestion[] = [];
-    suggestions.forEach(s => {
+    visibleSuggestions.forEach(s => {
       if (s.typeGroup && byGroup[s.typeGroup]) byGroup[s.typeGroup].push(s);
       else other.push(s);
     });
     return { byGroup, other };
-  }, [suggestions]);
+  }, [visibleSuggestions]);
 
   const fetchSuggestions = async () => {
     if (!bundle.totalCount) {
@@ -210,6 +238,16 @@ export default function Step1ContentType({
     }
     setLoading(true);
     setError(null);
+    // Never present cached options as if they belonged to the new source snapshot.
+    if (scanIsStale) {
+      onUpdate({
+        contentTypeSuggestions: [],
+        contentTypeSourceFingerprint: undefined,
+        contentTypeScannedAt: undefined,
+        contentType: undefined,
+        selectedContentTypeSuggestionId: undefined,
+      });
+    }
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -307,7 +345,7 @@ export default function Step1ContentType({
     setCustomLabel("");
   };
 
-  const selectedSuggestion = suggestions.find(s =>
+  const selectedSuggestion = visibleSuggestions.find(s =>
     s.id === article.selectedContentTypeSuggestionId ||
     (!article.selectedContentTypeSuggestionId && s.label === selected),
   );
@@ -329,7 +367,7 @@ export default function Step1ContentType({
                 disabled={loading || !bundle.totalCount}
                 className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
               >
-                {loading ? "Đang phân tích..." : suggestions.length ? "Đề xuất lại" : "Lấy đề xuất"}
+                {loading ? "Đang phân tích..." : visibleSuggestions.length ? "Đề xuất lại" : "Lấy đề xuất"}
               </button>
             </div>
 
@@ -367,7 +405,7 @@ export default function Step1ContentType({
               </div>
             )}
 
-            {!loading && suggestions.length > 0 && (
+            {!loading && visibleSuggestions.length > 0 && (
               <div className="space-y-5">
                 {GROUP_ORDER.map(g => {
                   const items = grouped.byGroup[g];
@@ -425,7 +463,7 @@ export default function Step1ContentType({
               </div>
             )}
 
-            {!loading && suggestions.length === 0 && !error && bundle.totalCount > 0 && (
+            {!loading && visibleSuggestions.length === 0 && !error && bundle.totalCount > 0 && (
               <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
                 Nhấn <span className="font-semibold">"Lấy đề xuất"</span> để AI phân tích tài liệu và gợi ý loại nội dung.
               </div>
