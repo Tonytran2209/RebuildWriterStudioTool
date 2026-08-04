@@ -14,6 +14,7 @@ export interface AIResponse {
   content: string;
   model: string;
   usage?: { inputTokens: number; outputTokens: number };
+  generatedAt?: string;
 }
 
 const DEMO_RESPONSES: Record<string, string> = {

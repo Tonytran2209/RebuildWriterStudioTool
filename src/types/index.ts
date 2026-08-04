@@ -124,11 +124,11 @@ export interface Article {
   createdAt: string;
   updatedAt: string;
   // Step 1 data
-  contentType?: string;
-  selectedContentTypeSuggestionId?: string;
+  contentType?: string | null;
+  selectedContentTypeSuggestionId?: string | null;
   contentTypeSuggestions?: ContentTypeSuggestion[];
-  contentTypeSourceFingerprint?: string;
-  contentTypeScannedAt?: string;
+  contentTypeSourceFingerprint?: string | null;
+  contentTypeScannedAt?: string | null;
   // Step 2 data
   topic?: string;
   keywords?: string;

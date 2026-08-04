@@ -87,7 +87,7 @@ app.post('/api/generate', async (req, res) => {
       temperature,
     });
     console.log(`[generate] done — outputTokens=${result.usage?.outputTokens}`);
-    res.json({ ...result, context: stepContext.summary });
+    res.json({ ...result, context: stepContext.summary, generatedAt: new Date().toISOString() });
   } catch (err: any) {
     console.error('[generate] error:', err.message);
     res.status(500).json({ error: err.message || 'Lỗi gọi AI API' });

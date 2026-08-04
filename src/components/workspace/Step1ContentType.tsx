@@ -80,11 +80,24 @@ function extractDocumentYear(text: string): number | undefined {
 
 interface EvidenceIndex {
   actionPlanNames: Set<string>;
-  kbNames: Set<string>;
-  ruleNames: Set<string>;
+  actionPlanOriginalNames: string[];
+  kbOriginalNames: string[];
+  ruleOriginalNames: string[];
   actionText: string;
   kbByName: Map<string, string>;
   rulesByName: Map<string, string>;
+}
+
+function findTypeEvidence(documents: Map<string, string>, typeGroup: ContentTypeGroup): string | undefined {
+  const pattern = new RegExp(`(?:comparison\\s+)?type\\s*${typeGroup}\\b`, "i");
+  for (const content of documents.values()) {
+    const line = content
+      .split(/\r?\n/)
+      .map(value => value.trim())
+      .find(value => pattern.test(value));
+    if (line) return line;
+  }
+  return undefined;
 }
 
 function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): ContentTypeSuggestion[] {
@@ -112,17 +125,9 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       const timeframe = String(obj.timeframe ?? "").trim();
       const keywords = arr("keywords").map(keyword => keyword.trim()).filter(Boolean);
       const matchedDocs = arr("matchedDocs").map(name => name.trim()).filter(Boolean);
-      const kbRefs = arr("kbRefs").map(name => name.trim()).filter(Boolean);
-      const ruleRefs = arr("ruleRefs").map(name => name.trim()).filter(Boolean);
-      const kbEvidence = String(obj.kbEvidence ?? "").trim();
-      const ruleEvidence = String(obj.ruleEvidence ?? "").trim();
       const actionPlanEvidence = String(obj.actionPlanEvidence ?? "").trim();
       const scheduleEvidence = String(obj.scheduleEvidence ?? "").trim();
       const referencesActionPlan = matchedDocs.some(name => evidence.actionPlanNames.has(canonical(name)));
-      const referencesKb = kbRefs.some(name => evidence.kbNames.has(canonical(name)));
-      const referencesRules = ruleRefs.some(name => evidence.ruleNames.has(canonical(name)));
-      const referencedKbText = canonical(kbRefs.map(name => evidence.kbByName.get(canonical(name)) ?? "").join("\n"));
-      const referencedRuleText = canonical(ruleRefs.map(name => evidence.rulesByName.get(canonical(name)) ?? "").join("\n"));
       const timeframeExists = sourceContains(evidence.actionText, timeframe);
       const waveExists = sourceContains(evidence.actionText, wave);
       const labelExists = sourceContains(evidence.actionText, label);
@@ -131,21 +136,17 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       const actionQuoteExists = evidenceQuoteExists(evidence.actionText, actionPlanEvidence);
       const scheduleQuote = canonical(scheduleEvidence);
       const scheduleQuoteExists = evidenceQuoteExists(evidence.actionText, scheduleEvidence);
-      const kbQuote = canonical(kbEvidence);
-      const ruleQuote = canonical(ruleEvidence);
-      const kbQuoteExists = evidenceQuoteExists(referencedKbText, kbEvidence);
-      const ruleQuoteExists = evidenceQuoteExists(referencedRuleText, ruleEvidence);
-      const typeExists = typeGroup
-        ? new RegExp(`(?:type|loại|comparison type)[\\s:_-]*${typeGroup.toLocaleLowerCase()}\\b`).test(`${kbQuote}\n${ruleQuote}`)
-        : false;
+      const scheduleQuoteCoversPeriod = scheduleQuote.includes(canonical(wave)) &&
+        scheduleQuote.includes(canonical(timeframe));
+      const verifiedKbEvidence = typeGroup ? findTypeEvidence(evidence.kbByName, typeGroup) : undefined;
+      const verifiedRuleEvidence = typeGroup ? findTypeEvidence(evidence.rulesByName, typeGroup) : undefined;
       // Reject ungrounded values instead of allowing the model to invent a date, keyword or type.
       if (
         !typeGroup || !wave || !timeframe || !keywords.length ||
-        !referencesActionPlan || !referencesKb || !referencesRules ||
         !waveExists || !timeframeExists || !labelExists || !keywordsExist ||
         !actionQuote || !actionQuoteExists ||
-        !scheduleQuote || !scheduleQuoteExists ||
-        !kbQuoteExists || !ruleQuoteExists || !typeExists
+        !scheduleQuote || !scheduleQuoteExists || !scheduleQuoteCoversPeriod ||
+        !verifiedKbEvidence || !verifiedRuleEvidence
       ) return null;
       return {
         id: `sg-${idx}-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
@@ -157,11 +158,14 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
         timeframe,
         audience: obj.audience ? String(obj.audience) : undefined,
         format: obj.format ? String(obj.format) : undefined,
-        matchedDocs,
-        kbRefs,
-        ruleRefs,
-        kbEvidence,
-        ruleEvidence,
+        // A model may accidentally put KB/Rules names in matchedDocs. Once the
+        // literal Action Plan evidence has passed all checks, bind the result to
+        // the actual authorized Action Plan records instead of trusting that field.
+        matchedDocs: referencesActionPlan ? matchedDocs : evidence.actionPlanOriginalNames,
+        kbRefs: evidence.kbOriginalNames,
+        ruleRefs: evidence.ruleOriginalNames,
+        kbEvidence: verifiedKbEvidence,
+        ruleEvidence: verifiedRuleEvidence,
         actionPlanEvidence,
         scheduleEvidence,
         sourceYear: extractDocumentYear(evidence.actionText),
@@ -203,9 +207,10 @@ export default function Step1ContentType({
 
   const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
   const sourceFingerprint = useMemo(() => buildActionPlanFingerprint(bundle), [bundle]);
-  const scanIsStale = Boolean(
-    suggestions.length && article.contentTypeSourceFingerprint !== sourceFingerprint,
+  const hasCachedScan = Boolean(
+    suggestions.length || article.contentTypeSourceFingerprint || article.contentTypeScannedAt,
   );
+  const scanIsStale = hasCachedScan && article.contentTypeSourceFingerprint !== sourceFingerprint;
   const visibleSuggestions = scanIsStale ? [] : suggestions;
 
   // Group suggestions by Type A/B/C; anything without a group falls to "other".
@@ -238,16 +243,6 @@ export default function Step1ContentType({
     }
     setLoading(true);
     setError(null);
-    // Never present cached options as if they belonged to the new source snapshot.
-    if (scanIsStale) {
-      onUpdate({
-        contentTypeSuggestions: [],
-        contentTypeSourceFingerprint: undefined,
-        contentTypeScannedAt: undefined,
-        contentType: undefined,
-        selectedContentTypeSuggestionId: undefined,
-      });
-    }
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -256,10 +251,11 @@ export default function Step1ContentType({
           "QUY TẮC PHÂN LOẠI (bắt buộc):",
           "- Nhận diện tên Content Type và typeGroup (A/B/C) từ CẢ Knowledge Base và Rules; không dùng Action Plan làm nguồn duy nhất để phân loại type.",
           "- KB và Rules định nghĩa taxonomy/tiêu chí Type A/B/C; topic cụ thể lấy từ Action Plan. Không yêu cầu topic phải xuất hiện trong KB/Rules.",
-          "- Mỗi loại thuộc một WAVE gắn với một MỐC THỜI GIAN — wave và timeframe PHẢI sao chép nguyên văn từ Action Plan, tuyệt đối không tự quy đổi quý/năm.",
+          "- `wave` là PUBLISHING WAVE từ tiêu đề section, ví dụ `Wave 1`/`Wave 2`; KHÔNG dùng W2/W3/W4/W5 vì đó là execution week của từng row.",
+          "- `timeframe` là mốc đi cùng publishing wave trong tiêu đề section. Cả wave và timeframe PHẢI sao chép nguyên văn từ cùng một tiêu đề/đoạn Action Plan, tuyệt đối không tự quy đổi quý/năm.",
           "- Mỗi loại gắn với đúng bộ keywords mà Action Plan chỉ định cho loại/wave đó. Trích nguyên văn, không thêm bớt từ khóa không có trong tài liệu.",
           "- Chỉ trả về lựa chọn có đủ nhóm + wave + timeframe + ít nhất 1 keyword. Bỏ qua mục thiếu dữ liệu thay vì suy đoán.",
-          "- matchedDocs phải chứa chính xác tên của ít nhất một tài liệu Action Plan làm căn cứ cho lựa chọn.",
+          "- matchedDocs chỉ chứa chính xác tên tài liệu Action Plan làm căn cứ cho lựa chọn; không đặt tên KB hoặc Rules vào matchedDocs.",
           "- kbRefs và ruleRefs phải chứa chính xác tên file KB và Rules dùng để nhận diện Content Type.",
           "- kbEvidence và ruleEvidence là các đoạn trích nguyên văn mô tả tiêu chí taxonomy dùng để suy ra Type A/B/C.",
           "- actionPlanEvidence là đoạn/hàng nguyên văn chứa topic và toàn bộ keywords trả về.",
@@ -297,8 +293,9 @@ export default function Step1ContentType({
       const parsed = extractJson(res.content);
       const evidence: EvidenceIndex = {
         actionPlanNames: new Set(bundle.actionPlan.map(doc => canonical(doc.name))),
-        kbNames: new Set(bundle.knowledgeBase.map(doc => canonical(doc.name))),
-        ruleNames: new Set(bundle.rules.map(doc => canonical(doc.name))),
+        actionPlanOriginalNames: bundle.actionPlan.map(doc => doc.name),
+        kbOriginalNames: bundle.knowledgeBase.map(doc => doc.name),
+        ruleOriginalNames: bundle.rules.map(doc => doc.name),
         actionText: bundle.actionPlan.map(doc => doc.content ?? "").join("\n"),
         kbByName: new Map(bundle.knowledgeBase.map(doc => [canonical(doc.name), doc.content ?? ""])),
         rulesByName: new Map(bundle.rules.map(doc => [canonical(doc.name), doc.content ?? ""])),
@@ -310,13 +307,22 @@ export default function Step1ContentType({
       onUpdate({
         contentTypeSuggestions: normalized,
         contentTypeSourceFingerprint: sourceFingerprint,
-        contentTypeScannedAt: new Date().toISOString(),
-        contentType: undefined,
-        selectedContentTypeSuggestionId: undefined,
+        contentTypeScannedAt: res.generatedAt ?? new Date().toISOString(),
+        contentType: null,
+        selectedContentTypeSuggestionId: null,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
+      if (scanIsStale) {
+        onUpdate({
+          contentTypeSuggestions: [],
+          contentTypeSourceFingerprint: null,
+          contentTypeScannedAt: null,
+          contentType: null,
+          selectedContentTypeSuggestionId: null,
+        });
+      }
     } finally {
       setLoading(false);
     }
