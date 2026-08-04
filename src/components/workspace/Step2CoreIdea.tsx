@@ -94,6 +94,14 @@ function ratingBar(score: number): string {
   return "bg-rose-400";
 }
 
+function ratingTag(score: number): { label: string; className: string } {
+  if (score >= 9)   return { label: "Đề xuất mạnh", className: "bg-emerald-600 text-white" };
+  if (score >= 8)   return { label: "Đề xuất",      className: "bg-emerald-100 text-emerald-800 border border-emerald-200" };
+  if (score >= 7)   return { label: "Cân nhắc",     className: "bg-blue-100 text-blue-800 border border-blue-200" };
+  if (score >= 5.5) return { label: "Tùy chọn",     className: "bg-amber-100 text-amber-800 border border-amber-200" };
+  return { label: "Yếu", className: "bg-rose-100 text-rose-800 border border-rose-200" };
+}
+
 export default function Step2CoreIdea({
   article,
   config,
@@ -214,44 +222,42 @@ export default function Step2CoreIdea({
     <div className="h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
         <div className="bg-white rounded-2xl p-6 flex-1 overflow-y-auto shadow-sm">
-          <div className="max-w-4xl mx-auto space-y-6">
+          <div className="max-w-6xl mx-auto space-y-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">Step 2: Core Idea & Angle</h2>
+                <h2 className="text-base font-bold text-slate-800 mb-1">Step 2 — Core Idea & Angle</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  AI đề xuất ≥3 core ideas cho loại nội dung <b>"{article.contentType || "(chưa chọn)"}"</b> dựa trên tài liệu Step 2 và Rules bắt buộc. Bạn chỉ cần chọn 1.
+                  AI đề xuất ≥3 core ideas cho loại nội dung <b>"{article.contentType || "(chưa chọn)"}"</b>. Chọn 1 để sang Step 3.
                 </p>
               </div>
               <button
                 onClick={fetchIdeas}
                 disabled={loading || !article.contentType || !bundle.totalCount}
-                className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
+                className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
               >
-                {loading ? "Đang phân tích..." : ideas.length ? "↻ Đề xuất lại" : "✨ Lấy đề xuất từ AI"}
+                {loading ? "Đang phân tích..." : ideas.length ? "Đề xuất lại" : "Lấy đề xuất"}
               </button>
             </div>
 
-            {/* Doc context summary */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between text-[11px] text-slate-600">
-              <span>Tài liệu AI đọc ở Step 2: <b>{describeBundle(bundle)}</b></span>
-              <span className="font-mono text-slate-500">Model: {model.name}</span>
-            </div>
-
             {error && (
-              <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-xs text-rose-700">{error}</div>
+              <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>
             )}
 
             {loading && (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {[0, 1, 2].map(i => (
-                  <div key={i} className="border-2 border-slate-100 rounded-2xl p-5 space-y-3">
-                    <div className="ai-loading h-5 w-3/4" />
+                  <div key={i} className="border-2 border-slate-100 rounded-2xl p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div className="ai-loading h-3 w-20" />
+                      <div className="ai-loading h-6 w-10" />
+                    </div>
+                    <div className="ai-loading h-5 w-full" />
                     <div className="ai-loading h-3 w-full" />
                     <div className="ai-loading h-3 w-5/6" />
-                    <div className="flex gap-2 pt-2">
-                      <div className="ai-loading h-6 w-20" />
-                      <div className="ai-loading h-6 w-24" />
-                      <div className="ai-loading h-6 w-16" />
+                    <div className="flex gap-1 pt-1">
+                      <div className="ai-loading h-5 w-16 rounded-full" />
+                      <div className="ai-loading h-5 w-20 rounded-full" />
+                      <div className="ai-loading h-5 w-14 rounded-full" />
                     </div>
                   </div>
                 ))}
@@ -259,135 +265,95 @@ export default function Step2CoreIdea({
             )}
 
             {!loading && ideas.length > 0 && (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {ideas.map(idea => {
                   const isSelected = selectedId === idea.id;
+                  const tag = ratingTag(idea.rating.overall);
                   return (
                     <button
                       key={idea.id}
                       onClick={() => handleSelect(idea)}
-                      className={`w-full text-left p-5 rounded-2xl border-2 transition-all space-y-4 ${
+                      className={`text-left rounded-2xl border-2 transition-all flex flex-col ${
                         isSelected
                           ? "border-slate-900 bg-slate-900/[0.02] ring-2 ring-slate-900 ring-offset-2 shadow-lg"
                           : "border-slate-200 bg-white hover:border-slate-400 hover:shadow-md"
                       }`}
                     >
-                      {/* Header: title + overall score */}
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 space-y-1.5">
+                      {/* Top: angle + tag + rating number */}
+                      <div className="flex items-start justify-between gap-2 p-4 pb-3">
+                        <div className="min-w-0 flex-1 space-y-1.5">
                           {idea.angleLabel && (
-                            <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">
+                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">
                               {idea.angleLabel}
                             </div>
                           )}
-                          <h3 className="text-base font-bold text-slate-800 leading-snug">{idea.title}</h3>
-                          {idea.angleDescription && (
-                            <p className="text-[11px] text-slate-500 italic">{idea.angleDescription}</p>
-                          )}
+                          <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${tag.className}`}>
+                            {tag.label}
+                          </span>
                         </div>
-                        <div className="shrink-0 text-center bg-slate-50 border border-slate-200 rounded-2xl px-3 py-2 min-w-[80px]">
-                          <div className={`text-2xl font-bold font-mono ${ratingColor(idea.rating.overall)}`}>
+                        <div className="shrink-0 text-right">
+                          <div className={`text-2xl font-bold font-mono leading-none ${ratingColor(idea.rating.overall)}`}>
                             {idea.rating.overall.toFixed(1)}
                           </div>
-                          <div className="text-[9px] font-bold text-slate-500 uppercase">Rating</div>
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">/10</div>
                         </div>
+                      </div>
+
+                      {/* Title */}
+                      <div className="px-4 pb-3">
+                        <h3 className="text-sm font-bold text-slate-800 leading-snug">{idea.title}</h3>
                       </div>
 
                       {/* Main argument */}
-                      <div className="bg-slate-50 border-l-4 border-slate-800 rounded-r-xl px-3 py-2.5">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Main Argument</div>
-                        <p className="text-xs text-slate-700 leading-relaxed">{idea.mainArgument}</p>
+                      <div className="mx-4 mb-3 bg-slate-50 border-l-4 border-slate-800 rounded-r-lg px-3 py-2">
+                        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Main Argument</div>
+                        <p className="text-[11px] text-slate-700 leading-relaxed">{idea.mainArgument}</p>
                       </div>
 
-                      {/* Rating breakdown */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {[
-                          { label: "SEO", val: idea.rating.seoPotential },
-                          { label: "Audience", val: idea.rating.audienceFit },
-                          { label: "Doc Support", val: idea.rating.docSupport },
-                          { label: "Uniqueness", val: idea.rating.uniqueness },
-                        ].map(r => (
-                          <div key={r.label} className="space-y-1">
-                            <div className="flex justify-between text-[10px]">
-                              <span className="text-slate-500 font-medium">{r.label}</span>
-                              <span className={`font-mono font-bold ${ratingColor(r.val)}`}>{r.val.toFixed(1)}</span>
-                            </div>
-                            <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all ${ratingBar(r.val)}`}
-                                style={{ width: `${Math.min(r.val * 10, 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {idea.ratingRationale && (
-                        <p className="text-[10px] text-slate-500 italic leading-relaxed">
-                          <span className="font-bold not-italic">Căn cứ chấm điểm:</span> {idea.ratingRationale}
-                        </p>
-                      )}
-
-                      {/* SEO Keywords */}
-                      <div className="space-y-1.5">
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Top SEO Keywords</div>
-                        <div className="flex flex-wrap gap-1.5">
+                      {/* Top SEO Keywords */}
+                      <div className="px-4 pb-3">
+                        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Top SEO Keywords</div>
+                        <div className="flex flex-wrap gap-1">
                           {idea.primaryKeyword && (
-                            <span className="text-[11px] font-bold bg-indigo-600 text-white px-2.5 py-1 rounded-full">
-                              ★ {idea.primaryKeyword}
+                            <span className="text-[10px] font-bold bg-indigo-600 text-white rounded-full px-2 py-0.5">
+                              {idea.primaryKeyword}
                             </span>
                           )}
                           {idea.secondaryKeywords.map((kw, i) => (
-                            <span key={i} className="text-[11px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-full">
+                            <span key={i} className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full px-2 py-0.5">
                               {kw}
                             </span>
                           ))}
                         </div>
                       </div>
 
-                      {/* Meta chips */}
-                      <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100">
-                        {idea.targetAudience && (
-                          <span className="text-[10px] font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
-                            👥 {idea.targetAudience}
-                          </span>
-                        )}
-                        {idea.recommendedTone && (
-                          <span className="text-[10px] font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
-                            🎙 Tone: {idea.recommendedTone}
-                          </span>
-                        )}
-                        {idea.recommendedWordCount > 0 && (
-                          <span className="text-[10px] font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
-                            📏 ~{idea.recommendedWordCount.toLocaleString()} từ
-                          </span>
-                        )}
+                      {/* Rating breakdown */}
+                      <div className="mt-auto border-t border-slate-100 p-4 space-y-1.5">
+                        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Rating breakdown</div>
+                        {[
+                          { label: "SEO Potential",  val: idea.rating.seoPotential },
+                          { label: "Audience Fit",   val: idea.rating.audienceFit },
+                          { label: "Doc Support",    val: idea.rating.docSupport },
+                          { label: "Uniqueness",     val: idea.rating.uniqueness },
+                        ].map(r => (
+                          <div key={r.label} className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 font-medium w-24 shrink-0">{r.label}</span>
+                            <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${ratingBar(r.val)}`}
+                                style={{ width: `${Math.min(r.val * 10, 100)}%` }}
+                              />
+                            </div>
+                            <span className={`text-[10px] font-mono font-bold w-6 text-right ${ratingColor(r.val)}`}>
+                              {r.val.toFixed(1)}
+                            </span>
+                          </div>
+                        ))}
                       </div>
 
-                      {/* Source refs */}
-                      {(idea.matchedDocs.length > 0 || idea.ruleRefs.length > 0) && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10px]">
-                          {idea.matchedDocs.length > 0 && (
-                            <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg p-2">
-                              <span className="font-bold text-indigo-700">KB/Action:</span>{" "}
-                              <span className="text-indigo-800">{idea.matchedDocs.join(", ")}</span>
-                            </div>
-                          )}
-                          {idea.ruleRefs.length > 0 && (
-                            <div className="bg-amber-50/60 border border-amber-100 rounded-lg p-2">
-                              <span className="font-bold text-amber-700">Rules:</span>{" "}
-                              <span className="text-amber-800">{idea.ruleRefs.join(", ")}</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
                       {isSelected && (
-                        <div className="flex items-center space-x-1 text-[11px] font-bold text-slate-900 pt-1">
-                          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
-                          </svg>
-                          <span>Đã chọn — sẵn sàng sang Step 3</span>
+                        <div className="border-t border-slate-100 px-4 py-2 text-[10px] font-bold text-slate-900">
+                          ✓ Đã chọn
                         </div>
                       )}
                     </button>
@@ -398,7 +364,7 @@ export default function Step2CoreIdea({
 
             {!loading && ideas.length === 0 && !error && article.contentType && bundle.totalCount > 0 && (
               <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
-                Nhấn <span className="font-semibold">"Lấy đề xuất từ AI"</span> để AI phân tích tài liệu và gợi ý core ideas.
+                Nhấn <span className="font-semibold">"Lấy đề xuất"</span> để AI phân tích tài liệu và gợi ý core ideas.
               </div>
             )}
           </div>
@@ -410,17 +376,14 @@ export default function Step2CoreIdea({
           onClick={onPrev}
           className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-5 rounded-2xl shadow-sm transition-all"
         >
-          ← Quay lại
+          Quay lại
         </button>
         <button
           onClick={onNext}
           disabled={!selectedId}
-          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all flex items-center space-x-2"
+          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all"
         >
-          <span>Tiếp tục → Draft Outline</span>
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
+          Tiếp tục — Draft Outline
         </button>
       </div>
     </div>

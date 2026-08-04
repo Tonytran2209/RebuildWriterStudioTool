@@ -287,7 +287,7 @@ export default function Step3Outline({
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">Step 3 — Draft Outline</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  AI dệt outline từ dữ liệu Step 1-2 và Rules DB. Mỗi section hiển thị keyword mapping, search intent và evidence trong 3 cột riêng biệt.
+                  Outline H2/H3 sinh từ dữ liệu Step 1-2 và Rules DB. Mỗi section có keywords và evidence trích rõ nguồn.
                 </p>
               </div>
               <button
@@ -297,55 +297,6 @@ export default function Step3Outline({
               >
                 {generating ? "Đang dựng..." : outline.length ? "Tạo lại" : "Tạo outline"}
               </button>
-            </div>
-
-            {/* Context brief */}
-            <div className="border border-slate-200 rounded-2xl overflow-hidden">
-              <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dữ liệu đầu vào</span>
-                <span className="text-[10px] font-mono text-slate-500">
-                  Docs Step 3: {describeBundle(bundle)} · Model: {model.name}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 md:grid-cols-6 divide-x divide-slate-100 text-[11px]">
-                <BriefCell label="Loại" value={contextBrief.contentType} />
-                <BriefCell label="Angle" value={contextBrief.angle} />
-                <BriefCell label="Tone" value={contextBrief.tone} />
-                <BriefCell label="Số từ" value={contextBrief.wordCount ? `${contextBrief.wordCount.toLocaleString()}` : ""} />
-                <BriefCell label="Primary KW" value={contextBrief.primaryKeyword} />
-                <BriefCell label="Độc giả" value={contextBrief.audience} />
-              </div>
-
-              {contextBrief.topic && (
-                <div className="border-t border-slate-100 px-4 py-2.5">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Core Idea</div>
-                  <div className="text-xs font-semibold text-slate-800">{contextBrief.topic}</div>
-                </div>
-              )}
-
-              {(contextBrief.secondaryKeywords.length > 0 || bundle.rules.length > 0) && (
-                <div className="border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
-                  {contextBrief.secondaryKeywords.length > 0 && (
-                    <div className="px-4 py-2.5">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Secondary keywords</div>
-                      <div className="flex flex-wrap gap-1">
-                        {contextBrief.secondaryKeywords.map(kw => (
-                          <span key={kw} className="text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 rounded px-1.5 py-0.5">
-                            {kw}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {bundle.rules.length > 0 && (
-                    <div className="px-4 py-2.5">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Rules áp dụng</div>
-                      <div className="text-[11px] text-amber-800">{bundle.rules.map(r => r.name).join(", ")}</div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
             {error && <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>}
@@ -479,17 +430,6 @@ export default function Step3Outline({
 
 // ─────────────────────────────────────────────────────────────
 
-function BriefCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="px-3 py-2">
-      <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{label}</div>
-      <div className="text-[11px] font-semibold text-slate-800 truncate mt-0.5">
-        {value || <span className="text-slate-300 italic font-normal">—</span>}
-      </div>
-    </div>
-  );
-}
-
 function SectionRow({
   section,
   onChange,
@@ -506,7 +446,6 @@ function SectionRow({
   onAddKeyword: (kw: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const intentMeta = section.searchIntent ? SEARCH_INTENT_META[section.searchIntent] : null;
   const isH3 = section.level === "h3";
 
   return (
@@ -530,12 +469,6 @@ function SectionRow({
           }`}
         />
 
-        {intentMeta && (
-          <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded border ${intentMeta.color}`}>
-            {intentMeta.label}
-          </span>
-        )}
-
         {/* Action buttons */}
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title="Lên">
@@ -558,8 +491,8 @@ function SectionRow({
         </div>
       </div>
 
-      {/* Metadata row: 3 columns Keywords | Evidence | Rules */}
-      <div className={`grid grid-cols-3 divide-x divide-slate-100 border-t border-slate-100 text-[10px] ${isH3 ? "pl-10" : ""}`}>
+      {/* Metadata row: Keywords + Evidence */}
+      <div className={`grid grid-cols-2 divide-x divide-slate-100 border-t border-slate-100 text-[10px] ${isH3 ? "pl-10" : ""}`}>
         <MetaCol label="Keywords" empty={!section.keywords?.length}>
           {section.keywords?.map((kw, i) => (
             <span
@@ -585,14 +518,6 @@ function SectionRow({
               title={e.note ? `${e.source} — ${e.note}` : e.source}
             >
               {e.source}
-            </span>
-          ))}
-        </MetaCol>
-
-        <MetaCol label="Rules" empty={!section.ruleRefs?.length}>
-          {section.ruleRefs?.map((r, i) => (
-            <span key={i} className="font-medium rounded px-1.5 py-0.5 border bg-amber-50 text-amber-700 border-amber-100">
-              {r}
             </span>
           ))}
         </MetaCol>
