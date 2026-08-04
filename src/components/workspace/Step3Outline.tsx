@@ -38,7 +38,26 @@ function extractJson(raw: string): unknown {
   const start = body.indexOf("[");
   const end = body.lastIndexOf("]");
   if (start === -1 || end === -1) throw new Error("Không tìm thấy mảng JSON.");
-  return JSON.parse(body.slice(start, end + 1));
+  const json = body.slice(start, end + 1);
+  try {
+    return JSON.parse(json);
+  } catch (firstError) {
+    // Repair common model-output mistakes without changing any text values:
+    // trailing commas, adjacent objects and missing commas between properties.
+    const repaired = json
+      .replace(/\u00a0/g, " ")
+      .replace(/,\s*([}\]])/g, "$1")
+      .replace(/}\s*{/g, "},{")
+      .replace(
+        /("(?:\\.|[^"\\])*"|\d+(?:\.\d+)?|true|false|null|\]|})\s*\n\s*(?="[^"\n]+"\s*:)/g,
+        "$1,\n",
+      );
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      throw firstError;
+    }
+  }
 }
 
 function toStringArr(v: unknown): string[] {
@@ -156,6 +175,7 @@ export default function Step3Outline({
           "- Mỗi section PHẢI ghi rõ: keywords được nhắm tới, searchIntent, evidence (nguồn tài liệu KB/Action/Rules đã dùng).",
           "",
           "Trả về DUY NHẤT một mảng JSON hợp lệ, không markdown fences, không giải thích.",
+          "- JSON phải parse được bằng JSON.parse: dùng dấu phẩy giữa mọi field/phần tử và escape dấu ngoặc kép nằm trong chuỗi bằng \\\".",
           "Schema mỗi phần tử:",
           `{
   "heading": string (tiêu đề section, sẵn sàng dùng),
@@ -186,8 +206,37 @@ export default function Step3Outline({
         "Yêu cầu: Trả về outline dạng JSON array với keyword mapping, search intent và evidence chi tiết cho từng section.",
       ].join("\n");
 
-      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 3 });
-      const parsed = extractJson(res.content);
+      const res = await callAI({
+        model,
+        railwayUrl,
+        prompt: userPrompt,
+        systemPrompt,
+        maxTokens: 8000,
+        temperature: 0.1,
+        stepNumber: 3,
+      });
+      let parsed: unknown;
+      try {
+        parsed = extractJson(res.content);
+      } catch {
+        const repairPrompt = [
+          "Chuẩn hóa nội dung bên dưới thành đúng một JSON array hợp lệ.",
+          "Giữ nguyên dữ liệu và thứ tự section; chỉ sửa cú pháp JSON, dấu phẩy và escape chuỗi.",
+          "Không thêm markdown hoặc giải thích.",
+          "",
+          res.content,
+        ].join("\n");
+        const repaired = await callAI({
+          model,
+          railwayUrl,
+          prompt: repairPrompt,
+          systemPrompt: "Bạn là JSON formatter. Chỉ trả về JSON array parse được bằng JSON.parse.",
+          maxTokens: 8000,
+          temperature: 0,
+          stepNumber: 3,
+        });
+        parsed = extractJson(repaired.content);
+      }
       const sections = normalizeSections(parsed);
       if (!sections.length) throw new Error("AI không trả về section hợp lệ.");
       onUpdate({ outline: sections });
@@ -250,8 +299,8 @@ export default function Step3Outline({
     onUpdate({ outline: next });
   };
 
-  const addSection = (extraKeyword?: string) => {
-    const heading = newSectionHeading.trim();
+  const addSection = (extraKeyword?: string, headingOverride?: string) => {
+    const heading = (headingOverride ?? newSectionHeading).trim();
     if (!heading) return;
     const kws = extraKeyword ? [extraKeyword] : [];
     onUpdate({
@@ -276,16 +325,16 @@ export default function Step3Outline({
 
   return (
     <div className="h-full flex flex-col gap-4 animate-fade-in-up">
-      <div className="bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
-        <div className="bg-white rounded-2xl p-6 flex-1 overflow-y-auto shadow-sm">
-          <div className="max-w-5xl mx-auto space-y-5">
+      <div className="bg-white rounded-2xl border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="p-5 md:p-6 flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto space-y-6">
 
             {/* Header */}
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">Step 3 — Draft Outline</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Outline H2/H3 sinh từ dữ liệu Step 1-2 và Rules DB. Mỗi section có keywords và evidence trích rõ nguồn.
+                  Đọc và chỉnh dàn ý theo đúng thứ tự bài viết. Mở chi tiết khi cần xem keyword, intent hoặc nguồn tham khảo.
                 </p>
               </div>
               <button
@@ -302,13 +351,9 @@ export default function Step3Outline({
             {generating && (
               <div className="space-y-2">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="border border-slate-100 rounded-xl p-3 space-y-2">
+                  <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-2">
                     <div className="ai-loading h-4 w-2/3" />
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="ai-loading h-3 w-full" />
-                      <div className="ai-loading h-3 w-full" />
-                      <div className="ai-loading h-3 w-full" />
-                    </div>
+                    <div className="ai-loading h-3 w-full" />
                   </div>
                 ))}
               </div>
@@ -330,10 +375,11 @@ export default function Step3Outline({
                   </span>
                 </div>
 
-                <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
-                  {outline.map(section => (
+                <div className="space-y-2.5">
+                  {outline.map((section, index) => (
                     <SectionRow
                       key={section.id}
+                      index={index}
                       section={section}
                       onChange={patch => updateSection(section.id, patch)}
                       onRemove={() => removeSection(section.id)}
@@ -347,7 +393,7 @@ export default function Step3Outline({
             )}
 
             {/* Add section */}
-            <div className="border border-slate-200 rounded-2xl p-4 space-y-3">
+            <div className="border border-slate-200 rounded-xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-bold text-slate-700">Thêm section hoặc luận điểm nhánh</div>
                 <button
@@ -393,10 +439,7 @@ export default function Step3Outline({
                     {suggestedKeywords.map(kw => (
                       <button
                         key={kw}
-                        onClick={() => {
-                          setNewSectionHeading(kw);
-                          addSection(kw);
-                        }}
+                        onClick={() => addSection(kw, kw)}
                         className="text-[11px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md px-2 py-0.5 transition-all"
                       >
                         {kw}
@@ -429,6 +472,7 @@ export default function Step3Outline({
 // ─────────────────────────────────────────────────────────────
 
 function SectionRow({
+  index,
   section,
   onChange,
   onRemove,
@@ -436,6 +480,7 @@ function SectionRow({
   keywordSuggestions,
   onAddKeyword,
 }: {
+  index: number;
   section: OutlineSection;
   onChange: (patch: Partial<OutlineSection>) => void;
   onRemove: () => void;
@@ -447,28 +492,55 @@ function SectionRow({
   const isH3 = section.level === "h3";
 
   return (
-    <div className={`group ${isH3 ? "bg-slate-50/40" : "bg-white"}`}>
-      {/* Compact header row */}
-      <div className={`flex items-center gap-3 px-4 py-2.5 ${isH3 ? "pl-10" : ""}`}>
-        <span
-          className={`shrink-0 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
-            isH3 ? "bg-slate-200 text-slate-600" : "bg-slate-800 text-white"
-          }`}
-        >
-          {section.level.toUpperCase()}
-        </span>
+    <div className={`group rounded-xl border transition-colors ${
+      isH3 ? "ml-6 border-slate-200 bg-slate-50/60" : "border-slate-200 bg-white"
+    }`}>
+      <div className="flex items-start gap-3 p-4">
+        <div className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${
+          isH3 ? "bg-white border border-slate-200 text-slate-500" : "bg-slate-900 text-white"
+        }`}>
+          {index + 1}
+        </div>
 
-        <input
-          value={section.heading}
-          onChange={e => onChange({ heading: e.target.value })}
-          placeholder="Tiêu đề section..."
-          className={`flex-1 bg-transparent outline-none text-slate-800 placeholder:text-slate-300 min-w-0 ${
-            isH3 ? "text-xs font-semibold" : "text-sm font-bold"
-          }`}
-        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+              {section.level.toUpperCase()}
+            </span>
+            {section.searchIntent && (
+              <span className="text-[9px] text-slate-400">· {SEARCH_INTENT_META[section.searchIntent].label}</span>
+            )}
+          </div>
+          <input
+            value={section.heading}
+            onChange={e => onChange({ heading: e.target.value })}
+            placeholder="Tiêu đề section..."
+            className={`w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-300 ${
+              isH3 ? "text-sm font-semibold" : "text-sm font-bold"
+            }`}
+          />
+          {section.notes && !expanded && (
+            <p className="text-[11px] text-slate-500 leading-relaxed mt-1.5">{section.notes}</p>
+          )}
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          {!expanded && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-3">
+              {section.keywords?.slice(0, 3).map((kw, i) => (
+                <span key={i} className="text-[10px] text-slate-600 bg-slate-100 rounded-md px-2 py-0.5">
+                  {kw}
+                </span>
+              ))}
+              {(section.keywords?.length ?? 0) > 3 && (
+                <span className="text-[10px] text-slate-400">+{section.keywords!.length - 3} keyword</span>
+              )}
+              {(section.evidence?.length ?? 0) > 0 && (
+                <span className="text-[10px] text-slate-400 ml-1">· {section.evidence!.length} nguồn</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-0.5 shrink-0">
           <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title="Lên">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>
           </button>
@@ -477,9 +549,9 @@ function SectionRow({
           </button>
           <button
             onClick={() => setExpanded(!expanded)}
-            className="text-[10px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-0.5 rounded border border-slate-200"
+            className="text-[10px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-md hover:bg-slate-100"
           >
-            {expanded ? "Đóng" : "Sửa"}
+            {expanded ? "Thu gọn" : "Chi tiết"}
           </button>
           <button onClick={onRemove} className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-500 rounded" title="Xoá">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -489,48 +561,9 @@ function SectionRow({
         </div>
       </div>
 
-      {/* Metadata row: Keywords + Evidence */}
-      <div className={`grid grid-cols-2 divide-x divide-slate-100 border-t border-slate-100 text-[10px] ${isH3 ? "pl-10" : ""}`}>
-        <MetaCol label="Keywords" empty={!section.keywords?.length}>
-          {section.keywords?.map((kw, i) => (
-            <span
-              key={i}
-              className={`font-medium rounded px-1.5 py-0.5 border ${
-                i === 0
-                  ? "bg-indigo-600 text-white border-indigo-600"
-                  : "bg-indigo-50 text-indigo-700 border-indigo-100"
-              }`}
-            >
-              {kw}
-            </span>
-          ))}
-        </MetaCol>
-
-        <MetaCol label="Evidence" empty={!section.evidence?.length}>
-          {section.evidence?.map((e, i) => (
-            <span
-              key={i}
-              className={`font-medium rounded px-1.5 py-0.5 border truncate max-w-full ${
-                e.role ? EVIDENCE_ROLE_STYLE[e.role] : "bg-slate-100 text-slate-700 border-slate-200"
-              }`}
-              title={e.note ? `${e.source} — ${e.note}` : e.source}
-            >
-              {e.source}
-            </span>
-          ))}
-        </MetaCol>
-      </div>
-
-      {/* Notes — only when present, one line */}
-      {section.notes && !expanded && (
-        <div className={`px-4 py-1.5 text-[10px] text-slate-500 italic border-t border-slate-100 ${isH3 ? "pl-10" : ""}`}>
-          {section.notes}
-        </div>
-      )}
-
       {/* Expanded editor */}
       {expanded && (
-        <div className={`border-t border-slate-100 bg-slate-50/50 px-4 py-3 space-y-2 ${isH3 ? "pl-10" : ""}`}>
+        <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-4 space-y-3">
           <div>
             <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Notes</label>
             <textarea
@@ -567,6 +600,36 @@ function SectionRow({
               </select>
             </div>
           </div>
+          {(section.keywords?.length ?? 0) > 0 && (
+            <div>
+              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Keywords</label>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {section.keywords?.map((kw, i) => (
+                  <span key={i} className="text-[10px] text-slate-600 bg-white border border-slate-200 rounded-md px-2 py-0.5">
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {(section.evidence?.length ?? 0) > 0 && (
+            <div>
+              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Nguồn tham khảo</label>
+              <div className="flex flex-wrap gap-1 mt-1">
+                {section.evidence?.map((e, i) => (
+                  <span
+                    key={i}
+                    className={`text-[10px] rounded-md px-2 py-0.5 border ${
+                      e.role ? EVIDENCE_ROLE_STYLE[e.role] : "bg-white text-slate-600 border-slate-200"
+                    }`}
+                    title={e.note ? `${e.source} — ${e.note}` : e.source}
+                  >
+                    {e.source}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {keywordSuggestions.length > 0 && (
             <div>
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
@@ -588,19 +651,6 @@ function SectionRow({
             </div>
           )}
         </div>
-      )}
-    </div>
-  );
-}
-
-function MetaCol({ label, empty, children }: { label: string; empty: boolean; children: React.ReactNode }) {
-  return (
-    <div className="px-3 py-2 min-w-0">
-      <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">{label}</div>
-      {empty ? (
-        <div className="text-slate-300 italic">—</div>
-      ) : (
-        <div className="flex flex-wrap gap-1">{children}</div>
       )}
     </div>
   );
