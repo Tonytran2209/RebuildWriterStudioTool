@@ -212,6 +212,10 @@ export default function App() {
               {article.currentStep === 1 && (
                 <Step1ContentType
                   article={article}
+                  config={config}
+                  files={files}
+                  model={currentModel || config.models[0]}
+                  railwayUrl={config.railwayUrl}
                   onUpdate={u => handleUpdateArticle(article.id, u)}
                   onNext={handleNext}
                 />
