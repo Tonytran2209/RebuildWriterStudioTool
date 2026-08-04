@@ -20,17 +20,17 @@ function generateId() {
   return Math.random().toString(36).slice(2, 9);
 }
 
-const SEARCH_INTENT_META: Record<SearchIntent, { label: string; color: string; icon: string }> = {
-  informational: { label: "Informational", color: "bg-blue-100 text-blue-700 border-blue-200", icon: "ℹ" },
-  commercial:    { label: "Commercial",    color: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: "◈" },
-  transactional: { label: "Transactional", color: "bg-amber-100 text-amber-700 border-amber-200", icon: "★" },
-  navigational:  { label: "Navigational",  color: "bg-slate-100 text-slate-700 border-slate-200", icon: "◎" },
+const SEARCH_INTENT_META: Record<SearchIntent, { label: string; color: string }> = {
+  informational: { label: "Informational", color: "bg-blue-50 text-blue-700 border-blue-200" },
+  commercial:    { label: "Commercial",    color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  transactional: { label: "Transactional", color: "bg-amber-50 text-amber-700 border-amber-200" },
+  navigational:  { label: "Navigational",  color: "bg-slate-100 text-slate-700 border-slate-200" },
 };
 
 const EVIDENCE_ROLE_STYLE: Record<string, string> = {
-  kb:     "bg-indigo-50 text-indigo-700 border-indigo-200",
-  action: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  rules:  "bg-amber-50 text-amber-700 border-amber-200",
+  kb:     "bg-indigo-50 text-indigo-700 border-indigo-100",
+  action: "bg-emerald-50 text-emerald-700 border-emerald-100",
+  rules:  "bg-amber-50 text-amber-700 border-amber-100",
 };
 
 function extractJson(raw: string): unknown {
@@ -162,11 +162,11 @@ export default function Step3Outline({
           `{
   "heading": string (tiêu đề section, sẵn sàng dùng),
   "level": "h2" | "h3",
-  "notes": string (1-2 câu mô tả nội dung sẽ trình bày),
-  "keywords": string[] (2-5 từ khóa nhắm tới trong section này, ưu tiên từ danh sách keywords có sẵn),
+  "notes": string (1 câu ngắn mô tả nội dung, tối đa 120 ký tự),
+  "keywords": string[] (2-5 từ khóa nhắm tới),
   "searchIntent": "informational" | "commercial" | "transactional" | "navigational",
-  "evidence": [{ "source": string (tên tài liệu), "note": string (data/luận điểm rút ra), "role": "kb" | "action" | "rules" }],
-  "ruleRefs": string[] (tên rule/guideline áp dụng cho section)
+  "evidence": [{ "source": string, "note": string, "role": "kb" | "action" | "rules" }],
+  "ruleRefs": string[]
 }`,
         ].join("\n"),
       );
@@ -280,83 +280,85 @@ export default function Step3Outline({
     <div className="h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
         <div className="bg-white rounded-2xl p-6 flex-1 overflow-y-auto shadow-sm">
-          <div className="max-w-4xl mx-auto space-y-5">
+          <div className="max-w-5xl mx-auto space-y-5">
+
             {/* Header */}
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">Step 3: Draft Outline</h2>
+                <h2 className="text-base font-bold text-slate-800 mb-1">Step 3 — Draft Outline</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  AI dệt outline từ dữ liệu Step 1-2 + Rules DB. Mỗi section có keyword mapping, search intent và evidence rõ nguồn.
+                  AI dệt outline từ dữ liệu Step 1-2 và Rules DB. Mỗi section hiển thị keyword mapping, search intent và evidence trong 3 cột riêng biệt.
                 </p>
               </div>
               <button
                 onClick={handleGenerate}
                 disabled={generating}
-                className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all flex items-center space-x-1.5"
+                className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all"
               >
-                {generating ? (
-                  <>
-                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    <span>AI đang dựng...</span>
-                  </>
-                ) : (
-                  <><span>✨</span><span>{outline.length ? "Tạo lại" : "AI Tạo Outline"}</span></>
-                )}
+                {generating ? "Đang dựng..." : outline.length ? "Tạo lại" : "Tạo outline"}
               </button>
             </div>
 
-            {/* Context brief — data from Step 1-2 + Rules */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dữ liệu đầu vào cho Outline</span>
-                <span className="text-[10px] font-mono text-slate-500">Tài liệu Step 3: {describeBundle(bundle)}</span>
+            {/* Context brief */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden">
+              <div className="bg-slate-50 border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Dữ liệu đầu vào</span>
+                <span className="text-[10px] font-mono text-slate-500">
+                  Docs Step 3: {describeBundle(bundle)} · Model: {model.name}
+                </span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px]">
-                <BriefItem icon="📋" label="Loại nội dung" value={contextBrief.contentType} tone="slate" />
-                <BriefItem icon="🎯" label="Angle" value={contextBrief.angle} tone="indigo" />
-                <BriefItem icon="🎙" label="Tone" value={contextBrief.tone} tone="slate" />
-                <BriefItem icon="👥" label="Độc giả" value={contextBrief.audience} tone="slate" wide />
-                <BriefItem icon="📏" label="Số từ" value={`${contextBrief.wordCount.toLocaleString()} từ`} tone="slate" />
-                <BriefItem icon="🔑" label="Primary KW" value={contextBrief.primaryKeyword} tone="indigo" />
+
+              <div className="grid grid-cols-3 md:grid-cols-6 divide-x divide-slate-100 text-[11px]">
+                <BriefCell label="Loại" value={contextBrief.contentType} />
+                <BriefCell label="Angle" value={contextBrief.angle} />
+                <BriefCell label="Tone" value={contextBrief.tone} />
+                <BriefCell label="Số từ" value={contextBrief.wordCount ? `${contextBrief.wordCount.toLocaleString()}` : ""} />
+                <BriefCell label="Primary KW" value={contextBrief.primaryKeyword} />
+                <BriefCell label="Độc giả" value={contextBrief.audience} />
               </div>
+
               {contextBrief.topic && (
-                <div className="bg-white border border-slate-200 rounded-xl p-2.5">
-                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Core Idea</div>
+                <div className="border-t border-slate-100 px-4 py-2.5">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Core Idea</div>
                   <div className="text-xs font-semibold text-slate-800">{contextBrief.topic}</div>
                 </div>
               )}
-              {contextBrief.secondaryKeywords.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {contextBrief.secondaryKeywords.map(kw => (
-                    <span key={kw} className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2 py-0.5">
-                      {kw}
-                    </span>
-                  ))}
-                </div>
-              )}
-              {bundle.rules.length > 0 && (
-                <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-2.5">
-                  <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-1">Rules & Guidelines áp dụng</div>
-                  <div className="text-[11px] text-amber-800">{bundle.rules.map(r => r.name).join(", ")}</div>
+
+              {(contextBrief.secondaryKeywords.length > 0 || bundle.rules.length > 0) && (
+                <div className="border-t border-slate-100 grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+                  {contextBrief.secondaryKeywords.length > 0 && (
+                    <div className="px-4 py-2.5">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Secondary keywords</div>
+                      <div className="flex flex-wrap gap-1">
+                        {contextBrief.secondaryKeywords.map(kw => (
+                          <span key={kw} className="text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 rounded px-1.5 py-0.5">
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {bundle.rules.length > 0 && (
+                    <div className="px-4 py-2.5">
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Rules áp dụng</div>
+                      <div className="text-[11px] text-amber-800">{bundle.rules.map(r => r.name).join(", ")}</div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {error && <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3 text-xs text-rose-700">{error}</div>}
+            {error && <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>}
 
             {generating && (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="space-y-2 p-4 border-2 border-slate-100 rounded-2xl">
-                    <div className="ai-loading h-5 w-2/3" />
-                    <div className="ai-loading h-3 w-full" />
-                    <div className="flex gap-2 pt-1">
-                      <div className="ai-loading h-5 w-16 rounded-full" />
-                      <div className="ai-loading h-5 w-20 rounded-full" />
-                      <div className="ai-loading h-5 w-14 rounded-full" />
+                  <div key={i} className="border border-slate-100 rounded-xl p-3 space-y-2">
+                    <div className="ai-loading h-4 w-2/3" />
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="ai-loading h-3 w-full" />
+                      <div className="ai-loading h-3 w-full" />
+                      <div className="ai-loading h-3 w-full" />
                     </div>
                   </div>
                 ))}
@@ -364,25 +366,24 @@ export default function Step3Outline({
             )}
 
             {!generating && outline.length === 0 && (
-              <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 text-center">
-                <div className="text-3xl mb-3">📄</div>
+              <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center">
                 <p className="text-sm font-semibold text-slate-600">Chưa có outline</p>
-                <p className="text-xs text-slate-400 mt-1">Nhấn "AI Tạo Outline" để dệt dàn bài từ dữ liệu Step 1-2</p>
+                <p className="text-xs text-slate-400 mt-1">Nhấn "Tạo outline" để dệt dàn bài từ dữ liệu Step 1-2</p>
               </div>
             )}
 
-            {/* Outline sections */}
+            {/* Outline */}
             {!generating && outline.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-slate-500">
-                    <b className="text-slate-700">{outline.length}</b> section — <b>{h2Count}</b> H2 · <b>{h3Count}</b> H3
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                  <span>
+                    <span className="font-mono text-slate-700 font-bold">{outline.length}</span> section — {h2Count} H2 · {h3Count} H3
                   </span>
                 </div>
 
-                <div className="space-y-2.5">
+                <div className="border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
                   {outline.map(section => (
-                    <SectionCard
+                    <SectionRow
                       key={section.id}
                       section={section}
                       onChange={patch => updateSection(section.id, patch)}
@@ -396,16 +397,16 @@ export default function Step3Outline({
               </div>
             )}
 
-            {/* Add section panel */}
-            <div className="border-2 border-dashed border-slate-300 rounded-2xl p-4 space-y-3">
+            {/* Add section */}
+            <div className="border border-slate-200 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-bold text-slate-700">+ Thêm section hoặc luận điểm nhánh</div>
+                <div className="text-xs font-bold text-slate-700">Thêm section hoặc luận điểm nhánh</div>
                 <button
                   onClick={handleSuggestKeywords}
                   disabled={suggestingKeywords || (!contextBrief.angle && !contextBrief.topic)}
-                  className="text-[10px] font-semibold bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 text-indigo-700 border border-indigo-200 rounded-full px-3 py-1 transition-all"
+                  className="text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 border border-slate-200 rounded-md px-2.5 py-1 transition-all"
                 >
-                  {suggestingKeywords ? "..." : "💡 Gợi ý keyword theo angle"}
+                  {suggestingKeywords ? "Đang gợi ý..." : "Gợi ý keyword theo angle"}
                 </button>
               </div>
 
@@ -413,7 +414,7 @@ export default function Step3Outline({
                 <select
                   value={newSectionLevel}
                   onChange={e => setNewSectionLevel(e.target.value as "h2" | "h3")}
-                  className="bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-800"
+                  className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-slate-800"
                 >
                   <option value="h2">H2</option>
                   <option value="h3">H3</option>
@@ -423,12 +424,12 @@ export default function Step3Outline({
                   onChange={e => setNewSectionHeading(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && addSection()}
                   placeholder="Tiêu đề section mới..."
-                  className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-slate-800 placeholder:text-slate-400"
+                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-slate-800 placeholder:text-slate-400"
                 />
                 <button
                   onClick={() => addSection()}
                   disabled={!newSectionHeading.trim()}
-                  className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-1.5 rounded-xl transition-all"
+                  className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-all"
                 >
                   Thêm
                 </button>
@@ -437,9 +438,9 @@ export default function Step3Outline({
               {suggestedKeywords.length > 0 && (
                 <div>
                   <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                    Keyword gợi ý theo angle (click để tạo section mới với keyword đó)
+                    Keyword theo angle — click để tạo section mới
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1">
                     {suggestedKeywords.map(kw => (
                       <button
                         key={kw}
@@ -447,9 +448,9 @@ export default function Step3Outline({
                           setNewSectionHeading(kw);
                           addSection(kw);
                         }}
-                        className="text-[11px] font-semibold bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2.5 py-1 transition-all"
+                        className="text-[11px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md px-2 py-0.5 transition-all"
                       >
-                        + {kw}
+                        {kw}
                       </button>
                     ))}
                   </div>
@@ -462,17 +463,14 @@ export default function Step3Outline({
 
       <div className="flex justify-between shrink-0">
         <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-5 rounded-2xl shadow-sm transition-all">
-          ← Quay lại
+          Quay lại
         </button>
         <button
           onClick={onNext}
           disabled={outline.length === 0}
-          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all flex items-center space-x-2"
+          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all"
         >
-          <span>Tiếp tục → First Draft</span>
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-          </svg>
+          Tiếp tục — First Draft
         </button>
       </div>
     </div>
@@ -480,38 +478,19 @@ export default function Step3Outline({
 }
 
 // ─────────────────────────────────────────────────────────────
-// Sub-components
-// ─────────────────────────────────────────────────────────────
 
-const BRIEF_TONE: Record<string, string> = {
-  slate: "border-slate-200 bg-white",
-  indigo: "border-indigo-200 bg-indigo-50/70",
-};
-
-function BriefItem({
-  icon,
-  label,
-  value,
-  tone,
-  wide,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-  tone: string;
-  wide?: boolean;
-}) {
+function BriefCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className={`border rounded-xl px-2.5 py-1.5 ${BRIEF_TONE[tone]} ${wide ? "col-span-2" : ""}`}>
-      <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{icon} {label}</div>
+    <div className="px-3 py-2">
+      <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{label}</div>
       <div className="text-[11px] font-semibold text-slate-800 truncate mt-0.5">
-        {value || <span className="text-slate-400 italic font-normal">chưa có</span>}
+        {value || <span className="text-slate-300 italic font-normal">—</span>}
       </div>
     </div>
   );
 }
 
-function SectionCard({
+function SectionRow({
   section,
   onChange,
   onRemove,
@@ -531,26 +510,11 @@ function SectionCard({
   const isH3 = section.level === "h3";
 
   return (
-    <div
-      className={`group border-2 rounded-2xl p-4 transition-all ${
-        isH3
-          ? "border-slate-100 bg-white ml-6"
-          : "border-slate-200 bg-slate-50/60"
-      }`}
-    >
-      {/* Header row */}
-      <div className="flex items-start gap-2">
-        <div className="flex flex-col gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-          <button onClick={() => onMove(-1)} className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-800">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>
-          </button>
-          <button onClick={() => onMove(1)} className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-800">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
-          </button>
-        </div>
-
+    <div className={`group ${isH3 ? "bg-slate-50/40" : "bg-white"}`}>
+      {/* Compact header row */}
+      <div className={`flex items-center gap-3 px-4 py-2.5 ${isH3 ? "pl-10" : ""}`}>
         <span
-          className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-md mt-1 ${
+          className={`shrink-0 text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
             isH3 ? "bg-slate-200 text-slate-600" : "bg-slate-800 text-white"
           }`}
         >
@@ -561,116 +525,119 @@ function SectionCard({
           value={section.heading}
           onChange={e => onChange({ heading: e.target.value })}
           placeholder="Tiêu đề section..."
-          className={`flex-1 bg-transparent outline-none text-slate-800 placeholder:text-slate-300 ${
+          className={`flex-1 bg-transparent outline-none text-slate-800 placeholder:text-slate-300 min-w-0 ${
             isH3 ? "text-xs font-semibold" : "text-sm font-bold"
           }`}
         />
 
         {intentMeta && (
-          <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border ${intentMeta.color}`}>
-            {intentMeta.icon} {intentMeta.label}
+          <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded border ${intentMeta.color}`}>
+            {intentMeta.label}
           </span>
         )}
 
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-slate-700 shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-md border border-slate-200"
-        >
-          {expanded ? "−" : "+"} Edit
-        </button>
-        <button
-          onClick={onRemove}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-300 hover:text-red-500 shrink-0"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        {/* Action buttons */}
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title="Lên">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>
+          </button>
+          <button onClick={() => onMove(1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title="Xuống">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+          </button>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-[10px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-0.5 rounded border border-slate-200"
+          >
+            {expanded ? "Đóng" : "Sửa"}
+          </button>
+          <button onClick={onRemove} className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-500 rounded" title="Xoá">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Notes */}
-      {section.notes && !expanded && (
-        <p className="text-[11px] text-slate-600 mt-2 leading-relaxed pl-12">{section.notes}</p>
-      )}
-
-      {/* Keywords chips */}
-      {section.keywords && section.keywords.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-2 pl-12">
-          {section.keywords.map((kw, i) => (
+      {/* Metadata row: 3 columns Keywords | Evidence | Rules */}
+      <div className={`grid grid-cols-3 divide-x divide-slate-100 border-t border-slate-100 text-[10px] ${isH3 ? "pl-10" : ""}`}>
+        <MetaCol label="Keywords" empty={!section.keywords?.length}>
+          {section.keywords?.map((kw, i) => (
             <span
               key={i}
-              className={`text-[10px] font-semibold rounded-full px-2 py-0.5 border ${
+              className={`font-medium rounded px-1.5 py-0.5 border ${
                 i === 0
                   ? "bg-indigo-600 text-white border-indigo-600"
-                  : "bg-indigo-50 text-indigo-700 border-indigo-200"
+                  : "bg-indigo-50 text-indigo-700 border-indigo-100"
               }`}
             >
-              🔑 {kw}
+              {kw}
             </span>
           ))}
-        </div>
-      )}
+        </MetaCol>
 
-      {/* Evidence */}
-      {section.evidence && section.evidence.length > 0 && (
-        <div className="mt-2 pl-12 space-y-1">
-          <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Evidence</div>
-          <div className="flex flex-wrap gap-1">
-            {section.evidence.map((e, i) => (
-              <span
-                key={i}
-                className={`text-[10px] font-semibold rounded-md px-2 py-0.5 border ${
-                  e.role ? EVIDENCE_ROLE_STYLE[e.role] : "bg-slate-100 text-slate-700 border-slate-200"
-                }`}
-                title={e.note}
-              >
-                📎 {e.source}{e.note ? ` — ${e.note}` : ""}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+        <MetaCol label="Evidence" empty={!section.evidence?.length}>
+          {section.evidence?.map((e, i) => (
+            <span
+              key={i}
+              className={`font-medium rounded px-1.5 py-0.5 border truncate max-w-full ${
+                e.role ? EVIDENCE_ROLE_STYLE[e.role] : "bg-slate-100 text-slate-700 border-slate-200"
+              }`}
+              title={e.note ? `${e.source} — ${e.note}` : e.source}
+            >
+              {e.source}
+            </span>
+          ))}
+        </MetaCol>
 
-      {/* Rules refs */}
-      {section.ruleRefs && section.ruleRefs.length > 0 && (
-        <div className="mt-2 pl-12 text-[10px] text-amber-700">
-          <span className="font-bold">Rules:</span> {section.ruleRefs.join(", ")}
+        <MetaCol label="Rules" empty={!section.ruleRefs?.length}>
+          {section.ruleRefs?.map((r, i) => (
+            <span key={i} className="font-medium rounded px-1.5 py-0.5 border bg-amber-50 text-amber-700 border-amber-100">
+              {r}
+            </span>
+          ))}
+        </MetaCol>
+      </div>
+
+      {/* Notes — only when present, one line */}
+      {section.notes && !expanded && (
+        <div className={`px-4 py-1.5 text-[10px] text-slate-500 italic border-t border-slate-100 ${isH3 ? "pl-10" : ""}`}>
+          {section.notes}
         </div>
       )}
 
       {/* Expanded editor */}
       {expanded && (
-        <div className="mt-3 pl-12 space-y-2 border-t border-slate-200 pt-3">
+        <div className={`border-t border-slate-100 bg-slate-50/50 px-4 py-3 space-y-2 ${isH3 ? "pl-10" : ""}`}>
           <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Notes</label>
+            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Notes</label>
             <textarea
               value={section.notes}
               onChange={e => onChange({ notes: e.target.value })}
               rows={2}
               placeholder="Nội dung sẽ trình bày trong section..."
-              className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 resize-none mt-1"
+              className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 resize-none mt-1"
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Search Intent</label>
+              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Search Intent</label>
               <select
                 value={section.searchIntent || ""}
                 onChange={e => onChange({ searchIntent: (e.target.value || undefined) as SearchIntent | undefined })}
-                className="w-full bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-xs text-slate-700 outline-none mt-1"
+                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none mt-1"
               >
                 <option value="">— chưa xác định —</option>
                 {Object.entries(SEARCH_INTENT_META).map(([k, v]) => (
-                  <option key={k} value={k}>{v.icon} {v.label}</option>
+                  <option key={k} value={k}>{v.label}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Level</label>
+              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Level</label>
               <select
                 value={section.level}
                 onChange={e => onChange({ level: e.target.value as "h2" | "h3" })}
-                className="w-full bg-white border border-slate-200 rounded-xl px-2 py-1.5 text-xs text-slate-700 outline-none mt-1"
+                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none mt-1"
               >
                 <option value="h2">H2</option>
                 <option value="h3">H3</option>
@@ -679,7 +646,7 @@ function SectionCard({
           </div>
           {keywordSuggestions.length > 0 && (
             <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
                 Thêm keyword từ gợi ý
               </label>
               <div className="flex flex-wrap gap-1 mt-1">
@@ -689,15 +656,28 @@ function SectionCard({
                     <button
                       key={k}
                       onClick={() => onAddKeyword(k)}
-                      className="text-[10px] font-semibold bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2 py-0.5 transition-all"
+                      className="text-[10px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 transition-all"
                     >
-                      + {k}
+                      {k}
                     </button>
                   ))}
               </div>
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+function MetaCol({ label, empty, children }: { label: string; empty: boolean; children: React.ReactNode }) {
+  return (
+    <div className="px-3 py-2 min-w-0">
+      <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">{label}</div>
+      {empty ? (
+        <div className="text-slate-300 italic">—</div>
+      ) : (
+        <div className="flex flex-wrap gap-1">{children}</div>
       )}
     </div>
   );
