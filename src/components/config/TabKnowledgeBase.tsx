@@ -2,8 +2,8 @@ import { useRef } from 'react';
 import { useState } from 'react';
 import type { ActionDataSource, DocumentFile, FileCategory, KbSubTab } from '../../types';
 import ActionPlanTab from './ActionPlanTab';
-import { extractDocumentText } from '../../lib/fileText';
 import { isDocumentReady } from '../../lib/documentStatus';
+import { uploadDocumentToRailway } from '../../lib/railwayUpload';
 
 const FILE_ICONS: Record<string, { icon: string; color: string }> = {
   pdf: { icon: '📄', color: 'text-red-500' },
@@ -41,19 +41,10 @@ interface Props {
   onChange: (files: DocumentFile[]) => void;
   actionSources: ActionDataSource[];
   onActionSourcesChange: (sources: ActionDataSource[]) => void;
+  railwayUrl: string;
 }
 
-function generateId() {
-  return Math.random().toString(36).slice(2, 9);
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-export default function TabKnowledgeBase({ files, onChange, actionSources, onActionSourcesChange }: Props) {
+export default function TabKnowledgeBase({ files, onChange, actionSources, onActionSourcesChange, railwayUrl }: Props) {
   const [activeSubTab, setActiveSubTab] = useState<KbSubTab>('kb');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -70,19 +61,8 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
     try {
       const newFiles: DocumentFile[] = [];
       for (const f of Array.from(fileList)) {
-        const ext = f.name.split('.').pop()?.toLowerCase() || 'txt';
-        const content = (await extractDocumentText(f)).trim();
-        if (!content) throw new Error(`${f.name} không có nội dung văn bản để AI phân tích.`);
-        newFiles.push({
-          id: generateId(),
-          name: f.name,
-          size: formatBytes(f.size),
-          uploadedAt: new Date().toLocaleDateString('vi-VN'),
-          category: meta.category,
-          fileType: ext as DocumentFile['fileType'],
-          content,
-          contentUpdatedAt: new Date().toISOString(),
-        });
+        const result = await uploadDocumentToRailway(f, meta.category, railwayUrl);
+        newFiles.push(result.record as DocumentFile);
       }
       onChange([...files, ...newFiles]);
     } catch (error: unknown) {
@@ -118,7 +98,7 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
 
       {/* Action Plan subtab — multi-mode data input */}
       {activeSubTab === 'action' ? (
-        <ActionPlanTab sources={actionSources} onChange={onActionSourcesChange} />
+        <ActionPlanTab sources={actionSources} onChange={onActionSourcesChange} railwayUrl={railwayUrl} />
       ) : (
         <>
           {/* Upload zone */}

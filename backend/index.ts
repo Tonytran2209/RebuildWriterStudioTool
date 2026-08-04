@@ -1,10 +1,13 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { generate, getAvailableProviders } from './providers.ts';
 import { kvGet, kvSet, kvGetByPrefix, checkConnection } from './supabase.ts';
+import { extractDocumentText } from './documentParser.ts';
 
 // DIST_PATH env var set by Railway start command; fallback to sibling dist/ of cwd
 const DIST = process.env.DIST_PATH
@@ -16,8 +19,26 @@ console.log(`[static] serving frontend from: ${DIST}`);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors({ origin: '*' }));
+app.use(cors({ origin: process.env.CORS_ORIGIN || true }));
 app.use(express.json({ limit: '10mb' }));
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024, files: 1 },
+});
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function contentMetadata(content: string) {
+  return {
+    contentLength: content.length,
+    contentHash: crypto.createHash('sha256').update(content, 'utf8').digest('hex'),
+    scanStatus: 'ready' as const,
+  };
+}
 
 // ─── Serve Vite frontend static files ────────────────────────────────────────
 
@@ -158,7 +179,23 @@ app.get('/api/config', async (_req, res) => {
 
 app.post('/api/config', async (req, res) => {
   try {
-    await kvSet('writer:config', req.body);
+    const invalidSources = (req.body?.actionSources ?? []).filter((source: any) =>
+      typeof source?.content !== 'string' || !source.content.trim(),
+    );
+    if (invalidSources.length) {
+      return res.status(422).json({
+        error: `Có ${invalidSources.length} Action Plan source chưa có nội dung scan. Hãy xóa và tải/nhập lại.`,
+      });
+    }
+    const config = {
+      ...req.body,
+      actionSources: (req.body?.actionSources ?? []).map((source: any) => ({
+        ...source,
+        contentUpdatedAt: source.contentUpdatedAt ?? new Date().toISOString(),
+        ...contentMetadata(source.content),
+      })),
+    };
+    await kvSet('writer:config', config);
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -178,10 +215,79 @@ app.get('/api/files', async (_req, res) => {
 
 app.post('/api/files', async (req, res) => {
   try {
-    await kvSet('writer:files', req.body);
+    if (!Array.isArray(req.body)) return res.status(400).json({ error: 'Danh sách files không hợp lệ.' });
+    const invalidFiles = req.body.filter((file: any) => typeof file?.content !== 'string' || !file.content.trim());
+    if (invalidFiles.length) {
+      return res.status(422).json({
+        error: `Có ${invalidFiles.length} file chưa có nội dung scan. Hãy xóa và tải lại.`,
+      });
+    }
+    const files = req.body.map((file: any) => ({
+      ...file,
+      contentUpdatedAt: file.contentUpdatedAt ?? new Date().toISOString(),
+      ...contentMetadata(file.content),
+    }));
+    await kvSet('writer:files', files);
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Document upload: Railway parses, then persists extracted content ────────
+
+app.post('/api/upload/document', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Thiếu file upload.' });
+    const category = String(req.body.category ?? '');
+    if (!['kb', 'rules', 'action'].includes(category)) {
+      return res.status(400).json({ error: 'category phải là kb, rules hoặc action.' });
+    }
+
+    const content = (await extractDocumentText(req.file.buffer, req.file.originalname)).trim();
+    if (!content) return res.status(422).json({ error: 'File không có nội dung văn bản để AI scan.' });
+
+    const timestamp = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const fileType = req.file.originalname.split('.').pop()?.toLowerCase() ?? 'txt';
+
+    if (category === 'action') {
+      const config = (await kvGet<Record<string, any>>('writer:config')) ?? {};
+      const source = {
+        id,
+        name: req.file.originalname,
+        sourceType: 'file',
+        addedAt: timestamp,
+        contentUpdatedAt: timestamp,
+        fileType,
+        size: formatBytes(req.file.size),
+        content,
+        preview: content.split('\n').slice(0, 4).join('\n'),
+        rowCount: content.split('\n').filter(Boolean).length,
+        ...contentMetadata(content),
+      };
+      config.actionSources = [source, ...(config.actionSources ?? []).filter((item: any) => item.id !== id)];
+      await kvSet('writer:config', config);
+      return res.status(201).json({ target: 'writer:config.actionSources', record: source });
+    }
+
+    const record = {
+      id,
+      name: req.file.originalname,
+      size: formatBytes(req.file.size),
+      uploadedAt: timestamp,
+      category,
+      fileType,
+      content,
+      contentUpdatedAt: timestamp,
+      ...contentMetadata(content),
+    };
+    const files = (await kvGet<any[]>('writer:files')) ?? [];
+    await kvSet('writer:files', [record, ...files.filter(item => item.id !== id)]);
+    return res.status(201).json({ target: 'writer:files', record });
+  } catch (err: any) {
+    console.error('[upload/document] error:', err.message);
+    return res.status(500).json({ error: err.message || 'Không thể xử lý và lưu file.' });
   }
 });
 
@@ -196,5 +302,5 @@ app.get('*', (_req, res) => {
 app.listen(PORT, () => {
   console.log(`\n🚀 Writer Studio Backend running on port ${PORT}`);
   console.log(`   Providers: ${JSON.stringify(getAvailableProviders())}`);
-  console.log(`   Supabase:  ${!!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) ? '✓ Connected' : '✗ Not configured'}\n`);
+  console.log(`   Supabase:  ${!!(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY)) ? '✓ Connected' : '✗ Not configured'}\n`);
 });

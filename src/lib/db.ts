@@ -1,57 +1,64 @@
 import type { Article, AppConfig, DocumentFile } from '../types';
-import { kvGet, kvSet } from './supabase';
 
-// ── Keys ──────────────────────────────────────────────────────────────────────
+function resolveRailwayUrl(explicitUrl?: string): string {
+  const saved = typeof window !== 'undefined' ? localStorage.getItem('writer:railwayUrl') : null;
+  const sameOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const url = explicitUrl?.trim() || saved?.trim() || sameOrigin;
+  if (!url) throw new Error('Chưa cấu hình Railway URL.');
+  return url.replace(/\/$/, '');
+}
 
-const KEYS = {
-  articles: 'writer:articles',
-  config:   'writer:config',
-  files:    'writer:files',
-} as const;
+async function railwayRequest<T>(path: string, init?: RequestInit, railwayUrl?: string): Promise<T> {
+  const response = await fetch(`${resolveRailwayUrl(railwayUrl)}${path}`, init);
+  const payload = await response.json().catch(() => ({ error: response.statusText }));
+  if (!response.ok) throw new Error(payload.error || `Railway error ${response.status}`);
+  return payload as T;
+}
 
 // ── Articles ──────────────────────────────────────────────────────────────────
 
 export async function fetchArticles(): Promise<Article[]> {
-  return (await kvGet<Article[]>(KEYS.articles)) ?? [];
+  return railwayRequest<Article[]>('/api/articles');
 }
 
 export async function saveArticle(article: Article): Promise<void> {
-  const list = (await kvGet<Article[]>(KEYS.articles)) ?? [];
-  const next = [article, ...list.filter(a => a.id !== article.id)];
-  await kvSet(KEYS.articles, next);
+  await railwayRequest('/api/articles', jsonRequest('POST', article));
 }
 
 export async function updateArticle(id: string, updates: Partial<Article>): Promise<void> {
-  const list = (await kvGet<Article[]>(KEYS.articles)) ?? [];
-  const next = list.map(a =>
-    a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a
-  );
-  await kvSet(KEYS.articles, next);
+  await railwayRequest(`/api/articles/${encodeURIComponent(id)}`, jsonRequest('PUT', updates));
 }
 
 export async function deleteArticle(id: string): Promise<void> {
-  const list = (await kvGet<Article[]>(KEYS.articles)) ?? [];
-  await kvSet(KEYS.articles, list.filter(a => a.id !== id));
+  await railwayRequest(`/api/articles/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
 export async function fetchConfig(): Promise<AppConfig | null> {
-  return kvGet<AppConfig>(KEYS.config);
+  return railwayRequest<AppConfig | null>('/api/config');
 }
 
 export async function saveConfig(config: AppConfig): Promise<void> {
-  await kvSet(KEYS.config, config);
+  await railwayRequest('/api/config', jsonRequest('POST', config), config.railwayUrl);
 }
 
 // ── Files ─────────────────────────────────────────────────────────────────────
 
 export async function fetchFiles(): Promise<DocumentFile[]> {
-  return (await kvGet<DocumentFile[]>(KEYS.files)) ?? [];
+  return railwayRequest<DocumentFile[]>('/api/files');
 }
 
-export async function saveFiles(files: DocumentFile[]): Promise<void> {
-  await kvSet(KEYS.files, files);
+export async function saveFiles(files: DocumentFile[], railwayUrl: string): Promise<void> {
+  await railwayRequest('/api/files', jsonRequest('POST', files), railwayUrl);
+}
+
+function jsonRequest(method: string, body: unknown): RequestInit {
+  return {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
 }
 
 // ── Railway health check ───────────────────────────────────────────────────────

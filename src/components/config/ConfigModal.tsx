@@ -112,6 +112,7 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
                 onChange={setLocalFiles}
                 actionSources={localConfig.actionSources ?? []}
                 onActionSourcesChange={handleActionSourcesChange}
+                railwayUrl={localConfig.railwayUrl}
               />
             )}
           </div>

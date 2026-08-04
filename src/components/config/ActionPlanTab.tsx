@@ -1,17 +1,11 @@
 import { useState, useRef } from 'react';
 import type { ActionDataSource, ActionSourceType, ManualRow } from '../../types';
-import { extractDocumentText } from '../../lib/fileText';
 import { isActionSourceReady } from '../../lib/documentStatus';
+import { uploadDocumentToRailway } from '../../lib/railwayUpload';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function uid() { return Math.random().toString(36).slice(2, 9); }
-
-function formatBytes(b: number) {
-  if (b < 1024) return `${b} B`;
-  if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`;
-  return `${(b / 1048576).toFixed(1)} MB`;
-}
 
 function csvPreview(text: string, maxRows = 4): string {
   return text.split('\n').slice(0, maxRows).join('\n');
@@ -46,7 +40,7 @@ const SOURCE_ICONS: Record<ActionSourceType, string> = {
 
 // ── sub-forms ─────────────────────────────────────────────────────────────────
 
-function FileForm({ onAdd }: { onAdd: (sources: ActionDataSource[]) => void }) {
+function FileForm({ onAdd, railwayUrl }: { onAdd: (sources: ActionDataSource[]) => void; railwayUrl: string }) {
   const ref = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -60,14 +54,8 @@ function FileForm({ onAdd }: { onAdd: (sources: ActionDataSource[]) => void }) {
     try {
       const extracted: ActionDataSource[] = [];
       for (const f of Array.from(list)) {
-        const ext = f.name.split('.').pop()?.toLowerCase() ?? 'csv';
-        const content = (await extractDocumentText(f)).trim();
-        if (!content) throw new Error(`${f.name} không có nội dung văn bản để AI phân tích.`);
-        extracted.push({
-          id: uid(), name: f.name, sourceType: 'file', addedAt: now(), contentUpdatedAt: now(),
-          fileType: ext, size: formatBytes(f.size), content,
-          preview: csvPreview(content), rowCount: countRows(content),
-        });
+        const result = await uploadDocumentToRailway(f, 'action', railwayUrl);
+        extracted.push(result.record as ActionDataSource);
       }
       onAdd(extracted);
     } catch (e: unknown) {
@@ -88,7 +76,7 @@ function FileForm({ onAdd }: { onAdd: (sources: ActionDataSource[]) => void }) {
         bg-emerald-50/30 border-emerald-200 hover:border-emerald-500 ${dragging ? 'scale-[0.99] opacity-75' : ''}`}
     >
       <div className="text-3xl mb-2">📁</div>
-      <p className="text-xs font-bold text-slate-700">{reading ? 'Đang trích xuất nội dung...' : 'Kéo thả hoặc nhấp để chọn file'}</p>
+      <p className="text-xs font-bold text-slate-700">{reading ? 'Railway đang scan và lưu Supabase...' : 'Kéo thả hoặc nhấp để chọn file'}</p>
       <p className="text-[11px] text-slate-400 mt-1">CSV · XLSX · JSON · PDF · TXT · XML</p>
       <input ref={ref} type="file" multiple accept=".csv,.xlsx,.json,.pdf,.txt,.xml,.tsv" className="hidden" onChange={e => handle(e.target.files)} />
       {error && <p className="text-[11px] text-red-600 mt-2">{error}</p>}
@@ -432,9 +420,10 @@ const shortDate = () => new Date().toLocaleDateString('vi-VN');
 interface Props {
   sources: ActionDataSource[];
   onChange: (sources: ActionDataSource[]) => void;
+  railwayUrl: string;
 }
 
-export default function ActionPlanTab({ sources = [], onChange }: Props) {
+export default function ActionPlanTab({ sources = [], onChange, railwayUrl }: Props) {
   const [mode, setMode] = useState<ActionSourceType>('file');
 
   const addSource = (s: ActionDataSource) => onChange([s, ...sources]);
@@ -468,7 +457,7 @@ export default function ActionPlanTab({ sources = [], onChange }: Props) {
 
       {/* Active form */}
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-        {mode === 'file'     && <FileForm     onAdd={addSources} />}
+        {mode === 'file'     && <FileForm     onAdd={addSources} railwayUrl={railwayUrl} />}
         {mode === 'paste'    && <PasteForm    onAdd={addSource} />}
         {mode === 'url'      && <UrlForm      onAdd={addSource} />}
         {mode === 'gsheet'   && <GSheetForm   onAdd={addSource} />}

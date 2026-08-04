@@ -96,7 +96,7 @@ export default function App() {
     if (newConfig.railwayUrl) localStorage.setItem('writer:railwayUrl', newConfig.railwayUrl);
     setSyncStatus('saving');
     try {
-      await Promise.all([db.saveConfig(newConfig), db.saveFiles(newFiles)]);
+      await Promise.all([db.saveConfig(newConfig), db.saveFiles(newFiles, newConfig.railwayUrl)]);
       setSyncStatus('idle');
     } catch {
       setSyncStatus('error');

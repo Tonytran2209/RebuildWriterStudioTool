@@ -22,6 +22,9 @@ export interface DocumentFile {
   fileType: FileType;
   content?: string;
   contentUpdatedAt?: string;
+  contentLength?: number;
+  contentHash?: string;
+  scanStatus?: 'ready' | 'error';
 }
 
 export interface StepFileAccess {
@@ -182,6 +185,9 @@ export interface ActionDataSource {
   // Paste / Manual
   content?: string;       // raw text hoặc CSV string
   contentUpdatedAt?: string; // dùng để phát hiện Action Plan quý mới
+  contentLength?: number;
+  contentHash?: string;
+  scanStatus?: 'ready' | 'error';
   // URL / GSheet
   url?: string;
   headers?: Record<string, string>;   // custom request headers cho API
