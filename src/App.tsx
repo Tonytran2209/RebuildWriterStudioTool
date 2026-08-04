@@ -34,11 +34,14 @@ export default function App() {
   const [files, setFiles] = useState<DocumentFile[]>([]);
   const [showConfig, setShowConfig] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading');
+  const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
 
   // Load all data from Supabase / Railway on mount
   useEffect(() => {
     const load = async () => {
       setSyncStatus('loading');
+      setInitialLoadError(null);
+      let loaded = false;
       try {
         const [remoteArticles, remoteConfig, remoteFiles] = await Promise.all([
           db.fetchArticles(),
@@ -58,10 +61,12 @@ export default function App() {
           }
         }
         if (remoteFiles?.length) setFiles(remoteFiles);
-      } catch {
-        // Backend not yet deployed — start with clean state
+        loaded = true;
+      } catch (error: unknown) {
+        setInitialLoadError(error instanceof Error ? error.message : String(error));
+        setSyncStatus('error');
       } finally {
-        setSyncStatus('idle');
+        if (loaded) setSyncStatus('idle');
       }
     };
     load();
@@ -140,6 +145,31 @@ export default function App() {
           <div className="w-40 h-1 bg-slate-200 rounded-full overflow-hidden mx-auto">
             <div className="h-full bg-slate-800 rounded-full w-3/5 animate-pulse" />
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (initialLoadError) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#f4f5f8] p-6">
+        <div className="max-w-md w-full bg-white border border-red-200 rounded-3xl p-6 text-center shadow-sm space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center text-xl mx-auto">!</div>
+          <div>
+            <h1 className="text-base font-bold text-slate-800">Không tải được dữ liệu từ Railway / Supabase</h1>
+            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+              Ứng dụng đã khóa thao tác lưu để tránh ghi đè database bằng dữ liệu rỗng.
+            </p>
+          </div>
+          <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-[11px] text-red-700 font-mono break-words">
+            {initialLoadError}
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm py-2.5 px-5 rounded-xl transition-all"
+          >
+            Thử tải lại
+          </button>
         </div>
       </div>
     );
