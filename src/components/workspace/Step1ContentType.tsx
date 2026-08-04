@@ -10,7 +10,6 @@ import type {
 import { callAI } from "../../lib/aiService";
 import {
   collectStepDocs,
-  buildDocContextBlock,
   buildRoleSystemPrompt,
   buildActionPlanFingerprint,
   describeBundle,
@@ -176,7 +175,6 @@ export default function Step1ContentType({
   const autoRequestedRef = useRef<string | null>(null);
 
   const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
-  const contextBlock = useMemo(() => buildDocContextBlock(bundle), [bundle]);
   const sourceFingerprint = useMemo(() => buildActionPlanFingerprint(bundle), [bundle]);
   const scanIsStale = Boolean(
     suggestions.length && article.contentTypeSourceFingerprint !== sourceFingerprint,
@@ -243,7 +241,7 @@ export default function Step1ContentType({
 
       const prompt = [
         `TÀI LIỆU ĐƯỢC PHÂN QUYỀN ĐỌC Ở STEP 1 (${describeBundle(bundle)}):`,
-        contextBlock,
+        "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 1 từ Supabase.",
         "",
         "Yêu cầu: Tổng hợp các loại nội dung từ Action Plan, phân loại đúng Type A/B/C, gán đúng wave + mốc thời gian + keywords cho từng loại.",
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
@@ -256,6 +254,7 @@ export default function Step1ContentType({
         systemPrompt,
         maxTokens: 8000,
         temperature: 0.1,
+        stepNumber: 1,
       });
       const parsed = extractJson(res.content);
       const evidence: EvidenceIndex = {

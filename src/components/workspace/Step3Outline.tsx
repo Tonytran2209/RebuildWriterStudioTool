@@ -11,7 +11,6 @@ import type {
 import { callAI } from "../../lib/aiService";
 import {
   collectStepDocs,
-  buildDocContextBlock,
   buildRoleSystemPrompt,
   describeBundle,
 } from "../../lib/docContext";
@@ -125,7 +124,6 @@ export default function Step3Outline({
   const outline = article.outline || [];
 
   const bundle = useMemo(() => collectStepDocs(3, config, files), [config, files]);
-  const contextBlock = useMemo(() => buildDocContextBlock(bundle), [bundle]);
 
   const contextBrief = useMemo(() => {
     const kws = (article.keywords || "").split(",").map(k => k.trim()).filter(Boolean);
@@ -173,7 +171,7 @@ export default function Step3Outline({
 
       const userPrompt = [
         `TÀI LIỆU STEP 3 (${describeBundle(bundle)}):`,
-        contextBlock,
+        "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 3 từ Supabase.",
         "",
         "DỮ LIỆU TỪ 2 BƯỚC TRƯỚC:",
         `- Loại nội dung (Step 1): ${contextBrief.contentType}`,
@@ -188,7 +186,7 @@ export default function Step3Outline({
         "Yêu cầu: Trả về outline dạng JSON array với keyword mapping, search intent và evidence chi tiết cho từng section.",
       ].join("\n");
 
-      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt });
+      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 3 });
       const parsed = extractJson(res.content);
       const sections = normalizeSections(parsed);
       if (!sections.length) throw new Error("AI không trả về section hợp lệ.");
@@ -216,14 +214,14 @@ export default function Step3Outline({
       );
       const userPrompt = [
         `TÀI LIỆU STEP 3 (${describeBundle(bundle)}):`,
-        contextBlock,
+        "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 3 từ Supabase.",
         "",
         `Chủ đề: "${contextBrief.topic}" · Angle: "${contextBrief.angle}"`,
         `Keywords đã có: ${[contextBrief.primaryKeyword, ...contextBrief.secondaryKeywords].join(", ")}`,
         "",
         "Trả về JSON array các chuỗi keyword, không giải thích.",
       ].join("\n");
-      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt });
+      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 3 });
       const parsed = extractJson(res.content);
       if (!Array.isArray(parsed)) throw new Error("Không phải mảng.");
       setSuggestedKeywords(parsed.map(String).filter(Boolean));

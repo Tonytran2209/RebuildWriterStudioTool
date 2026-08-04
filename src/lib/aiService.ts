@@ -4,10 +4,10 @@ export interface AIRequest {
   model: AIModel;
   prompt: string;
   systemPrompt?: string;
-  contextDocs?: string[];
   railwayUrl?: string;
   maxTokens?: number;
   temperature?: number;
+  stepNumber: 1 | 2 | 3 | 4;
 }
 
 export interface AIResponse {
@@ -71,7 +71,7 @@ function getDemoKey(prompt: string): string {
 }
 
 export async function callAI(req: AIRequest): Promise<AIResponse> {
-  const { model, prompt, systemPrompt, contextDocs, maxTokens, temperature } = req;
+  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber } = req;
 
   // Resolve railway URL — prop → localStorage → hardcoded production URL
   const railwayUrl = req.railwayUrl
@@ -88,7 +88,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
           provider: model.provider,
           prompt,
           systemPrompt,
-          contextDocs,
+          stepNumber,
           maxTokens,
           temperature,
         }),

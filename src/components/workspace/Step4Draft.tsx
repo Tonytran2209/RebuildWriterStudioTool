@@ -3,7 +3,6 @@ import type { Article, AIModel, AppConfig, DocumentFile } from '../../types';
 import { callAI } from '../../lib/aiService';
 import {
   collectStepDocs,
-  buildDocContextBlock,
   buildRoleSystemPrompt,
   describeBundle,
 } from '../../lib/docContext';
@@ -74,7 +73,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
       );
       const userPrompt = [
         `TÀI LIỆU STEP 4 (${describeBundle(bundle)}):`,
-        buildDocContextBlock(bundle),
+        'Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 4 từ Supabase.',
         '',
         'THÔNG TIN BÀI VIẾT:',
         `- Chủ đề: "${article.topic}"`,
@@ -88,7 +87,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         'Yêu cầu: Viết bài hoàn chỉnh theo dàn bài trên, tuân thủ toàn bộ Rules & Guidelines.',
       ].join('\n');
 
-      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt });
+      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 4 });
       onUpdate({ draft: res.content });
       if (editorRef.current) editorRef.current.innerText = res.content;
     } finally {

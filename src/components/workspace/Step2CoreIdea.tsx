@@ -9,7 +9,6 @@ import type {
 import { callAI } from "../../lib/aiService";
 import {
   collectStepDocs,
-  buildDocContextBlock,
   buildRoleSystemPrompt,
   describeBundle,
 } from "../../lib/docContext";
@@ -119,7 +118,6 @@ export default function Step2CoreIdea({
   const autoRequestedRef = useRef<string | null>(null);
 
   const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
-  const contextBlock = useMemo(() => buildDocContextBlock(bundle), [bundle]);
 
   const fetchIdeas = async () => {
     if (!article.contentType) {
@@ -168,7 +166,7 @@ export default function Step2CoreIdea({
 
       const userPrompt = [
         `TÀI LIỆU STEP 2 (${describeBundle(bundle)}):`,
-        contextBlock,
+        "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 2 từ Supabase.",
         "",
         "LOẠI NỘI DUNG ĐÃ CHỌN Ở STEP 1:",
         `- ${article.contentType}`,
@@ -177,7 +175,7 @@ export default function Step2CoreIdea({
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
       ].join("\n");
 
-      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt });
+      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 2 });
       const parsed = extractJson(res.content);
       const normalized = normalizeIdeas(parsed);
       if (normalized.length < 3) throw new Error(`AI chỉ trả về ${normalized.length} idea hợp lệ (yêu cầu ≥3).`);

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { generate, getAvailableProviders } from './providers.ts';
 import { kvGet, kvSet, kvGetByPrefix, checkConnection } from './supabase.ts';
 import { extractDocumentText } from './documentParser.ts';
+import { resolveStepContext } from './stepContext.ts';
 
 // DIST_PATH env var set by Railway start command; fallback to sibling dist/ of cwd
 const DIST = process.env.DIST_PATH
@@ -60,10 +61,10 @@ app.get('/health', async (_req, res) => {
 // ─── AI Generate ─────────────────────────────────────────────────────────────
 
 app.post('/api/generate', async (req, res) => {
-  const { modelId, provider, prompt, systemPrompt, contextDocs, maxTokens, temperature } = req.body;
+  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature } = req.body;
 
-  if (!modelId || !provider || !prompt) {
-    return res.status(400).json({ error: 'modelId, provider và prompt là bắt buộc.' });
+  if (!modelId || !provider || !prompt || !Number.isInteger(stepNumber)) {
+    return res.status(400).json({ error: 'modelId, provider, prompt và stepNumber là bắt buộc.' });
   }
 
   const providers = getAvailableProviders();
@@ -74,10 +75,19 @@ app.post('/api/generate', async (req, res) => {
   }
 
   try {
-    console.log(`[generate] provider=${provider} model=${modelId} promptLen=${prompt.length}`);
-    const result = await generate({ modelId, provider, prompt, systemPrompt, contextDocs, maxTokens, temperature });
+    const stepContext = await resolveStepContext(stepNumber);
+    console.log(`[generate] step=${stepNumber} provider=${provider} model=${modelId} promptLen=${prompt.length} contextChars=${stepContext.summary.totalChars}`);
+    const result = await generate({
+      modelId,
+      provider,
+      prompt,
+      systemPrompt,
+      contextDocs: stepContext.contextDocs,
+      maxTokens,
+      temperature,
+    });
     console.log(`[generate] done — outputTokens=${result.usage?.outputTokens}`);
-    res.json(result);
+    res.json({ ...result, context: stepContext.summary });
   } catch (err: any) {
     console.error('[generate] error:', err.message);
     res.status(500).json({ error: err.message || 'Lỗi gọi AI API' });
