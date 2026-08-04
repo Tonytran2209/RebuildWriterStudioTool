@@ -1,4 +1,5 @@
 import type { AppConfig, DocumentFile, ActionDataSource } from "../types";
+import { isActionSourceReady, isDocumentReady } from "./documentStatus";
 
 export interface DocRef {
   name: string;
@@ -71,18 +72,20 @@ export function collectStepDocs(
   const knowledgeBase: DocRef[] = (access.kb ?? [])
     .map(id => files.find(f => f.id === id))
     .filter((f): f is DocumentFile => Boolean(f))
+    .filter(isDocumentReady)
     .map(formatFile);
 
   const actionPlan: DocRef[] = (access.action ?? []).flatMap(id => {
     const src = actionSources.find(s => s.id === id);
-    if (src) return [formatActionSource(src)];
+    if (src && isActionSourceReady(src)) return [formatActionSource(src)];
     const file = files.find(f => f.id === id);
-    return file ? [formatFile(file)] : [];
+    return file && isDocumentReady(file) ? [formatFile(file)] : [];
   });
 
   const rules: DocRef[] = (access.rules ?? [])
     .map(id => files.find(f => f.id === id))
     .filter((f): f is DocumentFile => Boolean(f))
+    .filter(isDocumentReady)
     .map(formatFile);
 
   return {

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { AppConfig, DocumentFile } from '../../types';
 import { STEP_LABELS } from '../../lib/defaultData';
 import { pingRailway } from '../../lib/db';
+import { isActionSourceReady, isDocumentReady } from '../../lib/documentStatus';
 
 interface Props {
   config: AppConfig;
@@ -30,6 +31,8 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const enabledModels = config.models.filter(m => m.enabled);
   const actionSources = config.actionSources ?? [];
+  const invalidDocumentCount = files.filter(file => !isDocumentReady(file)).length;
+  const invalidActionCount = actionSources.filter(source => !isActionSourceReady(source)).length;
 
   useEffect(() => {
     pingRailway(RAILWAY_URL).then(result => {
@@ -123,6 +126,16 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
         </div>
       )}
 
+      {(invalidDocumentCount > 0 || invalidActionCount > 0) && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-3 text-[11px] text-red-800 flex items-start gap-2">
+          <span>⚠️</span>
+          <span>
+            Có {invalidDocumentCount + invalidActionCount} bản ghi chỉ có tên file nhưng không có nội dung trong Supabase.
+            Các mục này đã bị vô hiệu hóa và sẽ không được cấp cho AI. Hãy xóa rồi tải lại file.
+          </span>
+        </div>
+      )}
+
       {/* Step cards */}
       {[1, 2, 3, 4].map(step => {
         const stepCfg = config.stepConfigs[step] ?? { modelId: '', fileAccess: { kb: [], action: [], rules: [] } };
@@ -162,12 +175,14 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                     <p className="text-[10px] text-slate-400 italic">Chưa có file</p>
                   ) : kbFiles.map(f => {
                     const selected = stepCfg.fileAccess?.kb ?? [];
+                    const ready = isDocumentReady(f);
                     return (
-                      <label key={f.id} className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={selected.includes(f.id)}
+                      <label key={f.id} className={`flex items-center gap-1.5 ${ready ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                        <input type="checkbox" checked={ready && selected.includes(f.id)} disabled={!ready}
                           onChange={() => toggleItem(step, 'kb', f.id)}
                           className="rounded border-slate-300 text-slate-900 focus:ring-slate-800 w-3 h-3" />
                         <span className="text-[10px] text-slate-700 truncate">{f.name}</span>
+                        {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">THIẾU DỮ LIỆU</span>}
                       </label>
                     );
                   })}
@@ -180,16 +195,18 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                     <p className="text-[10px] text-slate-400 italic">Chưa có nguồn dữ liệu</p>
                   ) : actionSources.map(s => {
                     const selected = stepCfg.fileAccess?.action ?? [];
+                    const ready = isActionSourceReady(s);
                     const icons: Record<string, string> = {
                       file: '📁', paste: '📋', url: '🔗', gsheet: '📊', manual: '✏️', supabase: '🗄️', airtable: '🔌',
                     };
                     return (
-                      <label key={s.id} className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={selected.includes(s.id)}
+                      <label key={s.id} className={`flex items-center gap-1.5 ${ready ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                        <input type="checkbox" checked={ready && selected.includes(s.id)} disabled={!ready}
                           onChange={() => toggleItem(step, 'action', s.id)}
                           className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3 h-3" />
                         <span className="text-[9px] shrink-0">{icons[s.sourceType] ?? '📄'}</span>
                         <span className="text-[10px] text-slate-700 truncate">{s.name}</span>
+                        {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">THIẾU DỮ LIỆU</span>}
                       </label>
                     );
                   })}
@@ -202,12 +219,14 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                     <p className="text-[10px] text-slate-400 italic">Chưa có file</p>
                   ) : rulesFiles.map(f => {
                     const selected = stepCfg.fileAccess?.rules ?? [];
+                    const ready = isDocumentReady(f);
                     return (
-                      <label key={f.id} className="flex items-center gap-1.5 cursor-pointer">
-                        <input type="checkbox" checked={selected.includes(f.id)}
+                      <label key={f.id} className={`flex items-center gap-1.5 ${ready ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                        <input type="checkbox" checked={ready && selected.includes(f.id)} disabled={!ready}
                           onChange={() => toggleItem(step, 'rules', f.id)}
                           className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3 h-3" />
                         <span className="text-[10px] text-slate-700 truncate">{f.name}</span>
+                        {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">THIẾU DỮ LIỆU</span>}
                       </label>
                     );
                   })}

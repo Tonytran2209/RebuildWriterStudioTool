@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import type { ActionDataSource, ActionSourceType, ManualRow } from '../../types';
 import { extractDocumentText } from '../../lib/fileText';
+import { isActionSourceReady } from '../../lib/documentStatus';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -439,6 +440,7 @@ export default function ActionPlanTab({ sources = [], onChange }: Props) {
   const addSource = (s: ActionDataSource) => onChange([s, ...sources]);
   const addSources = (newSources: ActionDataSource[]) => onChange([...newSources, ...sources]);
   const removeSource = (id: string) => onChange(sources.filter(s => s.id !== id));
+  const readySourceCount = sources.filter(isActionSourceReady).length;
 
   return (
     <div className="space-y-4">
@@ -483,8 +485,12 @@ export default function ActionPlanTab({ sources = [], onChange }: Props) {
             <span className="text-slate-400 font-normal ml-1">({sources.length})</span>
           </h4>
           {sources.length > 0 && (
-            <span className="text-[10px] text-emerald-600 font-semibold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md">
-              AI có thể đọc {sources.length} nguồn
+            <span className={`text-[10px] font-semibold border px-2 py-0.5 rounded-md ${
+              readySourceCount === sources.length
+                ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                : 'text-red-600 bg-red-50 border-red-100'
+            }`}>
+              AI có thể đọc {readySourceCount}/{sources.length} nguồn
             </span>
           )}
         </div>
@@ -497,8 +503,10 @@ export default function ActionPlanTab({ sources = [], onChange }: Props) {
           </div>
         ) : (
           <div className="space-y-1.5">
-            {sources.map(s => (
-              <div key={s.id} className="group flex items-start gap-3 bg-white border border-slate-200 rounded-xl p-3 hover:shadow-sm transition-all">
+            {sources.map(s => {
+              const ready = isActionSourceReady(s);
+              return (
+              <div key={s.id} className={`group flex items-start gap-3 bg-white border rounded-xl p-3 hover:shadow-sm transition-all ${ready ? 'border-slate-200' : 'border-red-200'}`}>
                 <span className="text-base mt-0.5 shrink-0">{SOURCE_ICONS[s.sourceType]}</span>
                 <div className="flex-1 min-w-0 space-y-0.5">
                   <div className="flex items-center gap-2">
@@ -513,6 +521,11 @@ export default function ActionPlanTab({ sources = [], onChange }: Props) {
                       'bg-yellow-100 text-yellow-700'
                     }`}>
                       {s.sourceType}
+                    </span>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${
+                      ready ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                    }`}>
+                      {ready ? `${s.content!.length.toLocaleString('vi-VN')} ký tự` : 'THIẾU NỘI DUNG — TẢI LẠI'}
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-400 font-mono truncate">
@@ -533,7 +546,8 @@ export default function ActionPlanTab({ sources = [], onChange }: Props) {
                   </svg>
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

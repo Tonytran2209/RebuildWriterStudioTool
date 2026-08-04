@@ -4,6 +4,7 @@ import TabStepSetup from './TabStepSetup';
 import TabModels from './TabModels';
 import TabKnowledgeBase from './TabKnowledgeBase';
 import { saveConfig } from '../../lib/db';
+import { sanitizeConfigFileAccess } from '../../lib/documentStatus';
 
 interface Props {
   config: AppConfig;
@@ -28,13 +29,15 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSave = () => {
-    onSave(localConfig, localFiles);
+    const sanitized = sanitizeConfigFileAccess(localConfig, localFiles);
+    setLocalConfig(sanitized);
+    onSave(sanitized, localFiles);
     onClose();
   };
 
   // Auto-save actionSources immediately to Supabase whenever they change
   const handleActionSourcesChange = async (sources: ActionDataSource[]) => {
-    const updated = { ...localConfig, actionSources: sources };
+    const updated = sanitizeConfigFileAccess({ ...localConfig, actionSources: sources }, localFiles);
     setLocalConfig(updated);
 
     // Debounce slightly to batch rapid changes

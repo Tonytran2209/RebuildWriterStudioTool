@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { ActionDataSource, DocumentFile, FileCategory, KbSubTab } from '../../types';
 import ActionPlanTab from './ActionPlanTab';
 import { extractDocumentText } from '../../lib/fileText';
+import { isDocumentReady } from '../../lib/documentStatus';
 
 const FILE_ICONS: Record<string, { icon: string; color: string }> = {
   pdf: { icon: '📄', color: 'text-red-500' },
@@ -164,12 +165,14 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
                       <th className="pb-2 font-bold pl-1">Tên File</th>
                       <th className="pb-2 font-bold">Kích thước</th>
                       <th className="pb-2 font-bold">Ngày tải lên</th>
+                      <th className="pb-2 font-bold">Dữ liệu DB</th>
                       <th className="pb-2 font-bold text-right pr-1">Hành động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200/60">
                     {catFiles.map(f => {
                       const iconMeta = FILE_ICONS[f.fileType] || FILE_ICONS.txt;
+                      const ready = isDocumentReady(f);
                       return (
                         <tr key={f.id} className="group hover:bg-white transition-colors">
                           <td className="py-2.5 pl-1">
@@ -180,6 +183,15 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
                           </td>
                           <td className="py-2.5 text-slate-500 font-mono text-[11px]">{f.size}</td>
                           <td className="py-2.5 text-slate-500">{f.uploadedAt}</td>
+                          <td className="py-2.5">
+                            <span className={`text-[9px] font-bold rounded-md border px-2 py-0.5 ${
+                              ready
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                : 'bg-red-50 border-red-200 text-red-700'
+                            }`}>
+                              {ready ? `${f.content!.length.toLocaleString('vi-VN')} ký tự` : 'Thiếu nội dung — tải lại'}
+                            </span>
+                          </td>
                           <td className="py-2.5 text-right pr-1">
                             <button
                               onClick={() => removeFile(f.id)}
