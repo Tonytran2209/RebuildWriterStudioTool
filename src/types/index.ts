@@ -83,6 +83,8 @@ export interface ContentTypeSuggestion {
   kbEvidence?: string;
   ruleEvidence?: string;
   actionPlanEvidence?: string;
+  scheduleEvidence?: string;
+  sourceYear?: number;
   icon?: string;
 }
 

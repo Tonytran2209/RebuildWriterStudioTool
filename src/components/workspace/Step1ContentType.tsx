@@ -43,7 +43,19 @@ function normalizeGroup(v: unknown): ContentTypeGroup | undefined {
 }
 
 function canonical(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim();
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\\([.()\[\]~-])/g, "$1")
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractDocumentYear(text: string): number | undefined {
+  const header = text.slice(0, 2500);
+  const match = header.match(/\b(20\d{2})\b/);
+  return match ? Number(match[1]) : undefined;
 }
 
 interface EvidenceIndex {
@@ -76,6 +88,7 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       const kbEvidence = String(obj.kbEvidence ?? "").trim();
       const ruleEvidence = String(obj.ruleEvidence ?? "").trim();
       const actionPlanEvidence = String(obj.actionPlanEvidence ?? "").trim();
+      const scheduleEvidence = String(obj.scheduleEvidence ?? "").trim();
       const referencesActionPlan = matchedDocs.some(name => evidence.actionPlanNames.has(canonical(name)));
       const referencesKb = kbRefs.some(name => evidence.kbNames.has(canonical(name)));
       const referencesRules = ruleRefs.some(name => evidence.ruleNames.has(canonical(name)));
@@ -86,25 +99,27 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       const keywordsExist = keywords.every(keyword => canonical(evidence.actionText).includes(canonical(keyword)));
       const actionQuote = canonical(actionPlanEvidence);
       const actionQuoteExists = Boolean(actionQuote) && canonical(evidence.actionText).includes(actionQuote);
-      const actionQuoteCoversMapping = actionQuote.includes(canonical(wave)) &&
-        actionQuote.includes(canonical(timeframe)) &&
+      const actionQuoteCoversTopic = actionQuote.includes(canonical(label)) &&
         keywords.every(keyword => actionQuote.includes(canonical(keyword)));
+      const scheduleQuote = canonical(scheduleEvidence);
+      const scheduleQuoteExists = Boolean(scheduleQuote) && canonical(evidence.actionText).includes(scheduleQuote);
+      const scheduleQuoteCoversPeriod = scheduleQuote.includes(canonical(wave)) &&
+        scheduleQuote.includes(canonical(timeframe));
       const kbQuote = canonical(kbEvidence);
       const ruleQuote = canonical(ruleEvidence);
       const kbQuoteExists = Boolean(kbQuote) && referencedKbText.includes(kbQuote);
       const ruleQuoteExists = Boolean(ruleQuote) && referencedRuleText.includes(ruleQuote);
       const typeExists = typeGroup
-        ? new RegExp(`(?:type|loại)[\\s:_-]*${typeGroup.toLocaleLowerCase()}\\b`).test(ruleQuote)
+        ? new RegExp(`(?:type|loại|comparison type)[\\s:_-]*${typeGroup.toLocaleLowerCase()}\\b`).test(`${kbQuote}\n${ruleQuote}`)
         : false;
-      const labelExists = kbQuote.includes(canonical(label));
-      const ruleMapsLabel = ruleQuote.includes(canonical(label));
       // Reject ungrounded values instead of allowing the model to invent a date, keyword or type.
       if (
         !typeGroup || !wave || !timeframe || !keywords.length ||
         !referencesActionPlan || !referencesKb || !referencesRules ||
         !waveExists || !timeframeExists || !keywordsExist ||
-        !actionQuoteExists || !actionQuoteCoversMapping ||
-        !kbQuoteExists || !ruleQuoteExists || !typeExists || !labelExists || !ruleMapsLabel
+        !actionQuoteExists || !actionQuoteCoversTopic ||
+        !scheduleQuoteExists || !scheduleQuoteCoversPeriod ||
+        !kbQuoteExists || !ruleQuoteExists || !typeExists
       ) return null;
       return {
         id: `sg-${idx}-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
@@ -122,6 +137,8 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
         kbEvidence,
         ruleEvidence,
         actionPlanEvidence,
+        scheduleEvidence,
+        sourceYear: extractDocumentYear(evidence.actionText),
         icon: obj.icon ? String(obj.icon) : undefined,
       } as ContentTypeSuggestion;
     })
@@ -135,6 +152,12 @@ const GROUP_META: Record<ContentTypeGroup, { title: string; accent: string; badg
 };
 
 const GROUP_ORDER: ContentTypeGroup[] = ["A", "B", "C"];
+
+function displayTimeframe(suggestion: ContentTypeSuggestion): string {
+  const timeframe = suggestion.timeframe ?? "";
+  if (!suggestion.sourceYear || /\b20\d{2}\b/.test(timeframe)) return timeframe;
+  return `${timeframe} · ${suggestion.sourceYear}`;
+}
 
 export default function Step1ContentType({
   article,
@@ -196,14 +219,16 @@ export default function Step1ContentType({
           "",
           "QUY TẮC PHÂN LOẠI (bắt buộc):",
           "- Nhận diện tên Content Type và typeGroup (A/B/C) từ CẢ Knowledge Base và Rules; không dùng Action Plan làm nguồn duy nhất để phân loại type.",
-          "- Tên Content Type và chuỗi Type A/B/C phải tồn tại nguyên văn trong KB hoặc Rules được dẫn nguồn.",
+          "- KB và Rules định nghĩa taxonomy/tiêu chí Type A/B/C; topic cụ thể lấy từ Action Plan. Không yêu cầu topic phải xuất hiện trong KB/Rules.",
           "- Mỗi loại thuộc một WAVE gắn với một MỐC THỜI GIAN — wave và timeframe PHẢI sao chép nguyên văn từ Action Plan, tuyệt đối không tự quy đổi quý/năm.",
           "- Mỗi loại gắn với đúng bộ keywords mà Action Plan chỉ định cho loại/wave đó. Trích nguyên văn, không thêm bớt từ khóa không có trong tài liệu.",
           "- Chỉ trả về lựa chọn có đủ nhóm + wave + timeframe + ít nhất 1 keyword. Bỏ qua mục thiếu dữ liệu thay vì suy đoán.",
           "- matchedDocs phải chứa chính xác tên của ít nhất một tài liệu Action Plan làm căn cứ cho lựa chọn.",
           "- kbRefs và ruleRefs phải chứa chính xác tên file KB và Rules dùng để nhận diện Content Type.",
-          "- kbEvidence phải là đoạn trích nguyên văn KB chứa tên Content Type; ruleEvidence phải là đoạn trích nguyên văn Rules chứa đồng thời tên Content Type và Type A/B/C tương ứng.",
-          "- actionPlanEvidence phải là một đoạn/hàng nguyên văn chứa đồng thời wave, timeframe và toàn bộ keywords trả về; không ghép dữ liệu từ các dòng khác nhau.",
+          "- kbEvidence và ruleEvidence là các đoạn trích nguyên văn mô tả tiêu chí taxonomy dùng để suy ra Type A/B/C.",
+          "- actionPlanEvidence là đoạn/hàng nguyên văn chứa topic và toàn bộ keywords trả về.",
+          "- scheduleEvidence là tiêu đề/đoạn nguyên văn chứa đồng thời wave và timeframe. Có thể khác actionPlanEvidence vì PDF tách lịch ở tiêu đề section.",
+          "- Với file Revised June 2026, giữ timeframe nguyên văn như 'Tháng 7'/'Tháng 8'; không đổi thành Q1/Q2/Q3/Q4 và không thêm năm khác.",
           "- Không dùng kiến thức ghi nhớ hoặc năm từ ví dụ. Nếu file ghi 2026 thì không được trả về 2024.",
           "",
           "NGUYÊN TẮC QUÉT DỮ LIỆU:",
@@ -212,7 +237,7 @@ export default function Step1ContentType({
           "",
           "Trả về DUY NHẤT một mảng JSON hợp lệ, không kèm markdown fences hay text giải thích.",
           "Mỗi phần tử schema:",
-          `{ "label": string, "typeGroup": "A" | "B" | "C", "wave": string, "timeframe": string (chép nguyên văn), "description": string, "keywords": string[] (chép nguyên văn), "matchedDocs": string[] (tên Action Plan), "kbRefs": string[] (tên KB), "ruleRefs": string[] (tên Rules), "kbEvidence": string (trích nguyên văn KB), "ruleEvidence": string (trích nguyên văn Rules), "actionPlanEvidence": string (trích nguyên văn một hàng/đoạn Action Plan) }`,
+          `{ "label": string (topic Action Plan), "typeGroup": "A" | "B" | "C", "wave": string, "timeframe": string (chép nguyên văn), "description": string, "keywords": string[] (chép nguyên văn), "matchedDocs": string[] (tên Action Plan), "kbRefs": string[] (tên KB), "ruleRefs": string[] (tên Rules), "kbEvidence": string, "ruleEvidence": string, "actionPlanEvidence": string (topic + keywords), "scheduleEvidence": string (wave + timeframe) }`,
         ].join("\n"),
       );
 
@@ -224,7 +249,14 @@ export default function Step1ContentType({
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
       ].join("\n");
 
-      const res = await callAI({ model, railwayUrl, prompt, systemPrompt });
+      const res = await callAI({
+        model,
+        railwayUrl,
+        prompt,
+        systemPrompt,
+        maxTokens: 8000,
+        temperature: 0.1,
+      });
       const parsed = extractJson(res.content);
       const evidence: EvidenceIndex = {
         actionPlanNames: new Set(bundle.actionPlan.map(doc => canonical(doc.name))),
@@ -290,7 +322,7 @@ export default function Step1ContentType({
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">Step 1 — Content Type</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  AI tổng hợp Content Type từ Action Plan, phân theo <b>Type A / B / C</b> — mỗi loại gắn wave, mốc thời gian và bộ keyword riêng. Chọn 1 để sang Step 2.
+                  AI lấy topic, wave và timeframe từ Action Plan; dùng Knowledge Base + Rules để phân loại <b>Type A / B / C</b>. Chọn 1 để sang Step 2.
                 </p>
               </div>
               <button
@@ -309,7 +341,7 @@ export default function Step1ContentType({
                   : "bg-emerald-50 border-emerald-200 text-emerald-700"
               }`}>
                 {scanIsStale
-                  ? "Action Plan đã thay đổi — AI đang cần quét lại dữ liệu quý mới."
+                  ? "Nguồn KB / Rules / Action Plan đã thay đổi — AI đang cần quét lại dữ liệu."
                   : `Đã quét Action Plan lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")}.`}
               </div>
             )}
@@ -344,7 +376,7 @@ export default function Step1ContentType({
                   const meta = GROUP_META[g];
                   const waves = Object.entries(
                     items.reduce<Record<string, ContentTypeSuggestion[]>>((acc, item) => {
-                      const key = `${item.wave}|||${item.timeframe}`;
+                      const key = `${item.wave}|||${displayTimeframe(item)}`;
                       (acc[key] ??= []).push(item);
                       return acc;
                     }, {}),
@@ -478,7 +510,7 @@ function SuggestionCard({
           )}
           {s.timeframe && (
             <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
-              {s.timeframe}
+              {displayTimeframe(s)}
             </span>
           )}
         </div>
