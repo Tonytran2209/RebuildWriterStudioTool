@@ -134,13 +134,16 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
       continue;
     }
     for (const section of waveSections) {
-      const key = `${item.document.id}:${section.wave}:${section.timeframe ?? ''}`;
+      // Publishing wave is the unit of work. A timeframe found inside an individual
+      // row must not split that row into a tiny standalone AI request.
+      const key = `${item.document.id}:${section.wave}`;
       const group = groups.get(key) ?? {
         wave: section.wave!,
         timeframe: section.timeframe,
         expectedTypeGroups: new Set<'A' | 'B' | 'C'>(),
         documents: [],
       };
+      if (!group.timeframe && section.timeframe) group.timeframe = section.timeframe;
       section.typeGroups.forEach(typeGroup => group.expectedTypeGroups.add(typeGroup));
       const existing = group.documents[0]?.document;
       const content = existing

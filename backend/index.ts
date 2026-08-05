@@ -222,7 +222,7 @@ app.post('/api/generate', async (req, res) => {
       : [await resolveStepContext(stepNumber)];
     const contextMs = Date.now() - contextsStartedAt;
     const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
-    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 3 });
+    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 4 });
     const cached = await kvGet<any>(cacheKey);
     if (cached?.content) {
       console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
@@ -233,51 +233,77 @@ app.post('/api/generate', async (req, res) => {
     const providerStartedAt = Date.now();
     let result;
     if (stepNumber === 1 && splitByWave) {
-      const waveResults = await runWithConcurrency(contexts as StepWaveContext[], 3, async context => {
-        const callWave = async (correction?: string) => {
-          const waveInstruction = [
+      try {
+        const waveResults = await runWithConcurrency(contexts as StepWaveContext[], 3, async context => {
+          const callWave = async (correction?: string) => {
+            const waveInstruction = [
+              systemPrompt ?? '',
+              '',
+              `PHẠM VI REQUEST NÀY: Chỉ tổng hợp dữ liệu thuộc ${context.wave}${context.timeframe ? `, timeframe ${context.timeframe}` : ''}.`,
+              'Không đưa dữ liệu từ wave khác vào response. Vẫn phải trả về duy nhất JSON array hợp lệ.',
+              context.expectedTypeGroups.length
+                ? `Phải bao phủ đầy đủ các nhóm nhận diện được trong section: ${context.expectedTypeGroups.map(group => `Type ${group}`).join(', ')}.`
+                : 'Phải trả về tất cả lựa chọn hợp lệ có trong phạm vi này; không dừng sau lựa chọn đầu tiên.',
+              correction ?? '',
+            ].filter(Boolean).join('\n');
+            const response = await generate({
+              modelId,
+              provider,
+              prompt,
+              systemPrompt: waveInstruction,
+              contextDocs: context.contextDocs,
+              maxTokens: Math.min(maxTokens ?? 6000, 6000),
+              temperature,
+            });
+            const items = extractJsonArray(response.content);
+            validateStep1Items(items, context.actionText);
+            const missing = missingStep1Coverage(items, context);
+            if (missing.length) throw new Error(`Thiếu độ phủ: ${missing.join(', ')}`);
+            return { response, items };
+          };
+
+          try {
+            return await callWave();
+          } catch (firstError: any) {
+            console.warn(`[generate] retry wave=${context.wave} reason=${firstError.message}`);
+            return callWave('LẦN TRƯỚC BỊ THIẾU HOẶC SAI DẪN CHỨNG. Hãy đọc lại toàn bộ section và trả đủ mọi lựa chọn, không bỏ sót bất kỳ Type/topic nào.');
+          }
+        });
+        const merged = waveResults.flatMap(item => item.items);
+        validateStep1Items(merged, contexts.map(context => context.actionText).join('\n'));
+        result = {
+          content: JSON.stringify(merged),
+          model: waveResults[0]?.response.model ?? modelId,
+          usage: {
+            inputTokens: waveResults.reduce((sum, item) => sum + (item.response.usage?.inputTokens ?? 0), 0),
+            outputTokens: waveResults.reduce((sum, item) => sum + (item.response.usage?.outputTokens ?? 0), 0),
+          },
+        };
+      } catch (waveError: any) {
+        // Quality-first fallback: preserve the old full-document behavior whenever
+        // deterministic splitting cannot produce a complete, evidence-backed wave.
+        console.warn(`[generate] wave orchestration failed; fallback=full-document reason=${waveError.message}`);
+        const fullContext = await resolveStepContext(1);
+        const fallbackSystemPrompt = [
           systemPrompt ?? '',
           '',
-          `PHẠM VI REQUEST NÀY: Chỉ tổng hợp dữ liệu thuộc ${context.wave}${context.timeframe ? `, timeframe ${context.timeframe}` : ''}.`,
-          'Không đưa dữ liệu từ wave khác vào response. Vẫn phải trả về duy nhất JSON array hợp lệ.',
-          context.expectedTypeGroups.length
-            ? `Phải bao phủ đầy đủ các nhóm nhận diện được trong section: ${context.expectedTypeGroups.map(group => `Type ${group}`).join(', ')}.`
-            : 'Phải trả về tất cả lựa chọn hợp lệ có trong phạm vi này; không dừng sau lựa chọn đầu tiên.',
-          correction ?? '',
-          ].filter(Boolean).join('\n');
-          const response = await generate({
-            modelId,
-            provider,
-            prompt,
-            systemPrompt: waveInstruction,
-            contextDocs: context.contextDocs,
-            maxTokens: Math.min(maxTokens ?? 6000, 6000),
-            temperature,
-          });
-          const items = extractJsonArray(response.content);
-          validateStep1Items(items, context.actionText);
-          const missing = missingStep1Coverage(items, context);
-          if (missing.length) throw new Error(`Thiếu độ phủ: ${missing.join(', ')}`);
-          return { response, items };
-        };
-
-        try {
-          return await callWave();
-        } catch (firstError: any) {
-          console.warn(`[generate] retry wave=${context.wave} reason=${firstError.message}`);
-          return callWave('LẦN TRƯỚC BỊ THIẾU HOẶC SAI DẪN CHỨNG. Hãy đọc lại toàn bộ section và trả đủ mọi lựa chọn, không bỏ sót bất kỳ Type/topic nào.');
-        }
-      });
-      const merged = waveResults.flatMap(item => item.items);
-      validateStep1Items(merged, contexts.map(context => context.actionText).join('\n'));
-      result = {
-        content: JSON.stringify(merged),
-        model: waveResults[0]?.response.model ?? modelId,
-        usage: {
-          inputTokens: waveResults.reduce((sum, item) => sum + (item.response.usage?.inputTokens ?? 0), 0),
-          outputTokens: waveResults.reduce((sum, item) => sum + (item.response.usage?.outputTokens ?? 0), 0),
-        },
-      };
+          'FALLBACK TOÀN TÀI LIỆU: Đọc từ đầu đến cuối tất cả Action Plan trong context.',
+          'Trả về đầy đủ mọi topic thuộc mọi Type A/B/C, publishing wave, timeframe và keyword có dẫn chứng nguyên văn.',
+          'Không trả về mảng rỗng nếu Action Plan có dữ liệu. Chỉ trả về duy nhất JSON array hợp lệ.',
+        ].filter(Boolean).join('\n');
+        const fallbackResponse = await generate({
+          modelId,
+          provider,
+          prompt,
+          systemPrompt: fallbackSystemPrompt,
+          contextDocs: fullContext.contextDocs,
+          maxTokens,
+          temperature,
+        });
+        const fallbackItems = extractJsonArray(fallbackResponse.content);
+        validateStep1Items(fallbackItems, fullContext.actionText);
+        result = { ...fallbackResponse, content: JSON.stringify(fallbackItems) };
+      }
     } else {
       const context = contexts[0];
       result = await generate({ modelId, provider, prompt, systemPrompt, contextDocs: context.contextDocs, maxTokens, temperature });

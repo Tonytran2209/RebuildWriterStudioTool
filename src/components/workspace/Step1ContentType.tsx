@@ -187,7 +187,7 @@ const GROUP_META: Record<ContentTypeGroup, { title: string; accent: string; badg
 };
 
 const GROUP_ORDER: ContentTypeGroup[] = ["A", "B", "C"];
-const STEP1_PROMPT_VERSION = "step1-wave-v3-completeness";
+const STEP1_PROMPT_VERSION = "step1-wave-v4-full-fallback";
 
 function displayTimeframe(suggestion: ContentTypeSuggestion): string {
   const timeframe = suggestion.timeframe ?? "";
