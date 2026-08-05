@@ -92,28 +92,30 @@ function evidenceExists(source: string, quote: unknown): boolean {
     .some(part => normalizedSource.includes(part));
 }
 
-function validateStep1Items(items: unknown[], actionText: string): void {
-  if (!items.length) throw new Error('AI không trả về đề xuất nào cho Step 1.');
+function filterValidStep1Items(items: unknown[], actionText: string): unknown[] {
   const source = canonicalEvidence(actionText);
-  const invalid = items.find(item => {
-    if (!item || typeof item !== 'object') return true;
+  return items.filter(item => {
+    if (!item || typeof item !== 'object') return false;
     const value = item as Record<string, unknown>;
     const typeGroup = String(value.typeGroup ?? value.type ?? '').toUpperCase().match(/\b(A|B|C)\b/)?.[1];
     const label = canonicalEvidence(value.label ?? value.name);
     const wave = canonicalEvidence(value.wave);
     const timeframe = canonicalEvidence(value.timeframe);
-    const keywords = Array.isArray(value.keywords) ? value.keywords.map(canonicalEvidence).filter(Boolean) : [];
+    const keywords = Array.isArray(value.keywords)
+      ? value.keywords.map(canonicalEvidence).filter(Boolean)
+      : typeof value.keywords === 'string'
+        ? value.keywords.split(/[,;\n]/).map(canonicalEvidence).filter(Boolean)
+        : [];
     const actionEvidence = value.actionPlanEvidence;
     const scheduleEvidence = value.scheduleEvidence;
     const schedule = canonicalEvidence(scheduleEvidence);
-    return !typeGroup || !label || !wave || !timeframe || !keywords.length ||
-      !source.includes(label) || !source.includes(wave) || !source.includes(timeframe) ||
-      keywords.some(keyword => !source.includes(keyword)) ||
-      !new RegExp(`\\b(?:content\\s*)?type\\s*${typeGroup}\\b`, 'i').test(actionText) ||
-      !evidenceExists(actionText, actionEvidence) || !evidenceExists(actionText, scheduleEvidence) ||
-      !schedule.includes(wave) || !schedule.includes(timeframe);
+    return Boolean(typeGroup && label && wave && timeframe && keywords.length &&
+      source.includes(label) && source.includes(wave) && source.includes(timeframe) &&
+      keywords.every(keyword => source.includes(keyword)) &&
+      new RegExp(`\\b(?:content\\s*)?type\\s*${typeGroup}\\b`, 'i').test(actionText) &&
+      evidenceExists(actionText, actionEvidence) && evidenceExists(actionText, scheduleEvidence) &&
+      schedule.includes(wave) && schedule.includes(timeframe));
   });
-  if (invalid) throw new Error('Một hoặc nhiều đề xuất Step 1 không vượt qua kiểm chứng nguyên văn; kết quả không được cache.');
 }
 
 function missingStep1Coverage(items: unknown[], context: StepWaveContext): string[] {
@@ -222,7 +224,7 @@ app.post('/api/generate', async (req, res) => {
       : [await resolveStepContext(stepNumber)];
     const contextMs = Date.now() - contextsStartedAt;
     const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
-    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 4 });
+    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 5 });
     const cached = await kvGet<any>(cacheKey);
     if (cached?.content) {
       console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
@@ -255,8 +257,12 @@ app.post('/api/generate', async (req, res) => {
               maxTokens: Math.min(maxTokens ?? 6000, 6000),
               temperature,
             });
-            const items = extractJsonArray(response.content);
-            validateStep1Items(items, context.actionText);
+            const rawItems = extractJsonArray(response.content);
+            const items = filterValidStep1Items(rawItems, context.actionText);
+            if (items.length !== rawItems.length) {
+              console.warn(`[generate] wave=${context.wave} filtered=${rawItems.length - items.length} accepted=${items.length}`);
+            }
+            if (!items.length) throw new Error(`Không có đề xuất hợp lệ trong ${context.wave}.`);
             const missing = missingStep1Coverage(items, context);
             if (missing.length) throw new Error(`Thiếu độ phủ: ${missing.join(', ')}`);
             return { response, items };
@@ -270,7 +276,6 @@ app.post('/api/generate', async (req, res) => {
           }
         });
         const merged = waveResults.flatMap(item => item.items);
-        validateStep1Items(merged, contexts.map(context => context.actionText).join('\n'));
         result = {
           content: JSON.stringify(merged),
           model: waveResults[0]?.response.model ?? modelId,
@@ -300,8 +305,14 @@ app.post('/api/generate', async (req, res) => {
           maxTokens,
           temperature,
         });
-        const fallbackItems = extractJsonArray(fallbackResponse.content);
-        validateStep1Items(fallbackItems, fullContext.actionText);
+        const fallbackRawItems = extractJsonArray(fallbackResponse.content);
+        const fallbackItems = filterValidStep1Items(fallbackRawItems, fullContext.actionText);
+        if (!fallbackItems.length) {
+          throw new Error('AI chưa trả về đề xuất có đủ dẫn chứng nguyên văn sau khi quét toàn bộ tài liệu.');
+        }
+        if (fallbackItems.length !== fallbackRawItems.length) {
+          console.warn(`[generate] fallback filtered=${fallbackRawItems.length - fallbackItems.length} accepted=${fallbackItems.length}`);
+        }
         result = { ...fallbackResponse, content: JSON.stringify(fallbackItems) };
       }
     } else {
