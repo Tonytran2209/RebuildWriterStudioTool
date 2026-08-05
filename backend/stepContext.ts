@@ -41,6 +41,7 @@ export interface StepContextResult {
 export interface StepWaveContext extends StepContextResult {
   wave: string;
   timeframe?: string;
+  expectedTypeGroups: Array<'A' | 'B' | 'C'>;
 }
 
 function sourceFingerprint(items: Array<{ role: Role; document: StoredDocument }>): string {
@@ -113,23 +114,38 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
   const shared = resolved.filter(item => item.role !== 'ACTION_PLAN');
   const action = resolved.filter(item => item.role === 'ACTION_PLAN');
   if (!action.length) throw new Error('Step 1 chưa được cấp quyền đọc Action Plan.');
-  const groups = new Map<string, { wave: string; timeframe?: string; documents: Array<{ role: Role; document: StoredDocument & { content: string } }> }>();
+  const groups = new Map<string, {
+    wave: string;
+    timeframe?: string;
+    expectedTypeGroups: Set<'A' | 'B' | 'C'>;
+    documents: Array<{ role: Role; document: StoredDocument & { content: string } }>;
+  }>();
 
   for (const item of action) {
     const sections = item.document.structuredSections?.length
       ? item.document.structuredSections
       : extractStructuredSections(item.document.content);
     const waveSections = sections.filter(section => section.wave);
+    const sharedSections = sections.filter(section => !section.wave);
+    const sharedContent = sharedSections.map(section => section.content).join('\n\n');
     if (!waveSections.length) {
       const key = `${item.document.name} — toàn bộ`;
-      groups.set(key, { wave: key, documents: [item] });
+      groups.set(key, { wave: key, expectedTypeGroups: new Set(), documents: [item] });
       continue;
     }
     for (const section of waveSections) {
       const key = `${item.document.id}:${section.wave}:${section.timeframe ?? ''}`;
-      const group = groups.get(key) ?? { wave: section.wave!, timeframe: section.timeframe, documents: [] };
+      const group = groups.get(key) ?? {
+        wave: section.wave!,
+        timeframe: section.timeframe,
+        expectedTypeGroups: new Set<'A' | 'B' | 'C'>(),
+        documents: [],
+      };
+      section.typeGroups.forEach(typeGroup => group.expectedTypeGroups.add(typeGroup));
       const existing = group.documents[0]?.document;
-      const content = existing ? `${existing.content}\n\n${section.content}` : section.content;
+      const content = existing
+        ? `${existing.content}\n\n${section.content}`
+        : [sharedContent, section.content].filter(Boolean).join('\n\n');
       group.documents = [{
         role: 'ACTION_PLAN',
         document: { ...item.document, content },
@@ -144,5 +160,6 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
     ...buildResult(1, [...shared, ...group.documents]),
     wave: group.wave,
     timeframe: group.timeframe,
+    expectedTypeGroups: [...group.expectedTypeGroups],
   }));
 }

@@ -17,7 +17,7 @@ import {
 } from './supabase.ts';
 import { extractDocumentText } from './documentParser.ts';
 import { extractStructuredSections } from './documentStructure.ts';
-import { resolveStepContext, resolveStep1WaveContexts, type StepContextResult } from './stepContext.ts';
+import { resolveStepContext, resolveStep1WaveContexts, type StepWaveContext } from './stepContext.ts';
 
 // DIST_PATH env var set by Railway start command; fallback to sibling dist/ of cwd
 const DIST = process.env.DIST_PATH
@@ -116,6 +116,26 @@ function validateStep1Items(items: unknown[], actionText: string): void {
   if (invalid) throw new Error('Một hoặc nhiều đề xuất Step 1 không vượt qua kiểm chứng nguyên văn; kết quả không được cache.');
 }
 
+function missingStep1Coverage(items: unknown[], context: StepWaveContext): string[] {
+  const records = items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
+  const expectedWave = canonicalEvidence(context.wave);
+  const expectedTimeframe = canonicalEvidence(context.timeframe);
+  const inScope = records.filter(item => {
+    const wave = canonicalEvidence(item.wave);
+    const timeframe = canonicalEvidence(item.timeframe);
+    return wave.includes(expectedWave) && (!expectedTimeframe || timeframe.includes(expectedTimeframe));
+  });
+  const missing: string[] = [];
+  if (!inScope.length) missing.push(`${context.wave}${context.timeframe ? ` / ${context.timeframe}` : ''}`);
+  for (const typeGroup of context.expectedTypeGroups) {
+    const present = inScope.some(item =>
+      String(item.typeGroup ?? item.type ?? '').toUpperCase().match(/\b(A|B|C)\b/)?.[1] === typeGroup,
+    );
+    if (!present) missing.push(`Type ${typeGroup}`);
+  }
+  return missing;
+}
+
 async function runWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let cursor = 0;
@@ -202,7 +222,7 @@ app.post('/api/generate', async (req, res) => {
       : [await resolveStepContext(stepNumber)];
     const contextMs = Date.now() - contextsStartedAt;
     const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
-    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 2 });
+    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 3 });
     const cached = await kvGet<any>(cacheKey);
     if (cached?.content) {
       console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
@@ -212,40 +232,55 @@ app.post('/api/generate', async (req, res) => {
     console.log(`[generate] step=${stepNumber} provider=${provider} model=${modelId} waves=${contexts.length} promptLen=${prompt.length} contextChars=${contexts.reduce((sum, item) => sum + item.summary.totalChars, 0)}`);
     const providerStartedAt = Date.now();
     let result;
-    if (stepNumber === 1 && splitByWave && contexts.length > 1) {
-      const waveResults = await runWithConcurrency(contexts, 3, async (context: StepContextResult & { wave?: string; timeframe?: string }) => {
-        const waveInstruction = [
+    if (stepNumber === 1 && splitByWave) {
+      const waveResults = await runWithConcurrency(contexts as StepWaveContext[], 3, async context => {
+        const callWave = async (correction?: string) => {
+          const waveInstruction = [
           systemPrompt ?? '',
           '',
-          `PHẠM VI REQUEST NÀY: Chỉ tổng hợp dữ liệu thuộc ${context.wave ?? 'phần Action Plan hiện tại'}${context.timeframe ? `, timeframe ${context.timeframe}` : ''}.`,
+          `PHẠM VI REQUEST NÀY: Chỉ tổng hợp dữ liệu thuộc ${context.wave}${context.timeframe ? `, timeframe ${context.timeframe}` : ''}.`,
           'Không đưa dữ liệu từ wave khác vào response. Vẫn phải trả về duy nhất JSON array hợp lệ.',
-        ].join('\n');
-        return generate({
-          modelId,
-          provider,
-          prompt,
-          systemPrompt: waveInstruction,
-          contextDocs: context.contextDocs,
-          maxTokens: Math.min(maxTokens ?? 6000, 6000),
-          temperature,
-        });
+          context.expectedTypeGroups.length
+            ? `Phải bao phủ đầy đủ các nhóm nhận diện được trong section: ${context.expectedTypeGroups.map(group => `Type ${group}`).join(', ')}.`
+            : 'Phải trả về tất cả lựa chọn hợp lệ có trong phạm vi này; không dừng sau lựa chọn đầu tiên.',
+          correction ?? '',
+          ].filter(Boolean).join('\n');
+          const response = await generate({
+            modelId,
+            provider,
+            prompt,
+            systemPrompt: waveInstruction,
+            contextDocs: context.contextDocs,
+            maxTokens: Math.min(maxTokens ?? 6000, 6000),
+            temperature,
+          });
+          const items = extractJsonArray(response.content);
+          validateStep1Items(items, context.actionText);
+          const missing = missingStep1Coverage(items, context);
+          if (missing.length) throw new Error(`Thiếu độ phủ: ${missing.join(', ')}`);
+          return { response, items };
+        };
+
+        try {
+          return await callWave();
+        } catch (firstError: any) {
+          console.warn(`[generate] retry wave=${context.wave} reason=${firstError.message}`);
+          return callWave('LẦN TRƯỚC BỊ THIẾU HOẶC SAI DẪN CHỨNG. Hãy đọc lại toàn bộ section và trả đủ mọi lựa chọn, không bỏ sót bất kỳ Type/topic nào.');
+        }
       });
-      const merged = waveResults.flatMap(item => extractJsonArray(item.content));
+      const merged = waveResults.flatMap(item => item.items);
       validateStep1Items(merged, contexts.map(context => context.actionText).join('\n'));
       result = {
         content: JSON.stringify(merged),
-        model: waveResults[0]?.model ?? modelId,
+        model: waveResults[0]?.response.model ?? modelId,
         usage: {
-          inputTokens: waveResults.reduce((sum, item) => sum + (item.usage?.inputTokens ?? 0), 0),
-          outputTokens: waveResults.reduce((sum, item) => sum + (item.usage?.outputTokens ?? 0), 0),
+          inputTokens: waveResults.reduce((sum, item) => sum + (item.response.usage?.inputTokens ?? 0), 0),
+          outputTokens: waveResults.reduce((sum, item) => sum + (item.response.usage?.outputTokens ?? 0), 0),
         },
       };
     } else {
       const context = contexts[0];
       result = await generate({ modelId, provider, prompt, systemPrompt, contextDocs: context.contextDocs, maxTokens, temperature });
-      if (stepNumber === 1 && splitByWave) {
-        validateStep1Items(extractJsonArray(result.content), context.actionText);
-      }
     }
     const providerMs = Date.now() - providerStartedAt;
     const generatedAt = new Date().toISOString();
