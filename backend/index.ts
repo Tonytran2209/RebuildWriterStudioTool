@@ -182,11 +182,12 @@ app.get('/api/articles', async (_req, res) => {
 
 app.post('/api/articles', async (req, res) => {
   try {
-    const article = req.body;
+    const now = new Date().toISOString();
+    const article = { ...req.body, updatedAt: now };
     const articles = await kvGet('writer:articles') ?? [];
     const updated = [article, ...(articles as any[]).filter((a: any) => a.id !== article.id)];
     await kvSet('writer:articles', updated);
-    res.json({ ok: true });
+    res.json({ ok: true, article });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -197,9 +198,15 @@ app.put('/api/articles/:id', async (req, res) => {
     const { id } = req.params;
     const updates = req.body;
     const articles = (await kvGet('writer:articles') ?? []) as any[];
-    const updated = articles.map(a => a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a);
+    const existing = articles.find(a => a.id === id);
+    if (!existing) {
+      res.status(404).json({ error: 'Bài viết không tồn tại trong Supabase.' });
+      return;
+    }
+    const article = { ...existing, ...updates, id, updatedAt: new Date().toISOString() };
+    const updated = articles.map(a => a.id === id ? article : a);
     await kvSet('writer:articles', updated);
-    res.json({ ok: true });
+    res.json({ ok: true, article });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

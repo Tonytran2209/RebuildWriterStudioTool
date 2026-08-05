@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Article, AppConfig, DocumentFile } from './types';
 import { DEFAULT_CONFIG, mergeWithLatestModelCatalog } from './lib/defaultData';
 import * as db from './lib/db';
@@ -35,6 +35,15 @@ export default function App() {
   const [showConfig, setShowConfig] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading');
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
+  const [articleActionError, setArticleActionError] = useState<string | null>(null);
+  const [completionSavingId, setCompletionSavingId] = useState<string | null>(null);
+  const articleMutationQueue = useRef<Promise<void>>(Promise.resolve());
+
+  const enqueueArticleMutation = useCallback((operation: () => Promise<Article>): Promise<Article> => {
+    const result = articleMutationQueue.current.then(operation, operation);
+    articleMutationQueue.current = result.then(() => undefined, () => undefined);
+    return result;
+  }, []);
 
   // Load all data from Supabase / Railway on mount
   useEffect(() => {
@@ -73,27 +82,54 @@ export default function App() {
   }, []);
 
   const handleUpdateArticle = useCallback((id: string, updates: Partial<Article>) => {
-    setArticles(prev => {
-      const next = prev.map(a =>
-        a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a
-      );
-      setSyncStatus('saving');
-      db.updateArticle(id, updates)
-        .then(() => setSyncStatus('idle'))
-        .catch(() => setSyncStatus('error'));
-      return next;
-    });
-  }, []);
-
-  const handleNewArticle = () => {
-    const newArt = createNewArticle();
-    setArticles(prev => [newArt, ...prev]);
-    setActiveId(newArt.id);
+    setArticles(prev => prev.map(a =>
+      a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a
+    ));
     setSyncStatus('saving');
-    db.saveArticle(newArt)
+    enqueueArticleMutation(() => db.updateArticle(id, updates))
       .then(() => setSyncStatus('idle'))
-      .catch(() => setSyncStatus('error'));
+      .catch((error: unknown) => {
+        setArticleActionError(`Không đồng bộ được bài viết với Supabase: ${error instanceof Error ? error.message : String(error)}`);
+        setSyncStatus('error');
+      });
+  }, [enqueueArticleMutation]);
+
+  const handleNewArticle = async () => {
+    const newArt = createNewArticle();
+    setArticleActionError(null);
+    setSyncStatus('saving');
+    try {
+      const savedArticle = await enqueueArticleMutation(() => db.saveArticle(newArt));
+      setArticles(prev => [savedArticle, ...prev.filter(item => item.id !== savedArticle.id)]);
+      setActiveId(savedArticle.id);
+      setSyncStatus('idle');
+    } catch (error: unknown) {
+      setArticleActionError(`Không tạo được bài viết trong Supabase: ${error instanceof Error ? error.message : String(error)}`);
+      setSyncStatus('error');
+    }
   };
+
+  const handleToggleComplete = useCallback(async (target: Article) => {
+    if (completionSavingId) return;
+    const isDone = target.status === 'done';
+    const updates: Partial<Article> = isDone
+      ? { status: 'review', completedAt: null }
+      : { status: 'done', currentStep: 4, completedAt: new Date().toISOString() };
+
+    setArticleActionError(null);
+    setCompletionSavingId(target.id);
+    setSyncStatus('saving');
+    try {
+      const savedArticle = await enqueueArticleMutation(() => db.updateArticle(target.id, updates));
+      setArticles(prev => prev.map(item => item.id === target.id ? savedArticle : item));
+      setSyncStatus('idle');
+    } catch (error: unknown) {
+      setArticleActionError(`Không lưu được trạng thái bài viết vào Supabase: ${error instanceof Error ? error.message : String(error)}`);
+      setSyncStatus('error');
+    } finally {
+      setCompletionSavingId(null);
+    }
+  }, [completionSavingId, enqueueArticleMutation]);
 
   const handleSaveConfig = async (newConfig: AppConfig, newFiles: DocumentFile[]) => {
     setConfig(newConfig);
@@ -185,6 +221,8 @@ export default function App() {
           onSelectArticle={() => {}}
           onNewArticle={handleNewArticle}
           onOpenConfig={() => setShowConfig(true)}
+          onToggleComplete={handleToggleComplete}
+          completionSavingId={completionSavingId}
         />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-5 max-w-sm">
@@ -197,6 +235,11 @@ export default function App() {
               </p>
             </div>
             <div className="flex flex-col gap-2">
+              {articleActionError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {articleActionError}
+                </div>
+              )}
               <button
                 onClick={handleNewArticle}
                 className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm py-3 px-6 rounded-2xl shadow-sm transition-all"
@@ -227,9 +270,17 @@ export default function App() {
         onSelectArticle={id => setActiveId(id)}
         onNewArticle={handleNewArticle}
         onOpenConfig={() => setShowConfig(true)}
+        onToggleComplete={handleToggleComplete}
+        completionSavingId={completionSavingId}
       />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">
+        {articleActionError && (
+          <div className="mx-5 mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 flex items-center justify-between gap-3">
+            <span>{articleActionError}</span>
+            <button type="button" onClick={() => setArticleActionError(null)} className="font-bold text-red-500 hover:text-red-700" aria-label="Đóng thông báo">×</button>
+          </div>
+        )}
         {article ? (
           <>
             <StepNav
@@ -283,6 +334,8 @@ export default function App() {
                   railwayUrl={config.railwayUrl}
                   onUpdate={u => handleUpdateArticle(article.id, u)}
                   onPrev={handlePrev}
+                  onToggleComplete={() => handleToggleComplete(article)}
+                  completionSaving={completionSavingId === article.id}
                 />
               )}
             </main>

@@ -30,9 +30,11 @@ interface Props {
   railwayUrl: string;
   onUpdate: (updates: Partial<Article>) => void;
   onPrev: () => void;
+  onToggleComplete: () => void;
+  completionSaving: boolean;
 }
 
-export default function Step4Draft({ article, config, files, model, railwayUrl, onUpdate, onPrev }: Props) {
+export default function Step4Draft({ article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
   const bundle = useMemo(() => collectStepDocs(4, config, files), [config, files]);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -303,10 +305,11 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           ← Quay lại Outline
         </button>
         <button
-          disabled={!draft}
-          className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all"
+          onClick={onToggleComplete}
+          disabled={!draft || completionSaving}
+          className={`${article.status === 'done' ? 'bg-white hover:bg-slate-50 border border-emerald-300 text-emerald-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all`}
         >
-          ✓ Đánh dấu hoàn thành
+          {completionSaving ? 'Đang lưu...' : article.status === 'done' ? '↺ Mở lại bài viết' : '✓ Đánh dấu hoàn thành'}
         </button>
       </div>
     </div>

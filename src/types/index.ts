@@ -135,6 +135,7 @@ export interface Article {
   status: ArticleStatus;
   createdAt: string;
   updatedAt: string;
+  completedAt?: string | null;
   // Step 1 data
   contentType?: string | null;
   selectedContentTypeSuggestionId?: string | null;

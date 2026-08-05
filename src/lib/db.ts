@@ -21,12 +21,14 @@ export async function fetchArticles(): Promise<Article[]> {
   return railwayRequest<Article[]>('/api/articles');
 }
 
-export async function saveArticle(article: Article): Promise<void> {
-  await railwayRequest('/api/articles', jsonRequest('POST', article));
+export async function saveArticle(article: Article): Promise<Article> {
+  const result = await railwayRequest<{ article: Article }>('/api/articles', jsonRequest('POST', article));
+  return result.article;
 }
 
-export async function updateArticle(id: string, updates: Partial<Article>): Promise<void> {
-  await railwayRequest(`/api/articles/${encodeURIComponent(id)}`, jsonRequest('PUT', updates));
+export async function updateArticle(id: string, updates: Partial<Article>): Promise<Article> {
+  const result = await railwayRequest<{ article: Article }>(`/api/articles/${encodeURIComponent(id)}`, jsonRequest('PUT', updates));
+  return result.article;
 }
 
 export async function deleteArticle(id: string): Promise<void> {

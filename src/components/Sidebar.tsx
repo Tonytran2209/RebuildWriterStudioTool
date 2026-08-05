@@ -22,9 +22,11 @@ interface Props {
   onSelectArticle: (id: string) => void;
   onNewArticle: () => void;
   onOpenConfig: () => void;
+  onToggleComplete: (article: Article) => void;
+  completionSavingId: string | null;
 }
 
-export default function Sidebar({ articles, activeArticleId, onSelectArticle, onNewArticle, onOpenConfig }: Props) {
+export default function Sidebar({ articles, activeArticleId, onSelectArticle, onNewArticle, onOpenConfig, onToggleComplete, completionSavingId }: Props) {
   const [search, setSearch] = useState('');
 
   const filtered = articles.filter(a =>
@@ -88,28 +90,45 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
         )}
 
         {filtered.map(article => (
-          <button
+          <div
             key={article.id}
-            onClick={() => onSelectArticle(article.id)}
-            className={`w-full text-left rounded-2xl p-3 border transition-all space-y-1.5 ${
+            className={`relative w-full rounded-2xl border transition-all ${
               activeArticleId === article.id
                 ? 'bg-slate-900 border-slate-800 shadow-md'
                 : 'bg-white border-slate-200/80 shadow-sm hover:border-slate-300 hover:shadow'
             }`}
           >
-            <div className="flex justify-between items-start gap-2">
-              <h4 className={`text-xs font-bold line-clamp-2 leading-snug ${activeArticleId === article.id ? 'text-white' : 'text-slate-800'}`}>
-                {article.title}
-              </h4>
-              <span className={`w-2 h-2 rounded-full shrink-0 mt-0.5 ${STATUS_COLORS[article.status]}`} />
-            </div>
-            <div className={`flex items-center justify-between text-[10px] ${activeArticleId === article.id ? 'text-slate-400' : 'text-slate-400'}`}>
-              <span className={`font-medium ${activeArticleId === article.id ? 'text-slate-300' : 'text-slate-500'}`}>
-                Step {article.currentStep}/4 — {STEP_LABELS[article.currentStep]}
-              </span>
-              <span>{STATUS_LABELS[article.status]}</span>
-            </div>
-          </button>
+            <button onClick={() => onSelectArticle(article.id)} className="w-full text-left p-3 pr-10 space-y-1.5 rounded-2xl">
+              <div className="flex justify-between items-start gap-2">
+                <h4 className={`text-xs font-bold line-clamp-2 leading-snug ${activeArticleId === article.id ? 'text-white' : 'text-slate-800'}`}>
+                  {article.title}
+                </h4>
+                <span className={`w-2 h-2 rounded-full shrink-0 mt-0.5 ${STATUS_COLORS[article.status]}`} />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-slate-400">
+                <span className={`font-medium ${activeArticleId === article.id ? 'text-slate-300' : 'text-slate-500'}`}>
+                  Step {article.currentStep}/4 — {STEP_LABELS[article.currentStep]}
+                </span>
+                <span>{STATUS_LABELS[article.status]}</span>
+              </div>
+            </button>
+            <button
+              type="button"
+              disabled={completionSavingId === article.id}
+              onClick={() => onToggleComplete(article)}
+              title={article.status === 'done' ? 'Mở lại bài viết' : 'Đánh dấu hoàn thành'}
+              aria-label={article.status === 'done' ? `Mở lại ${article.title}` : `Đánh dấu ${article.title} hoàn thành`}
+              className={`absolute right-2.5 top-2.5 w-6 h-6 rounded-lg border flex items-center justify-center text-xs font-bold transition-all disabled:opacity-50 ${
+                article.status === 'done'
+                  ? 'bg-emerald-500 border-emerald-400 text-white hover:bg-emerald-600'
+                  : activeArticleId === article.id
+                    ? 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white'
+                    : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-emerald-400 hover:text-emerald-600'
+              }`}
+            >
+              {completionSavingId === article.id ? '…' : article.status === 'done' ? '✓' : '○'}
+            </button>
+          </div>
         ))}
       </div>
 
