@@ -6,7 +6,14 @@ import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { generate, getAvailableProviders } from './providers.ts';
-import { kvGet, kvSet, kvGetByPrefix, checkConnection } from './supabase.ts';
+import {
+  kvGet,
+  kvSet,
+  kvGetByPrefix,
+  checkConnection,
+  uploadDocumentBinary,
+  downloadDocumentBinary,
+} from './supabase.ts';
 import { extractDocumentText } from './documentParser.ts';
 import { resolveStepContext } from './stepContext.ts';
 
@@ -260,6 +267,9 @@ app.post('/api/upload/document', upload.single('file'), async (req, res) => {
     const timestamp = new Date().toISOString();
     const id = crypto.randomUUID();
     const fileType = req.file.originalname.split('.').pop()?.toLowerCase() ?? 'txt';
+    const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]+/g, '_');
+    const storagePath = `${category}/${id}/${safeName}`;
+    await uploadDocumentBinary(storagePath, req.file.buffer, req.file.mimetype || 'application/octet-stream');
 
     if (category === 'action') {
       const config = (await kvGet<Record<string, any>>('writer:config')) ?? {};
@@ -271,6 +281,8 @@ app.post('/api/upload/document', upload.single('file'), async (req, res) => {
         contentUpdatedAt: timestamp,
         fileType,
         size: formatBytes(req.file.size),
+        storagePath,
+        originalMimeType: req.file.mimetype || 'application/octet-stream',
         content,
         preview: content.split('\n').slice(0, 4).join('\n'),
         rowCount: content.split('\n').filter(Boolean).length,
@@ -288,6 +300,8 @@ app.post('/api/upload/document', upload.single('file'), async (req, res) => {
       uploadedAt: timestamp,
       category,
       fileType,
+      storagePath,
+      originalMimeType: req.file.mimetype || 'application/octet-stream',
       content,
       contentUpdatedAt: timestamp,
       ...contentMetadata(content),
@@ -298,6 +312,45 @@ app.post('/api/upload/document', upload.single('file'), async (req, res) => {
   } catch (err: any) {
     console.error('[upload/document] error:', err.message);
     return res.status(500).json({ error: err.message || 'Không thể xử lý và lưu file.' });
+  }
+});
+
+app.get('/api/documents/:id/download', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const [files, config] = await Promise.all([
+      kvGet<any[]>('writer:files'),
+      kvGet<Record<string, any>>('writer:config'),
+    ]);
+    const document = [
+      ...(Array.isArray(files) ? files : []),
+      ...(Array.isArray(config?.actionSources) ? config.actionSources : []),
+    ].find(item => item?.id === id);
+
+    if (!document) return res.status(404).json({ error: 'Không tìm thấy tài liệu trong Supabase.' });
+
+    let payload: Buffer;
+    let filename = String(document.name || `document-${id}.txt`);
+    let contentType = String(document.originalMimeType || 'application/octet-stream');
+
+    if (document.storagePath) {
+      const blob = await downloadDocumentBinary(document.storagePath);
+      payload = Buffer.from(await blob.arrayBuffer());
+    } else if (typeof document.content === 'string' && document.content) {
+      payload = Buffer.from(document.content, 'utf8');
+      contentType = 'text/plain; charset=utf-8';
+      if (!/\.(txt|md|csv|json|xml|tsv)$/i.test(filename)) filename = `${filename}.extracted.txt`;
+    } else {
+      return res.status(404).json({ error: 'Nguồn dữ liệu này chưa có nội dung có thể tải xuống.' });
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Length', payload.length);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    return res.send(payload);
+  } catch (err: any) {
+    console.error('[documents/download] error:', err.message);
+    return res.status(500).json({ error: err.message || 'Không thể tải tài liệu.' });
   }
 });
 

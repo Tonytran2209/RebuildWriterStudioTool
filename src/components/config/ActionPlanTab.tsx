@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import type { ActionDataSource, ActionSourceType, ManualRow } from '../../types';
 import { isActionSourceReady } from '../../lib/documentStatus';
 import { uploadDocumentToRailway } from '../../lib/railwayUpload';
+import { downloadDocumentFromRailway } from '../../lib/railwayDownload';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -425,11 +426,24 @@ interface Props {
 
 export default function ActionPlanTab({ sources = [], onChange, railwayUrl }: Props) {
   const [mode, setMode] = useState<ActionSourceType>('file');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState('');
 
   const addSource = (s: ActionDataSource) => onChange([s, ...sources]);
   const addSources = (newSources: ActionDataSource[]) => onChange([...newSources, ...sources]);
   const removeSource = (id: string) => onChange(sources.filter(s => s.id !== id));
   const readySourceCount = sources.filter(isActionSourceReady).length;
+  const downloadSource = async (source: ActionDataSource) => {
+    setDownloadingId(source.id);
+    setDownloadError('');
+    try {
+      await downloadDocumentFromRailway(source.id, source.name, railwayUrl);
+    } catch (error: unknown) {
+      setDownloadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -484,6 +498,12 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl }: Pr
           )}
         </div>
 
+        {downloadError && (
+          <p className="mb-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[11px] text-red-600">
+            {downloadError}
+          </p>
+        )}
+
         {sources.length === 0 ? (
           <div className="text-center py-10">
             <div className="text-3xl mb-2">📂</div>
@@ -526,14 +546,28 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl }: Pr
                     <span>{new Date(s.addedAt).toLocaleDateString('vi-VN')}</span>
                   </div>
                 </div>
-                <button
-                  onClick={() => removeSource(s.id)}
-                  className="text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all mt-0.5 shrink-0"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => downloadSource(s)}
+                    disabled={!ready || downloadingId === s.id}
+                    title={s.storagePath ? 'Tải file gốc từ Supabase' : 'Tải dữ liệu đã lưu'}
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l-4-4m4 4l4-4M5 19h14" />
+                    </svg>
+                    {downloadingId === s.id ? 'Đang tải' : 'Tải về'}
+                  </button>
+                  <button
+                    onClick={() => removeSource(s.id)}
+                    title="Xóa nguồn dữ liệu"
+                    className="text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
               </div>
               );
             })}

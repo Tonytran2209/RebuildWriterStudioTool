@@ -4,6 +4,7 @@ import type { ActionDataSource, DocumentFile, FileCategory, KbSubTab } from '../
 import ActionPlanTab from './ActionPlanTab';
 import { isDocumentReady } from '../../lib/documentStatus';
 import { uploadDocumentToRailway } from '../../lib/railwayUpload';
+import { downloadDocumentFromRailway } from '../../lib/railwayDownload';
 
 const FILE_ICONS: Record<string, { icon: string; color: string }> = {
   pdf: { icon: '📄', color: 'text-red-500' },
@@ -50,6 +51,7 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
   const [dragging, setDragging] = useState(false);
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState('');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const meta = SUBTAB_META[activeSubTab];
   const catFiles = files.filter(f => f.category === meta.category);
@@ -75,6 +77,18 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
 
   const removeFile = (id: string) => {
     onChange(files.filter(f => f.id !== id));
+  };
+
+  const downloadFile = async (file: DocumentFile) => {
+    setDownloadingId(file.id);
+    setReadError('');
+    try {
+      await downloadDocumentFromRailway(file.id, file.name, railwayUrl);
+    } catch (error: unknown) {
+      setReadError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   return (
@@ -173,14 +187,28 @@ export default function TabKnowledgeBase({ files, onChange, actionSources, onAct
                             </span>
                           </td>
                           <td className="py-2.5 text-right pr-1">
-                            <button
-                              onClick={() => removeFile(f.id)}
-                              className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
+                            <div className="flex justify-end items-center gap-1">
+                              <button
+                                onClick={() => downloadFile(f)}
+                                disabled={downloadingId === f.id || !ready}
+                                title={f.storagePath ? 'Tải file gốc từ Supabase' : 'Tải nội dung đã scan'}
+                                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l-4-4m4 4l4-4M5 19h14" />
+                                </svg>
+                                {downloadingId === f.id ? 'Đang tải' : 'Tải về'}
+                              </button>
+                              <button
+                                onClick={() => removeFile(f.id)}
+                                title="Xóa tài liệu"
+                                className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-1"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

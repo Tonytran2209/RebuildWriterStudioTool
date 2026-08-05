@@ -25,6 +25,8 @@ export interface DocumentFile {
   contentLength?: number;
   contentHash?: string;
   scanStatus?: 'ready' | 'error';
+  storagePath?: string;
+  originalMimeType?: string;
 }
 
 export interface StepFileAccess {
@@ -188,6 +190,8 @@ export interface ActionDataSource {
   contentLength?: number;
   contentHash?: string;
   scanStatus?: 'ready' | 'error';
+  storagePath?: string;
+  originalMimeType?: string;
   // URL / GSheet
   url?: string;
   headers?: Record<string, string>;   // custom request headers cho API

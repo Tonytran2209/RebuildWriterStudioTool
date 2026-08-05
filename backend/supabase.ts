@@ -9,6 +9,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
  */
 
 const TABLE = 'kv_store';
+const DOCUMENT_BUCKET = 'writer-documents';
 
 // Singleton — created once when Railway boots, reused for all requests
 let _client: SupabaseClient | null = null;
@@ -75,4 +76,38 @@ export async function checkConnection(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function uploadDocumentBinary(
+  storagePath: string,
+  data: Buffer,
+  contentType: string,
+): Promise<void> {
+  const client = getClient();
+  let { error } = await client.storage
+    .from(DOCUMENT_BUCKET)
+    .upload(storagePath, data, { contentType, upsert: false });
+
+  if (error && /bucket.*not found/i.test(error.message)) {
+    const { error: createError } = await client.storage.createBucket(DOCUMENT_BUCKET, {
+      public: false,
+      fileSizeLimit: 15 * 1024 * 1024,
+    });
+    if (createError && !/already exists/i.test(createError.message)) {
+      throw new Error(`Không thể tạo Supabase Storage bucket: ${createError.message}`);
+    }
+    ({ error } = await client.storage
+      .from(DOCUMENT_BUCKET)
+      .upload(storagePath, data, { contentType, upsert: false }));
+  }
+
+  if (error) throw new Error(`Không thể lưu file gốc vào Supabase Storage: ${error.message}`);
+}
+
+export async function downloadDocumentBinary(storagePath: string): Promise<Blob> {
+  const { data, error } = await getClient().storage.from(DOCUMENT_BUCKET).download(storagePath);
+  if (error || !data) {
+    throw new Error(`Không thể tải file gốc từ Supabase Storage: ${error?.message ?? 'không có dữ liệu'}`);
+  }
+  return data;
 }
