@@ -27,6 +27,16 @@ export interface DocumentFile {
   scanStatus?: 'ready' | 'error';
   storagePath?: string;
   originalMimeType?: string;
+  sourceType?: ActionSourceType;
+  addedAt?: string;
+  preview?: string;
+  rowCount?: number;
+  url?: string;
+  query?: string;
+  columns?: string[];
+  rows?: ManualRow[];
+  airtableBase?: string;
+  airtableTable?: string;
 }
 
 export interface StepFileAccess {

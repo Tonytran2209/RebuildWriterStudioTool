@@ -111,3 +111,25 @@ export async function downloadDocumentBinary(storagePath: string): Promise<Blob>
   }
   return data;
 }
+
+export async function runReadOnlySelect(query: string): Promise<unknown[]> {
+  const normalized = query.trim().replace(/;$/, '');
+  const match = normalized.match(
+    /^select\s+(.+?)\s+from\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s+limit\s+(\d+))?$/i,
+  );
+  if (!match) {
+    throw new Error('Supabase Query chỉ hỗ trợ: SELECT cột FROM tên_bảng LIMIT số_lượng.');
+  }
+
+  const columns = match[1].trim();
+  if (columns !== '*' && !columns.split(',').every(value => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value.trim()))) {
+    throw new Error('Danh sách cột Supabase không hợp lệ.');
+  }
+  const limit = Math.min(Math.max(Number(match[3] ?? 100), 1), 1000);
+  const { data, error } = await getClient()
+    .from(match[2])
+    .select(columns)
+    .limit(limit);
+  if (error) throw new Error(`Supabase SELECT: ${error.message}`);
+  return data ?? [];
+}

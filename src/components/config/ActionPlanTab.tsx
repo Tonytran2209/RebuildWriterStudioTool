@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
-import type { ActionDataSource, ActionSourceType, ManualRow } from '../../types';
+import type { ActionDataSource, ActionSourceType, FileCategory, ManualRow } from '../../types';
 import { isActionSourceReady } from '../../lib/documentStatus';
 import { uploadDocumentToRailway } from '../../lib/railwayUpload';
 import { downloadDocumentFromRailway } from '../../lib/railwayDownload';
+import { importSourceThroughRailway } from '../../lib/railwayImport';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ const SOURCE_ICONS: Record<ActionSourceType, string> = {
 
 // ── sub-forms ─────────────────────────────────────────────────────────────────
 
-function FileForm({ onAdd, railwayUrl }: { onAdd: (sources: ActionDataSource[]) => void; railwayUrl: string }) {
+function FileForm({ onAdd, railwayUrl, category }: { onAdd: (sources: ActionDataSource[]) => void; railwayUrl: string; category: FileCategory }) {
   const ref = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -55,8 +56,13 @@ function FileForm({ onAdd, railwayUrl }: { onAdd: (sources: ActionDataSource[]) 
     try {
       const extracted: ActionDataSource[] = [];
       for (const f of Array.from(list)) {
-        const result = await uploadDocumentToRailway(f, 'action', railwayUrl);
-        extracted.push(result.record as ActionDataSource);
+        const result = await uploadDocumentToRailway(f, category, railwayUrl);
+        const record = result.record as ActionDataSource & { uploadedAt?: string };
+        extracted.push({
+          ...record,
+          sourceType: 'file',
+          addedAt: record.addedAt ?? record.uploadedAt ?? new Date().toISOString(),
+        });
       }
       onAdd(extracted);
     } catch (e: unknown) {
@@ -135,9 +141,6 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
   const [headerKey, setHeaderKey] = useState('');
   const [headerVal, setHeaderVal] = useState('');
   const [headers, setHeaders] = useState<Record<string, string>>({});
-  const [fetching, setFetching] = useState(false);
-  const [preview, setPreview] = useState('');
-  const [fetchedContent, setFetchedContent] = useState('');
 
   const addHeader = () => {
     if (!headerKey) return;
@@ -145,28 +148,14 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
     setHeaderKey(''); setHeaderVal('');
   };
 
-  const fetchPreview = async () => {
-    if (!url) return;
-    setFetching(true);
-    try {
-      const res = await fetch(url, { headers });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      setFetchedContent(text);
-      setPreview(text.slice(0, 500));
-    } catch (e: any) {
-      setPreview(`Lỗi: ${e.message}`);
-    } finally { setFetching(false); }
-  };
-
   const save = () => {
     if (!url) return;
     onAdd({
       id: uid(), name: name || url, sourceType: 'url', addedAt: now(),
       url, headers: Object.keys(headers).length ? headers : undefined,
-      contentUpdatedAt: now(), content: fetchedContent || undefined, preview: preview || url,
+      contentUpdatedAt: now(), preview: url,
     });
-    setName(''); setUrl(''); setHeaders({}); setPreview(''); setFetchedContent('');
+    setName(''); setUrl(''); setHeaders({});
   };
 
   return (
@@ -174,9 +163,6 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên nguồn dữ liệu (tuỳ chọn)" className={input} />
       <div className="flex gap-2">
         <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://api.example.com/keywords" className={`${input} flex-1 font-mono text-[11px]`} />
-        <button onClick={fetchPreview} disabled={!url || fetching} className="px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 rounded-xl transition-all shrink-0 disabled:opacity-50">
-          {fetching ? '...' : 'Test'}
-        </button>
       </div>
 
       {/* Custom headers */}
@@ -196,11 +182,9 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
         ))}
       </div>
 
-      {preview && (
-        <pre className="bg-slate-900 text-emerald-400 text-[10px] font-mono rounded-xl p-3 overflow-x-auto max-h-32">{preview}</pre>
-      )}
+      <p className="text-[10px] text-slate-400">Railway sẽ gọi URL, kiểm tra HTTP và chỉ lưu khi nhận được nội dung hợp lệ.</p>
       <div className="flex justify-end">
-        <button onClick={save} disabled={!url} className={btn}>Lưu URL source</button>
+        <button onClick={save} disabled={!url} className={btn}>Import URL qua Railway</button>
       </div>
     </div>
   );
@@ -209,36 +193,18 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
 function GSheetForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [fetching, setFetching] = useState(false);
-  const [preview, setPreview] = useState('');
-  const [sheetContent, setSheetContent] = useState('');
-  const [error, setError] = useState('');
 
   const sheetId = extractSheetId(url);
   const csvUrl = sheetId ? `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv` : null;
-
-  const fetchPreview = async () => {
-    if (!csvUrl) { setError('URL không hợp lệ — cần link Google Sheets công khai.'); return; }
-    setFetching(true); setError('');
-    try {
-      const res = await fetch(csvUrl);
-      if (!res.ok) throw new Error('Không thể tải — đảm bảo sheet được chia sẻ công khai.');
-      const text = await res.text();
-      setSheetContent(text);
-      setPreview(csvPreview(text, 5));
-    } catch (e: any) { setError(e.message); }
-    finally { setFetching(false); }
-  };
 
   const save = () => {
     if (!sheetId) return;
     onAdd({
       id: uid(), name: name || `Google Sheets — ${sheetId.slice(0, 8)}`,
       sourceType: 'gsheet', addedAt: now(),
-      url: csvUrl!, contentUpdatedAt: now(), content: sheetContent || undefined, preview: preview || 'Google Sheets data source',
-      rowCount: sheetContent ? countRows(sheetContent) : undefined,
+      url: csvUrl!, contentUpdatedAt: now(), preview: 'Google Sheets public CSV',
     });
-    setName(''); setUrl(''); setPreview(''); setSheetContent('');
+    setName(''); setUrl('');
   };
 
   return (
@@ -250,17 +216,10 @@ function GSheetForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên nguồn dữ liệu..." className={input} />
       <div className="flex gap-2">
         <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." className={`${input} flex-1 font-mono text-[11px]`} />
-        <button onClick={fetchPreview} disabled={!sheetId || fetching} className="px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all disabled:opacity-50 shrink-0">
-          {fetching ? '...' : 'Import'}
-        </button>
       </div>
       {sheetId && <p className="text-[10px] text-slate-400 font-mono">Sheet ID: {sheetId}</p>}
-      {error && <p className="text-[11px] text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>}
-      {preview && (
-        <pre className="bg-slate-900 text-emerald-400 text-[10px] font-mono rounded-xl p-3 overflow-x-auto max-h-28">{preview}</pre>
-      )}
       <div className="flex justify-end">
-        <button onClick={save} disabled={!sheetId} className={btn}>Lưu Google Sheets source</button>
+        <button onClick={save} disabled={!sheetId} className={btn}>Import Google Sheets qua Railway</button>
       </div>
     </div>
   );
@@ -394,7 +353,7 @@ function AirtableForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
   return (
     <div className="space-y-3">
       <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-3 text-[11px] text-yellow-800">
-        API Key được lưu mã hóa, chỉ Railway backend mới đọc được để fetch dữ liệu khi AI generate.
+        Token chỉ được gửi một lần cho Railway để import dữ liệu và không được lưu vào Supabase.
       </div>
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên nguồn dữ liệu..." className={input} />
       <input value={apiKey} onChange={e => setApiKey(e.target.value)} type="password" placeholder="Airtable Personal Access Token (pat...)" className={`${input} font-mono text-[11px]`} />
@@ -422,14 +381,34 @@ interface Props {
   sources: ActionDataSource[];
   onChange: (sources: ActionDataSource[]) => void;
   railwayUrl: string;
+  category?: FileCategory;
 }
 
-export default function ActionPlanTab({ sources = [], onChange, railwayUrl }: Props) {
+const CATEGORY_LABEL: Record<FileCategory, string> = {
+  kb: 'Knowledge Base',
+  action: 'Action Plan',
+  rules: 'Rules & Guidelines',
+};
+
+export default function ActionPlanTab({ sources = [], onChange, railwayUrl, category = 'action' }: Props) {
   const [mode, setMode] = useState<ActionSourceType>('file');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState('');
 
-  const addSource = (s: ActionDataSource) => onChange([s, ...sources]);
+  const addSource = async (source: ActionDataSource) => {
+    setImporting(true);
+    setImportError('');
+    try {
+      const result = await importSourceThroughRailway(source, category, railwayUrl);
+      onChange([result.record as ActionDataSource, ...sources]);
+    } catch (error: unknown) {
+      setImportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setImporting(false);
+    }
+  };
   const addSources = (newSources: ActionDataSource[]) => onChange([...newSources, ...sources]);
   const removeSource = (id: string) => onChange(sources.filter(s => s.id !== id));
   const readySourceCount = sources.filter(isActionSourceReady).length;
@@ -471,20 +450,22 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl }: Pr
 
       {/* Active form */}
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-        {mode === 'file'     && <FileForm     onAdd={addSources} railwayUrl={railwayUrl} />}
+        {mode === 'file'     && <FileForm     onAdd={addSources} railwayUrl={railwayUrl} category={category} />}
         {mode === 'paste'    && <PasteForm    onAdd={addSource} />}
         {mode === 'url'      && <UrlForm      onAdd={addSource} />}
         {mode === 'gsheet'   && <GSheetForm   onAdd={addSource} />}
         {mode === 'manual'   && <ManualForm   onAdd={addSource} />}
         {mode === 'supabase' && <SupabaseForm onAdd={addSource} />}
         {mode === 'airtable' && <AirtableForm onAdd={addSource} />}
+        {importing && <p className="mt-3 text-[11px] font-semibold text-blue-600">Railway đang lấy dữ liệu và lưu Supabase...</p>}
+        {importError && <p className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[11px] text-red-600">{importError}</p>}
       </div>
 
       {/* Saved sources list */}
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
         <div className="flex items-center justify-between mb-3 px-1">
           <h4 className="text-xs font-bold text-slate-800">
-            Nguồn dữ liệu Action Plan
+            Nguồn dữ liệu {CATEGORY_LABEL[category]}
             <span className="text-slate-400 font-normal ml-1">({sources.length})</span>
           </h4>
           {sources.length > 0 && (

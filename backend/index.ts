@@ -13,6 +13,7 @@ import {
   checkConnection,
   uploadDocumentBinary,
   downloadDocumentBinary,
+  runReadOnlySelect,
 } from './supabase.ts';
 import { extractDocumentText } from './documentParser.ts';
 import { resolveStepContext } from './stepContext.ts';
@@ -46,6 +47,38 @@ function contentMetadata(content: string) {
     contentHash: crypto.createHash('sha256').update(content, 'utf8').digest('hex'),
     scanStatus: 'ready' as const,
   };
+}
+
+function assertPublicHttpUrl(value: string): URL {
+  const url = new URL(value);
+  if (!['http:', 'https:'].includes(url.protocol)) throw new Error('URL chỉ hỗ trợ HTTP/HTTPS.');
+  const host = url.hostname.toLowerCase();
+  if (
+    host === 'localhost' || host === '0.0.0.0' || host === '::1' ||
+    /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  ) throw new Error('Không cho phép truy cập URL nội bộ/private network.');
+  return url;
+}
+
+async function fetchTextSource(urlValue: string, headers?: Record<string, string>): Promise<string> {
+  const url = assertPublicHttpUrl(urlValue);
+  const response = await fetch(url, { headers: headers ?? {}, signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) throw new Error(`Không thể tải URL: HTTP ${response.status}.`);
+  const length = Number(response.headers.get('content-length') ?? 0);
+  if (length > 10 * 1024 * 1024) throw new Error('Nguồn URL vượt giới hạn 10 MB.');
+  const content = await response.text();
+  if (content.length > 10 * 1024 * 1024) throw new Error('Nguồn URL vượt giới hạn 10 MB.');
+  return content.trim();
+}
+
+async function fetchAirtableSource(key: string, base: string, table: string): Promise<string> {
+  if (!/^app[a-zA-Z0-9]+$/.test(base)) throw new Error('Airtable Base ID không hợp lệ.');
+  const url = `https://api.airtable.com/v0/${base}/${encodeURIComponent(table)}?pageSize=100`;
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(20_000) });
+  if (!response.ok) throw new Error(`Airtable API: HTTP ${response.status}.`);
+  const payload = await response.json() as { records?: unknown[] };
+  return JSON.stringify(payload.records ?? [], null, 2);
 }
 
 // ─── Serve Vite frontend static files ────────────────────────────────────────
@@ -248,6 +281,76 @@ app.post('/api/files', async (req, res) => {
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Multi-source import: Railway resolves content, then persists Supabase ──
+
+app.post('/api/import/source', async (req, res) => {
+  try {
+    const category = String(req.body?.category ?? '');
+    const sourceType = String(req.body?.sourceType ?? '');
+    if (!['kb', 'action', 'rules'].includes(category)) {
+      return res.status(400).json({ error: 'category phải là kb, action hoặc rules.' });
+    }
+    if (!['paste', 'url', 'gsheet', 'manual', 'supabase', 'airtable'].includes(sourceType)) {
+      return res.status(400).json({ error: 'Loại nguồn dữ liệu không được hỗ trợ.' });
+    }
+
+    let content = '';
+    if (sourceType === 'paste' || sourceType === 'manual') {
+      content = String(req.body.content ?? '').trim();
+    } else if (sourceType === 'url' || sourceType === 'gsheet') {
+      content = await fetchTextSource(String(req.body.url ?? ''), req.body.headers);
+    } else if (sourceType === 'supabase') {
+      content = JSON.stringify(await runReadOnlySelect(String(req.body.query ?? '')), null, 2);
+    } else if (sourceType === 'airtable') {
+      content = await fetchAirtableSource(
+        String(req.body.airtableKey ?? ''),
+        String(req.body.airtableBase ?? ''),
+        String(req.body.airtableTable ?? ''),
+      );
+    }
+    if (!content) return res.status(422).json({ error: 'Nguồn không trả về nội dung để AI đọc.' });
+
+    const timestamp = new Date().toISOString();
+    const id = crypto.randomUUID();
+    const name = String(req.body.name ?? '').trim() || `${sourceType}-${timestamp.slice(0, 10)}`;
+    const common = {
+      id,
+      name,
+      sourceType,
+      addedAt: timestamp,
+      uploadedAt: timestamp,
+      contentUpdatedAt: timestamp,
+      content,
+      preview: content.split('\n').slice(0, 4).join('\n'),
+      rowCount: content.split('\n').filter(Boolean).length,
+      size: formatBytes(Buffer.byteLength(content, 'utf8')),
+      fileType: sourceType === 'manual' ? 'csv' : sourceType === 'paste' ? String(req.body.format ?? 'txt') : 'json',
+      url: sourceType === 'url' || sourceType === 'gsheet' ? req.body.url : undefined,
+      query: sourceType === 'supabase' ? req.body.query : undefined,
+      airtableBase: sourceType === 'airtable' ? req.body.airtableBase : undefined,
+      airtableTable: sourceType === 'airtable' ? req.body.airtableTable : undefined,
+      columns: sourceType === 'manual' ? req.body.columns : undefined,
+      rows: sourceType === 'manual' ? req.body.rows : undefined,
+      ...contentMetadata(content),
+    };
+
+    if (category === 'action') {
+      const config = (await kvGet<Record<string, any>>('writer:config')) ?? {};
+      config.actionSources = [common, ...(config.actionSources ?? []).filter((item: any) => item.id !== id)];
+      await kvSet('writer:config', config);
+      return res.status(201).json({ target: 'writer:config.actionSources', record: common });
+    }
+
+    const record = { ...common, category };
+    const files = (await kvGet<any[]>('writer:files')) ?? [];
+    await kvSet('writer:files', [record, ...files.filter(item => item.id !== id)]);
+    return res.status(201).json({ target: 'writer:files', record });
+  } catch (err: any) {
+    console.error('[import/source] error:', err.message);
+    return res.status(500).json({ error: err.message || 'Không thể import nguồn dữ liệu.' });
   }
 });
 
