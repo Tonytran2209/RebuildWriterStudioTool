@@ -1,0 +1,50 @@
+import type { EvidenceRef } from "../types";
+import type { DocBundle, DocRef } from "./docContext";
+
+function canonical(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim();
+}
+
+function quoteExists(content: string, quote: string): boolean {
+  const source = canonical(content);
+  const target = canonical(quote);
+  if (!target) return false;
+  if (source.includes(target)) return true;
+  return quote.split(/\r?\n|\.{3}|…/).map(canonical).filter(part => part.length >= 16).some(part => source.includes(part));
+}
+
+function docIndex(bundle: DocBundle): Map<string, { role: EvidenceRef["role"]; doc: DocRef }> {
+  return new Map([
+    ...bundle.knowledgeBase.map(doc => [canonical(doc.name), { role: "kb" as const, doc }] as const),
+    ...bundle.actionPlan.map(doc => [canonical(doc.name), { role: "action" as const, doc }] as const),
+    ...bundle.rules.map(doc => [canonical(doc.name), { role: "rules" as const, doc }] as const),
+  ]);
+}
+
+export function verifyEvidence(value: unknown, bundle: DocBundle): EvidenceRef[] {
+  if (!Array.isArray(value)) return [];
+  const index = docIndex(bundle);
+  return value.flatMap(raw => {
+    if (!raw || typeof raw !== "object") return [];
+    const item = raw as Record<string, unknown>;
+    const source = String(item.source ?? item.doc ?? item.name ?? "").trim();
+    const quote = String(item.quote ?? item.excerpt ?? "").trim();
+    const match = index.get(canonical(source));
+    if (!match?.doc.content || !quoteExists(match.doc.content, quote)) return [];
+    return [{ source: match.doc.name, role: match.role, quote, note: item.note ? String(item.note) : undefined }];
+  });
+}
+
+export function verifiedRuleRefs(value: unknown, bundle: DocBundle): string[] {
+  const allowed = new Map(bundle.rules.map(doc => [canonical(doc.name), doc.name]));
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[,;\n]/) : [];
+  return [...new Set(values.map(item => allowed.get(canonical(String(item).trim()))).filter((item): item is string => Boolean(item)))];
+}
+
+export function hasResearchEvidence(evidence: EvidenceRef[]): boolean {
+  return evidence.some(item => item.role === "kb" || item.role === "action");
+}
+
+export function hasRulesEvidence(evidence: EvidenceRef[]): boolean {
+  return evidence.some(item => item.role === "rules");
+}

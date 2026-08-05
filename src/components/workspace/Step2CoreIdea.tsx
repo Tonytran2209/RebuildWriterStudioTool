@@ -10,8 +10,10 @@ import { callAI } from "../../lib/aiService";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
+  buildActionPlanFingerprint,
   describeBundle,
 } from "../../lib/docContext";
+import { hasResearchEvidence, hasRulesEvidence, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
 
 interface Props {
   article: Article;
@@ -39,10 +41,12 @@ function toNumber(v: unknown, fallback = 0): number {
 }
 
 function toStringArr(v: unknown): string[] {
-  return Array.isArray(v) ? v.map(String).map(s => s.trim()).filter(Boolean) : [];
+  if (Array.isArray(v)) return v.map(String).map(s => s.trim()).filter(Boolean);
+  if (typeof v === "string") return v.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+  return [];
 }
 
-function normalizeIdeas(parsed: unknown): CoreIdeaSuggestion[] {
+function normalizeIdeas(parsed: unknown, bundle: ReturnType<typeof collectStepDocs>): CoreIdeaSuggestion[] {
   if (!Array.isArray(parsed)) throw new Error("Phản hồi AI không phải mảng.");
   return parsed
     .map((raw, idx) => {
@@ -53,6 +57,9 @@ function normalizeIdeas(parsed: unknown): CoreIdeaSuggestion[] {
       if (!title || !mainArgument) return null;
       const ratingObj = (obj.rating && typeof obj.rating === "object" ? obj.rating : {}) as Record<string, unknown>;
       const seo = (obj.seoKeywords && typeof obj.seoKeywords === "object" ? obj.seoKeywords : {}) as Record<string, unknown>;
+      const evidence = verifyEvidence(obj.evidence, bundle);
+      const ruleRefs = verifiedRuleRefs(obj.ruleRefs, bundle);
+      if (!hasResearchEvidence(evidence) || !hasRulesEvidence(evidence)) return null;
       return {
         id: `idea-${idx}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
         title,
@@ -72,8 +79,9 @@ function normalizeIdeas(parsed: unknown): CoreIdeaSuggestion[] {
           uniqueness: toNumber(ratingObj.uniqueness, 0),
         },
         ratingRationale: String(obj.ratingRationale ?? "").trim(),
-        matchedDocs: toStringArr(obj.matchedDocs),
-        ruleRefs: toStringArr(obj.ruleRefs),
+        matchedDocs: [...new Set(evidence.filter(item => item.role === "kb" || item.role === "action").map(item => item.source))],
+        ruleRefs,
+        evidence,
       } as CoreIdeaSuggestion;
     })
     .filter((v): v is CoreIdeaSuggestion => v !== null);
@@ -111,13 +119,19 @@ export default function Step2CoreIdea({
   onNext,
   onPrev,
 }: Props) {
-  const ideas = article.coreIdeaSuggestions ?? [];
+  const storedIdeas = article.coreIdeaSuggestions ?? [];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(article.selectedCoreIdeaId ?? null);
   const autoRequestedRef = useRef<string | null>(null);
 
   const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
+  const sourceFingerprint = useMemo(
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-evidence-v1:${article.contentType ?? ""}`,
+    [article.contentType, bundle, model.id, model.provider],
+  );
+  const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
+  const ideas = scanIsStale ? [] : storedIdeas;
 
   const fetchIdeas = async () => {
     if (!article.contentType) {
@@ -126,6 +140,14 @@ export default function Step2CoreIdea({
     }
     if (!bundle.totalCount) {
       setError("Chưa có tài liệu nào được phân quyền cho Step 2. Vui lòng mở Cấu hình → Step Setup.");
+      return;
+    }
+    if (!bundle.knowledgeBase.length && !bundle.actionPlan.length) {
+      setError("Step 2 cần ít nhất một Knowledge Base hoặc Action Plan có nội dung thật.");
+      return;
+    }
+    if (!bundle.rules.length) {
+      setError("Step 2 chưa được cấp Rules & Guidelines để kiểm chứng Core Idea.");
       return;
     }
     setLoading(true);
@@ -138,6 +160,8 @@ export default function Step2CoreIdea({
           "- Không dùng dữ liệu ngoài tài liệu được cấp. Nếu không đủ, tạo ít ý tưởng hơn.",
           "- Mỗi idea phải có tiêu đề rõ ràng, main argument (luận điểm cốt lõi), Top SEO keywords, và rating chi tiết.",
           "- Rating cho theo thang 0-10 với 5 tiêu chí (overall, seoPotential, audienceFit, docSupport, uniqueness). Ghi rõ căn cứ chấm điểm.",
+          "- Mỗi idea phải có evidence gồm ít nhất 1 trích dẫn nguyên văn từ KB/Action và 1 trích dẫn nguyên văn từ Rules.",
+          "- source phải đúng chính xác tên file được cấp; quote phải được chép nguyên văn, không diễn giải.",
           "",
           "Trả về DUY NHẤT một mảng JSON hợp lệ, không kèm markdown fences hay text giải thích.",
           "Schema mỗi phần tử:",
@@ -159,7 +183,8 @@ export default function Step2CoreIdea({
   },
   "ratingRationale": string (1-2 câu giải thích điểm),
   "matchedDocs": string[] (tên tài liệu KB/Action đã dùng),
-  "ruleRefs": string[] (tên rule/guideline đã áp dụng)
+  "ruleRefs": string[] (tên rule/guideline đã áp dụng),
+  "evidence": [{ "source": string, "role": "kb" | "action" | "rules", "quote": string, "note": string }]
 }`,
         ].join("\n"),
       );
@@ -175,11 +200,22 @@ export default function Step2CoreIdea({
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
       ].join("\n");
 
-      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 2 });
-      const parsed = extractJson(res.content);
-      const normalized = normalizeIdeas(parsed);
-      if (normalized.length < 3) throw new Error(`AI chỉ trả về ${normalized.length} idea hợp lệ (yêu cầu ≥3).`);
-      onUpdate({ coreIdeaSuggestions: normalized });
+      const requestIdeas = async (correction = "") => {
+        const res = await callAI({ model, railwayUrl, prompt: `${userPrompt}${correction}`, systemPrompt, stepNumber: 2 });
+        return { res, ideas: normalizeIdeas(extractJson(res.content), bundle) };
+      };
+      let result = await requestIdeas();
+      if (!result.ideas.length) {
+        result = await requestIdeas("\n\nLần trước không có idea vượt qua kiểm chứng. Bắt buộc chép quote nguyên văn và đúng tên source cho cả KB/Action lẫn Rules.");
+      }
+      if (!result.ideas.length) throw new Error("AI chưa trả về core idea có đủ evidence KB/Action và Rules.");
+      onUpdate({
+        coreIdeaSuggestions: result.ideas,
+        selectedCoreIdeaId: null,
+        coreIdeaSourceFingerprint: sourceFingerprint,
+        coreIdeaScannedAt: result.res.servedAt ?? result.res.generatedAt ?? new Date().toISOString(),
+      });
+      setSelectedId(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
@@ -191,17 +227,17 @@ export default function Step2CoreIdea({
   // First-time scan only — cache in article.coreIdeaSuggestions.
   // Re-scan only when user explicitly clicks "Đề xuất lại".
   useEffect(() => {
-    const key = `${article.contentType || ""}`;
+    const key = sourceFingerprint;
     if (autoRequestedRef.current === key) return;
     if (!article.contentType || !bundle.totalCount) return;
-    if (ideas.length > 0) {
+    if (ideas.length > 0 && !scanIsStale) {
       autoRequestedRef.current = key;
       return;
     }
     autoRequestedRef.current = key;
     fetchIdeas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [article.contentType, bundle.totalCount, ideas.length]);
+  }, [article.contentType, bundle.totalCount, ideas.length, scanIsStale, sourceFingerprint]);
 
   const handleSelect = (idea: CoreIdeaSuggestion) => {
     setSelectedId(idea.id);
@@ -236,6 +272,12 @@ export default function Step2CoreIdea({
                 {loading ? "Đang phân tích..." : ideas.length ? "Đề xuất lại" : "Lấy đề xuất"}
               </button>
             </div>
+
+            {scanIsStale && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Nguồn KB / Action Plan / Rules hoặc model đã thay đổi — AI đang cần research lại Core Idea.
+              </div>
+            )}
 
             {error && (
               <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>
@@ -378,7 +420,7 @@ export default function Step2CoreIdea({
         </button>
         <button
           onClick={onNext}
-          disabled={!selectedId}
+          disabled={!selectedId || scanIsStale}
           className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all"
         >
           Tiếp tục — Draft Outline

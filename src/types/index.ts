@@ -74,6 +74,7 @@ export type SearchIntent = 'informational' | 'commercial' | 'transactional' | 'n
 export interface EvidenceRef {
   source: string;
   note?: string;
+  quote?: string;
   role?: 'kb' | 'action' | 'rules';
 }
 
@@ -137,6 +138,7 @@ export interface CoreIdeaSuggestion {
   ratingRationale: string;
   matchedDocs: string[];
   ruleRefs: string[];
+  evidence?: EvidenceRef[];
 }
 
 export interface Article {
@@ -163,8 +165,12 @@ export interface Article {
   tone?: string;
   coreIdeaSuggestions?: CoreIdeaSuggestion[];
   selectedCoreIdeaId?: string;
+  coreIdeaSourceFingerprint?: string | null;
+  coreIdeaScannedAt?: string | null;
   // Step 3 data
   outline?: OutlineSection[];
+  outlineSourceFingerprint?: string | null;
+  outlineScannedAt?: string | null;
   // Step 4 data
   draft?: string;
 }

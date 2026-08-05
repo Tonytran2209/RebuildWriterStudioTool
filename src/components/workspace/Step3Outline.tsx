@@ -5,15 +5,16 @@ import type {
   AppConfig,
   DocumentFile,
   OutlineSection,
-  EvidenceRef,
   SearchIntent,
 } from "../../types";
 import { callAI } from "../../lib/aiService";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
+  buildActionPlanFingerprint,
   describeBundle,
 } from "../../lib/docContext";
+import { hasResearchEvidence, hasRulesEvidence, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
 
 function generateId() {
   return Math.random().toString(36).slice(2, 9);
@@ -61,27 +62,9 @@ function extractJson(raw: string): unknown {
 }
 
 function toStringArr(v: unknown): string[] {
-  return Array.isArray(v) ? v.map(String).map(s => s.trim()).filter(Boolean) : [];
-}
-
-function normalizeEvidence(v: unknown): EvidenceRef[] {
-  if (!Array.isArray(v)) return [];
-  return v
-    .map(e => {
-      if (!e) return null;
-      if (typeof e === "string") return { source: e } as EvidenceRef;
-      if (typeof e === "object") {
-        const obj = e as Record<string, unknown>;
-        const source = String(obj.source ?? obj.doc ?? obj.name ?? "").trim();
-        if (!source) return null;
-        const roleRaw = String(obj.role ?? "").toLowerCase();
-        const role: EvidenceRef["role"] =
-          roleRaw === "kb" || roleRaw === "action" || roleRaw === "rules" ? roleRaw : undefined;
-        return { source, note: obj.note ? String(obj.note) : undefined, role };
-      }
-      return null;
-    })
-    .filter((v): v is EvidenceRef => v !== null);
+  if (Array.isArray(v)) return v.map(String).map(s => s.trim()).filter(Boolean);
+  if (typeof v === "string") return v.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+  return [];
 }
 
 function normalizeIntent(v: unknown): SearchIntent | undefined {
@@ -90,7 +73,7 @@ function normalizeIntent(v: unknown): SearchIntent | undefined {
   return undefined;
 }
 
-function normalizeSections(parsed: unknown): OutlineSection[] {
+function normalizeSections(parsed: unknown, bundle: ReturnType<typeof collectStepDocs>): OutlineSection[] {
   if (!Array.isArray(parsed)) throw new Error("Phản hồi AI không phải mảng.");
   return parsed
     .map(raw => {
@@ -99,6 +82,8 @@ function normalizeSections(parsed: unknown): OutlineSection[] {
       const heading = String(obj.heading ?? obj.title ?? "").trim();
       if (!heading) return null;
       const lvl = String(obj.level ?? "h2").toLowerCase();
+      const evidence = verifyEvidence(obj.evidence, bundle);
+      if (!hasResearchEvidence(evidence) || !hasRulesEvidence(evidence)) return null;
       return {
         id: generateId(),
         heading,
@@ -106,8 +91,8 @@ function normalizeSections(parsed: unknown): OutlineSection[] {
         level: lvl === "h3" ? "h3" : "h2",
         keywords: toStringArr(obj.keywords),
         searchIntent: normalizeIntent(obj.searchIntent),
-        evidence: normalizeEvidence(obj.evidence),
-        ruleRefs: toStringArr(obj.ruleRefs),
+        evidence,
+        ruleRefs: verifiedRuleRefs(obj.ruleRefs, bundle),
       } as OutlineSection;
     })
     .filter((v): v is OutlineSection => v !== null);
@@ -143,6 +128,15 @@ export default function Step3Outline({
   const outline = article.outline || [];
 
   const bundle = useMemo(() => collectStepDocs(3, config, files), [config, files]);
+  const sourceFingerprint = useMemo(
+    () => [
+      buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-evidence-v1",
+      article.contentType, article.topic, article.angle, article.keywords,
+      article.targetAudience, article.tone, article.wordCount,
+    ].join(":"),
+    [article.angle, article.contentType, article.keywords, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, model.id, model.provider],
+  );
+  const outlineIsStale = Boolean(outline.length) && article.outlineSourceFingerprint !== sourceFingerprint;
 
   const contextBrief = useMemo(() => {
     const kws = (article.keywords || "").split(",").map(k => k.trim()).filter(Boolean);
@@ -163,6 +157,14 @@ export default function Step3Outline({
       setError("Chưa có Core Idea từ Step 2.");
       return;
     }
+    if (!bundle.knowledgeBase.length && !bundle.actionPlan.length) {
+      setError("Step 3 cần ít nhất một Knowledge Base hoặc Action Plan có nội dung thật.");
+      return;
+    }
+    if (!bundle.rules.length) {
+      setError("Step 3 chưa được cấp Rules & Guidelines để kiểm chứng outline.");
+      return;
+    }
     setGenerating(true);
     setError(null);
     try {
@@ -173,6 +175,8 @@ export default function Step3Outline({
           "- Action Plan xác định cấu trúc mẫu và các mục bắt buộc phải có.",
           "- Rules & Guidelines quyết định định dạng heading, độ sâu H2/H3, cách đặt tiêu đề, quy tắc SEO.",
           "- Mỗi section PHẢI ghi rõ: keywords được nhắm tới, searchIntent, evidence (nguồn tài liệu KB/Action/Rules đã dùng).",
+          "- Mỗi section phải có ít nhất 1 quote nguyên văn từ KB/Action và 1 quote nguyên văn từ Rules.",
+          "- source phải đúng chính xác tên file được cấp; quote phải chép nguyên văn, không diễn giải.",
           "",
           "Trả về DUY NHẤT một mảng JSON hợp lệ, không markdown fences, không giải thích.",
           "- JSON phải parse được bằng JSON.parse: dùng dấu phẩy giữa mọi field/phần tử và escape dấu ngoặc kép nằm trong chuỗi bằng \\\".",
@@ -183,7 +187,7 @@ export default function Step3Outline({
   "notes": string (1 câu ngắn mô tả nội dung, tối đa 120 ký tự),
   "keywords": string[] (2-5 từ khóa nhắm tới),
   "searchIntent": "informational" | "commercial" | "transactional" | "navigational",
-  "evidence": [{ "source": string, "note": string, "role": "kb" | "action" | "rules" }],
+  "evidence": [{ "source": string, "note": string, "quote": string, "role": "kb" | "action" | "rules" }],
   "ruleRefs": string[]
 }`,
         ].join("\n"),
@@ -237,9 +241,23 @@ export default function Step3Outline({
         });
         parsed = extractJson(repaired.content);
       }
-      const sections = normalizeSections(parsed);
-      if (!sections.length) throw new Error("AI không trả về section hợp lệ.");
-      onUpdate({ outline: sections });
+      let sections = normalizeSections(parsed, bundle);
+      let generatedAt = res.servedAt ?? res.generatedAt ?? new Date().toISOString();
+      if (!sections.length) {
+        const corrected = await callAI({
+          model,
+          railwayUrl,
+          prompt: `${userPrompt}\n\nLần trước không có section vượt qua kiểm chứng. Bắt buộc mỗi section chép quote nguyên văn và đúng tên source cho cả KB/Action lẫn Rules.`,
+          systemPrompt,
+          maxTokens: 8000,
+          temperature: 0.1,
+          stepNumber: 3,
+        });
+        sections = normalizeSections(extractJson(corrected.content), bundle);
+        generatedAt = corrected.servedAt ?? corrected.generatedAt ?? new Date().toISOString();
+      }
+      if (!sections.length) throw new Error("AI chưa trả về outline có đủ evidence KB/Action và Rules.");
+      onUpdate({ outline: sections, outlineSourceFingerprint: sourceFingerprint, outlineScannedAt: generatedAt });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không tạo được outline: ${message}`);
@@ -345,6 +363,12 @@ export default function Step3Outline({
                 {generating ? "Đang dựng..." : outline.length ? "Tạo lại" : "Tạo outline"}
               </button>
             </div>
+
+            {outlineIsStale && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Nguồn tài liệu, model hoặc Core Idea đã thay đổi — hãy tạo lại outline để dùng evidence mới.
+              </div>
+            )}
 
             {error && <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>}
 
@@ -459,7 +483,7 @@ export default function Step3Outline({
         </button>
         <button
           onClick={onNext}
-          disabled={outline.length === 0}
+          disabled={outline.length === 0 || outlineIsStale}
           className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all"
         >
           Tiếp tục — First Draft
