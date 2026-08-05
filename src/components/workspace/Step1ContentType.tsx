@@ -187,6 +187,7 @@ const GROUP_META: Record<ContentTypeGroup, { title: string; accent: string; badg
 };
 
 const GROUP_ORDER: ContentTypeGroup[] = ["A", "B", "C"];
+const STEP1_PROMPT_VERSION = "step1-wave-v2";
 
 function displayTimeframe(suggestion: ContentTypeSuggestion): string {
   const timeframe = suggestion.timeframe ?? "";
@@ -211,7 +212,10 @@ export default function Step1ContentType({
   const autoRequestedRef = useRef<string | null>(null);
 
   const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
-  const sourceFingerprint = useMemo(() => buildActionPlanFingerprint(bundle), [bundle]);
+  const sourceFingerprint = useMemo(
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:${STEP1_PROMPT_VERSION}`,
+    [bundle, model.id, model.provider],
+  );
   const hasCachedScan = Boolean(
     suggestions.length || article.contentTypeSourceFingerprint || article.contentTypeScannedAt,
   );
@@ -297,6 +301,7 @@ export default function Step1ContentType({
         maxTokens: 16000,
         temperature: 0.1,
         stepNumber: 1,
+        splitByWave: true,
       });
       const parsed = extractJson(res.content);
       const evidence: EvidenceIndex = {
@@ -316,7 +321,8 @@ export default function Step1ContentType({
       onUpdate({
         contentTypeSuggestions: normalized,
         contentTypeSourceFingerprint: sourceFingerprint,
-        contentTypeScannedAt: res.generatedAt ?? new Date().toISOString(),
+        contentTypeScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),
+        contentTypeCacheHit: Boolean(res.cacheHit),
         contentType: null,
         selectedContentTypeSuggestionId: null,
       });
@@ -328,6 +334,7 @@ export default function Step1ContentType({
           contentTypeSuggestions: [],
           contentTypeSourceFingerprint: null,
           contentTypeScannedAt: null,
+          contentTypeCacheHit: false,
           contentType: null,
           selectedContentTypeSuggestionId: null,
         });
@@ -394,7 +401,9 @@ export default function Step1ContentType({
               }`}>
                 {scanIsStale
                   ? "Nguồn KB / Rules / Action Plan đã thay đổi — AI đang cần quét lại dữ liệu."
-                  : `Đã quét Action Plan lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")}.`}
+                  : article.contentTypeCacheHit
+                    ? `Đã dùng kết quả cache đã xác thực lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")} — nguồn không thay đổi.`
+                    : `Đã quét Action Plan lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")}.`}
               </div>
             )}
 

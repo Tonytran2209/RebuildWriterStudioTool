@@ -8,6 +8,7 @@ export interface AIRequest {
   maxTokens?: number;
   temperature?: number;
   stepNumber: 1 | 2 | 3 | 4;
+  splitByWave?: boolean;
 }
 
 export interface AIResponse {
@@ -15,6 +16,9 @@ export interface AIResponse {
   model: string;
   usage?: { inputTokens: number; outputTokens: number };
   generatedAt?: string;
+  servedAt?: string;
+  cacheHit?: boolean;
+  timing?: { contextMs: number; providerMs: number; totalMs: number };
 }
 
 const DEMO_RESPONSES: Record<string, string> = {
@@ -72,7 +76,7 @@ function getDemoKey(prompt: string): string {
 }
 
 export async function callAI(req: AIRequest): Promise<AIResponse> {
-  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber } = req;
+  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber, splitByWave } = req;
 
   // Resolve railway URL — prop → localStorage → hardcoded production URL
   const railwayUrl = req.railwayUrl
@@ -92,6 +96,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
           stepNumber,
           maxTokens,
           temperature,
+          splitByWave,
         }),
       });
 

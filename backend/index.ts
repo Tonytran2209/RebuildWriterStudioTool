@@ -16,7 +16,8 @@ import {
   runReadOnlySelect,
 } from './supabase.ts';
 import { extractDocumentText } from './documentParser.ts';
-import { resolveStepContext } from './stepContext.ts';
+import { extractStructuredSections } from './documentStructure.ts';
+import { resolveStepContext, resolveStep1WaveContexts, type StepContextResult } from './stepContext.ts';
 
 // DIST_PATH env var set by Railway start command; fallback to sibling dist/ of cwd
 const DIST = process.env.DIST_PATH
@@ -46,7 +47,86 @@ function contentMetadata(content: string) {
     contentLength: content.length,
     contentHash: crypto.createHash('sha256').update(content, 'utf8').digest('hex'),
     scanStatus: 'ready' as const,
+    structuredSections: extractStructuredSections(content),
   };
+}
+
+function aiCacheKey(input: unknown): string {
+  const digest = crypto.createHash('sha256').update(JSON.stringify(input), 'utf8').digest('hex');
+  return `writer:ai-cache:${digest}`;
+}
+
+function extractJsonArray(content: string): unknown[] {
+  const cleaned = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    const start = cleaned.indexOf('[');
+    const end = cleaned.lastIndexOf(']');
+    if (start >= 0 && end > start) {
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+      if (Array.isArray(parsed)) return parsed;
+    }
+  }
+  throw new Error('AI không trả về JSON array hợp lệ cho một wave.');
+}
+
+function canonicalEvidence(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[–—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function evidenceExists(source: string, quote: unknown): boolean {
+  const normalizedSource = canonicalEvidence(source);
+  const normalizedQuote = canonicalEvidence(quote);
+  if (!normalizedQuote) return false;
+  if (normalizedSource.includes(normalizedQuote)) return true;
+  return String(quote ?? '').split(/\r?\n|\.{3}|…/)
+    .map(canonicalEvidence)
+    .filter(part => part.length >= 16)
+    .some(part => normalizedSource.includes(part));
+}
+
+function validateStep1Items(items: unknown[], actionText: string): void {
+  if (!items.length) throw new Error('AI không trả về đề xuất nào cho Step 1.');
+  const source = canonicalEvidence(actionText);
+  const invalid = items.find(item => {
+    if (!item || typeof item !== 'object') return true;
+    const value = item as Record<string, unknown>;
+    const typeGroup = String(value.typeGroup ?? value.type ?? '').toUpperCase().match(/\b(A|B|C)\b/)?.[1];
+    const label = canonicalEvidence(value.label ?? value.name);
+    const wave = canonicalEvidence(value.wave);
+    const timeframe = canonicalEvidence(value.timeframe);
+    const keywords = Array.isArray(value.keywords) ? value.keywords.map(canonicalEvidence).filter(Boolean) : [];
+    const actionEvidence = value.actionPlanEvidence;
+    const scheduleEvidence = value.scheduleEvidence;
+    const schedule = canonicalEvidence(scheduleEvidence);
+    return !typeGroup || !label || !wave || !timeframe || !keywords.length ||
+      !source.includes(label) || !source.includes(wave) || !source.includes(timeframe) ||
+      keywords.some(keyword => !source.includes(keyword)) ||
+      !new RegExp(`\\b(?:content\\s*)?type\\s*${typeGroup}\\b`, 'i').test(actionText) ||
+      !evidenceExists(actionText, actionEvidence) || !evidenceExists(actionText, scheduleEvidence) ||
+      !schedule.includes(wave) || !schedule.includes(timeframe);
+  });
+  if (invalid) throw new Error('Một hoặc nhiều đề xuất Step 1 không vượt qua kiểm chứng nguyên văn; kết quả không được cache.');
+}
+
+async function runWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 function assertPublicHttpUrl(value: string): URL {
@@ -101,7 +181,7 @@ app.get('/health', async (_req, res) => {
 // ─── AI Generate ─────────────────────────────────────────────────────────────
 
 app.post('/api/generate', async (req, res) => {
-  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature } = req.body;
+  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave } = req.body;
 
   if (!modelId || !provider || !prompt || !Number.isInteger(stepNumber)) {
     return res.status(400).json({ error: 'modelId, provider, prompt và stepNumber là bắt buộc.' });
@@ -115,19 +195,75 @@ app.post('/api/generate', async (req, res) => {
   }
 
   try {
-    const stepContext = await resolveStepContext(stepNumber);
-    console.log(`[generate] step=${stepNumber} provider=${provider} model=${modelId} promptLen=${prompt.length} contextChars=${stepContext.summary.totalChars}`);
-    const result = await generate({
-      modelId,
-      provider,
-      prompt,
-      systemPrompt,
-      contextDocs: stepContext.contextDocs,
-      maxTokens,
-      temperature,
-    });
-    console.log(`[generate] done — outputTokens=${result.usage?.outputTokens}`);
-    res.json({ ...result, context: stepContext.summary, generatedAt: new Date().toISOString() });
+    const startedAt = Date.now();
+    const contextsStartedAt = Date.now();
+    const contexts = stepNumber === 1 && splitByWave
+      ? await resolveStep1WaveContexts()
+      : [await resolveStepContext(stepNumber)];
+    const contextMs = Date.now() - contextsStartedAt;
+    const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
+    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 2 });
+    const cached = await kvGet<any>(cacheKey);
+    if (cached?.content) {
+      console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
+      return res.json({ ...cached, cacheHit: true, generatedAt: cached.generatedAt, servedAt: new Date().toISOString() });
+    }
+
+    console.log(`[generate] step=${stepNumber} provider=${provider} model=${modelId} waves=${contexts.length} promptLen=${prompt.length} contextChars=${contexts.reduce((sum, item) => sum + item.summary.totalChars, 0)}`);
+    const providerStartedAt = Date.now();
+    let result;
+    if (stepNumber === 1 && splitByWave && contexts.length > 1) {
+      const waveResults = await runWithConcurrency(contexts, 3, async (context: StepContextResult & { wave?: string; timeframe?: string }) => {
+        const waveInstruction = [
+          systemPrompt ?? '',
+          '',
+          `PHẠM VI REQUEST NÀY: Chỉ tổng hợp dữ liệu thuộc ${context.wave ?? 'phần Action Plan hiện tại'}${context.timeframe ? `, timeframe ${context.timeframe}` : ''}.`,
+          'Không đưa dữ liệu từ wave khác vào response. Vẫn phải trả về duy nhất JSON array hợp lệ.',
+        ].join('\n');
+        return generate({
+          modelId,
+          provider,
+          prompt,
+          systemPrompt: waveInstruction,
+          contextDocs: context.contextDocs,
+          maxTokens: Math.min(maxTokens ?? 6000, 6000),
+          temperature,
+        });
+      });
+      const merged = waveResults.flatMap(item => extractJsonArray(item.content));
+      validateStep1Items(merged, contexts.map(context => context.actionText).join('\n'));
+      result = {
+        content: JSON.stringify(merged),
+        model: waveResults[0]?.model ?? modelId,
+        usage: {
+          inputTokens: waveResults.reduce((sum, item) => sum + (item.usage?.inputTokens ?? 0), 0),
+          outputTokens: waveResults.reduce((sum, item) => sum + (item.usage?.outputTokens ?? 0), 0),
+        },
+      };
+    } else {
+      const context = contexts[0];
+      result = await generate({ modelId, provider, prompt, systemPrompt, contextDocs: context.contextDocs, maxTokens, temperature });
+      if (stepNumber === 1 && splitByWave) {
+        validateStep1Items(extractJsonArray(result.content), context.actionText);
+      }
+    }
+    const providerMs = Date.now() - providerStartedAt;
+    const generatedAt = new Date().toISOString();
+    const responsePayload = {
+      ...result,
+      context: {
+        ...contexts[0].summary,
+        totalChars: contexts.reduce((sum, item) => sum + item.summary.totalChars, 0),
+        waves: contexts.length,
+      },
+      cacheHit: false,
+      generatedAt,
+      servedAt: generatedAt,
+      timing: { contextMs, providerMs, totalMs: Date.now() - startedAt },
+    };
+    await kvSet(cacheKey, responsePayload);
+    console.log(`[generate] done cache=false contextMs=${contextMs} providerMs=${providerMs} totalMs=${Date.now() - startedAt} outputTokens=${result.usage?.outputTokens}`);
+    return res.json(responsePayload);
   } catch (err: any) {
     console.error('[generate] error:', err.message);
     res.status(500).json({ error: err.message || 'Lỗi gọi AI API' });

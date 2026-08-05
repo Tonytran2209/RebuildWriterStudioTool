@@ -13,6 +13,16 @@ export interface AIModel {
 export type FileCategory = 'kb' | 'action' | 'rules';
 export type FileType = 'pdf' | 'docx' | 'csv' | 'xlsx' | 'txt' | 'md' | 'json';
 
+export interface StructuredDocumentSection {
+  id: string;
+  heading: string;
+  content: string;
+  contentHash: string;
+  wave?: string;
+  timeframe?: string;
+  typeGroups: ContentTypeGroup[];
+}
+
 export interface DocumentFile {
   id: string;
   name: string;
@@ -25,6 +35,7 @@ export interface DocumentFile {
   contentLength?: number;
   contentHash?: string;
   scanStatus?: 'ready' | 'error';
+  structuredSections?: StructuredDocumentSection[];
   storagePath?: string;
   originalMimeType?: string;
   sourceType?: ActionSourceType;
@@ -142,6 +153,7 @@ export interface Article {
   contentTypeSuggestions?: ContentTypeSuggestion[];
   contentTypeSourceFingerprint?: string | null;
   contentTypeScannedAt?: string | null;
+  contentTypeCacheHit?: boolean;
   // Step 2 data
   topic?: string;
   keywords?: string;
@@ -201,6 +213,7 @@ export interface ActionDataSource {
   contentLength?: number;
   contentHash?: string;
   scanStatus?: 'ready' | 'error';
+  structuredSections?: StructuredDocumentSection[];
   storagePath?: string;
   originalMimeType?: string;
   // URL / GSheet

@@ -220,7 +220,13 @@ async function callGroq(req: GenerateRequest): Promise<GenerateResponse> {
   const chat = await client.chat.completions.create({
     model: modelId,
     messages: [
-      ...(req.systemPrompt ? [{ role: 'system' as const, content: req.systemPrompt }] : []),
+      ...(req.systemPrompt || req.contextDocs?.length ? [{
+        role: 'system' as const,
+        content: [
+          req.systemPrompt ?? '',
+          req.contextDocs?.length ? '\n\n=== TÀI LIỆU THAM KHẢO ===\n' + req.contextDocs.join('\n\n---\n\n') : '',
+        ].filter(Boolean).join('\n'),
+      }] : []),
       { role: 'user' as const, content: req.prompt },
     ],
     max_tokens: req.maxTokens ?? 4096,
