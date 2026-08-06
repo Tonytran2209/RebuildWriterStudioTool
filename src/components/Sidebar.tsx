@@ -31,9 +31,10 @@ interface Props {
 export default function Sidebar({ articles, activeArticleId, onSelectArticle, onNewArticle, onOpenConfig, onToggleComplete, completionSavingId, onDeleteArticle, deletingArticleId }: Props) {
   const [search, setSearch] = useState('');
 
-  const filtered = articles.filter(a =>
-    a.title.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = articles.filter(article => {
+    const displayTitle = article.topic?.trim() || article.title;
+    return displayTitle.toLowerCase().includes(search.toLowerCase());
+  });
 
   return (
     <aside className="w-72 bg-[#ebedf3] border-r border-slate-200/80 p-3 flex flex-col shrink-0 h-full">
@@ -91,67 +92,70 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
           </div>
         )}
 
-        {filtered.map(article => (
-          <div
-            key={article.id}
-            className={`relative w-full rounded-2xl border transition-all ${
-              activeArticleId === article.id
-                ? 'bg-slate-900 border-slate-800 shadow-md'
-                : 'bg-white border-slate-200/80 shadow-sm hover:border-slate-300 hover:shadow'
-            }`}
-          >
-            <button onClick={() => onSelectArticle(article.id)} className="w-full text-left p-3 pr-10 space-y-1.5 rounded-2xl">
-              <div className="flex justify-between items-start gap-2">
-                <h4 className={`text-xs font-bold line-clamp-2 leading-snug ${activeArticleId === article.id ? 'text-white' : 'text-slate-800'}`}>
-                  {article.title}
-                </h4>
-                <span className={`w-2 h-2 rounded-full shrink-0 mt-0.5 ${STATUS_COLORS[article.status]}`} />
-              </div>
-              <div className="flex items-center justify-between text-[10px] text-slate-400">
-                <span className={`font-medium ${activeArticleId === article.id ? 'text-slate-300' : 'text-slate-500'}`}>
-                  Step {article.currentStep}/4 — {STEP_LABELS[article.currentStep]}
-                </span>
-                <span>{STATUS_LABELS[article.status]}</span>
-              </div>
-            </button>
-            <button
-              type="button"
-              disabled={completionSavingId === article.id}
-              onClick={() => onToggleComplete(article)}
-              title={article.status === 'done' ? 'Mở lại bài viết' : 'Đánh dấu hoàn thành'}
-              aria-label={article.status === 'done' ? `Mở lại ${article.title}` : `Đánh dấu ${article.title} hoàn thành`}
-              className={`absolute right-2.5 top-2.5 w-6 h-6 rounded-lg border flex items-center justify-center text-xs font-bold transition-all disabled:opacity-50 ${
-                article.status === 'done'
-                  ? 'bg-emerald-500 border-emerald-400 text-white hover:bg-emerald-600'
-                  : activeArticleId === article.id
-                    ? 'bg-slate-800 border-slate-600 text-slate-300 hover:text-white'
-                    : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-emerald-400 hover:text-emerald-600'
+        {filtered.map(article => {
+          const displayTitle = article.topic?.trim() || article.title;
+          const isActive = activeArticleId === article.id;
+          const isSavingCompletion = completionSavingId === article.id;
+          const isDeleting = deletingArticleId === article.id;
+
+          return (
+            <div
+              key={article.id}
+              className={`w-full overflow-hidden rounded-2xl border transition-all ${
+                isActive
+                  ? 'bg-slate-900 border-slate-800 shadow-md'
+                  : 'bg-white border-slate-200/80 shadow-sm hover:border-slate-300 hover:shadow'
               }`}
             >
-              {completionSavingId === article.id ? '…' : article.status === 'done' ? '✓' : '○'}
-            </button>
-            <button
-              type="button"
-              disabled={deletingArticleId === article.id}
-              onClick={() => onDeleteArticle(article)}
-              title="Xoá bài viết khỏi Supabase"
-              aria-label={`Xoá ${article.title} khỏi Supabase`}
-              className={`absolute right-2.5 bottom-2 w-6 h-6 rounded-lg border flex items-center justify-center transition-all disabled:opacity-50 ${
-                activeArticleId === article.id
-                  ? 'bg-slate-800 border-slate-600 text-slate-400 hover:border-red-400 hover:text-red-300'
-                  : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-red-300 hover:bg-red-50 hover:text-red-600'
-              }`}
-            >
-              {deletingArticleId === article.id ? (
-                <span className="text-xs">…</span>
-              ) : (
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12m-9 0V5h6v2m-8 0 1 12h8l1-12M10 11v5m4-5v5" />
-                </svg>
-              )}
-            </button>
-          </div>
-        ))}
+              <button onClick={() => onSelectArticle(article.id)} className="w-full text-left p-3 space-y-1.5">
+                <div className="flex justify-between items-start gap-2">
+                  <h4 className={`text-xs font-bold line-clamp-2 leading-snug ${isActive ? 'text-white' : 'text-slate-800'}`}>
+                    {displayTitle}
+                  </h4>
+                  <span className={`w-2 h-2 rounded-full shrink-0 mt-0.5 ${STATUS_COLORS[article.status]}`} />
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span className={`font-medium ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
+                    Step {article.currentStep}/4 — {STEP_LABELS[article.currentStep]}
+                  </span>
+                  <span>{STATUS_LABELS[article.status]}</span>
+                </div>
+              </button>
+              <div className={`flex items-center gap-2 border-t px-2.5 py-2 ${isActive ? 'border-slate-700' : 'border-slate-100'}`}>
+                <button
+                  type="button"
+                  disabled={isSavingCompletion || isDeleting}
+                  onClick={() => onToggleComplete(article)}
+                  title={article.status === 'done' ? 'Mở lại bài viết' : 'Đánh dấu hoàn thành'}
+                  aria-label={article.status === 'done' ? `Mở lại ${displayTitle}` : `Đánh dấu ${displayTitle} hoàn thành`}
+                  className={`min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-[10px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                    article.status === 'done'
+                      ? 'bg-emerald-500 border-emerald-400 text-white hover:bg-emerald-600'
+                      : isActive
+                        ? 'bg-slate-800 border-slate-600 text-slate-200 hover:border-emerald-400 hover:text-white'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-emerald-400 hover:text-emerald-700'
+                  }`}
+                >
+                  {isSavingCompletion ? 'Đang lưu…' : article.status === 'done' ? '✓ Mở lại' : '○ Đánh dấu xong'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting || isSavingCompletion}
+                  onClick={() => onDeleteArticle(article)}
+                  title="Xoá bài viết khỏi Supabase"
+                  aria-label={`Xoá ${displayTitle} khỏi Supabase`}
+                  className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                    isActive
+                      ? 'bg-slate-800 border-slate-600 text-slate-300 hover:border-red-400 hover:text-red-300'
+                      : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600'
+                  }`}
+                >
+                  {isDeleting ? 'Đang xoá…' : 'Xoá'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Footer config button */}

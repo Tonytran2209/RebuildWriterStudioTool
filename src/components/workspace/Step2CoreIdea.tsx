@@ -291,6 +291,7 @@ export default function Step2CoreIdea({
     setSelectedId(idea.id);
     onUpdate({
       selectedCoreIdeaId: idea.id,
+      title: idea.title,
       topic: idea.title,
       angle: idea.angleLabel,
       keywords: [idea.primaryKeyword, ...idea.secondaryKeywords].filter(Boolean).join(", "),
