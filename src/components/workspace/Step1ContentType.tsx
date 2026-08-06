@@ -72,6 +72,20 @@ function evidenceQuoteExists(source: string, quote: string): boolean {
     .some(part => normalizedSource.includes(part));
 }
 
+function findEvidenceWindow(source: string, terms: string[]): string | undefined {
+  const required = terms.map(canonical).filter(Boolean);
+  if (!required.length) return undefined;
+  const lines = source.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const start = Math.max(0, index - 3);
+    const end = Math.min(lines.length, index + 4);
+    const window = lines.slice(start, end).join("\n").trim();
+    const normalized = canonical(window);
+    if (required.every(term => normalized.includes(term))) return window;
+  }
+  return undefined;
+}
+
 function extractDocumentYear(text: string): number | undefined {
   const header = text.slice(0, 2500);
   const match = header.match(/\b(20\d{2})\b/);
@@ -133,12 +147,15 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       const waveExists = sourceContains(evidence.actionText, wave);
       const labelExists = sourceContains(evidence.actionText, label);
       const keywordsExist = keywords.every(keyword => sourceContains(evidence.actionText, keyword));
-      const actionQuote = canonical(actionPlanEvidence);
-      const actionQuoteExists = evidenceQuoteExists(evidence.actionText, actionPlanEvidence);
-      const scheduleQuote = canonical(scheduleEvidence);
-      const scheduleQuoteExists = evidenceQuoteExists(evidence.actionText, scheduleEvidence);
-      const scheduleQuoteCoversPeriod = scheduleQuote.includes(canonical(wave)) &&
-        scheduleQuote.includes(canonical(timeframe));
+      const verifiedActionEvidence = evidenceQuoteExists(evidence.actionText, actionPlanEvidence)
+        ? actionPlanEvidence
+        : findEvidenceWindow(evidence.actionText, [label, keywords[0]]);
+      const modelScheduleIsValid = evidenceQuoteExists(evidence.actionText, scheduleEvidence) &&
+        canonical(scheduleEvidence).includes(canonical(wave)) &&
+        canonical(scheduleEvidence).includes(canonical(timeframe));
+      const verifiedScheduleEvidence = modelScheduleIsValid
+        ? scheduleEvidence
+        : findEvidenceWindow(evidence.actionText, [wave, timeframe]);
       const verifiedActionTypeEvidence = typeGroup
         ? findTypeEvidence(evidence.actionByName, typeGroup)
         : undefined;
@@ -149,8 +166,7 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
       if (
         !typeGroup || !wave || !timeframe || !keywords.length ||
         !waveExists || !timeframeExists || !labelExists || !keywordsExist ||
-        !actionQuote || !actionQuoteExists ||
-        !scheduleQuote || !scheduleQuoteExists || !scheduleQuoteCoversPeriod ||
+        !verifiedActionEvidence || !verifiedScheduleEvidence ||
         !verifiedActionTypeEvidence
       ) return null;
       return {
@@ -171,8 +187,8 @@ function normalizeSuggestions(parsed: unknown, evidence: EvidenceIndex): Content
         ruleRefs: evidence.ruleOriginalNames,
         kbEvidence: verifiedKbEvidence,
         ruleEvidence: verifiedRuleEvidence,
-        actionPlanEvidence,
-        scheduleEvidence,
+        actionPlanEvidence: verifiedActionEvidence,
+        scheduleEvidence: verifiedScheduleEvidence,
         sourceYear: extractDocumentYear(evidence.actionText),
         icon: obj.icon ? String(obj.icon) : undefined,
       } as ContentTypeSuggestion;
@@ -187,7 +203,7 @@ const GROUP_META: Record<ContentTypeGroup, { title: string; accent: string; badg
 };
 
 const GROUP_ORDER: ContentTypeGroup[] = ["A", "B", "C"];
-const STEP1_PROMPT_VERSION = "step1-wave-v5-item-filter";
+const STEP1_PROMPT_VERSION = "step1-wave-v6-source-evidence";
 
 function displayTimeframe(suggestion: ContentTypeSuggestion): string {
   const timeframe = suggestion.timeframe ?? "";
@@ -233,7 +249,7 @@ export default function Step1ContentType({
     return { byGroup, other };
   }, [visibleSuggestions]);
 
-  const fetchSuggestions = async () => {
+  const fetchSuggestions = async (manual = false) => {
     if (!bundle.totalCount) {
       setError("Chưa có tài liệu nào được phân quyền cho Step 1. Vui lòng mở Cấu hình → Step Setup để gán tài liệu.");
       return;
@@ -302,6 +318,7 @@ export default function Step1ContentType({
         temperature: 0.1,
         stepNumber: 1,
         splitByWave: true,
+        bypassCache: manual,
       });
       const parsed = extractJson(res.content);
       const evidence: EvidenceIndex = {
@@ -351,7 +368,7 @@ export default function Step1ContentType({
     if (!bundle.totalCount) return;
     if (suggestions.length > 0 && !scanIsStale) return;
     autoRequestedRef.current = sourceFingerprint;
-    fetchSuggestions();
+    fetchSuggestions(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bundle.totalCount, suggestions.length, scanIsStale, sourceFingerprint]);
 
@@ -385,7 +402,7 @@ export default function Step1ContentType({
                 </p>
               </div>
               <button
-                onClick={fetchSuggestions}
+                onClick={() => fetchSuggestions(true)}
                 disabled={loading || !bundle.totalCount}
                 className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
               >

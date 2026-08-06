@@ -81,43 +81,6 @@ function canonicalEvidence(value: unknown): string {
     .trim();
 }
 
-function evidenceExists(source: string, quote: unknown): boolean {
-  const normalizedSource = canonicalEvidence(source);
-  const normalizedQuote = canonicalEvidence(quote);
-  if (!normalizedQuote) return false;
-  if (normalizedSource.includes(normalizedQuote)) return true;
-  return String(quote ?? '').split(/\r?\n|\.{3}|…/)
-    .map(canonicalEvidence)
-    .filter(part => part.length >= 16)
-    .some(part => normalizedSource.includes(part));
-}
-
-function filterValidStep1Items(items: unknown[], actionText: string): unknown[] {
-  const source = canonicalEvidence(actionText);
-  return items.filter(item => {
-    if (!item || typeof item !== 'object') return false;
-    const value = item as Record<string, unknown>;
-    const typeGroup = String(value.typeGroup ?? value.type ?? '').toUpperCase().match(/\b(A|B|C)\b/)?.[1];
-    const label = canonicalEvidence(value.label ?? value.name);
-    const wave = canonicalEvidence(value.wave);
-    const timeframe = canonicalEvidence(value.timeframe);
-    const keywords = Array.isArray(value.keywords)
-      ? value.keywords.map(canonicalEvidence).filter(Boolean)
-      : typeof value.keywords === 'string'
-        ? value.keywords.split(/[,;\n]/).map(canonicalEvidence).filter(Boolean)
-        : [];
-    const actionEvidence = value.actionPlanEvidence;
-    const scheduleEvidence = value.scheduleEvidence;
-    const schedule = canonicalEvidence(scheduleEvidence);
-    return Boolean(typeGroup && label && wave && timeframe && keywords.length &&
-      source.includes(label) && source.includes(wave) && source.includes(timeframe) &&
-      keywords.every(keyword => source.includes(keyword)) &&
-      new RegExp(`\\b(?:content\\s*)?type\\s*${typeGroup}\\b`, 'i').test(actionText) &&
-      evidenceExists(actionText, actionEvidence) && evidenceExists(actionText, scheduleEvidence) &&
-      schedule.includes(wave) && schedule.includes(timeframe));
-  });
-}
-
 function missingStep1Coverage(items: unknown[], context: StepWaveContext): string[] {
   const records = items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
   const expectedWave = canonicalEvidence(context.wave);
@@ -203,7 +166,7 @@ app.get('/health', async (_req, res) => {
 // ─── AI Generate ─────────────────────────────────────────────────────────────
 
 app.post('/api/generate', async (req, res) => {
-  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave } = req.body;
+  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave, bypassCache } = req.body;
 
   if (!modelId || !provider || !prompt || !Number.isInteger(stepNumber)) {
     return res.status(400).json({ error: 'modelId, provider, prompt và stepNumber là bắt buộc.' });
@@ -224,8 +187,8 @@ app.post('/api/generate', async (req, res) => {
       : [await resolveStepContext(stepNumber)];
     const contextMs = Date.now() - contextsStartedAt;
     const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
-    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 5 });
-    const cached = await kvGet<any>(cacheKey);
+    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 6 });
+    const cached = bypassCache ? null : await kvGet<any>(cacheKey);
     if (cached?.content) {
       console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
       return res.json({ ...cached, cacheHit: true, generatedAt: cached.generatedAt, servedAt: new Date().toISOString() });
@@ -257,12 +220,8 @@ app.post('/api/generate', async (req, res) => {
               maxTokens: Math.min(maxTokens ?? 6000, 6000),
               temperature,
             });
-            const rawItems = extractJsonArray(response.content);
-            const items = filterValidStep1Items(rawItems, context.actionText);
-            if (items.length !== rawItems.length) {
-              console.warn(`[generate] wave=${context.wave} filtered=${rawItems.length - items.length} accepted=${items.length}`);
-            }
-            if (!items.length) throw new Error(`Không có đề xuất hợp lệ trong ${context.wave}.`);
+            const items = extractJsonArray(response.content);
+            if (!items.length) throw new Error(`Không có đề xuất trong ${context.wave}.`);
             const missing = missingStep1Coverage(items, context);
             if (missing.length) throw new Error(`Thiếu độ phủ: ${missing.join(', ')}`);
             return { response, items };
@@ -305,13 +264,9 @@ app.post('/api/generate', async (req, res) => {
           maxTokens,
           temperature,
         });
-        const fallbackRawItems = extractJsonArray(fallbackResponse.content);
-        const fallbackItems = filterValidStep1Items(fallbackRawItems, fullContext.actionText);
+        const fallbackItems = extractJsonArray(fallbackResponse.content);
         if (!fallbackItems.length) {
-          throw new Error('AI chưa trả về đề xuất có đủ dẫn chứng nguyên văn sau khi quét toàn bộ tài liệu.');
-        }
-        if (fallbackItems.length !== fallbackRawItems.length) {
-          console.warn(`[generate] fallback filtered=${fallbackRawItems.length - fallbackItems.length} accepted=${fallbackItems.length}`);
+          throw new Error('AI chưa trả về đề xuất nào sau khi quét toàn bộ tài liệu.');
         }
         result = { ...fallbackResponse, content: JSON.stringify(fallbackItems) };
       }
