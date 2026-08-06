@@ -32,7 +32,25 @@ function extractJson(raw: string): unknown {
   const start = body.indexOf("[");
   const end = body.lastIndexOf("]");
   if (start === -1 || end === -1) throw new Error("Không tìm thấy mảng JSON trong phản hồi AI.");
-  return JSON.parse(body.slice(start, end + 1));
+  const json = body.slice(start, end + 1);
+  try {
+    return JSON.parse(json);
+  } catch (firstError) {
+    // Repair common syntax slips without changing evidence text.
+    const repaired = json
+      .replace(/\u00a0/g, " ")
+      .replace(/,\s*([}\]])/g, "$1")
+      .replace(/}\s*{/g, "},{")
+      .replace(
+        /("(?:\\.|[^"\\])*"|\d+(?:\.\d+)?|true|false|null|\]|})\s*\n\s*(?="[^"\n]+"\s*:)/g,
+        "$1,\n",
+      );
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      throw firstError;
+    }
+  }
 }
 
 function toNumber(v: unknown, fallback = 0): number {
@@ -127,7 +145,7 @@ export default function Step2CoreIdea({
 
   const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-evidence-v1:${article.contentType ?? ""}`,
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-evidence-json-v2:${article.contentType ?? ""}`,
     [article.contentType, bundle, model.id, model.provider],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
@@ -201,8 +219,38 @@ export default function Step2CoreIdea({
       ].join("\n");
 
       const requestIdeas = async (correction = "") => {
-        const res = await callAI({ model, railwayUrl, prompt: `${userPrompt}${correction}`, systemPrompt, stepNumber: 2 });
-        return { res, ideas: normalizeIdeas(extractJson(res.content), bundle) };
+        let res = await callAI({
+          model,
+          railwayUrl,
+          prompt: `${userPrompt}${correction}`,
+          systemPrompt,
+          maxTokens: 8000,
+          temperature: 0.1,
+          stepNumber: 2,
+        });
+        let parsed: unknown;
+        try {
+          parsed = extractJson(res.content);
+        } catch {
+          const repaired = await callAI({
+            model,
+            railwayUrl,
+            prompt: [
+              "Sửa nội dung dưới đây thành đúng một JSON array hợp lệ.",
+              "Giữ nguyên toàn bộ giá trị, quote evidence và thứ tự; chỉ sửa dấu phẩy, ngoặc và escape chuỗi.",
+              "Không thêm markdown hoặc giải thích.",
+              "",
+              res.content,
+            ].join("\n"),
+            systemPrompt: "Bạn là JSON formatter. Chỉ trả về JSON array parse được bằng JSON.parse.",
+            maxTokens: 8000,
+            temperature: 0,
+            stepNumber: 2,
+          });
+          parsed = extractJson(repaired.content);
+          res = repaired;
+        }
+        return { res, ideas: normalizeIdeas(parsed, bundle) };
       };
       let result = await requestIdeas();
       if (!result.ideas.length) {
