@@ -24,9 +24,11 @@ interface Props {
   onOpenConfig: () => void;
   onToggleComplete: (article: Article) => void;
   completionSavingId: string | null;
+  onDeleteArticle: (article: Article) => void;
+  deletingArticleId: string | null;
 }
 
-export default function Sidebar({ articles, activeArticleId, onSelectArticle, onNewArticle, onOpenConfig, onToggleComplete, completionSavingId }: Props) {
+export default function Sidebar({ articles, activeArticleId, onSelectArticle, onNewArticle, onOpenConfig, onToggleComplete, completionSavingId, onDeleteArticle, deletingArticleId }: Props) {
   const [search, setSearch] = useState('');
 
   const filtered = articles.filter(a =>
@@ -127,6 +129,26 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
               }`}
             >
               {completionSavingId === article.id ? '…' : article.status === 'done' ? '✓' : '○'}
+            </button>
+            <button
+              type="button"
+              disabled={deletingArticleId === article.id}
+              onClick={() => onDeleteArticle(article)}
+              title="Xoá bài viết khỏi Supabase"
+              aria-label={`Xoá ${article.title} khỏi Supabase`}
+              className={`absolute right-2.5 bottom-2 w-6 h-6 rounded-lg border flex items-center justify-center transition-all disabled:opacity-50 ${
+                activeArticleId === article.id
+                  ? 'bg-slate-800 border-slate-600 text-slate-400 hover:border-red-400 hover:text-red-300'
+                  : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-red-300 hover:bg-red-50 hover:text-red-600'
+              }`}
+            >
+              {deletingArticleId === article.id ? (
+                <span className="text-xs">…</span>
+              ) : (
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12m-9 0V5h6v2m-8 0 1 12h8l1-12M10 11v5m4-5v5" />
+                </svg>
+              )}
             </button>
           </div>
         ))}

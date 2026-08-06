@@ -37,6 +37,7 @@ export default function App() {
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [articleActionError, setArticleActionError] = useState<string | null>(null);
   const [completionSavingId, setCompletionSavingId] = useState<string | null>(null);
+  const [deletingArticleId, setDeletingArticleId] = useState<string | null>(null);
   const articleMutationQueue = useRef<Promise<void>>(Promise.resolve());
 
   const enqueueArticleMutation = useCallback((operation: () => Promise<Article>): Promise<Article> => {
@@ -131,6 +132,30 @@ export default function App() {
     }
   }, [completionSavingId, enqueueArticleMutation]);
 
+  const handleDeleteArticle = useCallback(async (target: Article) => {
+    if (deletingArticleId) return;
+    const confirmed = window.confirm(`Xoá vĩnh viễn bài viết “${target.title}” khỏi Supabase? Thao tác này không thể hoàn tác.`);
+    if (!confirmed) return;
+
+    setArticleActionError(null);
+    setDeletingArticleId(target.id);
+    setSyncStatus('saving');
+    try {
+      // Finish any content save already queued before deleting the database record.
+      await articleMutationQueue.current;
+      await db.deleteArticle(target.id);
+      const remaining = articles.filter(item => item.id !== target.id);
+      setArticles(remaining);
+      if (activeId === target.id) setActiveId(remaining[0]?.id ?? null);
+      setSyncStatus('idle');
+    } catch (error: unknown) {
+      setArticleActionError(`Không xoá được bài viết khỏi Supabase: ${error instanceof Error ? error.message : String(error)}`);
+      setSyncStatus('error');
+    } finally {
+      setDeletingArticleId(null);
+    }
+  }, [activeId, articles, deletingArticleId]);
+
   const handleSaveConfig = async (newConfig: AppConfig, newFiles: DocumentFile[]) => {
     setConfig(newConfig);
     setFiles(newFiles);
@@ -223,6 +248,8 @@ export default function App() {
           onOpenConfig={() => setShowConfig(true)}
           onToggleComplete={handleToggleComplete}
           completionSavingId={completionSavingId}
+          onDeleteArticle={handleDeleteArticle}
+          deletingArticleId={deletingArticleId}
         />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-5 max-w-sm">
@@ -272,6 +299,8 @@ export default function App() {
         onOpenConfig={() => setShowConfig(true)}
         onToggleComplete={handleToggleComplete}
         completionSavingId={completionSavingId}
+        onDeleteArticle={handleDeleteArticle}
+        deletingArticleId={deletingArticleId}
       />
 
       <div className="flex-1 flex flex-col h-full overflow-hidden">

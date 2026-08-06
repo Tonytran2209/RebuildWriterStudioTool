@@ -379,8 +379,12 @@ app.delete('/api/articles/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const articles = (await kvGet('writer:articles') ?? []) as any[];
+    if (!articles.some((article: any) => article.id === id)) {
+      res.status(404).json({ error: 'Bài viết không tồn tại trong Supabase.' });
+      return;
+    }
     await kvSet('writer:articles', articles.filter((a: any) => a.id !== id));
-    res.json({ ok: true });
+    res.json({ ok: true, deletedId: id });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
