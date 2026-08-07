@@ -10,6 +10,10 @@ export const DEFAULT_MODELS: AIModel[] = [
   { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol', provider: 'openai', description: 'Flagship cho công việc chuyên môn và suy luận phức tạp.', enabled: false, contextWindow: '1.05M', speed: 'slow' },
   { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra', provider: 'openai', description: 'Cân bằng năng lực và chi phí cho workflow sản xuất.', enabled: false, contextWindow: '1.05M', speed: 'medium' },
   { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', provider: 'openai', description: 'Tối ưu chi phí cho tác vụ thường xuyên và sản lượng lớn.', enabled: false, contextWindow: '1.05M', speed: 'fast' },
+  { id: 'gpt-5.5', name: 'GPT-5.5', provider: 'openai', description: 'Tier 1 · Chất lượng cao cho nội dung chuyên môn và suy luận phức tạp.', enabled: false, contextWindow: '1.05M', speed: 'slow' },
+  { id: 'gpt-5.4', name: 'GPT-5.4', provider: 'openai', description: 'Tier 1 · Cân bằng chất lượng và chi phí cho bài viết chuyên sâu.', enabled: false, contextWindow: '1.05M', speed: 'medium' },
+  { id: 'gpt-5.4-mini', name: 'GPT-5.4 mini', provider: 'openai', description: 'Tier 1 · Nhanh, hiệu quả cho workflow nội dung sản lượng lớn.', enabled: false, contextWindow: '400K', speed: 'fast' },
+  { id: 'gpt-5.4-nano', name: 'GPT-5.4 nano', provider: 'openai', description: 'Tier 1 · Tiết kiệm cho phân loại, trích xuất và tác vụ đơn giản.', enabled: false, contextWindow: '400K', speed: 'fast' },
   // Google
   { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', provider: 'google', description: 'Model stable mới nhất, mạnh cho tài liệu dài và tác vụ đa bước.', enabled: false, contextWindow: '1M', speed: 'fast' },
   { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite', provider: 'google', description: 'Model stable nhanh và tiết kiệm cho xử lý khối lượng lớn.', enabled: false, contextWindow: '1M', speed: 'fast' },
