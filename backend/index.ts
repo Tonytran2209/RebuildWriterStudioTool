@@ -177,7 +177,7 @@ app.get('/health/dependencies', async (_req, res) => {
 // ─── AI Generate ─────────────────────────────────────────────────────────────
 
 app.post('/api/generate', async (req, res) => {
-  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave, bypassCache } = req.body;
+  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave, bypassCache, pricing } = req.body;
 
   if (!modelId || !provider || !prompt || !Number.isInteger(stepNumber)) {
     return res.status(400).json({ error: 'modelId, provider, prompt và stepNumber là bắt buộc.' });
@@ -252,6 +252,7 @@ app.post('/api/generate', async (req, res) => {
           usage: {
             inputTokens: waveResults.reduce((sum, item) => sum + (item.response.usage?.inputTokens ?? 0), 0),
             outputTokens: waveResults.reduce((sum, item) => sum + (item.response.usage?.outputTokens ?? 0), 0),
+            cachedInputTokens: waveResults.reduce((sum, item) => sum + (item.response.usage?.cachedInputTokens ?? 0), 0),
           },
         };
       } catch (waveError: any) {
@@ -289,6 +290,21 @@ app.post('/api/generate', async (req, res) => {
     const generatedAt = new Date().toISOString();
     const responsePayload = {
       ...result,
+      costUsd: pricing
+        && Number.isFinite(Number(pricing.inputUsdPerMillion))
+        && Number.isFinite(Number(pricing.outputUsdPerMillion))
+        ? (() => {
+          const inputTokens = result.usage?.inputTokens ?? 0;
+          const cachedTokens = result.usage?.cachedInputTokens ?? 0;
+          const longContext = Number(pricing.longContextThresholdTokens) > 0
+            && inputTokens > Number(pricing.longContextThresholdTokens);
+          const inputMultiplier = longContext ? Number(pricing.longContextInputMultiplier ?? 1) : 1;
+          const outputMultiplier = longContext ? Number(pricing.longContextOutputMultiplier ?? 1) : 1;
+          return ((inputTokens - cachedTokens) * Number(pricing.inputUsdPerMillion) * inputMultiplier
+            + cachedTokens * Number(pricing.cachedInputUsdPerMillion ?? pricing.inputUsdPerMillion) * inputMultiplier
+            + (result.usage?.outputTokens ?? 0) * Number(pricing.outputUsdPerMillion) * outputMultiplier) / 1_000_000;
+        })()
+        : null,
       context: {
         ...contexts[0].summary,
         totalChars: contexts.reduce((sum, item) => sum + item.summary.totalChars, 0),

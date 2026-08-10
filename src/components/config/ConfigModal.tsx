@@ -5,6 +5,7 @@ import TabModels from './TabModels';
 import TabKnowledgeBase from './TabKnowledgeBase';
 import { saveConfig } from '../../lib/db';
 import { sanitizeConfigFileAccess } from '../../lib/documentStatus';
+import { useI18n } from '../../lib/i18n';
 
 interface Props {
   config: AppConfig;
@@ -22,6 +23,7 @@ const TABS: { id: ActiveTab; label: string; icon: string }[] = [
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export default function ConfigModal({ config, files, onSave, onClose }: Props) {
+  const { language, tr } = useI18n();
   const [activeTab, setActiveTab] = useState<ActiveTab>('step-setup');
   const [localConfig, setLocalConfig] = useState<AppConfig>({ ...config });
   const [localFiles, setLocalFiles] = useState<DocumentFile[]>([...files]);
@@ -65,8 +67,8 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
           {/* Modal Header */}
           <div className="flex justify-between items-center gap-3 border-b border-slate-100 px-3 sm:px-6 py-3 sm:py-4 shrink-0">
             <div className="min-w-0">
-              <h2 className="text-sm font-bold text-slate-800">Cấu hình Rules DB & Phân quyền AI Model</h2>
-              <p className="hidden sm:block text-xs text-slate-400 mt-0.5">Quản lý kho tài liệu, tích hợp Model AI và thiết lập luật truy xuất cho từng Step</p>
+              <h2 className="text-sm font-bold text-slate-800">{tr('Cấu hình Rules DB & Phân quyền AI Model', 'Rules DB & AI Model Access Settings')}</h2>
+              <p className="hidden sm:block text-xs text-slate-400 mt-0.5">{tr('Quản lý kho tài liệu, tích hợp Model AI và thiết lập luật truy xuất cho từng Step', 'Manage documents, AI models, and retrieval permissions for each step')}</p>
             </div>
             <button
               onClick={onClose}
@@ -92,7 +94,11 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
                   }`}
                 >
                   <span>{tab.icon}</span>
-                  <span>{tab.label}</span>
+                  <span>{language === 'vi' ? tab.label : ({
+                    'step-setup': 'AI access by Step',
+                    models: 'AI Model management',
+                    'knowledge-base': 'Data store (KB / AP / Rules)',
+                  } as Record<ActiveTab, string>)[tab.id]}</span>
                 </button>
               ))}
             </div>
@@ -135,7 +141,7 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
                   )}
                   {autoSaveState === 'saved'  && <span>✓</span>}
                   {autoSaveState === 'error'  && <span>✗</span>}
-                  {autoSaveState === 'saving' ? 'Đang lưu...' : autoSaveState === 'saved' ? 'Đã lưu vào Supabase' : 'Lỗi lưu dữ liệu'}
+                  {autoSaveState === 'saving' ? tr('Đang lưu...', 'Saving...') : autoSaveState === 'saved' ? tr('Đã lưu vào Supabase', 'Saved to Supabase') : tr('Lỗi lưu dữ liệu', 'Save failed')}
                 </div>
               )}
               <div className="hidden sm:block text-[11px] text-slate-400">
@@ -144,10 +150,10 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
             </div>
             <div className="flex gap-2 justify-end">
               <button onClick={onClose} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-all">
-                Đóng
+                {tr('Đóng', 'Close')}
               </button>
               <button onClick={handleSave} className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-sm transition-all">
-                Lưu cấu hình
+                {tr('Lưu cấu hình', 'Save settings')}
               </button>
             </div>
           </div>

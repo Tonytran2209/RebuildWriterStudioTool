@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { AppConfig, AIModel, AIProvider } from '../../types';
 import { PROVIDER_LABELS } from '../../lib/defaultData';
+import { useI18n } from '../../lib/i18n';
 
 interface Props {
   config: AppConfig;
@@ -20,6 +21,7 @@ const API_KEY_NAMES: Record<AIProvider, string> = {
 };
 
 export default function TabModels({ config, onChange }: Props) {
+  const { language, tr } = useI18n();
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [showKeyFor, setShowKeyFor] = useState<string | null>(null);
 
@@ -27,6 +29,22 @@ export default function TabModels({ config, onChange }: Props) {
     onChange({
       ...config,
       models: config.models.map(m => m.id === modelId ? { ...m, enabled: !m.enabled } : m),
+    });
+  };
+
+  const updatePricing = (modelId: string, field: 'inputUsdPerMillion' | 'cachedInputUsdPerMillion' | 'outputUsdPerMillion', value: string) => {
+    const numberValue = Number(value);
+    onChange({
+      ...config,
+      models: config.models.map(model => model.id === modelId ? {
+        ...model,
+        pricing: {
+          ...model.pricing,
+          inputUsdPerMillion: model.pricing?.inputUsdPerMillion ?? 0,
+          outputUsdPerMillion: model.pricing?.outputUsdPerMillion ?? 0,
+          [field]: Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0,
+        },
+      } : model),
     });
   };
 
@@ -41,8 +59,8 @@ export default function TabModels({ config, onChange }: Props) {
     <div className="space-y-5">
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-xs font-bold text-slate-800">Tích hợp & Kích hoạt Model AI</h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">Bật/tắt Model để hiển thị trong menu phân quyền từng Step</p>
+          <h3 className="text-xs font-bold text-slate-800">{tr('Tích hợp & Kích hoạt Model AI', 'AI Model Integration & Activation')}</h3>
+          <p className="text-[11px] text-slate-400 mt-0.5">{tr('Bật/tắt Model để hiển thị trong menu phân quyền từng Step', 'Enable models for use in each step')}</p>
         </div>
       </div>
 
@@ -65,7 +83,7 @@ export default function TabModels({ config, onChange }: Props) {
                   onClick={() => setShowKeyFor(showKeyFor === provider ? null : provider)}
                   className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 px-2 py-0.5 rounded-md transition-all"
                 >
-                  {showKeyFor === provider ? 'Ẩn' : 'API Key'}
+                  {showKeyFor === provider ? tr('Ẩn', 'Hide') : 'API Key'}
                 </button>
               </div>
             </div>
@@ -85,10 +103,10 @@ export default function TabModels({ config, onChange }: Props) {
                     className="flex-1 font-mono bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800"
                   />
                   <button className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-all">
-                    Lưu vào Railway
+                    {tr('Lưu vào Railway', 'Save to Railway')}
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-400">API Key được mã hóa và lưu an toàn trong Railway environment variables.</p>
+                <p className="text-[10px] text-slate-400">{tr('API Key được mã hóa và lưu an toàn trong biến môi trường Railway.', 'API keys are encrypted and stored in Railway environment variables.')}</p>
               </div>
             )}
 
@@ -103,10 +121,48 @@ export default function TabModels({ config, onChange }: Props) {
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-400 leading-snug">{model.description}</p>
+                    <p className="text-[10px] text-slate-400 leading-snug">{language === 'vi' ? model.description : `${model.name} for Step-based AI content workflows.`}</p>
                     <div className="flex items-center gap-2 mt-1.5">
                       <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{model.contextWindow}</span>
-                      <span className={`text-[10px] font-semibold ${SPEED_COLORS[model.speed]}`}>{SPEED_LABELS[model.speed]}</span>
+                      <span className={`text-[10px] font-semibold ${SPEED_COLORS[model.speed]}`}>{language === 'vi' ? SPEED_LABELS[model.speed] : ({ fast: 'Fast', medium: 'Medium', slow: 'Slow' } as const)[model.speed]}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5 mt-2">
+                      <label className="text-[9px] text-slate-500">
+                        Input $/1M
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={model.pricing?.inputUsdPerMillion ?? ''}
+                          onChange={event => updatePricing(model.id, 'inputUsdPerMillion', event.target.value)}
+                          placeholder="N/A"
+                          className="mt-0.5 w-full rounded-md border border-slate-200 bg-slate-50 px-1.5 py-1 font-mono text-[9px] outline-none"
+                        />
+                      </label>
+                      <label className="text-[9px] text-slate-500">
+                        Cache $/1M
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={model.pricing?.cachedInputUsdPerMillion ?? ''}
+                          onChange={event => updatePricing(model.id, 'cachedInputUsdPerMillion', event.target.value)}
+                          placeholder="= input"
+                          className="mt-0.5 w-full rounded-md border border-slate-200 bg-slate-50 px-1.5 py-1 font-mono text-[9px] outline-none"
+                        />
+                      </label>
+                      <label className="text-[9px] text-slate-500">
+                        Output $/1M
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={model.pricing?.outputUsdPerMillion ?? ''}
+                          onChange={event => updatePricing(model.id, 'outputUsdPerMillion', event.target.value)}
+                          placeholder="N/A"
+                          className="mt-0.5 w-full rounded-md border border-slate-200 bg-slate-50 px-1.5 py-1 font-mono text-[9px] outline-none"
+                        />
+                      </label>
                     </div>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">

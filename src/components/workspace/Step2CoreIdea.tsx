@@ -9,6 +9,7 @@ import type {
   EvidenceRef,
 } from "../../types";
 import { callAI } from "../../lib/aiService";
+import { useI18n } from "../../lib/i18n";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
@@ -177,6 +178,7 @@ export default function Step2CoreIdea({
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(article.selectedCoreIdeaId ?? null);
   const autoRequestedRef = useRef<string | null>(null);
+  const { tr, outputInstruction } = useI18n();
 
   const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
   const selectedSnapshot = useMemo(
@@ -236,6 +238,7 @@ export default function Step2CoreIdea({
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
+          outputInstruction,
           `Đề xuất ÍT NHẤT 3 core ideas / góc độ cho bài viết dạng "${article.contentType}".`,
           selectedSnapshot
             ? `- Dùng lựa chọn Step 1 đã khóa làm định hướng bắt buộc: ${selectedSnapshot.label}; Type ${selectedSnapshot.typeGroup ?? "không xác định"}; ${selectedSnapshot.wave ?? ""}; ${selectedSnapshot.timeframe ?? ""}; keywords: ${(selectedSnapshot.keywords ?? []).join(", ")}.`
@@ -397,9 +400,9 @@ export default function Step2CoreIdea({
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">Step 2 — Core Idea & Angle</h2>
+                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 2 — Ý tưởng cốt lõi & Góc tiếp cận', 'Step 2 — Core Idea & Angle')}</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  AI đề xuất ≥3 core ideas cho loại nội dung <b>"{article.contentType || "(chưa chọn)"}"</b>. Chọn 1 để sang Step 3.
+                  {tr('AI đề xuất ≥3 ý tưởng cho loại nội dung ', 'AI proposes ≥3 core ideas for ')}<b>"{article.contentType || tr('(chưa chọn)', '(not selected)')}"</b>. {tr('Chọn một để sang Bước 3.', 'Select one to continue to Step 3.')}
                 </p>
               </div>
               <button
@@ -407,13 +410,13 @@ export default function Step2CoreIdea({
                 disabled={loading || !article.contentType || !bundle.totalCount}
                 className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
               >
-                {loading ? "Đang phân tích..." : ideas.length ? "Đề xuất lại" : "Lấy đề xuất"}
+                {loading ? tr('Đang phân tích...', 'Analyzing...') : ideas.length ? tr('Đề xuất lại', 'Regenerate') : tr('Lấy đề xuất', 'Generate ideas')}
               </button>
             </div>
 
             {scanIsStale && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                Nguồn KB / Action Plan / Rules hoặc model đã thay đổi — AI đang cần research lại Core Idea.
+                {tr('Nguồn KB / Action Plan / Rules hoặc model đã thay đổi — AI cần nghiên cứu lại Core Idea.', 'KB / Action Plan / Rules sources or model changed — AI must research the Core Idea again.')}
               </div>
             )}
 
@@ -542,7 +545,7 @@ export default function Step2CoreIdea({
 
             {!loading && ideas.length === 0 && !error && article.contentType && bundle.totalCount > 0 && (
               <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
-                Nhấn <span className="font-semibold">"Lấy đề xuất"</span> để AI phân tích tài liệu và gợi ý core ideas.
+                {tr('Nhấn', 'Click')} <span className="font-semibold">"{tr('Lấy đề xuất', 'Generate ideas')}"</span> {tr('để AI phân tích tài liệu và gợi ý core ideas.', 'to let AI analyze documents and suggest core ideas.')}
               </div>
             )}
           </div>
@@ -554,14 +557,14 @@ export default function Step2CoreIdea({
           onClick={onPrev}
           className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all"
         >
-          Quay lại
+          {tr('Quay lại', 'Back')}
         </button>
         <button
           onClick={onNext}
           disabled={!selectedId || scanIsStale}
           className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
         >
-          Tiếp tục — Draft Outline
+          {tr('Tiếp tục — Draft Outline', 'Continue — Draft Outline')}
         </button>
       </div>
     </div>

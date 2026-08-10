@@ -8,6 +8,7 @@ import type {
   ContentTypeGroup,
 } from "../../types";
 import { callAI } from "../../lib/aiService";
+import { useI18n } from "../../lib/i18n";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
@@ -226,6 +227,7 @@ export default function Step1ContentType({
   const [error, setError] = useState<string | null>(null);
   const [customLabel, setCustomLabel] = useState("");
   const autoRequestedRef = useRef<string | null>(null);
+  const { tr, outputInstruction } = useI18n();
 
   const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
   const sourceFingerprint = useMemo(
@@ -273,6 +275,7 @@ export default function Step1ContentType({
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
+          outputInstruction,
           "Tổng hợp ĐẦY ĐỦ Content Type A/B/C từ toàn bộ Action Plan được cấp quyền; dùng Knowledge Base + Rules để bổ sung mô tả và kiểm chứng.",
           "",
           "QUY TẮC PHÂN LOẠI (bắt buộc):",
@@ -423,9 +426,9 @@ export default function Step1ContentType({
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">Step 1 — Content Type</h2>
+                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 1 — Loại nội dung', 'Step 1 — Content Type')}</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  AI lấy topic, wave và timeframe từ Action Plan; dùng Knowledge Base + Rules để phân loại <b>Type A / B / C</b>. Chọn 1 để sang Step 2.
+                  {tr('AI lấy chủ đề, wave và mốc thời gian từ Action Plan; dùng Knowledge Base + Rules để phân loại ', 'AI reads topics, waves, and timeframes from the Action Plan and uses Knowledge Base + Rules to classify ')}<b>Type A / B / C</b>. {tr('Chọn một phương án để sang Bước 2.', 'Select one option to continue to Step 2.')}
                 </p>
               </div>
               <button
@@ -433,7 +436,7 @@ export default function Step1ContentType({
                 disabled={loading || !bundle.totalCount}
                 className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
               >
-                {loading ? "Đang quét toàn bộ..." : visibleSuggestions.length ? "Tổng hợp lại toàn bộ" : "Tổng hợp toàn bộ"}
+                {loading ? tr('Đang quét toàn bộ...', 'Scanning all...') : visibleSuggestions.length ? tr('Tổng hợp lại toàn bộ', 'Rescan all') : tr('Tổng hợp toàn bộ', 'Scan all')}
               </button>
             </div>
 
@@ -444,7 +447,7 @@ export default function Step1ContentType({
                   : "bg-emerald-50 border-emerald-200 text-emerald-700"
               }`}>
                 {scanIsStale
-                  ? "Nguồn hoặc model đã thay đổi — vẫn đang dùng snapshot Step 1 đã lưu. Chỉ cập nhật khi bạn nhấn “Tổng hợp lại toàn bộ”."
+                  ? tr('Nguồn hoặc model đã thay đổi — vẫn đang dùng snapshot Bước 1 đã lưu. Chỉ cập nhật khi bạn nhấn “Tổng hợp lại toàn bộ”.', 'Sources or model changed — the saved Step 1 snapshot remains active. It only updates when you click “Rescan all”.')
                   : article.contentTypeCacheHit
                     ? `Snapshot Step 1 đã lưu trên Supabase lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")} — dùng lại kết quả cache đã xác thực.`
                     : `Snapshot Step 1 đã lưu trên Supabase sau khi quét Action Plan lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")}.`}
@@ -453,7 +456,7 @@ export default function Step1ContentType({
 
             {!bundle.totalCount && (
               <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
-                Chưa có tài liệu nào được phân quyền cho Step 1. Mở <span className="font-semibold">Cấu hình → Step Setup</span> để gán tài liệu.
+                {tr('Chưa có tài liệu nào được phân quyền cho Bước 1. Mở ', 'No documents are authorized for Step 1. Open ')}<span className="font-semibold">{tr('Cấu hình → Phân quyền theo Step', 'Settings → Step access')}</span>{tr(' để gán tài liệu.', ' to assign documents.')}
               </div>
             )}
 
@@ -518,7 +521,7 @@ export default function Step1ContentType({
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-                      <span className="text-xs font-bold text-slate-600">Chưa phân nhóm</span>
+                      <span className="text-xs font-bold text-slate-600">{tr('Chưa phân nhóm', 'Uncategorized')}</span>
                       <span className="text-[10px] text-slate-400">· {grouped.other.length} loại</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -533,18 +536,18 @@ export default function Step1ContentType({
 
             {!loading && visibleSuggestions.length === 0 && !error && bundle.totalCount > 0 && (
               <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center text-xs text-slate-500">
-                Nhấn <span className="font-semibold">"Lấy đề xuất"</span> để AI phân tích tài liệu và gợi ý loại nội dung.
+                {tr('Nhấn', 'Click')} <span className="font-semibold">"{tr('Lấy đề xuất', 'Generate')}"</span> {tr('để AI phân tích tài liệu và gợi ý loại nội dung.', 'to let AI analyze documents and suggest content types.')}
               </div>
             )}
 
             {/* Custom content type */}
             <div className="border border-slate-200 rounded-2xl p-4 space-y-2">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Hoặc nhập loại nội dung tùy chỉnh</div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{tr('Hoặc nhập loại nội dung tùy chỉnh', 'Or enter a custom content type')}</div>
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   value={customLabel}
                   onChange={e => setCustomLabel(e.target.value)}
-                  placeholder="Ví dụ: Bài phân tích chuyên sâu, Ebook hướng dẫn..."
+                  placeholder={tr('Ví dụ: Bài phân tích chuyên sâu, Ebook hướng dẫn...', 'Example: In-depth analysis, instructional ebook...')}
                   className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-slate-800 transition-all placeholder:text-slate-400"
                 />
                 <button
@@ -552,7 +555,7 @@ export default function Step1ContentType({
                   disabled={!customLabel.trim()}
                   className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all"
                 >
-                  Dùng
+                  {tr('Dùng', 'Use')}
                 </button>
               </div>
             </div>
@@ -560,7 +563,7 @@ export default function Step1ContentType({
             {selected && (
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 animate-fade-in-up">
                 <div className="flex items-center space-x-2 mb-2">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Loại đã chọn</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{tr('Loại đã chọn', 'Selected type')}</span>
                 </div>
                 <p className="text-sm font-bold text-slate-800">{selected}</p>
                 {selectedSuggestion?.description && (
@@ -578,7 +581,7 @@ export default function Step1ContentType({
           disabled={!selected}
           className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all"
         >
-          Tiếp tục — Core Idea & Angle
+          {tr('Tiếp tục — Core Idea & Angle', 'Continue — Core Idea & Angle')}
         </button>
       </div>
     </div>
@@ -596,6 +599,7 @@ function SuggestionCard({
   onSelect: (suggestion: ContentTypeSuggestion) => void;
   groupBadge: string;
 }) {
+  const { tr } = useI18n();
   return (
     <button
       onClick={() => onSelect(s)}
@@ -623,7 +627,7 @@ function SuggestionCard({
 
       <div className="flex items-start justify-between gap-2">
         <div className="text-sm font-bold text-slate-800 leading-tight">{s.label}</div>
-        {isSelected && <span className="shrink-0 text-[10px] font-bold text-slate-900">✓ Đã chọn</span>}
+        {isSelected && <span className="shrink-0 text-[10px] font-bold text-slate-900">✓ {tr('Đã chọn', 'Selected')}</span>}
       </div>
 
       <div className="text-[11px] text-slate-600 leading-relaxed">{s.description}</div>

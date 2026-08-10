@@ -16,7 +16,7 @@ export interface GenerateRequest {
 export interface GenerateResponse {
   content: string;
   model: string;
-  usage?: { inputTokens: number; outputTokens: number };
+  usage?: { inputTokens: number; outputTokens: number; cachedInputTokens?: number };
 }
 
 // ── Anthropic ────────────────────────────────────────────────────────────────
@@ -78,6 +78,7 @@ async function callOpenAI(req: GenerateRequest): Promise<GenerateResponse> {
       usage: {
         inputTokens: response.usage?.input_tokens ?? 0,
         outputTokens: response.usage?.output_tokens ?? 0,
+        cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0,
       },
     };
   }
@@ -95,6 +96,7 @@ async function callOpenAI(req: GenerateRequest): Promise<GenerateResponse> {
     usage: {
       inputTokens: res.usage?.prompt_tokens ?? 0,
       outputTokens: res.usage?.completion_tokens ?? 0,
+      cachedInputTokens: res.usage?.prompt_tokens_details?.cached_tokens ?? 0,
     },
   };
 }

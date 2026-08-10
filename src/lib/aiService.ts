@@ -1,4 +1,4 @@
-import type { AIModel } from '../types';
+import type { AICallUsage, AIModel } from '../types';
 
 export interface AIRequest {
   model: AIModel;
@@ -15,11 +15,12 @@ export interface AIRequest {
 export interface AIResponse {
   content: string;
   model: string;
-  usage?: { inputTokens: number; outputTokens: number };
+  usage?: { inputTokens: number; outputTokens: number; cachedInputTokens?: number };
   generatedAt?: string;
   servedAt?: string;
   cacheHit?: boolean;
   timing?: { contextMs: number; providerMs: number; totalMs: number };
+  costUsd?: number | null;
 }
 
 const DEMO_RESPONSES: Record<string, string> = {
@@ -99,6 +100,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
           temperature,
           splitByWave,
           bypassCache,
+          pricing: model.pricing,
         }),
       });
 
@@ -107,7 +109,25 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
         throw new Error(err.error || `Railway error ${res.status}`);
       }
 
-      return res.json();
+      const response = await res.json() as AIResponse;
+      const billedInput = response.cacheHit ? 0 : response.usage?.inputTokens ?? 0;
+      const billedOutput = response.cacheHit ? 0 : response.usage?.outputTokens ?? 0;
+      const billedCachedInput = response.cacheHit ? 0 : response.usage?.cachedInputTokens ?? 0;
+      const usage: AICallUsage = {
+        id: `usage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        step: stepNumber,
+        provider: model.provider,
+        model: response.model || model.id,
+        inputTokens: billedInput,
+        cachedInputTokens: billedCachedInput,
+        outputTokens: billedOutput,
+        totalTokens: billedInput + billedOutput,
+        costUsd: response.cacheHit ? 0 : response.costUsd ?? null,
+        cacheHit: Boolean(response.cacheHit),
+        calledAt: new Date().toISOString(),
+      };
+      window.dispatchEvent(new CustomEvent<AICallUsage>('writer:ai-usage', { detail: usage }));
+      return response;
     } catch (err: any) {
       // Re-throw with clear message — UI will show it
       throw new Error(`Railway: ${err.message}`);

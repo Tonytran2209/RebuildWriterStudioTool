@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ActionDataSource, DocumentFile, FileCategory, KbSubTab } from '../../types';
 import ActionPlanTab from './ActionPlanTab';
+import { useI18n } from '../../lib/i18n';
 
 const SUBTAB_META: Record<KbSubTab, { label: string; category: FileCategory; hint: string }> = {
   kb: {
@@ -53,6 +54,7 @@ export default function TabKnowledgeBase({
   onActionSourcesChange,
   railwayUrl,
 }: Props) {
+  const { language, tr } = useI18n();
   const [activeSubTab, setActiveSubTab] = useState<KbSubTab>('kb');
   const meta = SUBTAB_META[activeSubTab];
 
@@ -83,13 +85,13 @@ export default function TabKnowledgeBase({
                 : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
             }`}
           >
-            {item.label}
+            {language === 'vi' ? item.label : key === 'kb' ? '1. Knowledge Base' : key === 'action' ? '2. Action Plan' : '3. Rules & Guidelines'}
           </button>
         ))}
       </div>
 
       <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11px] text-blue-700">
-        <strong>{meta.label}:</strong> {meta.hint}. Mọi phương thức đều được Railway xử lý và chỉ được đánh dấu sẵn sàng sau khi Supabase đã lưu nội dung thật.
+        <strong>{meta.label}:</strong> {language === 'vi' ? meta.hint : tr(meta.hint, activeSubTab === 'kb' ? 'Core knowledge, products, research, and references' : activeSubTab === 'action' ? 'Keywords, timeline, content calendar, and execution plan' : 'Taxonomy, tone of voice, structure, and mandatory rules')}. {tr('Mọi phương thức đều được Railway xử lý và chỉ được đánh dấu sẵn sàng sau khi Supabase đã lưu nội dung thật.', 'Every import method is processed by Railway and marked ready only after Supabase stores the actual content.')}
       </div>
 
       <ActionPlanTab

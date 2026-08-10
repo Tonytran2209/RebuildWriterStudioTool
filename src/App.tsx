@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Article, AppConfig, DocumentFile } from './types';
+import type { AICallUsage, Article, AppConfig, DocumentFile } from './types';
 import { DEFAULT_CONFIG, mergeWithLatestModelCatalog } from './lib/defaultData';
 import * as db from './lib/db';
 import Sidebar from './components/Sidebar';
@@ -9,6 +9,7 @@ import Step1ContentType from './components/workspace/Step1ContentType';
 import Step2CoreIdea from './components/workspace/Step2CoreIdea';
 import Step3Outline from './components/workspace/Step3Outline';
 import Step4Draft from './components/workspace/Step4Draft';
+import { useI18n } from './lib/i18n';
 
 function generateId() {
   return `art-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -28,6 +29,7 @@ function createNewArticle(): Article {
 type SyncStatus = 'idle' | 'loading' | 'saving' | 'error';
 
 export default function App() {
+  const { tr } = useI18n();
   const [articles, setArticles] = useState<Article[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
@@ -39,6 +41,10 @@ export default function App() {
   const [completionSavingId, setCompletionSavingId] = useState<string | null>(null);
   const [deletingArticleId, setDeletingArticleId] = useState<string | null>(null);
   const articleMutationQueue = useRef<Promise<void>>(Promise.resolve());
+  const articlesRef = useRef<Article[]>([]);
+  const activeIdRef = useRef<string | null>(null);
+  articlesRef.current = articles;
+  activeIdRef.current = activeId;
 
   const enqueueArticleMutation = useCallback((operation: () => Promise<Article>): Promise<Article> => {
     const result = articleMutationQueue.current.then(operation, operation);
@@ -93,6 +99,32 @@ export default function App() {
         setArticleActionError(`Không đồng bộ được bài viết với Supabase: ${error instanceof Error ? error.message : String(error)}`);
         setSyncStatus('error');
       });
+  }, [enqueueArticleMutation]);
+
+  useEffect(() => {
+    const recordUsage = (event: Event) => {
+      const usage = (event as CustomEvent<AICallUsage>).detail;
+      const articleId = activeIdRef.current;
+      const current = articlesRef.current.find(item => item.id === articleId);
+      if (!articleId || !current || !usage) return;
+      const previous = current.aiUsageByStep?.[usage.step] ?? [];
+      const aiUsageByStep = {
+        ...current.aiUsageByStep,
+        [usage.step]: [...previous, usage].slice(-50),
+      };
+      const updated = articlesRef.current.map(item => item.id === articleId
+        ? { ...item, aiUsageByStep, updatedAt: new Date().toISOString() }
+        : item);
+      articlesRef.current = updated;
+      setArticles(updated);
+      enqueueArticleMutation(() => db.updateArticle(articleId, { aiUsageByStep }))
+        .catch((error: unknown) => {
+          setArticleActionError(`Không lưu được usage AI: ${error instanceof Error ? error.message : String(error)}`);
+          setSyncStatus('error');
+        });
+    };
+    window.addEventListener('writer:ai-usage', recordUsage);
+    return () => window.removeEventListener('writer:ai-usage', recordUsage);
   }, [enqueueArticleMutation]);
 
   const handleNewArticle = async () => {
@@ -202,7 +234,7 @@ export default function App() {
       <div className="h-dvh flex items-center justify-center bg-[#f4f5f8]">
         <div className="text-center space-y-3">
           <div className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg mx-auto">W</div>
-          <div className="text-sm font-semibold text-slate-700">Đang tải Writer Studio...</div>
+          <div className="text-sm font-semibold text-slate-700">{tr('Đang tải Writer Studio...', 'Loading Writer Studio...')}</div>
           <div className="w-40 h-1 bg-slate-200 rounded-full overflow-hidden mx-auto">
             <div className="h-full bg-slate-800 rounded-full w-3/5 animate-pulse" />
           </div>
@@ -217,9 +249,9 @@ export default function App() {
         <div className="max-w-md w-full bg-white border border-red-200 rounded-3xl p-6 text-center shadow-sm space-y-4">
           <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center text-xl mx-auto">!</div>
           <div>
-            <h1 className="text-base font-bold text-slate-800">Không tải được dữ liệu từ Railway / Supabase</h1>
+            <h1 className="text-base font-bold text-slate-800">{tr('Không tải được dữ liệu từ Railway / Supabase', 'Could not load data from Railway / Supabase')}</h1>
             <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-              Ứng dụng đã khóa thao tác lưu để tránh ghi đè database bằng dữ liệu rỗng.
+              {tr('Ứng dụng đã khóa thao tác lưu để tránh ghi đè database bằng dữ liệu rỗng.', 'Saving is locked to prevent overwriting the database with empty data.')}
             </p>
           </div>
           <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-[11px] text-red-700 font-mono break-words">
@@ -229,7 +261,7 @@ export default function App() {
             onClick={() => window.location.reload()}
             className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm py-2.5 px-5 rounded-xl transition-all"
           >
-            Thử tải lại
+            {tr('Thử tải lại', 'Try again')}
           </button>
         </div>
       </div>
@@ -255,10 +287,10 @@ export default function App() {
           <div className="text-center space-y-5 max-w-sm w-full">
             <div className="w-14 h-14 rounded-3xl bg-slate-900 text-white flex items-center justify-center font-bold text-2xl mx-auto shadow-lg">W</div>
             <div className="space-y-1.5">
-              <h1 className="text-lg font-bold text-slate-800">Chào mừng đến Writer Studio</h1>
+              <h1 className="text-lg font-bold text-slate-800">{tr('Chào mừng đến Writer Studio', 'Welcome to Writer Studio')}</h1>
               <p className="text-sm text-slate-500 leading-relaxed">
-                Workspace AI cho quy trình sản xuất nội dung 4 bước.<br />
-                Bắt đầu bằng cách tạo bài viết đầu tiên.
+                {tr('Workspace AI cho quy trình sản xuất nội dung 4 bước.', 'AI workspace for a four-step content workflow.')}<br />
+                {tr('Bắt đầu bằng cách tạo bài viết đầu tiên.', 'Start by creating your first article.')}
               </p>
             </div>
             <div className="flex flex-col gap-2">
@@ -271,13 +303,13 @@ export default function App() {
                 onClick={handleNewArticle}
                 className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm py-3 px-6 rounded-2xl shadow-sm transition-all"
               >
-                + Tạo bài viết đầu tiên
+                {tr('+ Tạo bài viết đầu tiên', '+ Create first article')}
               </button>
               <button
                 onClick={() => setShowConfig(true)}
                 className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 font-semibold text-xs py-2.5 px-5 rounded-2xl transition-all"
               >
-                Cấu hình AI Model & Knowledge Base
+                {tr('Cấu hình AI Model & Knowledge Base', 'Configure AI Model & Knowledge Base')}
               </button>
             </div>
           </div>
@@ -317,6 +349,7 @@ export default function App() {
               onStepChange={handleStepChange}
               currentModel={currentModel}
               syncStatus={syncStatus}
+              usage={article.aiUsageByStep?.[article.currentStep as 1 | 2 | 3 | 4] ?? []}
             />
             <main className="flex-1 min-h-0 overflow-hidden p-2.5 md:p-5">
               {article.currentStep === 1 && (

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import type { Article, AIModel, AppConfig, DocumentFile } from '../../types';
 import { callAI } from '../../lib/aiService';
+import { useI18n } from '../../lib/i18n';
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
@@ -35,6 +36,7 @@ interface Props {
 }
 
 export default function Step4Draft({ article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
+  const { tr, outputInstruction } = useI18n();
   const bundle = useMemo(() => collectStepDocs(4, config, files), [config, files]);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -65,6 +67,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
       const systemPrompt = buildRoleSystemPrompt(
         [
+          outputInstruction,
           'Viết bài hoàn chỉnh theo dàn bài và tài liệu được cấp.',
           '- Knowledge Base là nguồn dữ liệu duy nhất cho số liệu, dẫn chứng, thông tin sản phẩm. KHÔNG bịa dữ liệu.',
           '- Action Plan xác định định hướng nội dung và các mục bắt buộc.',
@@ -130,7 +133,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             {/* Editor toolbar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 sm:px-4 py-2.5 border-b border-slate-100">
               <div className="min-w-0">
-                <h2 className="text-sm font-bold text-slate-800">Step 4: First Draft & Audit</h2>
+                <h2 className="text-sm font-bold text-slate-800">{tr('Bước 4: Bản nháp & Kiểm tra', 'Step 4: First Draft & Audit')}</h2>
                 <p className="text-[10px] text-slate-400">{article.title || 'Bài viết mới'}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -142,16 +145,16 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                   {generating ? (
                     <>
                       <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                      <span>Đang viết...</span>
+                      <span>{tr('Đang viết...', 'Writing...')}</span>
                     </>
-                  ) : <><span>✨</span><span>{draft ? 'Viết lại' : 'AI Viết Draft'}</span></>}
+                    ) : <><span>✨</span><span>{draft ? tr('Viết lại', 'Rewrite') : tr('AI Viết Draft', 'AI Draft')}</span></>}
                 </button>
                 <button
                   onClick={handleCopy}
                   disabled={!draft}
                   className="bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all"
                 >
-                  {copied ? '✓ Đã copy' : 'Copy'}
+                  {copied ? tr('✓ Đã copy', '✓ Copied') : 'Copy'}
                 </button>
               </div>
             </div>
@@ -170,7 +173,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                   contentEditable
                   suppressContentEditableWarning
                   onInput={handleEditorInput}
-                  data-placeholder="Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công..."
+                  data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
                   className="prose-editor min-h-full whitespace-pre-wrap"
                 >
                   {draft || ''}
@@ -182,7 +185,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             <div className="px-5 py-2.5 border-t border-slate-100">
               <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
                 <span className="font-mono font-semibold">{wordCount.toLocaleString()} / {targetWords.toLocaleString()} từ</span>
-                <span>{progress}% hoàn thành</span>
+                <span>{progress}% {tr('hoàn thành', 'complete')}</span>
               </div>
               <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
                 <div
@@ -197,12 +200,14 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           <div className="w-full lg:w-60 grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-col gap-3 shrink-0">
             {/* Readability */}
             <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
-              <h3 className="text-xs font-bold text-slate-800">Phân tích nội dung</h3>
+              <h3 className="text-xs font-bold text-slate-800">{tr('Phân tích nội dung', 'Content analysis')}</h3>
               <div className="space-y-2.5">
                 <div>
                   <div className="flex justify-between text-[11px] mb-1">
-                    <span className="text-slate-500 font-medium">Độ dễ đọc</span>
-                    <span className={`font-bold ${readability?.color || 'text-slate-400'}`}>{readability?.label || '—'}</span>
+                    <span className="text-slate-500 font-medium">{tr('Độ dễ đọc', 'Readability')}</span>
+                    <span className={`font-bold ${readability?.color || 'text-slate-400'}`}>{readability
+                      ? tr(readability.label, readability.score >= 90 ? 'Very easy' : readability.score >= 75 ? 'Easy' : readability.score >= 60 ? 'Medium' : 'Difficult')
+                      : '—'}</span>
                   </div>
                   <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                     <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${readability?.score || 0}%` }} />
@@ -210,15 +215,15 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                 </div>
 
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">Số từ</span>
+                  <span className="text-slate-500">{tr('Số từ', 'Words')}</span>
                   <span className="font-mono font-bold text-slate-700">{wordCount.toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">Số đoạn</span>
+                  <span className="text-slate-500">{tr('Số đoạn', 'Paragraphs')}</span>
                   <span className="font-mono font-bold text-slate-700">{draft.split('\n\n').filter(p => p.trim()).length}</span>
                 </div>
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">Số ký tự</span>
+                  <span className="text-slate-500">{tr('Số ký tự', 'Characters')}</span>
                   <span className="font-mono font-bold text-slate-700">{draft.length.toLocaleString()}</span>
                 </div>
               </div>
@@ -250,7 +255,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             {/* Keyword density */}
             {keywordStats.length > 0 && (
               <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
-                <h3 className="text-xs font-bold text-slate-800">Mật độ từ khóa</h3>
+                <h3 className="text-xs font-bold text-slate-800">{tr('Mật độ từ khóa', 'Keyword density')}</h3>
                 <div className="space-y-2">
                   {keywordStats.map(kw => (
                     <div key={kw.keyword}>
@@ -272,13 +277,13 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
             {/* Export */}
             <div className="bg-white rounded-2xl p-4 shadow-sm space-y-2">
-              <h3 className="text-xs font-bold text-slate-800">Xuất bài viết</h3>
+              <h3 className="text-xs font-bold text-slate-800">{tr('Xuất bài viết', 'Export article')}</h3>
               <button
                 onClick={handleCopy}
                 disabled={!draft}
                 className="w-full py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold rounded-xl transition-all"
               >
-                {copied ? '✓ Đã copy' : 'Copy toàn bộ nội dung'}
+                {copied ? tr('✓ Đã copy', '✓ Copied') : tr('Copy toàn bộ nội dung', 'Copy all content')}
               </button>
               <button
                 disabled={!draft}
@@ -293,7 +298,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                 }}
                 className="w-full py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 text-xs font-semibold rounded-xl transition-all"
               >
-                Tải xuống .txt
+                {tr('Tải xuống .txt', 'Download .txt')}
               </button>
             </div>
           </div>
@@ -302,7 +307,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
       <div className="flex justify-between gap-2 shrink-0">
         <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all">
-          ← Quay lại Outline
+          {tr('← Quay lại Outline', '← Back to Outline')}
         </button>
         <button
           onClick={onToggleComplete}

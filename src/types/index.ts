@@ -8,6 +8,30 @@ export interface AIModel {
   enabled: boolean;
   contextWindow: string;
   speed: 'fast' | 'medium' | 'slow';
+  pricing?: {
+    inputUsdPerMillion: number;
+    outputUsdPerMillion: number;
+    cachedInputUsdPerMillion?: number;
+    longContextThresholdTokens?: number;
+    longContextInputMultiplier?: number;
+    longContextOutputMultiplier?: number;
+  };
+}
+
+export type AppLanguage = 'vi' | 'en';
+
+export interface AICallUsage {
+  id: string;
+  step: 1 | 2 | 3 | 4;
+  provider: AIProvider;
+  model: string;
+  inputTokens: number;
+  cachedInputTokens?: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number | null;
+  cacheHit: boolean;
+  calledAt: string;
 }
 
 export type FileCategory = 'kb' | 'action' | 'rules';
@@ -174,6 +198,7 @@ export interface Article {
   outlineScannedAt?: string | null;
   // Step 4 data
   draft?: string;
+  aiUsageByStep?: Partial<Record<1 | 2 | 3 | 4, AICallUsage[]>>;
 }
 
 export interface ContentType {

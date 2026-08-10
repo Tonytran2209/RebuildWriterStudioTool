@@ -8,6 +8,7 @@ import type {
   SearchIntent,
 } from "../../types";
 import { callAI } from "../../lib/aiService";
+import { useI18n } from "../../lib/i18n";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
@@ -119,6 +120,7 @@ export default function Step3Outline({
   onNext,
   onPrev,
 }: Props) {
+  const { tr, outputInstruction } = useI18n();
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestingKeywords, setSuggestingKeywords] = useState(false);
@@ -170,6 +172,7 @@ export default function Step3Outline({
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
+          outputInstruction,
           "Tạo dàn bài (outline) chi tiết với keyword mapping và search intent cho từng section.",
           "- Knowledge Base cung cấp luận điểm và evidence cho từng mục.",
           "- Action Plan xác định cấu trúc mẫu và các mục bắt buộc phải có.",
@@ -273,6 +276,7 @@ export default function Step3Outline({
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
+          outputInstruction,
           "Đề xuất 6-10 từ khóa phụ / long-tail liên quan tới angle và tài liệu được cấp.",
           "- Chỉ trả về mảng JSON các chuỗi từ khóa (không kèm mô tả).",
           "- Ưu tiên từ khóa có căn cứ trong Knowledge Base / Action Plan.",
@@ -350,9 +354,9 @@ export default function Step3Outline({
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">Step 3 — Draft Outline</h2>
+                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 3 — Dàn bài nháp', 'Step 3 — Draft Outline')}</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Đọc và chỉnh dàn ý theo đúng thứ tự bài viết. Mở chi tiết khi cần xem keyword, intent hoặc nguồn tham khảo.
+                  {tr('Đọc và chỉnh dàn ý theo đúng thứ tự bài viết. Mở chi tiết khi cần xem keyword, intent hoặc nguồn tham khảo.', 'Review and edit the outline in article order. Open details to inspect keywords, intent, or sources.')}
                 </p>
               </div>
               <button
@@ -360,7 +364,7 @@ export default function Step3Outline({
                 disabled={generating}
                 className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all"
               >
-                {generating ? "Đang dựng..." : outline.length ? "Tạo lại" : "Tạo outline"}
+                {generating ? tr('Đang dựng...', 'Generating...') : outline.length ? tr('Tạo lại', 'Regenerate') : tr('Tạo outline', 'Generate outline')}
               </button>
             </div>
 
@@ -385,8 +389,8 @@ export default function Step3Outline({
 
             {!generating && outline.length === 0 && (
               <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center">
-                <p className="text-sm font-semibold text-slate-600">Chưa có outline</p>
-                <p className="text-xs text-slate-400 mt-1">Nhấn "Tạo outline" để dệt dàn bài từ dữ liệu Step 1-2</p>
+                <p className="text-sm font-semibold text-slate-600">{tr('Chưa có outline', 'No outline yet')}</p>
+                <p className="text-xs text-slate-400 mt-1">{tr('Nhấn “Tạo outline” để dựng dàn bài từ dữ liệu Bước 1–2', 'Click “Generate outline” to build it from Step 1–2 data')}</p>
               </div>
             )}
 
@@ -419,13 +423,13 @@ export default function Step3Outline({
             {/* Add section */}
             <div className="border border-slate-200 rounded-xl p-4 space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="text-xs font-bold text-slate-700">Thêm section hoặc luận điểm nhánh</div>
+                <div className="text-xs font-bold text-slate-700">{tr('Thêm section hoặc luận điểm nhánh', 'Add a section or supporting point')}</div>
                 <button
                   onClick={handleSuggestKeywords}
                   disabled={suggestingKeywords || (!contextBrief.angle && !contextBrief.topic)}
                   className="text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 border border-slate-200 rounded-md px-2.5 py-1 transition-all"
                 >
-                  {suggestingKeywords ? "Đang gợi ý..." : "Gợi ý keyword theo angle"}
+                  {suggestingKeywords ? tr('Đang gợi ý...', 'Suggesting...') : tr('Gợi ý keyword theo angle', 'Suggest keywords by angle')}
                 </button>
               </div>
 
@@ -442,7 +446,7 @@ export default function Step3Outline({
                   value={newSectionHeading}
                   onChange={e => setNewSectionHeading(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && addSection()}
-                  placeholder="Tiêu đề section mới..."
+                  placeholder={tr('Tiêu đề section mới...', 'New section heading...')}
                   className="min-w-0 flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-slate-800 placeholder:text-slate-400"
                 />
                 <button
@@ -450,7 +454,7 @@ export default function Step3Outline({
                   disabled={!newSectionHeading.trim()}
                   className="col-span-2 sm:col-span-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-all"
                 >
-                  Thêm
+                  {tr('Thêm', 'Add')}
                 </button>
               </div>
 
@@ -479,14 +483,14 @@ export default function Step3Outline({
 
       <div className="flex justify-between gap-2 shrink-0">
         <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all">
-          Quay lại
+          {tr('Quay lại', 'Back')}
         </button>
         <button
           onClick={onNext}
           disabled={outline.length === 0 || outlineIsStale}
           className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
         >
-          Tiếp tục — First Draft
+          {tr('Tiếp tục — First Draft', 'Continue — First Draft')}
         </button>
       </div>
     </div>
@@ -512,6 +516,7 @@ function SectionRow({
   keywordSuggestions: string[];
   onAddKeyword: (kw: string) => void;
 }) {
+  const { tr } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const isH3 = section.level === "h3";
 
@@ -538,7 +543,7 @@ function SectionRow({
           <input
             value={section.heading}
             onChange={e => onChange({ heading: e.target.value })}
-            placeholder="Tiêu đề section..."
+            placeholder={tr('Tiêu đề section...', 'Section heading...')}
             className={`w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-300 ${
               isH3 ? "text-sm font-semibold" : "text-sm font-bold"
             }`}
@@ -565,19 +570,19 @@ function SectionRow({
         </div>
 
         <div className="flex items-center justify-end gap-0.5 shrink-0 w-full sm:w-auto">
-          <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title="Lên">
+          <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title={tr('Lên', 'Move up')}>
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>
           </button>
-          <button onClick={() => onMove(1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title="Xuống">
+          <button onClick={() => onMove(1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title={tr('Xuống', 'Move down')}>
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
           </button>
           <button
             onClick={() => setExpanded(!expanded)}
             className="text-[10px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-md hover:bg-slate-100"
           >
-            {expanded ? "Thu gọn" : "Chi tiết"}
+            {expanded ? tr('Thu gọn', 'Collapse') : tr('Chi tiết', 'Details')}
           </button>
-          <button onClick={onRemove} className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-500 rounded" title="Xoá">
+          <button onClick={onRemove} className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-500 rounded" title={tr('Xoá', 'Delete')}>
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -594,7 +599,7 @@ function SectionRow({
               value={section.notes}
               onChange={e => onChange({ notes: e.target.value })}
               rows={2}
-              placeholder="Nội dung sẽ trình bày trong section..."
+              placeholder={tr('Nội dung sẽ trình bày trong section...', 'Content to cover in this section...')}
               className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 resize-none mt-1"
             />
           </div>
@@ -606,7 +611,7 @@ function SectionRow({
                 onChange={e => onChange({ searchIntent: (e.target.value || undefined) as SearchIntent | undefined })}
                 className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none mt-1"
               >
-                <option value="">— chưa xác định —</option>
+                <option value="">— {tr('chưa xác định', 'not set')} —</option>
                 {Object.entries(SEARCH_INTENT_META).map(([k, v]) => (
                   <option key={k} value={k}>{v.label}</option>
                 ))}
@@ -638,7 +643,7 @@ function SectionRow({
           )}
           {(section.evidence?.length ?? 0) > 0 && (
             <div>
-              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Nguồn tham khảo</label>
+              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Nguồn tham khảo', 'Sources')}</label>
               <div className="flex flex-wrap gap-1 mt-1">
                 {section.evidence?.map((e, i) => (
                   <span

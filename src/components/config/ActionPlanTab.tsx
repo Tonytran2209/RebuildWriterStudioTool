@@ -4,6 +4,7 @@ import { isActionSourceReady } from '../../lib/documentStatus';
 import { uploadDocumentToRailway } from '../../lib/railwayUpload';
 import { downloadDocumentFromRailway } from '../../lib/railwayDownload';
 import { importSourceThroughRailway } from '../../lib/railwayImport';
+import { useI18n } from '../../lib/i18n';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,7 @@ const SOURCE_ICONS: Record<ActionSourceType, string> = {
 // ── sub-forms ─────────────────────────────────────────────────────────────────
 
 function FileForm({ onAdd, railwayUrl, category }: { onAdd: (sources: ActionDataSource[]) => void; railwayUrl: string; category: FileCategory }) {
+  const { tr } = useI18n();
   const ref = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -83,7 +85,7 @@ function FileForm({ onAdd, railwayUrl, category }: { onAdd: (sources: ActionData
         bg-emerald-50/30 border-emerald-200 hover:border-emerald-500 ${dragging ? 'scale-[0.99] opacity-75' : ''}`}
     >
       <div className="text-3xl mb-2">📁</div>
-      <p className="text-xs font-bold text-slate-700">{reading ? 'Railway đang scan và lưu Supabase...' : 'Kéo thả hoặc nhấp để chọn file'}</p>
+      <p className="text-xs font-bold text-slate-700">{reading ? tr('Railway đang scan và lưu Supabase...', 'Railway is scanning and saving to Supabase...') : tr('Kéo thả hoặc nhấp để chọn file', 'Drop files here or click to browse')}</p>
       <p className="text-[11px] text-slate-400 mt-1">CSV · XLSX · JSON · PDF · TXT · XML</p>
       <input ref={ref} type="file" multiple accept=".csv,.xlsx,.json,.pdf,.txt,.xml,.tsv" className="hidden" onChange={e => handle(e.target.files)} />
       {error && <p className="text-[11px] text-red-600 mt-2">{error}</p>}
@@ -92,6 +94,7 @@ function FileForm({ onAdd, railwayUrl, category }: { onAdd: (sources: ActionData
 }
 
 function PasteForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
+  const { tr } = useI18n();
   const [name, setName] = useState('');
   const [content, setContent] = useState('');
   const [fmt, setFmt] = useState<'csv' | 'json' | 'text'>('csv');
@@ -109,7 +112,7 @@ function PasteForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên nguồn dữ liệu..." className={input} />
+        <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('Tên nguồn dữ liệu...', 'Data source name...')} className={input} />
         <div className="flex gap-1 bg-slate-100 p-1 rounded-xl shrink-0">
           {(['csv','json','text'] as const).map(f => (
             <button key={f} onClick={() => setFmt(f)}
@@ -123,19 +126,20 @@ function PasteForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
         value={content} onChange={e => setContent(e.target.value)}
         placeholder={fmt === 'csv' ? 'keyword,volume,difficulty\ncontent marketing,8100,45\n...'
           : fmt === 'json' ? '[{"keyword":"content marketing","volume":8100}]'
-          : 'Nhập dữ liệu văn bản thuần...'}
+          : tr('Nhập dữ liệu văn bản thuần...', 'Enter plain text data...')}
         rows={7}
         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs font-mono text-slate-800 outline-none focus:ring-2 focus:ring-slate-800 resize-none placeholder:text-slate-300"
       />
       <div className="flex justify-between items-center">
-        <span className="text-[11px] text-slate-400">{countRows(content)} dòng · {content.length} ký tự</span>
-        <button onClick={save} disabled={!content.trim()} className={btn}>Lưu nguồn dữ liệu</button>
+        <span className="text-[11px] text-slate-400">{countRows(content)} {tr('dòng', 'rows')} · {content.length} {tr('ký tự', 'characters')}</span>
+        <button onClick={save} disabled={!content.trim()} className={btn}>{tr('Lưu nguồn dữ liệu', 'Save data source')}</button>
       </div>
     </div>
   );
 }
 
 function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
+  const { tr } = useI18n();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [headerKey, setHeaderKey] = useState('');
@@ -160,7 +164,7 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
 
   return (
     <div className="space-y-3">
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên nguồn dữ liệu (tuỳ chọn)" className={input} />
+      <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('Tên nguồn dữ liệu (tuỳ chọn)', 'Data source name (optional)')} className={input} />
       <div className="flex gap-2">
         <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://api.example.com/keywords" className={`${input} flex-1 font-mono text-[11px]`} />
       </div>
@@ -191,6 +195,7 @@ function UrlForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
 }
 
 function GSheetForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
+  const { tr } = useI18n();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
 
@@ -213,7 +218,7 @@ function GSheetForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
         Sheet phải được <strong>chia sẻ công khai</strong> (Anyone with the link → Viewer). <br />
         Paste link dạng: <code className="font-mono">docs.google.com/spreadsheets/d/...</code>
       </div>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên nguồn dữ liệu..." className={input} />
+      <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('Tên nguồn dữ liệu...', 'Data source name...')} className={input} />
       <div className="flex gap-2">
         <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/..." className={`${input} flex-1 font-mono text-[11px]`} />
       </div>
@@ -226,6 +231,7 @@ function GSheetForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
 }
 
 function ManualForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
+  const { tr } = useI18n();
   const [name, setName] = useState('');
   const [columns, setColumns] = useState<string[]>(['Từ khóa', 'Volume', 'Độ khó']);
   const [rows, setRows] = useState<ManualRow[]>([{ id: uid(), cells: ['', '', ''] }]);
@@ -253,9 +259,9 @@ function ManualForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
   return (
     <div className="space-y-3">
       <div className="flex gap-2 items-center">
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên bảng..." className={`${input} flex-1`} />
-        <button onClick={addCol} className="px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 rounded-xl shrink-0">+ Cột</button>
-        <button onClick={addRow} className="px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 rounded-xl shrink-0">+ Hàng</button>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('Tên bảng...', 'Table name...')} className={`${input} flex-1`} />
+        <button onClick={addCol} className="px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 rounded-xl shrink-0">+ {tr('Cột', 'Column')}</button>
+        <button onClick={addRow} className="px-3 py-2 text-xs font-semibold bg-slate-100 hover:bg-slate-200 rounded-xl shrink-0">+ {tr('Hàng', 'Row')}</button>
       </div>
 
       <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -296,13 +302,14 @@ function ManualForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
       </div>
       <div className="flex justify-between items-center">
         <span className="text-[11px] text-slate-400">{rows.length} hàng · {columns.length} cột</span>
-        <button onClick={save} className={btn}>Lưu bảng dữ liệu</button>
+        <button onClick={save} className={btn}>{tr('Lưu bảng dữ liệu', 'Save data table')}</button>
       </div>
     </div>
   );
 }
 
 function SupabaseForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
+  const { tr } = useI18n();
   const [name, setName] = useState('');
   const [query, setQuery] = useState('SELECT * FROM keywords LIMIT 100;');
 
@@ -321,19 +328,20 @@ function SupabaseForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 text-[11px] text-slate-300">
         Query sẽ được Railway backend thực thi trên Supabase project đã kết nối. Chỉ dùng <code className="text-emerald-400">SELECT</code>.
       </div>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên query..." className={input} />
+      <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('Tên query...', 'Query name...')} className={input} />
       <textarea
         value={query} onChange={e => setQuery(e.target.value)} rows={6}
         className="w-full bg-slate-900 text-emerald-400 border border-slate-700 rounded-xl px-4 py-3 text-xs font-mono outline-none focus:ring-2 focus:ring-emerald-600 resize-none"
       />
       <div className="flex justify-end">
-        <button onClick={save} disabled={!query.trim()} className={btn}>Lưu Supabase Query</button>
+        <button onClick={save} disabled={!query.trim()} className={btn}>{tr('Lưu Supabase Query', 'Save Supabase Query')}</button>
       </div>
     </div>
   );
 }
 
 function AirtableForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
+  const { tr } = useI18n();
   const [name, setName] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [base, setBase] = useState('');
@@ -355,14 +363,14 @@ function AirtableForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
       <div className="bg-yellow-50 border border-yellow-100 rounded-xl p-3 text-[11px] text-yellow-800">
         Token chỉ được gửi một lần cho Railway để import dữ liệu và không được lưu vào Supabase.
       </div>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên nguồn dữ liệu..." className={input} />
+      <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('Tên nguồn dữ liệu...', 'Data source name...')} className={input} />
       <input value={apiKey} onChange={e => setApiKey(e.target.value)} type="password" placeholder="Airtable Personal Access Token (pat...)" className={`${input} font-mono text-[11px]`} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <input value={base} onChange={e => setBase(e.target.value)} placeholder="Base ID (app...)" className={`${input} font-mono text-[11px]`} />
-        <input value={table} onChange={e => setTable(e.target.value)} placeholder="Tên table" className={input} />
+        <input value={table} onChange={e => setTable(e.target.value)} placeholder={tr('Tên table', 'Table name')} className={input} />
       </div>
       <div className="flex justify-end">
-        <button onClick={save} disabled={!apiKey || !base || !table} className={btn}>Lưu Airtable source</button>
+        <button onClick={save} disabled={!apiKey || !base || !table} className={btn}>{tr('Lưu nguồn Airtable', 'Save Airtable source')}</button>
       </div>
     </div>
   );
@@ -391,6 +399,7 @@ const CATEGORY_LABEL: Record<FileCategory, string> = {
 };
 
 export default function ActionPlanTab({ sources = [], onChange, railwayUrl, category = 'action' }: Props) {
+  const { language, tr } = useI18n();
   const [mode, setMode] = useState<ActionSourceType>('file');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState('');
@@ -428,7 +437,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
     <div className="space-y-4">
       {/* Mode selector */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Chọn cách nhập dữ liệu</p>
+        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">{tr('Chọn cách nhập dữ liệu', 'Choose an import method')}</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {MODES.map(m => (
             <button
@@ -441,8 +450,8 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
               }`}
             >
               <span className="text-base leading-none">{m.icon}</span>
-              <span className={`text-[10px] font-bold leading-tight ${mode === m.id ? 'text-white' : 'text-slate-700'}`}>{m.label}</span>
-              <span className={`text-[9px] leading-tight ${mode === m.id ? 'text-slate-400' : 'text-slate-400'}`}>{m.hint}</span>
+              <span className={`text-[10px] font-bold leading-tight ${mode === m.id ? 'text-white' : 'text-slate-700'}`}>{language === 'vi' ? m.label : ({ paste: 'Paste Data', manual: 'Manual Entry', file: 'File Upload', url: 'URL / API', gsheet: 'Google Sheets', supabase: 'Supabase Query', airtable: 'Airtable' } as Record<ActionSourceType, string>)[m.id]}</span>
+              <span className={`text-[9px] leading-tight text-slate-400`}>{language === 'vi' ? m.hint : ({ paste: 'CSV, JSON, plain text', manual: 'Create a data table', file: 'CSV, XLSX, JSON, PDF', url: 'REST API, RSS feed', gsheet: 'Public spreadsheet link', supabase: 'SQL SELECT from DB', airtable: 'API Key + Base ID' } as Record<ActionSourceType, string>)[m.id]}</span>
             </button>
           ))}
         </div>
@@ -457,7 +466,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
         {mode === 'manual'   && <ManualForm   onAdd={addSource} />}
         {mode === 'supabase' && <SupabaseForm onAdd={addSource} />}
         {mode === 'airtable' && <AirtableForm onAdd={addSource} />}
-        {importing && <p className="mt-3 text-[11px] font-semibold text-blue-600">Railway đang lấy dữ liệu và lưu Supabase...</p>}
+        {importing && <p className="mt-3 text-[11px] font-semibold text-blue-600">{tr('Railway đang lấy dữ liệu và lưu Supabase...', 'Railway is importing and saving data to Supabase...')}</p>}
         {importError && <p className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[11px] text-red-600">{importError}</p>}
       </div>
 
@@ -465,7 +474,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
         <div className="flex items-center justify-between mb-3 px-1">
           <h4 className="text-xs font-bold text-slate-800">
-            Nguồn dữ liệu {CATEGORY_LABEL[category]}
+            {tr('Nguồn dữ liệu', 'Data sources')} {CATEGORY_LABEL[category]}
             <span className="text-slate-400 font-normal ml-1">({sources.length})</span>
           </h4>
           {sources.length > 0 && (
@@ -474,7 +483,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
                 ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
                 : 'text-red-600 bg-red-50 border-red-100'
             }`}>
-              AI có thể đọc {readySourceCount}/{sources.length} nguồn
+              {tr('AI có thể đọc', 'AI can read')} {readySourceCount}/{sources.length} {tr('nguồn', 'sources')}
             </span>
           )}
         </div>
@@ -488,8 +497,8 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
         {sources.length === 0 ? (
           <div className="text-center py-10">
             <div className="text-3xl mb-2">📂</div>
-            <p className="text-xs text-slate-400">Chưa có nguồn dữ liệu nào.</p>
-            <p className="text-[11px] text-slate-300 mt-0.5">Chọn cách nhập ở trên và thêm dữ liệu.</p>
+            <p className="text-xs text-slate-400">{tr('Chưa có nguồn dữ liệu nào.', 'No data sources yet.')}</p>
+            <p className="text-[11px] text-slate-300 mt-0.5">{tr('Chọn cách nhập ở trên và thêm dữ liệu.', 'Choose an import method above and add data.')}</p>
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -537,7 +546,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l-4-4m4 4l4-4M5 19h14" />
                     </svg>
-                    {downloadingId === s.id ? 'Đang tải' : 'Tải về'}
+                    {downloadingId === s.id ? tr('Đang tải', 'Downloading') : tr('Tải về', 'Download')}
                   </button>
                   <button
                     onClick={() => removeSource(s.id)}

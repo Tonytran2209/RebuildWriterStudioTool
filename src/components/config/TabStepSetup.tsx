@@ -3,6 +3,7 @@ import type { AppConfig, DocumentFile } from '../../types';
 import { STEP_LABELS } from '../../lib/defaultData';
 import { pingRailway } from '../../lib/db';
 import { isActionSourceReady, isDocumentReady } from '../../lib/documentStatus';
+import { useI18n } from '../../lib/i18n';
 
 interface Props {
   config: AppConfig;
@@ -27,6 +28,7 @@ const PROVIDER_META: Record<string, { icon: string; name: string; color: string 
 };
 
 export default function TabStepSetup({ config, files, onChange }: Props) {
+  const { language, tr } = useI18n();
   const [providers, setProviders] = useState<Record<string, boolean> | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const enabledModels = config.models.filter(m => m.enabled);
@@ -85,9 +87,9 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
             backendOk === null ? 'text-slate-500' :
             backendOk          ? 'text-emerald-800' : 'text-red-700'
           }`}>
-            {backendOk === null ? 'Đang kiểm tra kết nối AI backend...' :
-             backendOk          ? 'AI Backend đang hoạt động' :
-                                  'Không kết nối được AI backend'}
+            {backendOk === null ? tr('Đang kiểm tra kết nối AI backend...', 'Checking AI backend...') :
+             backendOk          ? tr('AI Backend đang hoạt động', 'AI Backend is online') :
+                                  tr('Không kết nối được AI backend', 'Cannot connect to AI backend')}
           </p>
           <p className="text-[10px] text-slate-400 font-mono truncate">{RAILWAY_URL}</p>
         </div>
@@ -114,15 +116,14 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <p className="text-xs text-indigo-900">
-          Mỗi Step có thể dùng một <strong>AI Model riêng</strong> và được cấp quyền đọc <strong>tài liệu cụ thể</strong> từ 3 kho KB / Action Plan / Rules.
-          Bật models ở tab <em>Quản lý AI Models</em> trước.
+          {tr('Mỗi Step có thể dùng một ', 'Each step can use its own ')}<strong>AI Model</strong>{tr(' và được cấp quyền đọc tài liệu cụ thể từ 3 kho KB / Action Plan / Rules. Bật models ở tab Quản lý AI Models trước.', ' and receive access to specific documents from KB / Action Plan / Rules. Enable models in AI Model management first.')}
         </p>
       </div>
 
       {enabledModels.length === 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-[11px] text-amber-800 flex items-center gap-2">
           <span>⚠️</span>
-          <span>Chưa có model nào được bật. Vào tab <strong>Quản lý AI Models</strong> để kích hoạt.</span>
+          <span>{tr('Chưa có model nào được bật. Vào tab Quản lý AI Models để kích hoạt.', 'No models are enabled. Open AI Model management to activate one.')}</span>
         </div>
       )}
 
@@ -147,7 +148,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-3">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">{step}</span>
-                <span className="text-xs font-bold text-slate-800">Step {step}: {STEP_LABELS[step]}</span>
+                <span className="text-xs font-bold text-slate-800">{tr('Bước', 'Step')} {step}: {language === 'vi' ? STEP_LABELS[step] : ({ 1: 'Content Type', 2: 'Core Idea & Angle', 3: 'Draft Outline', 4: 'First Draft & Audit' } as Record<number, string>)[step]}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-slate-500 font-medium">AI Model:</span>
@@ -156,7 +157,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                   onChange={e => updateStepModel(step, e.target.value)}
                   className="min-w-0 flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700 font-semibold outline-none focus:ring-2 focus:ring-slate-800 transition-all"
                 >
-                  <option value="">— Chọn model —</option>
+                  <option value="">— {tr('Chọn model', 'Select model')} —</option>
                   {enabledModels.map(m => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
@@ -165,14 +166,14 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
             </div>
 
             <div>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tài liệu được cấp phép:</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{tr('Tài liệu được cấp phép:', 'Authorized documents:')}</span>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
 
                 {/* KB */}
                 <div className={`p-3 rounded-xl border ${CATEGORY_META.kb.border} ${CATEGORY_META.kb.bg} space-y-1.5`}>
                   <span className={`text-[10px] font-bold block border-b border-current/20 pb-1 ${CATEGORY_META.kb.color}`}>Knowledge Base</span>
                   {kbFiles.length === 0 ? (
-                    <p className="text-[10px] text-slate-400 italic">Chưa có file</p>
+                    <p className="text-[10px] text-slate-400 italic">{tr('Chưa có file', 'No files')}</p>
                   ) : kbFiles.map(f => {
                     const selected = stepCfg.fileAccess?.kb ?? [];
                     const ready = isDocumentReady(f);
@@ -182,7 +183,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                           onChange={() => toggleItem(step, 'kb', f.id)}
                           className="rounded border-slate-300 text-slate-900 focus:ring-slate-800 w-3 h-3" />
                         <span className="text-[10px] text-slate-700 truncate">{f.name}</span>
-                        {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">THIẾU DỮ LIỆU</span>}
+                        {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">{tr('THIẾU DỮ LIỆU', 'MISSING DATA')}</span>}
                       </label>
                     );
                   })}
@@ -192,7 +193,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                 <div className={`p-3 rounded-xl border ${CATEGORY_META.action.border} ${CATEGORY_META.action.bg} space-y-1.5`}>
                   <span className={`text-[10px] font-bold block border-b border-current/20 pb-1 ${CATEGORY_META.action.color}`}>Action Plan</span>
                   {actionSources.length === 0 ? (
-                    <p className="text-[10px] text-slate-400 italic">Chưa có nguồn dữ liệu</p>
+                    <p className="text-[10px] text-slate-400 italic">{tr('Chưa có nguồn dữ liệu', 'No data sources')}</p>
                   ) : actionSources.map(s => {
                     const selected = stepCfg.fileAccess?.action ?? [];
                     const ready = isActionSourceReady(s);
@@ -206,7 +207,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                           className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3 h-3" />
                         <span className="text-[9px] shrink-0">{icons[s.sourceType] ?? '📄'}</span>
                         <span className="text-[10px] text-slate-700 truncate">{s.name}</span>
-                        {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">THIẾU DỮ LIỆU</span>}
+                        {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">{tr('THIẾU DỮ LIỆU', 'MISSING DATA')}</span>}
                       </label>
                     );
                   })}
@@ -216,7 +217,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                 <div className={`p-3 rounded-xl border ${CATEGORY_META.rules.border} ${CATEGORY_META.rules.bg} space-y-1.5`}>
                   <span className={`text-[10px] font-bold block border-b border-current/20 pb-1 ${CATEGORY_META.rules.color}`}>Rules & Guidelines</span>
                   {rulesFiles.length === 0 ? (
-                    <p className="text-[10px] text-slate-400 italic">Chưa có file</p>
+                    <p className="text-[10px] text-slate-400 italic">{tr('Chưa có file', 'No files')}</p>
                   ) : rulesFiles.map(f => {
                     const selected = stepCfg.fileAccess?.rules ?? [];
                     const ready = isDocumentReady(f);
@@ -226,7 +227,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                           onChange={() => toggleItem(step, 'rules', f.id)}
                           className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3 h-3" />
                         <span className="text-[10px] text-slate-700 truncate">{f.name}</span>
-                        {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">THIẾU DỮ LIỆU</span>}
+                        {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">{tr('THIẾU DỮ LIỆU', 'MISSING DATA')}</span>}
                       </label>
                     );
                   })}
