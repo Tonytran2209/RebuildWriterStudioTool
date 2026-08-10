@@ -145,7 +145,7 @@ export default function Step2CoreIdea({
 
   const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-evidence-json-v2:${article.contentType ?? ""}`,
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-evidence-json-v3:${article.contentType ?? ""}`,
     [article.contentType, bundle, model.id, model.provider],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
@@ -218,7 +218,7 @@ export default function Step2CoreIdea({
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
       ].join("\n");
 
-      const requestIdeas = async (correction = "") => {
+      const requestIdeas = async (correction = "", bypassCache = false) => {
         let res = await callAI({
           model,
           railwayUrl,
@@ -227,6 +227,7 @@ export default function Step2CoreIdea({
           maxTokens: 8000,
           temperature: 0.1,
           stepNumber: 2,
+          bypassCache,
         });
         let parsed: unknown;
         try {
@@ -254,9 +255,26 @@ export default function Step2CoreIdea({
       };
       let result = await requestIdeas();
       if (!result.ideas.length) {
-        result = await requestIdeas("\n\nLần trước không có idea vượt qua kiểm chứng. Bắt buộc chép quote nguyên văn và đúng tên source cho cả KB/Action lẫn Rules.");
+        const rejectedJson = result.res.content;
+        result = await requestIdeas([
+          "\n\nNHIỆM VỤ SỬA RESPONSE BỊ TỪ CHỐI:",
+          "- Giữ các core idea hữu ích, nhưng đọc lại DOCUMENT trong context và thay evidence bằng quote nguyên văn có thật.",
+          `- Tên nguồn KB hợp lệ: ${bundle.knowledgeBase.map(doc => JSON.stringify(doc.name)).join(", ") || "(không có)"}.`,
+          `- Tên nguồn Action hợp lệ: ${bundle.actionPlan.map(doc => JSON.stringify(doc.name)).join(", ") || "(không có)"}.`,
+          `- Tên nguồn Rules hợp lệ: ${bundle.rules.map(doc => JSON.stringify(doc.name)).join(", ")}.`,
+          "- Mỗi idea bắt buộc có ít nhất 1 evidence role kb/action và 1 evidence role rules.",
+          "- source phải chép đúng một tên trong danh sách trên; quote phải là một đoạn liên tục chép nguyên văn từ chính source đó.",
+          "- Chỉ trả về JSON array hoàn chỉnh, không giải thích.",
+          "",
+          "RESPONSE BỊ TỪ CHỐI CẦN SỬA:",
+          rejectedJson,
+        ].join("\n"), true);
       }
-      if (!result.ideas.length) throw new Error("AI chưa trả về core idea có đủ evidence KB/Action và Rules.");
+      if (!result.ideas.length) {
+        throw new Error(
+          `AI chưa trả về core idea có evidence kiểm chứng được. Đã đối chiếu ${bundle.knowledgeBase.length + bundle.actionPlan.length} nguồn KB/Action và ${bundle.rules.length} nguồn Rules được cấp cho Step 2.`,
+        );
+      }
       onUpdate({
         coreIdeaSuggestions: result.ideas,
         selectedCoreIdeaId: null,

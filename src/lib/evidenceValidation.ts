@@ -2,7 +2,15 @@ import type { EvidenceRef } from "../types";
 import type { DocBundle, DocRef } from "./docContext";
 
 function canonical(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase().replace(/[–—]/g, "-").replace(/\s+/g, " ").trim();
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\u00ad/g, "")
+    .replace(/[“”„‟]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function quoteExists(content: string, quote: string): boolean {
@@ -10,15 +18,33 @@ function quoteExists(content: string, quote: string): boolean {
   const target = canonical(quote);
   if (!target) return false;
   if (source.includes(target)) return true;
-  return quote.split(/\r?\n|\.{3}|…/).map(canonical).filter(part => part.length >= 16).some(part => source.includes(part));
+  // PDF/DOCX extraction often changes line breaks or punctuation around a
+  // multi-sentence quote. At least one substantial verbatim segment must still
+  // exist; this remains deterministic and does not use fuzzy similarity.
+  return quote
+    .split(/\r?\n|\.{3}|…|(?<=[.!?。])\s+/)
+    .map(canonical)
+    .filter(part => part.length >= 24)
+    .some(part => source.includes(part));
 }
 
 function docIndex(bundle: DocBundle): Map<string, { role: EvidenceRef["role"]; doc: DocRef }> {
-  return new Map([
+  const documents = [
     ...bundle.knowledgeBase.map(doc => [canonical(doc.name), { role: "kb" as const, doc }] as const),
     ...bundle.actionPlan.map(doc => [canonical(doc.name), { role: "action" as const, doc }] as const),
     ...bundle.rules.map(doc => [canonical(doc.name), { role: "rules" as const, doc }] as const),
-  ]);
+  ];
+  const index = new Map(documents);
+  const aliases = new Map<string, Array<{ role: EvidenceRef["role"]; doc: DocRef }>>();
+  documents.forEach(([, match]) => {
+    const basename = match.doc.name.split(/[\\/]/).pop() ?? match.doc.name;
+    const stem = canonical(basename.replace(/\.[^.]+$/, ""));
+    aliases.set(stem, [...(aliases.get(stem) ?? []), match]);
+  });
+  aliases.forEach((matches, alias) => {
+    if (matches.length === 1 && !index.has(alias)) index.set(alias, matches[0]);
+  });
+  return index;
 }
 
 export function verifyEvidence(value: unknown, bundle: DocBundle): EvidenceRef[] {
