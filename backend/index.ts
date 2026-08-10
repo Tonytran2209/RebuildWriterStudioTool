@@ -152,12 +152,23 @@ app.use(express.static(DIST));
 
 // ─── Health ──────────────────────────────────────────────────────────────────
 
-app.get('/health', async (_req, res) => {
-  const [supabaseOk] = await Promise.all([checkConnection()]);
+// Railway liveness must not depend on an external service. If Supabase is
+// temporarily slow during a deploy, waiting for it here can make Railway mark
+// an otherwise healthy container as unavailable and return 502 upstream errors.
+app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     version: '1.0.0',
     providers: getAvailableProviders(),
+    supabaseConfigured: !!(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY)),
+  });
+});
+
+// Dependency diagnostics are kept separate from Railway's liveness probe.
+app.get('/health/dependencies', async (_req, res) => {
+  const supabaseOk = await checkConnection();
+  res.status(supabaseOk ? 200 : 503).json({
+    status: supabaseOk ? 'ok' : 'degraded',
     supabase: supabaseOk,
     supabaseUrl: process.env.SUPABASE_URL ?? null,
   });

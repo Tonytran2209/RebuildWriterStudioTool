@@ -9,10 +9,35 @@ function resolveRailwayUrl(explicitUrl?: string): string {
 }
 
 async function railwayRequest<T>(path: string, init?: RequestInit, railwayUrl?: string): Promise<T> {
-  const response = await fetch(`${resolveRailwayUrl(railwayUrl)}${path}`, init);
-  const payload = await response.json().catch(() => ({ error: response.statusText }));
-  if (!response.ok) throw new Error(payload.error || `Railway error ${response.status}`);
-  return payload as T;
+  const url = `${resolveRailwayUrl(railwayUrl)}${path}`;
+  const method = (init?.method ?? 'GET').toUpperCase();
+  const maxAttempts = method === 'GET' ? 3 : 1;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(url, init);
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts) throw error;
+      await new Promise(resolve => setTimeout(resolve, attempt * 750));
+      continue;
+    }
+
+    const payload = await response.json().catch(() => ({ error: response.statusText }));
+    const transient = [502, 503, 504].includes(response.status);
+
+    if (response.ok) return payload as T;
+    if (!transient || attempt === maxAttempts) {
+      throw new Error(payload.error || `Railway error ${response.status}`);
+    }
+    lastError = new Error(payload.error || `Railway error ${response.status}`);
+
+    await new Promise(resolve => setTimeout(resolve, attempt * 750));
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Không thể kết nối Railway.');
 }
 
 // ── Articles ──────────────────────────────────────────────────────────────────
