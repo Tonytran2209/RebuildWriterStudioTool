@@ -41,6 +41,7 @@ export interface StepContextResult {
 export interface StepWaveContext extends StepContextResult {
   wave: string;
   timeframe?: string;
+  scopeKey: string;
   expectedTypeGroups: Array<'A' | 'B' | 'C'>;
   expectedItemCount: number;
   expectedRows: string[];
@@ -141,9 +142,12 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
   }>();
 
   for (const item of action) {
-    const sections = item.document.structuredSections?.length
-      ? item.document.structuredSections
-      : extractStructuredSections(item.document.content);
+    // Rebuild with the current parser. Persisted sections may predate timeframe
+    // splitting and would otherwise keep merging August into an earlier month.
+    const extractedSections = extractStructuredSections(item.document.content);
+    const sections = extractedSections.length
+      ? extractedSections
+      : (item.document.structuredSections ?? []);
     const waveSections = sections.filter(section => section.wave);
     const sharedSections = sections.filter(section => !section.wave);
     const sharedContent = sharedSections.map(section => section.content).join('\n\n');
@@ -154,9 +158,9 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
       continue;
     }
     for (const section of waveSections) {
-      // Publishing wave is the unit of work. A timeframe found inside an individual
-      // row must not split that row into a tiny standalone AI request.
-      const key = `${item.document.id}:${section.wave}`;
+      // A publishing wave can contain multiple independent monthly/quarterly
+      // plans. Never merge them: doing so lets the first timeframe mask later ones.
+      const key = `${item.document.id}:${section.wave}:${section.timeframe ?? 'no-timeframe'}`;
       const group = groups.get(key) ?? {
         wave: section.wave!,
         timeframe: section.timeframe,
@@ -186,6 +190,7 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
     ...buildResult(1, [...shared, ...group.documents]),
     wave: group.wave,
     timeframe: group.timeframe,
+    scopeKey: `${group.wave}|${group.timeframe ?? 'no-timeframe'}`,
     expectedTypeGroups: [...group.expectedTypeGroups],
     expectedRows: group.expectedRows,
     expectedItemCount: Math.max(group.expectedTypeGroups.size, group.expectedRows.length, 1),

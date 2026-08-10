@@ -12,6 +12,7 @@ export interface StructuredSection {
 
 const HEADING_PATTERN = /^(?:#{1,6}\s+|(?:section|phần|chapter|chương)\s+\d+|wave\s*\d+|publishing\s+wave\s*\d+)/i;
 const WAVE_PATTERN = /\b(?:publishing\s+)?wave\s*[:#-]?\s*(\d+)\b/i;
+const TIMEFRAME_HEADING_PATTERN = /^(?:(?:tháng|month)\s+\d{1,2}(?:\s*[/-]\s*(?:19|20)\d{2})?|Q[1-4]\s*[/-]?\s*(?:19|20)\d{2}|(?:19|20)\d{2}\s*[/-]?\s*Q[1-4])\s*[:#-]?\s*$/i;
 const TIMEFRAME_PATTERNS = [
   /\bQ[1-4]\s*[/-]?\s*(?:19|20)\d{2}\b/i,
   /\b(?:19|20)\d{2}\s*[/-]?\s*Q[1-4]\b/i,
@@ -49,7 +50,7 @@ export function extractStructuredSections(content: string): StructuredSection[] 
   const starts: number[] = [];
   lines.forEach((line, index) => {
     const trimmed = line.trim();
-    if (trimmed && (HEADING_PATTERN.test(trimmed) || WAVE_PATTERN.test(trimmed))) starts.push(index);
+    if (trimmed && (HEADING_PATTERN.test(trimmed) || WAVE_PATTERN.test(trimmed) || TIMEFRAME_HEADING_PATTERN.test(trimmed))) starts.push(index);
   });
   if (!starts.length || starts[0] !== 0) starts.unshift(0);
 

@@ -204,7 +204,33 @@ const GROUP_META: Record<ContentTypeGroup, { title: string; accent: string; badg
 };
 
 const GROUP_ORDER: ContentTypeGroup[] = ["A", "B", "C"];
-const STEP1_PROMPT_VERSION = "step1-wave-v6-source-evidence";
+const STEP1_PROMPT_VERSION = "step1-manifest-v7-wave-timeframe";
+
+function suggestionScopeKey(suggestion: ContentTypeSuggestion): string {
+  return [
+    suggestion.typeGroup ?? "?",
+    canonical(suggestion.wave ?? ""),
+    canonical(suggestion.timeframe ?? ""),
+  ].join("|");
+}
+
+function preserveCompleteScopes(
+  current: ContentTypeSuggestion[],
+  previous: ContentTypeSuggestion[],
+): ContentTypeSuggestion[] {
+  const currentCounts = new Map<string, number>();
+  const previousCounts = new Map<string, number>();
+  current.forEach(item => currentCounts.set(suggestionScopeKey(item), (currentCounts.get(suggestionScopeKey(item)) ?? 0) + 1));
+  previous.forEach(item => previousCounts.set(suggestionScopeKey(item), (previousCounts.get(suggestionScopeKey(item)) ?? 0) + 1));
+  const regressedScopes = new Set(
+    [...previousCounts].filter(([scope, count]) => (currentCounts.get(scope) ?? 0) < count).map(([scope]) => scope),
+  );
+  if (!regressedScopes.size) return current;
+  return [
+    ...current.filter(item => !regressedScopes.has(suggestionScopeKey(item))),
+    ...previous.filter(item => regressedScopes.has(suggestionScopeKey(item))),
+  ];
+}
 
 function displayTimeframe(suggestion: ContentTypeSuggestion): string {
   const timeframe = suggestion.timeframe ?? "";
@@ -232,6 +258,10 @@ export default function Step1ContentType({
   const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
   const sourceFingerprint = useMemo(
     () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:${STEP1_PROMPT_VERSION}`,
+    [bundle, model.id, model.provider],
+  );
+  const sourceModelPrefix = useMemo(
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:`,
     [bundle, model.id, model.provider],
   );
   const hasCachedScan = Boolean(
@@ -341,18 +371,9 @@ export default function Step1ContentType({
         throw new Error("Toàn bộ đề xuất bị từ chối vì thiếu dẫn chứng Type A/B/C, timeframe hoặc keyword trong Action Plan.");
       }
       const sameSourceSnapshot = manual
-        && article.contentTypeSourceFingerprint === sourceFingerprint
-        && suggestions.length > normalized.length;
+        && Boolean(article.contentTypeSourceFingerprint?.startsWith(sourceModelPrefix));
       const nextSuggestions = sameSourceSnapshot
-        ? [
-            ...normalized,
-            ...suggestions.filter(previous => !normalized.some(current =>
-              current.typeGroup === previous.typeGroup
-              && canonical(current.wave ?? "") === canonical(previous.wave ?? "")
-              && canonical(current.timeframe ?? "") === canonical(previous.timeframe ?? "")
-              && canonical(current.label) === canonical(previous.label),
-            )),
-          ]
+        ? preserveCompleteScopes(normalized, suggestions)
         : normalized;
       onUpdate({
         // A manual rescan of unchanged sources must never silently replace a

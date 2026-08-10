@@ -104,6 +104,15 @@ function missingStep1Coverage(items: unknown[], context: StepWaveContext): strin
   return missing;
 }
 
+function assertCompleteStep1Result(items: unknown[], contexts: StepWaveContext[]): void {
+  const failures = contexts.flatMap(context =>
+    missingStep1Coverage(items, context).map(reason => `${context.scopeKey}: ${reason}`),
+  );
+  if (failures.length) {
+    throw new Error(`Kết quả Step 1 chưa đủ manifest theo từng wave/timeframe: ${failures.join('; ')}`);
+  }
+}
+
 async function runWithConcurrency<T, R>(items: T[], limit: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let cursor = 0;
@@ -201,7 +210,7 @@ app.post('/api/generate', async (req, res) => {
       : [await resolveStepContext(stepNumber)];
     const contextMs = Date.now() - contextsStartedAt;
     const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
-    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 6 });
+    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 7 });
     const cached = bypassCache ? null : await kvGet<any>(cacheKey);
     if (cached?.content) {
       console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
@@ -253,6 +262,7 @@ app.post('/api/generate', async (req, res) => {
           }
         });
         const merged = waveResults.flatMap(item => item.items);
+        assertCompleteStep1Result(merged, contexts as StepWaveContext[]);
         result = {
           content: JSON.stringify(merged),
           model: waveResults[0]?.response.model ?? modelId,
@@ -287,6 +297,7 @@ app.post('/api/generate', async (req, res) => {
         if (!fallbackItems.length) {
           throw new Error('AI chưa trả về đề xuất nào sau khi quét toàn bộ tài liệu.');
         }
+        assertCompleteStep1Result(fallbackItems, contexts as StepWaveContext[]);
         result = { ...fallbackResponse, content: JSON.stringify(fallbackItems) };
       }
     } else {
