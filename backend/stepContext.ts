@@ -132,6 +132,7 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
   const resolved = await resolveDocuments(1);
   const shared = resolved.filter(item => item.role !== 'ACTION_PLAN');
   const action = resolved.filter(item => item.role === 'ACTION_PLAN');
+  const supportingAction: Array<{ role: Role; document: StoredDocument & { content: string } }> = [];
   if (!action.length) throw new Error('Step 1 chưa được cấp quyền đọc Action Plan.');
   const groups = new Map<string, {
     wave: string;
@@ -148,13 +149,15 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
     const sections = extractedSections.length
       ? extractedSections
       : (item.document.structuredSections ?? []);
-    const waveSections = sections.filter(section => section.wave);
+    const waveSections = sections.filter(section =>
+      section.wave && (section.timeframe || section.typeGroups.length || extractExpectedRows(section.content).length),
+    );
     const sharedSections = sections.filter(section => !section.wave);
     const sharedContent = sharedSections.map(section => section.content).join('\n\n');
     if (!waveSections.length) {
-      const key = `${item.document.name} — toàn bộ`;
-      const expectedRows = extractExpectedRows(item.document.content);
-      groups.set(key, { wave: key, expectedTypeGroups: new Set(), expectedRows, documents: [item] });
+      // Templates/outlines without a publishing wave can enrich a real scope,
+      // but must never become a fake wave named after the file.
+      supportingAction.push(item);
       continue;
     }
     for (const section of waveSections) {
@@ -172,10 +175,14 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
       section.typeGroups.forEach(typeGroup => group.expectedTypeGroups.add(typeGroup));
       group.expectedRows.push(...extractExpectedRows(section.content));
       group.expectedRows = [...new Set(group.expectedRows)];
+      const waveHeadingContent = sections
+        .filter(candidate => candidate.wave === section.wave && !candidate.timeframe && candidate.id !== section.id)
+        .map(candidate => candidate.content)
+        .join('\n\n');
       const existing = group.documents[0]?.document;
       const content = existing
         ? `${existing.content}\n\n${section.content}`
-        : [sharedContent, section.content].filter(Boolean).join('\n\n');
+        : [sharedContent, waveHeadingContent, section.content].filter(Boolean).join('\n\n');
       group.documents = [{
         role: 'ACTION_PLAN',
         document: { ...item.document, content },
@@ -187,7 +194,7 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
   if (!groups.size) throw new Error('Không thể tạo phạm vi Action Plan cho Step 1.');
 
   return [...groups.values()].map(group => ({
-    ...buildResult(1, [...shared, ...group.documents]),
+    ...buildResult(1, [...shared, ...supportingAction, ...group.documents]),
     wave: group.wave,
     timeframe: group.timeframe,
     scopeKey: `${group.wave}|${group.timeframe ?? 'no-timeframe'}`,

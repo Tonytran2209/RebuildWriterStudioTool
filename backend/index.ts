@@ -210,7 +210,7 @@ app.post('/api/generate', async (req, res) => {
       : [await resolveStepContext(stepNumber)];
     const contextMs = Date.now() - contextsStartedAt;
     const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
-    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 7 });
+    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 8 });
     const cached = bypassCache ? null : await kvGet<any>(cacheKey);
     if (cached?.content) {
       console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
@@ -273,32 +273,10 @@ app.post('/api/generate', async (req, res) => {
           },
         };
       } catch (waveError: any) {
-        // Quality-first fallback: preserve the old full-document behavior whenever
-        // deterministic splitting cannot produce a complete, evidence-backed wave.
-        console.warn(`[generate] wave orchestration failed; fallback=full-document reason=${waveError.message}`);
-        const fullContext = await resolveStepContext(1);
-        const fallbackSystemPrompt = [
-          systemPrompt ?? '',
-          '',
-          'FALLBACK TOÀN TÀI LIỆU: Đọc từ đầu đến cuối tất cả Action Plan trong context.',
-          'Trả về đầy đủ mọi topic thuộc mọi Type A/B/C, publishing wave, timeframe và keyword có dẫn chứng nguyên văn.',
-          'Không trả về mảng rỗng nếu Action Plan có dữ liệu. Chỉ trả về duy nhất JSON array hợp lệ.',
-        ].filter(Boolean).join('\n');
-        const fallbackResponse = await generate({
-          modelId,
-          provider,
-          prompt,
-          systemPrompt: fallbackSystemPrompt,
-          contextDocs: fullContext.contextDocs,
-          maxTokens,
-          temperature,
-        });
-        const fallbackItems = extractJsonArray(fallbackResponse.content);
-        if (!fallbackItems.length) {
-          throw new Error('AI chưa trả về đề xuất nào sau khi quét toàn bộ tài liệu.');
-        }
-        assertCompleteStep1Result(fallbackItems, contexts as StepWaveContext[]);
-        result = { ...fallbackResponse, content: JSON.stringify(fallbackItems) };
+        // Do not discard successful scoped work and pay for another huge call.
+        // The frontend keeps the last complete Supabase snapshot on failure.
+        console.warn(`[generate] scoped Step 1 failed; fallback=disabled reason=${waveError.message}`);
+        throw new Error(`Step 1 chưa hoàn tất một scope sau 2 lần kiểm tra: ${waveError.message}`);
       }
     } else {
       const context = contexts[0];
