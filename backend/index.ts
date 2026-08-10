@@ -92,6 +92,9 @@ function missingStep1Coverage(items: unknown[], context: StepWaveContext): strin
   });
   const missing: string[] = [];
   if (!inScope.length) missing.push(`${context.wave}${context.timeframe ? ` / ${context.timeframe}` : ''}`);
+  if (inScope.length < context.expectedItemCount) {
+    missing.push(`số lựa chọn ${inScope.length}/${context.expectedItemCount}`);
+  }
   for (const typeGroup of context.expectedTypeGroups) {
     const present = inScope.some(item =>
       String(item.typeGroup ?? item.type ?? '').toUpperCase().match(/\b(A|B|C)\b/)?.[1] === typeGroup,
@@ -220,6 +223,10 @@ app.post('/api/generate', async (req, res) => {
               context.expectedTypeGroups.length
                 ? `Phải bao phủ đầy đủ các nhóm nhận diện được trong section: ${context.expectedTypeGroups.map(group => `Type ${group}`).join(', ')}.`
                 : 'Phải trả về tất cả lựa chọn hợp lệ có trong phạm vi này; không dừng sau lựa chọn đầu tiên.',
+              `Số lựa chọn tối thiểu nhận diện được từ Action Plan trong phạm vi này: ${context.expectedItemCount}.`,
+              context.expectedRows.length
+                ? `CHECKLIST CÁC DÒNG TYPE PHẢI ĐỐI CHIẾU (không được bỏ sót):\n${context.expectedRows.map((row, index) => `${index + 1}. ${row}`).join('\n')}`
+                : '',
               correction ?? '',
             ].filter(Boolean).join('\n');
             const response = await generate({
@@ -228,7 +235,7 @@ app.post('/api/generate', async (req, res) => {
               prompt,
               systemPrompt: waveInstruction,
               contextDocs: context.contextDocs,
-              maxTokens: Math.min(maxTokens ?? 6000, 6000),
+              maxTokens: Math.min(maxTokens ?? 12000, Math.max(6000, context.expectedItemCount * 1000)),
               temperature,
             });
             const items = extractJsonArray(response.content);
@@ -242,7 +249,7 @@ app.post('/api/generate', async (req, res) => {
             return await callWave();
           } catch (firstError: any) {
             console.warn(`[generate] retry wave=${context.wave} reason=${firstError.message}`);
-            return callWave('LẦN TRƯỚC BỊ THIẾU HOẶC SAI DẪN CHỨNG. Hãy đọc lại toàn bộ section và trả đủ mọi lựa chọn, không bỏ sót bất kỳ Type/topic nào.');
+            return callWave(`LẦN TRƯỚC BỊ THIẾU HOẶC SAI DẪN CHỨNG. Hãy đọc lại toàn bộ section và trả ít nhất ${context.expectedItemCount} lựa chọn, không bỏ sót bất kỳ Type/topic nào.`);
           }
         });
         const merged = waveResults.flatMap(item => item.items);

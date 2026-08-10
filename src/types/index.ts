@@ -198,6 +198,8 @@ export interface Article {
   outlineScannedAt?: string | null;
   // Step 4 data
   draft?: string;
+  draftSourceFingerprint?: string | null;
+  draftScannedAt?: string | null;
   aiUsageByStep?: Partial<Record<1 | 2 | 3 | 4, AICallUsage[]>>;
 }
 

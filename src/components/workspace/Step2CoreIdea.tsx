@@ -214,9 +214,11 @@ export default function Step2CoreIdea({
     [bundle, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
-  const ideas = scanIsStale ? [] : storedIdeas;
+  // Saved Supabase results remain authoritative until the Step 1 selection
+  // changes (which clears them) or the user explicitly regenerates.
+  const ideas = storedIdeas;
 
-  const fetchIdeas = async () => {
+  const fetchIdeas = async (manual = false) => {
     if (!article.contentType) {
       setError("Chưa chọn loại nội dung ở Step 1. Vui lòng quay lại Step 1 trước.");
       return;
@@ -327,7 +329,7 @@ export default function Step2CoreIdea({
         }
         return { res, ideas: normalizeIdeas(parsed, bundle, trustedSnapshotEvidence) };
       };
-      let result = await requestIdeas();
+      let result = await requestIdeas("", manual);
       if (!result.ideas.length) {
         const rejectedJson = result.res.content;
         result = await requestIdeas([
@@ -351,7 +353,7 @@ export default function Step2CoreIdea({
       }
       onUpdate({
         coreIdeaSuggestions: result.ideas,
-        selectedCoreIdeaId: null,
+        selectedCoreIdeaId: undefined,
         coreIdeaSourceFingerprint: sourceFingerprint,
         coreIdeaScannedAt: result.res.servedAt ?? result.res.generatedAt ?? new Date().toISOString(),
       });
@@ -367,19 +369,20 @@ export default function Step2CoreIdea({
   // First-time scan only — cache in article.coreIdeaSuggestions.
   // Re-scan only when user explicitly clicks "Đề xuất lại".
   useEffect(() => {
-    const key = sourceFingerprint;
+    const key = selectedSnapshotSignature;
     if (autoRequestedRef.current === key) return;
     if (!article.contentType || !bundle.totalCount) return;
-    if (ideas.length > 0 && !scanIsStale) {
+    if (ideas.length > 0) {
       autoRequestedRef.current = key;
       return;
     }
     autoRequestedRef.current = key;
     fetchIdeas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [article.contentType, bundle.totalCount, ideas.length, scanIsStale, sourceFingerprint]);
+  }, [article.contentType, bundle.totalCount, ideas.length, selectedSnapshotSignature]);
 
   const handleSelect = (idea: CoreIdeaSuggestion) => {
+    const selectionChanged = article.selectedCoreIdeaId !== idea.id;
     setSelectedId(idea.id);
     onUpdate({
       selectedCoreIdeaId: idea.id,
@@ -390,6 +393,14 @@ export default function Step2CoreIdea({
       targetAudience: idea.targetAudience,
       tone: idea.recommendedTone,
       wordCount: idea.recommendedWordCount,
+      ...(selectionChanged ? {
+        outline: [],
+        outlineSourceFingerprint: null,
+        outlineScannedAt: null,
+        draft: "",
+        draftSourceFingerprint: null,
+        draftScannedAt: null,
+      } : {}),
     });
   };
 
@@ -406,7 +417,7 @@ export default function Step2CoreIdea({
                 </p>
               </div>
               <button
-                onClick={fetchIdeas}
+                onClick={() => fetchIdeas(true)}
                 disabled={loading || !article.contentType || !bundle.totalCount}
                 className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
               >
@@ -414,9 +425,9 @@ export default function Step2CoreIdea({
               </button>
             </div>
 
-            {scanIsStale && (
+            {scanIsStale && ideas.length > 0 && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                {tr('Nguồn KB / Action Plan / Rules hoặc model đã thay đổi — AI cần nghiên cứu lại Core Idea.', 'KB / Action Plan / Rules sources or model changed — AI must research the Core Idea again.')}
+                {tr('Nguồn hoặc model đã thay đổi — vẫn dùng kết quả Step 2 đã lưu trong Supabase. Chỉ tạo lại khi bạn nhấn “Đề xuất lại”.', 'Sources or model changed — the Step 2 result saved in Supabase remains active. It only changes when you click “Regenerate”.')}
               </div>
             )}
 

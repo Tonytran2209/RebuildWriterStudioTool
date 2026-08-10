@@ -154,7 +154,7 @@ export default function Step3Outline({
     };
   }, [article]);
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (manual = false) => {
     if (!article.topic) {
       setError("Chưa có Core Idea từ Step 2.");
       return;
@@ -221,6 +221,7 @@ export default function Step3Outline({
         maxTokens: 8000,
         temperature: 0.1,
         stepNumber: 3,
+        bypassCache: manual,
       });
       let parsed: unknown;
       try {
@@ -260,7 +261,14 @@ export default function Step3Outline({
         generatedAt = corrected.servedAt ?? corrected.generatedAt ?? new Date().toISOString();
       }
       if (!sections.length) throw new Error("AI chưa trả về outline có đủ evidence KB/Action và Rules.");
-      onUpdate({ outline: sections, outlineSourceFingerprint: sourceFingerprint, outlineScannedAt: generatedAt });
+      onUpdate({
+        outline: sections,
+        outlineSourceFingerprint: sourceFingerprint,
+        outlineScannedAt: generatedAt,
+        draft: "",
+        draftSourceFingerprint: null,
+        draftScannedAt: null,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không tạo được outline: ${message}`);
@@ -360,7 +368,7 @@ export default function Step3Outline({
                 </p>
               </div>
               <button
-                onClick={handleGenerate}
+                onClick={() => handleGenerate(Boolean(outline.length))}
                 disabled={generating}
                 className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all"
               >
@@ -370,7 +378,7 @@ export default function Step3Outline({
 
             {outlineIsStale && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                Nguồn tài liệu, model hoặc Core Idea đã thay đổi — hãy tạo lại outline để dùng evidence mới.
+                Nguồn hoặc model đã thay đổi — vẫn dùng outline đã lưu trong Supabase. Chỉ cập nhật khi bạn nhấn “Tạo lại”.
               </div>
             )}
 
@@ -487,7 +495,7 @@ export default function Step3Outline({
         </button>
         <button
           onClick={onNext}
-          disabled={outline.length === 0 || outlineIsStale}
+          disabled={outline.length === 0}
           className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
         >
           {tr('Tiếp tục — First Draft', 'Continue — First Draft')}

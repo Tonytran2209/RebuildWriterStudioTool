@@ -29,12 +29,13 @@ function quoteExists(content: string, quote: string): boolean {
 }
 
 function docIndex(bundle: DocBundle): Map<string, { role: EvidenceRef["role"]; doc: DocRef }> {
-  const documents = [
+  type IndexedDocument = readonly [string, { role: EvidenceRef["role"]; doc: DocRef }];
+  const documents: IndexedDocument[] = [
     ...bundle.knowledgeBase.map(doc => [canonical(doc.name), { role: "kb" as const, doc }] as const),
     ...bundle.actionPlan.map(doc => [canonical(doc.name), { role: "action" as const, doc }] as const),
     ...bundle.rules.map(doc => [canonical(doc.name), { role: "rules" as const, doc }] as const),
   ];
-  const index = new Map(documents);
+  const index = new Map<string, { role: EvidenceRef["role"]; doc: DocRef }>(documents);
   const aliases = new Map<string, Array<{ role: EvidenceRef["role"]; doc: DocRef }>>();
   documents.forEach(([, match]) => {
     const basename = match.doc.name.split(/[\\/]/).pop() ?? match.doc.name;

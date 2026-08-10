@@ -42,6 +42,24 @@ export interface StepWaveContext extends StepContextResult {
   wave: string;
   timeframe?: string;
   expectedTypeGroups: Array<'A' | 'B' | 'C'>;
+  expectedItemCount: number;
+  expectedRows: string[];
+}
+
+function extractExpectedRows(content: string): string[] {
+  const seen = new Set<string>();
+  return content
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(line => line.replace(/\s+/g, ' ').trim())
+    .filter(line => /\b(?:content\s*)?type\s*[ABC]\b/i.test(line))
+    .filter(line => {
+      const key = line.toLocaleLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map(line => line.slice(0, 500));
 }
 
 function sourceFingerprint(items: Array<{ role: Role; document: StoredDocument }>): string {
@@ -118,6 +136,7 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
     wave: string;
     timeframe?: string;
     expectedTypeGroups: Set<'A' | 'B' | 'C'>;
+    expectedRows: string[];
     documents: Array<{ role: Role; document: StoredDocument & { content: string } }>;
   }>();
 
@@ -130,7 +149,8 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
     const sharedContent = sharedSections.map(section => section.content).join('\n\n');
     if (!waveSections.length) {
       const key = `${item.document.name} — toàn bộ`;
-      groups.set(key, { wave: key, expectedTypeGroups: new Set(), documents: [item] });
+      const expectedRows = extractExpectedRows(item.document.content);
+      groups.set(key, { wave: key, expectedTypeGroups: new Set(), expectedRows, documents: [item] });
       continue;
     }
     for (const section of waveSections) {
@@ -141,10 +161,13 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
         wave: section.wave!,
         timeframe: section.timeframe,
         expectedTypeGroups: new Set<'A' | 'B' | 'C'>(),
+        expectedRows: [],
         documents: [],
       };
       if (!group.timeframe && section.timeframe) group.timeframe = section.timeframe;
       section.typeGroups.forEach(typeGroup => group.expectedTypeGroups.add(typeGroup));
+      group.expectedRows.push(...extractExpectedRows(section.content));
+      group.expectedRows = [...new Set(group.expectedRows)];
       const existing = group.documents[0]?.document;
       const content = existing
         ? `${existing.content}\n\n${section.content}`
@@ -164,5 +187,7 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
     wave: group.wave,
     timeframe: group.timeframe,
     expectedTypeGroups: [...group.expectedTypeGroups],
+    expectedRows: group.expectedRows,
+    expectedItemCount: Math.max(group.expectedTypeGroups.size, group.expectedRows.length, 1),
   }));
 }

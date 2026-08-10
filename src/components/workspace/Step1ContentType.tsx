@@ -340,8 +340,24 @@ export default function Step1ContentType({
       if (!normalized.length) {
         throw new Error("Toàn bộ đề xuất bị từ chối vì thiếu dẫn chứng Type A/B/C, timeframe hoặc keyword trong Action Plan.");
       }
+      const sameSourceSnapshot = manual
+        && article.contentTypeSourceFingerprint === sourceFingerprint
+        && suggestions.length > normalized.length;
+      const nextSuggestions = sameSourceSnapshot
+        ? [
+            ...normalized,
+            ...suggestions.filter(previous => !normalized.some(current =>
+              current.typeGroup === previous.typeGroup
+              && canonical(current.wave ?? "") === canonical(previous.wave ?? "")
+              && canonical(current.timeframe ?? "") === canonical(previous.timeframe ?? "")
+              && canonical(current.label) === canonical(previous.label),
+            )),
+          ]
+        : normalized;
       onUpdate({
-        contentTypeSuggestions: normalized,
+        // A manual rescan of unchanged sources must never silently replace a
+        // fuller verified snapshot with a shorter stochastic model response.
+        contentTypeSuggestions: nextSuggestions,
         contentTypeSourceFingerprint: sourceFingerprint,
         contentTypeScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),
         contentTypeCacheHit: Boolean(res.cacheHit),
@@ -356,6 +372,8 @@ export default function Step1ContentType({
         outlineSourceFingerprint: null,
         outlineScannedAt: null,
         draft: "",
+        draftSourceFingerprint: null,
+        draftScannedAt: null,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -391,6 +409,8 @@ export default function Step1ContentType({
         outlineSourceFingerprint: null,
         outlineScannedAt: null,
         draft: "",
+        draftSourceFingerprint: null,
+        draftScannedAt: null,
       } : {}),
     });
   };
@@ -410,6 +430,8 @@ export default function Step1ContentType({
       outlineSourceFingerprint: null,
       outlineScannedAt: null,
       draft: "",
+      draftSourceFingerprint: null,
+      draftScannedAt: null,
     });
     setCustomLabel("");
   };
