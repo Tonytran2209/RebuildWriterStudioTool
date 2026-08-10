@@ -84,17 +84,17 @@ function canonicalEvidence(value: unknown): string {
 function missingStep1Coverage(items: unknown[], context: StepWaveContext): string[] {
   const records = items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
   const expectedWave = canonicalEvidence(context.wave);
+  const expectedWaveNumber = expectedWave.match(/\bwave\s*(\d+)\b/)?.[1];
   const expectedTimeframe = canonicalEvidence(context.timeframe);
   const inScope = records.filter(item => {
     const wave = canonicalEvidence(item.wave);
     const timeframe = canonicalEvidence(item.timeframe);
-    return wave.includes(expectedWave) && (!expectedTimeframe || timeframe.includes(expectedTimeframe));
+    const waveNumber = wave.match(/\bwave\s*(\d+)\b/)?.[1];
+    const waveMatches = expectedWaveNumber ? waveNumber === expectedWaveNumber : wave === expectedWave;
+    return waveMatches && (!expectedTimeframe || timeframe.includes(expectedTimeframe));
   });
   const missing: string[] = [];
   if (!inScope.length) missing.push(`${context.wave}${context.timeframe ? ` / ${context.timeframe}` : ''}`);
-  if (inScope.length < context.expectedItemCount) {
-    missing.push(`số lựa chọn ${inScope.length}/${context.expectedItemCount}`);
-  }
   for (const typeGroup of context.expectedTypeGroups) {
     const present = inScope.some(item =>
       String(item.typeGroup ?? item.type ?? '').toUpperCase().match(/\b(A|B|C)\b/)?.[1] === typeGroup,
@@ -102,6 +102,44 @@ function missingStep1Coverage(items: unknown[], context: StepWaveContext): strin
     if (!present) missing.push(`Type ${typeGroup}`);
   }
   return missing;
+}
+
+function step1CoverageEstimate(items: unknown[], context: StepWaveContext): string | null {
+  const records = items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
+  const expectedWaveNumber = canonicalEvidence(context.wave).match(/\bwave\s*(\d+)\b/)?.[1];
+  const expectedTimeframe = canonicalEvidence(context.timeframe);
+  const count = records.filter(item => {
+    const wave = canonicalEvidence(item.wave);
+    const waveNumber = wave.match(/\bwave\s*(\d+)\b/)?.[1];
+    const waveMatches = expectedWaveNumber ? waveNumber === expectedWaveNumber : wave === canonicalEvidence(context.wave);
+    return waveMatches && (!expectedTimeframe || canonicalEvidence(item.timeframe).includes(expectedTimeframe));
+  }).length;
+  return count < context.expectedItemCount ? `ước lượng ${count}/${context.expectedItemCount}` : null;
+}
+
+function mergeStep1Items(...groups: unknown[][]): unknown[] {
+  const seen = new Set<string>();
+  return groups.flat().filter(item => {
+    if (!item || typeof item !== 'object') return false;
+    const record = item as Record<string, unknown>;
+    const key = [record.typeGroup ?? record.type, record.wave, record.timeframe, record.label ?? record.name]
+      .map(canonicalEvidence)
+      .join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function combineStep1Responses(first: any, second: any) {
+  return {
+    ...second,
+    usage: {
+      inputTokens: (first.usage?.inputTokens ?? 0) + (second.usage?.inputTokens ?? 0),
+      outputTokens: (first.usage?.outputTokens ?? 0) + (second.usage?.outputTokens ?? 0),
+      cachedInputTokens: (first.usage?.cachedInputTokens ?? 0) + (second.usage?.cachedInputTokens ?? 0),
+    },
+  };
 }
 
 function assertCompleteStep1Result(items: unknown[], contexts: StepWaveContext[]): void {
@@ -210,7 +248,7 @@ app.post('/api/generate', async (req, res) => {
       : [await resolveStepContext(stepNumber)];
     const contextMs = Date.now() - contextsStartedAt;
     const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
-    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 8 });
+    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 9 });
     const cached = bypassCache ? null : await kvGet<any>(cacheKey);
     if (cached?.content) {
       console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
@@ -232,7 +270,7 @@ app.post('/api/generate', async (req, res) => {
               context.expectedTypeGroups.length
                 ? `Phải bao phủ đầy đủ các nhóm nhận diện được trong section: ${context.expectedTypeGroups.map(group => `Type ${group}`).join(', ')}.`
                 : 'Phải trả về tất cả lựa chọn hợp lệ có trong phạm vi này; không dừng sau lựa chọn đầu tiên.',
-              `Số lựa chọn tối thiểu nhận diện được từ Action Plan trong phạm vi này: ${context.expectedItemCount}.`,
+              `Parser nhận diện khoảng ${context.expectedItemCount} dòng Type để đối chiếu. Đây là checklist bao phủ, không phải yêu cầu tạo trùng lựa chọn cho header/evidence lặp.`,
               context.expectedRows.length
                 ? `CHECKLIST CÁC DÒNG TYPE PHẢI ĐỐI CHIẾU (không được bỏ sót):\n${context.expectedRows.map((row, index) => `${index + 1}. ${row}`).join('\n')}`
                 : '',
@@ -248,18 +286,24 @@ app.post('/api/generate', async (req, res) => {
               temperature,
             });
             const items = extractJsonArray(response.content);
-            if (!items.length) throw new Error(`Không có đề xuất trong ${context.wave}.`);
-            const missing = missingStep1Coverage(items, context);
-            if (missing.length) throw new Error(`Thiếu độ phủ: ${missing.join(', ')}`);
             return { response, items };
           };
 
-          try {
-            return await callWave();
-          } catch (firstError: any) {
-            console.warn(`[generate] retry wave=${context.wave} reason=${firstError.message}`);
-            return callWave(`LẦN TRƯỚC BỊ THIẾU HOẶC SAI DẪN CHỨNG. Hãy đọc lại toàn bộ section và trả ít nhất ${context.expectedItemCount} lựa chọn, không bỏ sót bất kỳ Type/topic nào.`);
+          const first = await callWave();
+          const firstMissing = missingStep1Coverage(first.items, context);
+          const firstEstimate = step1CoverageEstimate(first.items, context);
+          if (!firstMissing.length && !firstEstimate) return first;
+
+          console.warn(`[generate] retry scope=${context.scopeKey} reason=${[...firstMissing, firstEstimate].filter(Boolean).join(', ')}`);
+          const second = await callWave(`LẦN TRƯỚC CHƯA BAO PHỦ HẾT CHECKLIST. Hãy trả các lựa chọn hợp lệ còn thiếu trong section; không tạo bản sao cho header hoặc evidence lặp.`);
+          const mergedItems = mergeStep1Items(first.items, second.items);
+          const hardMissing = missingStep1Coverage(mergedItems, context);
+          if (hardMissing.length) {
+            throw new Error(`Thiếu scope/Type bắt buộc: ${hardMissing.join(', ')}`);
           }
+          const remainingEstimate = step1CoverageEstimate(mergedItems, context);
+          if (remainingEstimate) console.warn(`[generate] accepted scope=${context.scopeKey} ${remainingEstimate}; parser rows include repeated headers/evidence`);
+          return { response: combineStep1Responses(first.response, second.response), items: mergedItems };
         });
         const merged = waveResults.flatMap(item => item.items);
         assertCompleteStep1Result(merged, contexts as StepWaveContext[]);

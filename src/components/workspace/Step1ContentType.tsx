@@ -204,7 +204,7 @@ const GROUP_META: Record<ContentTypeGroup, { title: string; accent: string; badg
 };
 
 const GROUP_ORDER: ContentTypeGroup[] = ["A", "B", "C"];
-const STEP1_PROMPT_VERSION = "step1-manifest-v8-actionable-scopes";
+const STEP1_PROMPT_VERSION = "step1-manifest-v9-merged-retries";
 
 function suggestionScopeKey(suggestion: ContentTypeSuggestion): string {
   return [

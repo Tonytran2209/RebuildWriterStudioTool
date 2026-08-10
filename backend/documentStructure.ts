@@ -29,7 +29,7 @@ function cleanHeading(line: string): string {
 }
 
 function sectionMetadata(heading: string, content: string) {
-  const sample = `${heading}\n${content.slice(0, 1200)}`;
+  const sample = `${heading}\n${content}`;
   const waveMatch = sample.match(WAVE_PATTERN);
   const timeframe = TIMEFRAME_PATTERNS.map(pattern => sample.match(pattern)?.[0]).find(Boolean);
   const typeGroups = (['A', 'B', 'C'] as const).filter(group =>
