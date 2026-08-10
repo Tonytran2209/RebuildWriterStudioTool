@@ -5,6 +5,8 @@ import type {
   AppConfig,
   DocumentFile,
   CoreIdeaSuggestion,
+  ContentTypeSuggestion,
+  EvidenceRef,
 } from "../../types";
 import { callAI } from "../../lib/aiService";
 import {
@@ -64,7 +66,32 @@ function toStringArr(v: unknown): string[] {
   return [];
 }
 
-function normalizeIdeas(parsed: unknown, bundle: ReturnType<typeof collectStepDocs>): CoreIdeaSuggestion[] {
+function snapshotEvidence(
+  snapshot: ContentTypeSuggestion | null | undefined,
+  bundle: ReturnType<typeof collectStepDocs>,
+): EvidenceRef[] {
+  if (!snapshot) return [];
+  const candidates: EvidenceRef[] = [];
+  const researchSource = snapshot.matchedDocs?.[0];
+  const kbSource = snapshot.kbRefs?.[0];
+  const ruleSource = snapshot.ruleRefs?.[0];
+  if (researchSource && snapshot.actionPlanEvidence) {
+    candidates.push({ source: researchSource, role: "action", quote: snapshot.actionPlanEvidence, note: "Snapshot Step 1 đã kiểm chứng" });
+  }
+  if (kbSource && snapshot.kbEvidence) {
+    candidates.push({ source: kbSource, role: "kb", quote: snapshot.kbEvidence, note: "Snapshot Step 1 đã kiểm chứng" });
+  }
+  if (ruleSource && snapshot.ruleEvidence) {
+    candidates.push({ source: ruleSource, role: "rules", quote: snapshot.ruleEvidence, note: "Snapshot Step 1 đã kiểm chứng" });
+  }
+  return verifyEvidence(candidates, bundle);
+}
+
+function normalizeIdeas(
+  parsed: unknown,
+  bundle: ReturnType<typeof collectStepDocs>,
+  trustedSnapshotEvidence: EvidenceRef[] = [],
+): CoreIdeaSuggestion[] {
   if (!Array.isArray(parsed)) throw new Error("Phản hồi AI không phải mảng.");
   return parsed
     .map((raw, idx) => {
@@ -75,8 +102,16 @@ function normalizeIdeas(parsed: unknown, bundle: ReturnType<typeof collectStepDo
       if (!title || !mainArgument) return null;
       const ratingObj = (obj.rating && typeof obj.rating === "object" ? obj.rating : {}) as Record<string, unknown>;
       const seo = (obj.seoKeywords && typeof obj.seoKeywords === "object" ? obj.seoKeywords : {}) as Record<string, unknown>;
-      const evidence = verifyEvidence(obj.evidence, bundle);
-      const ruleRefs = verifiedRuleRefs(obj.ruleRefs, bundle);
+      const evidence = [
+        ...verifyEvidence(obj.evidence, bundle),
+        ...trustedSnapshotEvidence,
+      ].filter((item, index, all) => all.findIndex(candidate =>
+        candidate.role === item.role && candidate.source === item.source && candidate.quote === item.quote
+      ) === index);
+      const ruleRefs = [...new Set([
+        ...verifiedRuleRefs(obj.ruleRefs, bundle),
+        ...evidence.filter(item => item.role === "rules").map(item => item.source),
+      ])];
       if (!hasResearchEvidence(evidence) || !hasRulesEvidence(evidence)) return null;
       return {
         id: `idea-${idx}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
@@ -144,9 +179,37 @@ export default function Step2CoreIdea({
   const autoRequestedRef = useRef<string | null>(null);
 
   const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
+  const selectedSnapshot = useMemo(
+    () => article.selectedContentTypeSnapshot
+      ?? article.contentTypeSuggestions?.find(item => item.id === article.selectedContentTypeSuggestionId)
+      ?? article.contentTypeSuggestions?.find(item => item.label === article.contentType)
+      ?? null,
+    [article.contentType, article.contentTypeSuggestions, article.selectedContentTypeSnapshot, article.selectedContentTypeSuggestionId],
+  );
+  const trustedSnapshotEvidence = useMemo(
+    () => snapshotEvidence(selectedSnapshot, bundle),
+    [bundle, selectedSnapshot],
+  );
+  const selectedSnapshotSignature = useMemo(
+    () => selectedSnapshot ? JSON.stringify({
+      id: selectedSnapshot.id,
+      label: selectedSnapshot.label,
+      typeGroup: selectedSnapshot.typeGroup,
+      wave: selectedSnapshot.wave,
+      timeframe: selectedSnapshot.timeframe,
+      keywords: selectedSnapshot.keywords,
+      matchedDocs: selectedSnapshot.matchedDocs,
+      kbRefs: selectedSnapshot.kbRefs,
+      ruleRefs: selectedSnapshot.ruleRefs,
+      actionPlanEvidence: selectedSnapshot.actionPlanEvidence,
+      kbEvidence: selectedSnapshot.kbEvidence,
+      ruleEvidence: selectedSnapshot.ruleEvidence,
+    }) : article.contentType ?? "",
+    [article.contentType, selectedSnapshot],
+  );
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-evidence-json-v3:${article.contentType ?? ""}`,
-    [article.contentType, bundle, model.id, model.provider],
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-evidence-json-v4:${selectedSnapshotSignature}`,
+    [bundle, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
   const ideas = scanIsStale ? [] : storedIdeas;
@@ -174,6 +237,9 @@ export default function Step2CoreIdea({
       const systemPrompt = buildRoleSystemPrompt(
         [
           `Đề xuất ÍT NHẤT 3 core ideas / góc độ cho bài viết dạng "${article.contentType}".`,
+          selectedSnapshot
+            ? `- Dùng lựa chọn Step 1 đã khóa làm định hướng bắt buộc: ${selectedSnapshot.label}; Type ${selectedSnapshot.typeGroup ?? "không xác định"}; ${selectedSnapshot.wave ?? ""}; ${selectedSnapshot.timeframe ?? ""}; keywords: ${(selectedSnapshot.keywords ?? []).join(", ")}.`
+            : "- Không có snapshot cấu trúc từ Step 1; chỉ dùng content type đã chọn.",
           "- Mọi ý tưởng phải suy ra từ Knowledge Base (nội dung), Action Plan (định hướng), Rules (chuẩn output).",
           "- Không dùng dữ liệu ngoài tài liệu được cấp. Nếu không đủ, tạo ít ý tưởng hơn.",
           "- Mỗi idea phải có tiêu đề rõ ràng, main argument (luận điểm cốt lõi), Top SEO keywords, và rating chi tiết.",
@@ -213,6 +279,11 @@ export default function Step2CoreIdea({
         "",
         "LOẠI NỘI DUNG ĐÃ CHỌN Ở STEP 1:",
         `- ${article.contentType}`,
+        ...(selectedSnapshot ? [
+          "",
+          "SNAPSHOT STEP 1 ĐÃ LƯU TRÊN SUPABASE (nguồn lựa chọn cố định):",
+          JSON.stringify(selectedSnapshot),
+        ] : []),
         "",
         "Yêu cầu: Đề xuất ít nhất 3 core ideas theo schema.",
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
@@ -251,7 +322,7 @@ export default function Step2CoreIdea({
           parsed = extractJson(repaired.content);
           res = repaired;
         }
-        return { res, ideas: normalizeIdeas(parsed, bundle) };
+        return { res, ideas: normalizeIdeas(parsed, bundle, trustedSnapshotEvidence) };
       };
       let result = await requestIdeas();
       if (!result.ideas.length) {

@@ -236,7 +236,9 @@ export default function Step1ContentType({
     suggestions.length || article.contentTypeSourceFingerprint || article.contentTypeScannedAt,
   );
   const scanIsStale = hasCachedScan && article.contentTypeSourceFingerprint !== sourceFingerprint;
-  const visibleSuggestions = scanIsStale ? [] : suggestions;
+  // A verified Step 1 scan is an immutable article snapshot. Source/model
+  // changes are shown to the user, but never hide or automatically replace it.
+  const visibleSuggestions = suggestions;
 
   // Group suggestions by Type A/B/C; anything without a group falls to "other".
   const grouped = useMemo(() => {
@@ -342,20 +344,19 @@ export default function Step1ContentType({
         contentTypeCacheHit: Boolean(res.cacheHit),
         contentType: null,
         selectedContentTypeSuggestionId: null,
+        selectedContentTypeSnapshot: null,
+        coreIdeaSuggestions: [],
+        selectedCoreIdeaId: undefined,
+        coreIdeaSourceFingerprint: null,
+        coreIdeaScannedAt: null,
+        outline: [],
+        outlineSourceFingerprint: null,
+        outlineScannedAt: null,
+        draft: "",
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
-      if (scanIsStale) {
-        onUpdate({
-          contentTypeSuggestions: [],
-          contentTypeSourceFingerprint: null,
-          contentTypeScannedAt: null,
-          contentTypeCacheHit: false,
-          contentType: null,
-          selectedContentTypeSuggestionId: null,
-        });
-      }
     } finally {
       setLoading(false);
     }
@@ -364,23 +365,49 @@ export default function Step1ContentType({
   // First-time scan only — cache in article.contentTypeSuggestions.
   // Explicit user click on "Tổng hợp lại toàn bộ" is the only way to re-scan afterwards.
   useEffect(() => {
-    if (autoRequestedRef.current === sourceFingerprint) return;
+    if (autoRequestedRef.current === "initial") return;
     if (!bundle.totalCount) return;
-    if (suggestions.length > 0 && !scanIsStale) return;
-    autoRequestedRef.current = sourceFingerprint;
+    if (suggestions.length > 0) return;
+    autoRequestedRef.current = "initial";
     fetchSuggestions(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bundle.totalCount, suggestions.length, scanIsStale, sourceFingerprint]);
+  }, [bundle.totalCount, suggestions.length]);
 
-  const handleSelect = (suggestion: ContentTypeSuggestion) => onUpdate({
-    contentType: suggestion.label,
-    selectedContentTypeSuggestionId: suggestion.id,
-  });
+  const handleSelect = (suggestion: ContentTypeSuggestion) => {
+    const selectionChanged = article.selectedContentTypeSuggestionId !== suggestion.id;
+    onUpdate({
+      contentType: suggestion.label,
+      selectedContentTypeSuggestionId: suggestion.id,
+      selectedContentTypeSnapshot: suggestion,
+      ...(selectionChanged ? {
+        coreIdeaSuggestions: [],
+        selectedCoreIdeaId: undefined,
+        coreIdeaSourceFingerprint: null,
+        coreIdeaScannedAt: null,
+        outline: [],
+        outlineSourceFingerprint: null,
+        outlineScannedAt: null,
+        draft: "",
+      } : {}),
+    });
+  };
 
   const handleUseCustom = () => {
     const trimmed = customLabel.trim();
     if (!trimmed) return;
-    onUpdate({ contentType: trimmed });
+    onUpdate({
+      contentType: trimmed,
+      selectedContentTypeSuggestionId: null,
+      selectedContentTypeSnapshot: null,
+      coreIdeaSuggestions: [],
+      selectedCoreIdeaId: undefined,
+      coreIdeaSourceFingerprint: null,
+      coreIdeaScannedAt: null,
+      outline: [],
+      outlineSourceFingerprint: null,
+      outlineScannedAt: null,
+      draft: "",
+    });
     setCustomLabel("");
   };
 
@@ -417,10 +444,10 @@ export default function Step1ContentType({
                   : "bg-emerald-50 border-emerald-200 text-emerald-700"
               }`}>
                 {scanIsStale
-                  ? "Nguồn KB / Rules / Action Plan đã thay đổi — AI đang cần quét lại dữ liệu."
+                  ? "Nguồn hoặc model đã thay đổi — vẫn đang dùng snapshot Step 1 đã lưu. Chỉ cập nhật khi bạn nhấn “Tổng hợp lại toàn bộ”."
                   : article.contentTypeCacheHit
-                    ? `Đã dùng kết quả cache đã xác thực lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")} — nguồn không thay đổi.`
-                    : `Đã quét Action Plan lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")}.`}
+                    ? `Snapshot Step 1 đã lưu trên Supabase lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")} — dùng lại kết quả cache đã xác thực.`
+                    : `Snapshot Step 1 đã lưu trên Supabase sau khi quét Action Plan lúc ${new Date(article.contentTypeScannedAt).toLocaleString("vi-VN")}.`}
               </div>
             )}
 

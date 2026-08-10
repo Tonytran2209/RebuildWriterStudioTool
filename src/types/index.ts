@@ -152,6 +152,7 @@ export interface Article {
   // Step 1 data
   contentType?: string | null;
   selectedContentTypeSuggestionId?: string | null;
+  selectedContentTypeSnapshot?: ContentTypeSuggestion | null;
   contentTypeSuggestions?: ContentTypeSuggestion[];
   contentTypeSourceFingerprint?: string | null;
   contentTypeScannedAt?: string | null;
