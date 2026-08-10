@@ -72,12 +72,12 @@ export default function TabKnowledgeBase({
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 border-b border-slate-200 pb-3">
+      <div className="flex gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
         {(Object.entries(SUBTAB_META) as [KbSubTab, typeof SUBTAB_META[KbSubTab]][]).map(([key, item]) => (
           <button
             key={key}
             onClick={() => setActiveSubTab(key)}
-            className={`px-4 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+            className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-xl text-xs font-semibold transition-all ${
               activeSubTab === key
                 ? 'bg-slate-900 text-white'
                 : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'

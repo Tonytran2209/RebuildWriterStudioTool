@@ -123,17 +123,17 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   return (
     <div className="h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
-        <div className="flex-1 flex gap-3 p-3 min-h-0">
+        <div className="flex-1 flex flex-col lg:flex-row gap-3 p-2 sm:p-3 min-h-0 overflow-y-auto lg:overflow-hidden">
 
           {/* Editor panel */}
-          <div className="flex-1 bg-white rounded-2xl flex flex-col shadow-sm min-w-0">
+          <div className="flex-1 bg-white rounded-2xl flex flex-col shadow-sm min-w-0 min-h-[55dvh] lg:min-h-0">
             {/* Editor toolbar */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100">
-              <div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 sm:px-4 py-2.5 border-b border-slate-100">
+              <div className="min-w-0">
                 <h2 className="text-sm font-bold text-slate-800">Step 4: First Draft & Audit</h2>
                 <p className="text-[10px] text-slate-400">{article.title || 'Bài viết mới'}</p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={handleGenerate}
                   disabled={generating}
@@ -157,7 +157,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             </div>
 
             {/* Draft editor */}
-            <div className="flex-1 overflow-y-auto p-5">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-5">
               {generating ? (
                 <div className="space-y-3">
                   {[...Array(12)].map((_, i) => (
@@ -194,7 +194,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           </div>
 
           {/* Audit panel */}
-          <div className="w-60 flex flex-col gap-3 shrink-0">
+          <div className="w-full lg:w-60 grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-col gap-3 shrink-0">
             {/* Readability */}
             <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
               <h3 className="text-xs font-bold text-slate-800">Phân tích nội dung</h3>
@@ -300,14 +300,14 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         </div>
       </div>
 
-      <div className="flex justify-between shrink-0">
-        <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-5 rounded-2xl shadow-sm transition-all">
+      <div className="flex justify-between gap-2 shrink-0">
+        <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all">
           ← Quay lại Outline
         </button>
         <button
           onClick={onToggleComplete}
           disabled={!draft || completionSaving}
-          className={`${article.status === 'done' ? 'bg-white hover:bg-slate-50 border border-emerald-300 text-emerald-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all`}
+          className={`${article.status === 'done' ? 'bg-white hover:bg-slate-50 border border-emerald-300 text-emerald-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all`}
         >
           {completionSaving ? 'Đang lưu...' : article.status === 'done' ? '↺ Mở lại bài viết' : '✓ Đánh dấu hoàn thành'}
         </button>

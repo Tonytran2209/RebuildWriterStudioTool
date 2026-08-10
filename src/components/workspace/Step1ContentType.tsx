@@ -392,9 +392,9 @@ export default function Step1ContentType({
   return (
     <div className="h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
-        <div className="bg-white rounded-2xl p-6 flex-1 overflow-y-auto shadow-sm">
+        <div className="bg-white rounded-2xl p-3.5 sm:p-6 flex-1 overflow-y-auto shadow-sm">
           <div className="max-w-3xl mx-auto space-y-6">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">Step 1 — Content Type</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
@@ -513,7 +513,7 @@ export default function Step1ContentType({
             {/* Custom content type */}
             <div className="border border-slate-200 rounded-2xl p-4 space-y-2">
               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Hoặc nhập loại nội dung tùy chỉnh</div>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   value={customLabel}
                   onChange={e => setCustomLabel(e.target.value)}

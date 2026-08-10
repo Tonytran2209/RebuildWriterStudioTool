@@ -144,8 +144,8 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
 
         return (
           <div key={step} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-200/70 pb-3">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-3">
+              <div className="flex items-center gap-2 min-w-0">
                 <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">{step}</span>
                 <span className="text-xs font-bold text-slate-800">Step {step}: {STEP_LABELS[step]}</span>
               </div>
@@ -154,7 +154,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                 <select
                   value={stepCfg.modelId}
                   onChange={e => updateStepModel(step, e.target.value)}
-                  className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700 font-semibold outline-none focus:ring-2 focus:ring-slate-800 transition-all"
+                  className="min-w-0 flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700 font-semibold outline-none focus:ring-2 focus:ring-slate-800 transition-all"
                 >
                   <option value="">— Chọn model —</option>
                   {enabledModels.map(m => (
@@ -166,7 +166,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
 
             <div>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tài liệu được cấp phép:</span>
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
 
                 {/* KB */}
                 <div className={`p-3 rounded-xl border ${CATEGORY_META.kb.border} ${CATEGORY_META.kb.bg} space-y-1.5`}>

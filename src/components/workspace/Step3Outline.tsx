@@ -344,11 +344,11 @@ export default function Step3Outline({
   return (
     <div className="h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="bg-white rounded-2xl border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div className="p-5 md:p-6 flex-1 overflow-y-auto">
+        <div className="p-3.5 sm:p-5 md:p-6 flex-1 overflow-y-auto">
           <div className="max-w-4xl mx-auto space-y-6">
 
             {/* Header */}
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">Step 3 — Draft Outline</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
@@ -418,7 +418,7 @@ export default function Step3Outline({
 
             {/* Add section */}
             <div className="border border-slate-200 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="text-xs font-bold text-slate-700">Thêm section hoặc luận điểm nhánh</div>
                 <button
                   onClick={handleSuggestKeywords}
@@ -429,7 +429,7 @@ export default function Step3Outline({
                 </button>
               </div>
 
-              <div className="flex gap-2">
+              <div className="grid grid-cols-[auto_1fr] sm:flex gap-2">
                 <select
                   value={newSectionLevel}
                   onChange={e => setNewSectionLevel(e.target.value as "h2" | "h3")}
@@ -443,12 +443,12 @@ export default function Step3Outline({
                   onChange={e => setNewSectionHeading(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && addSection()}
                   placeholder="Tiêu đề section mới..."
-                  className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-slate-800 placeholder:text-slate-400"
+                  className="min-w-0 flex-1 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 outline-none focus:ring-2 focus:ring-slate-800 placeholder:text-slate-400"
                 />
                 <button
                   onClick={() => addSection()}
                   disabled={!newSectionHeading.trim()}
-                  className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-all"
+                  className="col-span-2 sm:col-span-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-all"
                 >
                   Thêm
                 </button>
@@ -477,14 +477,14 @@ export default function Step3Outline({
         </div>
       </div>
 
-      <div className="flex justify-between shrink-0">
-        <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-5 rounded-2xl shadow-sm transition-all">
+      <div className="flex justify-between gap-2 shrink-0">
+        <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all">
           Quay lại
         </button>
         <button
           onClick={onNext}
           disabled={outline.length === 0 || outlineIsStale}
-          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all"
+          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
         >
           Tiếp tục — First Draft
         </button>
@@ -517,9 +517,9 @@ function SectionRow({
 
   return (
     <div className={`group rounded-xl border transition-colors ${
-      isH3 ? "ml-6 border-slate-200 bg-slate-50/60" : "border-slate-200 bg-white"
+      isH3 ? "ml-2 sm:ml-6 border-slate-200 bg-slate-50/60" : "border-slate-200 bg-white"
     }`}>
-      <div className="flex items-start gap-3 p-4">
+      <div className="flex flex-wrap sm:flex-nowrap items-start gap-2 sm:gap-3 p-3 sm:p-4">
         <div className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${
           isH3 ? "bg-white border border-slate-200 text-slate-500" : "bg-slate-900 text-white"
         }`}>
@@ -564,7 +564,7 @@ function SectionRow({
           )}
         </div>
 
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="flex items-center justify-end gap-0.5 shrink-0 w-full sm:w-auto">
           <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title="Lên">
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>
           </button>
@@ -598,7 +598,7 @@ function SectionRow({
               className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 resize-none mt-1"
             />
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Search Intent</label>
               <select

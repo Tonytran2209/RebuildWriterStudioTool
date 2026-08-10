@@ -357,7 +357,7 @@ function AirtableForm({ onAdd }: { onAdd: (s: ActionDataSource) => void }) {
       </div>
       <input value={name} onChange={e => setName(e.target.value)} placeholder="Tên nguồn dữ liệu..." className={input} />
       <input value={apiKey} onChange={e => setApiKey(e.target.value)} type="password" placeholder="Airtable Personal Access Token (pat...)" className={`${input} font-mono text-[11px]`} />
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <input value={base} onChange={e => setBase(e.target.value)} placeholder="Base ID (app...)" className={`${input} font-mono text-[11px]`} />
         <input value={table} onChange={e => setTable(e.target.value)} placeholder="Tên table" className={input} />
       </div>
@@ -429,7 +429,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
       {/* Mode selector */}
       <div>
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Chọn cách nhập dữ liệu</p>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {MODES.map(m => (
             <button
               key={m.id}

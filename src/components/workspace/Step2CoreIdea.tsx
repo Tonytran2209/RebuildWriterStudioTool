@@ -304,9 +304,9 @@ export default function Step2CoreIdea({
   return (
     <div className="h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="bg-white rounded-2xl border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div className="p-5 md:p-6 flex-1 overflow-y-auto">
+        <div className="p-3.5 sm:p-5 md:p-6 flex-1 overflow-y-auto">
           <div className="max-w-4xl mx-auto space-y-6">
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">Step 2 — Core Idea & Angle</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
@@ -460,17 +460,17 @@ export default function Step2CoreIdea({
         </div>
       </div>
 
-      <div className="flex justify-between shrink-0">
+      <div className="flex justify-between gap-2 shrink-0">
         <button
           onClick={onPrev}
-          className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-5 rounded-2xl shadow-sm transition-all"
+          className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all"
         >
           Quay lại
         </button>
         <button
           onClick={onNext}
           disabled={!selectedId || scanIsStale}
-          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-6 rounded-2xl shadow-sm transition-all"
+          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
         >
           Tiếp tục — Draft Outline
         </button>

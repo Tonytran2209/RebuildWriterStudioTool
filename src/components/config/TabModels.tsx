@@ -76,7 +76,7 @@ export default function TabModels({ config, onChange }: Props) {
                 <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
                   {API_KEY_NAMES[provider as AIProvider]} (lưu trong Railway env)
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="password"
                     value={apiKeys[provider] || ''}
@@ -93,7 +93,7 @@ export default function TabModels({ config, onChange }: Props) {
             )}
 
             {/* Models grid */}
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {models.map(model => (
                 <div key={model.id} className="flex items-start justify-between bg-white p-3 rounded-xl border border-slate-200 gap-2">
                   <div className="min-w-0">

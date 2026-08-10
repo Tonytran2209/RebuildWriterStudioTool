@@ -199,7 +199,7 @@ export default function App() {
   // ── Loading screen ──
   if (syncStatus === 'loading') {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#f4f5f8]">
+      <div className="h-dvh flex items-center justify-center bg-[#f4f5f8]">
         <div className="text-center space-y-3">
           <div className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg mx-auto">W</div>
           <div className="text-sm font-semibold text-slate-700">Đang tải Writer Studio...</div>
@@ -213,7 +213,7 @@ export default function App() {
 
   if (initialLoadError) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#f4f5f8] p-6">
+      <div className="h-dvh flex items-center justify-center bg-[#f4f5f8] p-4 sm:p-6">
         <div className="max-w-md w-full bg-white border border-red-200 rounded-3xl p-6 text-center shadow-sm space-y-4">
           <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center text-xl mx-auto">!</div>
           <div>
@@ -239,7 +239,7 @@ export default function App() {
   // ── Empty state — no articles yet ──
   if (articles.length === 0) {
     return (
-      <div className="h-screen flex overflow-hidden bg-[#f4f5f8]">
+      <div className="h-dvh flex flex-col md:flex-row overflow-hidden bg-[#f4f5f8]">
         <Sidebar
           articles={[]}
           activeArticleId={null}
@@ -251,8 +251,8 @@ export default function App() {
           onDeleteArticle={handleDeleteArticle}
           deletingArticleId={deletingArticleId}
         />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-5 max-w-sm">
+        <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-4">
+          <div className="text-center space-y-5 max-w-sm w-full">
             <div className="w-14 h-14 rounded-3xl bg-slate-900 text-white flex items-center justify-center font-bold text-2xl mx-auto shadow-lg">W</div>
             <div className="space-y-1.5">
               <h1 className="text-lg font-bold text-slate-800">Chào mừng đến Writer Studio</h1>
@@ -290,7 +290,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden bg-[#f4f5f8]">
+    <div className="h-dvh flex flex-col md:flex-row overflow-hidden bg-[#f4f5f8]">
       <Sidebar
         articles={articles}
         activeArticleId={activeId}
@@ -303,9 +303,9 @@ export default function App() {
         deletingArticleId={deletingArticleId}
       />
 
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden">
         {articleActionError && (
-          <div className="mx-5 mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 flex items-center justify-between gap-3">
+          <div className="mx-2 md:mx-5 mt-2 md:mt-3 rounded-xl border border-red-200 bg-red-50 px-3 md:px-4 py-2 text-xs text-red-700 flex items-center justify-between gap-3">
             <span>{articleActionError}</span>
             <button type="button" onClick={() => setArticleActionError(null)} className="font-bold text-red-500 hover:text-red-700" aria-label="Đóng thông báo">×</button>
           </div>
@@ -318,7 +318,7 @@ export default function App() {
               currentModel={currentModel}
               syncStatus={syncStatus}
             />
-            <main className="flex-1 overflow-hidden p-5">
+            <main className="flex-1 min-h-0 overflow-hidden p-2.5 md:p-5">
               {article.currentStep === 1 && (
                 <Step1ContentType
                   article={article}

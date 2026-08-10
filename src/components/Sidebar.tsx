@@ -30,6 +30,7 @@ interface Props {
 
 export default function Sidebar({ articles, activeArticleId, onSelectArticle, onNewArticle, onOpenConfig, onToggleComplete, completionSavingId, onDeleteArticle, deletingArticleId }: Props) {
   const [search, setSearch] = useState('');
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const filtered = articles.filter(article => {
     const displayTitle = article.topic?.trim() || article.title;
@@ -37,13 +38,13 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
   });
 
   return (
-    <aside className="w-72 bg-[#ebedf3] border-r border-slate-200/80 p-3 flex flex-col shrink-0 h-full">
+    <aside className="w-full md:w-72 bg-[#ebedf3] border-b md:border-b-0 md:border-r border-slate-200/80 p-3 flex flex-col shrink-0 h-auto md:h-full max-h-[52dvh] md:max-h-none">
       {/* Header */}
-      <div className="space-y-3 mb-4">
+      <div className={`space-y-3 ${mobileOpen ? 'mb-4' : 'mb-0'} md:mb-4`}>
         <div className="flex items-center justify-between px-1 pt-1">
           <div className="flex items-center space-x-2">
             <div className="w-7 h-7 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs">W</div>
-            <span className="font-bold text-sm text-slate-800">Writer Studio</span>
+            <span className="hidden min-[360px]:inline font-bold text-sm text-slate-800">Writer Studio</span>
           </div>
           <button
             onClick={onOpenConfig}
@@ -54,11 +55,22 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
             </svg>
           </button>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(open => !open)}
+            className="md:hidden h-8 rounded-xl bg-white border border-slate-200/80 px-3 text-[11px] font-semibold text-slate-600 shadow-sm"
+            aria-expanded={mobileOpen}
+          >
+            {mobileOpen ? 'Thu gọn' : `Bài viết (${articles.length})`}
+          </button>
         </div>
 
         <button
-          onClick={onNewArticle}
-          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs py-2.5 px-4 rounded-2xl shadow-sm transition-all flex items-center justify-center space-x-2"
+          onClick={() => {
+            onNewArticle();
+            setMobileOpen(false);
+          }}
+          className={`${mobileOpen ? 'flex' : 'hidden'} md:flex w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs py-2.5 px-4 rounded-2xl shadow-sm transition-all items-center justify-center space-x-2`}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
@@ -66,7 +78,7 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
           <span>Tạo bài viết mới</span>
         </button>
 
-        <div className="relative">
+        <div className={`${mobileOpen ? 'block' : 'hidden'} md:block relative`}>
           <svg className="w-3 h-3 absolute left-3 top-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -81,7 +93,7 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
       </div>
 
       {/* Article list */}
-      <div className="flex-1 overflow-y-auto space-y-1.5 pr-0.5">
+      <div className={`${mobileOpen ? 'block' : 'hidden'} md:block flex-1 overflow-y-auto space-y-1.5 pr-0.5 min-h-0`}>
         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">
           Bài viết ({filtered.length})
         </div>
@@ -107,7 +119,13 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
                   : 'bg-white border-slate-200/80 shadow-sm hover:border-slate-300 hover:shadow'
               }`}
             >
-              <button onClick={() => onSelectArticle(article.id)} className="w-full text-left p-3 space-y-1.5">
+              <button
+                onClick={() => {
+                  onSelectArticle(article.id);
+                  setMobileOpen(false);
+                }}
+                className="w-full text-left p-3 space-y-1.5"
+              >
                 <div className="flex justify-between items-start gap-2">
                   <h4 className={`text-xs font-bold line-clamp-2 leading-snug ${isActive ? 'text-white' : 'text-slate-800'}`}>
                     {displayTitle}
@@ -159,7 +177,7 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
       </div>
 
       {/* Footer config button */}
-      <div className="pt-3 border-t border-slate-200/80 mt-3">
+      <div className={`${mobileOpen ? 'block' : 'hidden'} md:block pt-3 border-t border-slate-200/80 mt-3`}>
         <button
           onClick={onOpenConfig}
           className="w-full bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold py-2 px-3 rounded-xl transition-all border border-slate-200/80 flex items-center justify-between"
