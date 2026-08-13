@@ -34,18 +34,20 @@ export function sanitizeConfigFileAccess(config: AppConfig, files: DocumentFile[
     stepConfigs: Object.fromEntries(
       Object.entries(config.stepConfigs).map(([step, stepConfig]) => {
         const fileAccess = sanitizeStepFileAccess(stepConfig.fileAccess, files, sources);
-        const documentPromptRules = Object.fromEntries(
+        const categoryPromptRules = Object.fromEntries(
           (['kb', 'action', 'rules'] as const).map(category => {
-            const authorized = new Set(fileAccess[category]);
-            const rules = Object.fromEntries(
-              Object.entries(stepConfig.documentPromptRules?.[category] ?? {})
-                .filter(([id, rule]) => authorized.has(id) && rule.trim())
-                .map(([id, rule]) => [id, rule.trim()]),
-            );
-            return [category, rules];
-          }),
+            const current = stepConfig.categoryPromptRules?.[category]?.trim();
+            if (current) return [category, current];
+            const migrated = Object.values(stepConfig.documentPromptRules?.[category] ?? {})
+              .map(rule => rule.trim())
+              .filter(Boolean)
+              .filter((rule, index, rules) => rules.indexOf(rule) === index)
+              .join('\n\n');
+            return [category, migrated];
+          }).filter(([, rule]) => Boolean(rule)),
         );
-        return [step, { ...stepConfig, fileAccess, documentPromptRules }];
+        const { documentPromptRules: _legacyRules, ...rest } = stepConfig;
+        return [step, { ...rest, fileAccess, categoryPromptRules }];
       }),
     ),
   };

@@ -134,31 +134,27 @@ export function buildDocContextBlock(bundle: DocBundle): string {
 export function buildStepDocumentPromptRules(
   stepNumber: number,
   config: AppConfig,
-  files: DocumentFile[],
+  _files: DocumentFile[],
 ): string {
   const stepConfig = config.stepConfigs[stepNumber];
   if (!stepConfig) return "";
-  const names = new Map([
-    ...files.map(file => [file.id, file.name] as const),
-    ...(config.actionSources ?? []).map(source => [source.id, source.name] as const),
-  ]);
   const categoryLabels: Record<FileCategory, string> = {
     kb: "KNOWLEDGE BASE",
     action: "ACTION PLAN",
     rules: "RULES & GUIDELINES",
   };
-  const lines = (['kb', 'action', 'rules'] as const).flatMap(category =>
-    (stepConfig.fileAccess?.[category] ?? []).flatMap(id => {
-      const rule = stepConfig.documentPromptRules?.[category]?.[id]?.trim();
-      return rule
-        ? [`- [${categoryLabels[category]}] ${names.get(id) ?? id} (id: ${id}): ${rule}`]
-        : [];
-    }),
-  );
+  const lines = (['kb', 'action', 'rules'] as const).flatMap(category => {
+    const current = stepConfig.categoryPromptRules?.[category]?.trim();
+    const legacy = Object.values(stepConfig.documentPromptRules?.[category] ?? {})
+      .map(rule => rule.trim()).filter(Boolean)
+      .filter((rule, index, rules) => rules.indexOf(rule) === index).join("\n\n");
+    const rule = current || legacy;
+    return rule ? [`- [${categoryLabels[category]}]: ${rule}`] : [];
+  });
   if (!lines.length) return "";
   return [
-    "QUY TẮC ĐỌC RIÊNG CHO TỪNG TÀI LIỆU (BẮT BUỘC):",
-    "Áp dụng đúng rule cho tài liệu tương ứng; không áp dụng chéo sang tài liệu khác.",
+    "QUY TẮC ĐỌC THEO PHÂN VÙNG TÀI LIỆU (BẮT BUỘC):",
+    "Áp dụng rule cho toàn bộ tài liệu thuộc đúng phân vùng tương ứng.",
     ...lines,
   ].join("\n");
 }

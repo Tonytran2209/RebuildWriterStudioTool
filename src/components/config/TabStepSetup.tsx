@@ -70,7 +70,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
     });
   };
 
-  const updatePromptRule = (step: number, category: 'kb' | 'action' | 'rules', itemId: string, rule: string) => {
+  const updatePromptRule = (step: number, category: 'kb' | 'action' | 'rules', rule: string) => {
     const stepConfig = config.stepConfigs[step] ?? { modelId: '', fileAccess: { kb: [], action: [], rules: [] } };
     onChange({
       ...config,
@@ -78,13 +78,24 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
         ...config.stepConfigs,
         [step]: {
           ...stepConfig,
-          documentPromptRules: {
-            ...stepConfig.documentPromptRules,
-            [category]: { ...stepConfig.documentPromptRules?.[category], [itemId]: rule },
+          categoryPromptRules: {
+            ...stepConfig.categoryPromptRules,
+            [category]: rule,
           },
         },
       },
     });
+  };
+
+  const getPromptRule = (step: number, category: 'kb' | 'action' | 'rules') => {
+    const stepConfig = config.stepConfigs[step];
+    const current = stepConfig?.categoryPromptRules?.[category];
+    if (current !== undefined) return current;
+    return Object.values(stepConfig?.documentPromptRules?.[category] ?? {})
+      .map(rule => rule.trim())
+      .filter(Boolean)
+      .filter((rule, index, rules) => rules.indexOf(rule) === index)
+      .join('\n\n');
   };
 
   return (
@@ -133,7 +144,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <p className="text-xs text-indigo-900">
-          {tr('Mỗi Step có thể dùng một ', 'Each step can use its own ')}<strong>AI Model</strong>{tr(' và được cấp quyền đọc tài liệu cụ thể từ 3 kho KB / Action Plan / Rules. Sau khi chọn tài liệu, bạn có thể thêm prompting rule riêng để hướng dẫn AI cách đọc và sử dụng tài liệu đó.', ' and receive access to specific documents from KB / Action Plan / Rules. After selecting a document, add a document-specific prompting rule to guide how AI reads and uses it.')}
+          {tr('Mỗi Step có thể dùng một ', 'Each step can use its own ')}<strong>AI Model</strong>{tr(' và được cấp quyền đọc tài liệu cụ thể từ 3 kho KB / Action Plan / Rules. Mỗi phân vùng có một prompting rule chung áp dụng cho toàn bộ tài liệu được chọn trong phân vùng đó.', ' and receive access to specific documents from KB / Action Plan / Rules. Each category has one shared prompting rule for all selected documents in that category.')}
         </p>
       </div>
 
@@ -194,18 +205,15 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                   ) : kbFiles.map(f => {
                     const selected = stepCfg.fileAccess?.kb ?? [];
                     const ready = isDocumentReady(f);
-                    const checked = ready && selected.includes(f.id);
                     return (
-                      <div key={f.id} className="space-y-1.5">
-                        <label className={`flex items-center gap-1.5 ${ready ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
-                          <input type="checkbox" checked={checked} disabled={!ready} onChange={() => toggleItem(step, 'kb', f.id)} className="rounded border-slate-300 text-slate-900 focus:ring-slate-800 w-3 h-3" />
+                        <label key={f.id} className={`flex items-center gap-1.5 ${ready ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                          <input type="checkbox" checked={ready && selected.includes(f.id)} disabled={!ready} onChange={() => toggleItem(step, 'kb', f.id)} className="rounded border-slate-300 text-slate-900 focus:ring-slate-800 w-3 h-3" />
                           <span className="text-[10px] text-slate-700 truncate">{f.name}</span>
                           {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">{tr('THIẾU DỮ LIỆU', 'MISSING DATA')}</span>}
                         </label>
-                        {checked && <textarea value={stepCfg.documentPromptRules?.kb?.[f.id] ?? ''} onChange={e => updatePromptRule(step, 'kb', f.id, e.target.value)} rows={2} placeholder={tr('Rule đọc tài liệu này…', 'How should AI read this document?')} aria-label={`${tr('Prompting rule cho', 'Prompting rule for')} ${f.name}`} className="w-full resize-y rounded-lg border border-indigo-200 bg-white px-2 py-1.5 text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300" />}
-                      </div>
                     );
                   })}
+                  <textarea value={getPromptRule(step, 'kb')} onChange={e => updatePromptRule(step, 'kb', e.target.value)} rows={3} placeholder={tr('Rule chung để AI đọc và sử dụng toàn bộ Knowledge Base…', 'Shared rule for reading and using all Knowledge Base documents…')} aria-label={tr('Prompting rule cho Knowledge Base', 'Prompting rule for Knowledge Base')} className="w-full resize-y rounded-lg border border-indigo-200 bg-white px-2 py-1.5 text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-indigo-300" />
                 </div>
 
                 {/* Action Plan — dùng actionSources từ config */}
@@ -219,19 +227,16 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                     const icons: Record<string, string> = {
                       file: '📁', paste: '📋', url: '🔗', gsheet: '📊', manual: '✏️', supabase: '🗄️', airtable: '🔌',
                     };
-                    const checked = ready && selected.includes(s.id);
                     return (
-                      <div key={s.id} className="space-y-1.5">
-                        <label className={`flex items-center gap-1.5 ${ready ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
-                          <input type="checkbox" checked={checked} disabled={!ready} onChange={() => toggleItem(step, 'action', s.id)} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3 h-3" />
+                        <label key={s.id} className={`flex items-center gap-1.5 ${ready ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                          <input type="checkbox" checked={ready && selected.includes(s.id)} disabled={!ready} onChange={() => toggleItem(step, 'action', s.id)} className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-3 h-3" />
                           <span className="text-[9px] shrink-0">{icons[s.sourceType] ?? '📄'}</span>
                           <span className="text-[10px] text-slate-700 truncate">{s.name}</span>
                           {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">{tr('THIẾU DỮ LIỆU', 'MISSING DATA')}</span>}
                         </label>
-                        {checked && <textarea value={stepCfg.documentPromptRules?.action?.[s.id] ?? ''} onChange={e => updatePromptRule(step, 'action', s.id, e.target.value)} rows={2} placeholder={tr('Rule đọc tài liệu này…', 'How should AI read this document?')} aria-label={`${tr('Prompting rule cho', 'Prompting rule for')} ${s.name}`} className="w-full resize-y rounded-lg border border-emerald-200 bg-white px-2 py-1.5 text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-emerald-300" />}
-                      </div>
                     );
                   })}
+                  <textarea value={getPromptRule(step, 'action')} onChange={e => updatePromptRule(step, 'action', e.target.value)} rows={3} placeholder={tr('Rule chung để AI đọc và sử dụng toàn bộ Action Plan…', 'Shared rule for reading and using all Action Plan documents…')} aria-label={tr('Prompting rule cho Action Plan', 'Prompting rule for Action Plan')} className="w-full resize-y rounded-lg border border-emerald-200 bg-white px-2 py-1.5 text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-emerald-300" />
                 </div>
 
                 {/* Rules */}
@@ -242,18 +247,15 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
                   ) : rulesFiles.map(f => {
                     const selected = stepCfg.fileAccess?.rules ?? [];
                     const ready = isDocumentReady(f);
-                    const checked = ready && selected.includes(f.id);
                     return (
-                      <div key={f.id} className="space-y-1.5">
-                        <label className={`flex items-center gap-1.5 ${ready ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
-                          <input type="checkbox" checked={checked} disabled={!ready} onChange={() => toggleItem(step, 'rules', f.id)} className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3 h-3" />
+                        <label key={f.id} className={`flex items-center gap-1.5 ${ready ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                          <input type="checkbox" checked={ready && selected.includes(f.id)} disabled={!ready} onChange={() => toggleItem(step, 'rules', f.id)} className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 w-3 h-3" />
                           <span className="text-[10px] text-slate-700 truncate">{f.name}</span>
                           {!ready && <span className="text-[8px] font-bold text-red-600 shrink-0">{tr('THIẾU DỮ LIỆU', 'MISSING DATA')}</span>}
                         </label>
-                        {checked && <textarea value={stepCfg.documentPromptRules?.rules?.[f.id] ?? ''} onChange={e => updatePromptRule(step, 'rules', f.id, e.target.value)} rows={2} placeholder={tr('Rule đọc tài liệu này…', 'How should AI read this document?')} aria-label={`${tr('Prompting rule cho', 'Prompting rule for')} ${f.name}`} className="w-full resize-y rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-amber-300" />}
-                      </div>
                     );
                   })}
+                  <textarea value={getPromptRule(step, 'rules')} onChange={e => updatePromptRule(step, 'rules', e.target.value)} rows={3} placeholder={tr('Rule chung để AI đọc và áp dụng toàn bộ Rules…', 'Shared rule for reading and applying all Rules documents…')} aria-label={tr('Prompting rule cho Rules', 'Prompting rule for Rules')} className="w-full resize-y rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-[10px] text-slate-700 outline-none focus:ring-2 focus:ring-amber-300" />
                 </div>
 
               </div>
