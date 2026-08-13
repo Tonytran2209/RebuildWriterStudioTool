@@ -90,14 +90,14 @@ function jsonRequest(method: string, body: unknown): RequestInit {
 
 // ── Railway health check ───────────────────────────────────────────────────────
 
-export async function pingRailway(url: string): Promise<{ ok: boolean; providers?: Record<string, boolean> }> {
+export async function pingRailway(url: string): Promise<{ ok: boolean; providers?: Record<string, boolean>; seoResearch?: boolean }> {
   try {
     const res = await fetch(`${url.replace(/\/$/, '')}/health`, {
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return { ok: false };
     const data = await res.json();
-    return { ok: true, providers: data.providers };
+    return { ok: true, providers: data.providers, seoResearch: Boolean(data.seoResearch) };
   } catch {
     return { ok: false };
   }

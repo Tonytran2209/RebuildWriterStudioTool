@@ -154,6 +154,34 @@ export interface CoreIdeaRating {
   uniqueness: number;
 }
 
+export interface SeoKeywordMetric {
+  keyword: string;
+  searchVolume: number;
+  keywordDifficulty: number | null;
+  competition: number | null;
+  cpc: number | null;
+  intent: string | null;
+  source: 'dataforseo';
+  updatedAt: string | null;
+}
+
+export interface SeoResearchResult {
+  keywords: SeoKeywordMetric[];
+  seedKeywords: string[];
+  location: string;
+  language: string;
+  researchedAt: string;
+  cacheHit?: boolean;
+}
+
+export interface KeywordAuditItem {
+  keyword: string;
+  decision: 'accepted' | 'rejected';
+  reason: string;
+  ruleReason: string;
+  kbReason: string;
+}
+
 export interface CoreIdeaSuggestion {
   id: string;
   title: string;
@@ -168,6 +196,7 @@ export interface CoreIdeaSuggestion {
   rating: CoreIdeaRating;
   ratingRationale: string;
   ratingRationales?: Partial<Record<keyof CoreIdeaRating, string>>;
+  keywordAudit?: KeywordAuditItem[];
   matchedDocs: string[];
   ruleRefs: string[];
   evidence?: EvidenceRef[];
@@ -200,6 +229,7 @@ export interface Article {
   selectedCoreIdeaId?: string;
   coreIdeaSourceFingerprint?: string | null;
   coreIdeaScannedAt?: string | null;
+  seoResearch?: SeoResearchResult | null;
   // Step 3 data
   outline?: OutlineSection[];
   outlineSourceFingerprint?: string | null;

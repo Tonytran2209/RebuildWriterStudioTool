@@ -7,8 +7,10 @@ import type {
   CoreIdeaSuggestion,
   ContentTypeSuggestion,
   EvidenceRef,
+  SeoResearchResult,
+  KeywordAuditItem,
 } from "../../types";
-import { callAI } from "../../lib/aiService";
+import { callAI, researchSeoKeywords } from "../../lib/aiService";
 import { useI18n } from "../../lib/i18n";
 import {
   collectStepDocs,
@@ -92,9 +94,11 @@ function snapshotEvidence(
 function normalizeIdeas(
   parsed: unknown,
   bundle: ReturnType<typeof collectStepDocs>,
+  seoResearch: SeoResearchResult,
   trustedSnapshotEvidence: EvidenceRef[] = [],
 ): CoreIdeaSuggestion[] {
   if (!Array.isArray(parsed)) throw new Error("Phản hồi AI không phải mảng.");
+  const researchedKeywords = new Map(seoResearch.keywords.map(item => [item.keyword.toLocaleLowerCase(), item.keyword]));
   return parsed
     .map((raw, idx) => {
       if (!raw || typeof raw !== "object") return null;
@@ -114,6 +118,23 @@ function normalizeIdeas(
         ...verifiedRuleRefs(obj.ruleRefs, bundle),
         ...evidence.filter(item => item.role === "rules").map(item => item.source),
       ])];
+      const keywordAudit = (Array.isArray(obj.keywordAudit) ? obj.keywordAudit : []).flatMap((raw): KeywordAuditItem[] => {
+        if (!raw || typeof raw !== "object") return [];
+        const item = raw as Record<string, unknown>;
+        const keyword = researchedKeywords.get(String(item.keyword ?? "").trim().toLocaleLowerCase());
+        const decision = item.decision === "accepted" ? "accepted" : item.decision === "rejected" ? "rejected" : null;
+        if (!keyword || !decision) return [];
+        const normalized = { keyword, decision, reason: String(item.reason ?? "").trim(), ruleReason: String(item.ruleReason ?? "").trim(), kbReason: String(item.kbReason ?? "").trim() };
+        return normalized.reason && normalized.ruleReason && normalized.kbReason ? [normalized] : [];
+      });
+      if (new Set(keywordAudit.map(item => item.keyword.toLocaleLowerCase())).size !== seoResearch.keywords.length) return null;
+      const accepted = new Set(keywordAudit.filter(item => item.decision === "accepted").map(item => item.keyword.toLocaleLowerCase()));
+      const primaryKeyword = researchedKeywords.get(String(seo.primary ?? obj.primaryKeyword ?? "").trim().toLocaleLowerCase()) ?? "";
+      const secondaryKeywords = toStringArr(seo.secondary ?? obj.secondaryKeywords)
+        .map(keyword => researchedKeywords.get(keyword.toLocaleLowerCase()))
+        .filter((keyword): keyword is string => Boolean(keyword))
+        .filter(keyword => accepted.has(keyword.toLocaleLowerCase()));
+      if (!primaryKeyword || !accepted.has(primaryKeyword.toLocaleLowerCase())) return null;
       if (!hasResearchEvidence(evidence) || !hasRulesEvidence(evidence)) return null;
       return {
         id: `idea-${idx}-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24)}`,
@@ -121,8 +142,8 @@ function normalizeIdeas(
         angleLabel: String(obj.angleLabel ?? obj.angle ?? "").trim(),
         angleDescription: String(obj.angleDescription ?? "").trim(),
         mainArgument,
-        primaryKeyword: String(seo.primary ?? obj.primaryKeyword ?? "").trim(),
-        secondaryKeywords: toStringArr(seo.secondary ?? obj.secondaryKeywords),
+        primaryKeyword,
+        secondaryKeywords,
         targetAudience: String(obj.targetAudience ?? "").trim(),
         recommendedTone: String(obj.recommendedTone ?? obj.tone ?? "").trim(),
         recommendedWordCount: toNumber(obj.recommendedWordCount ?? obj.wordCount, 1500),
@@ -139,6 +160,7 @@ function normalizeIdeas(
             .map(([key, value]) => [key, String(value ?? "").trim()])
             .filter(([, value]) => Boolean(value)),
         ),
+        keywordAudit,
         matchedDocs: [...new Set(evidence.filter(item => item.role === "kb" || item.role === "action").map(item => item.source))],
         ruleRefs,
         evidence,
@@ -217,8 +239,8 @@ export default function Step2CoreIdea({
     [article.contentType, selectedSnapshot],
   );
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-audit-json-v5:${selectedSnapshotSignature}`,
-    [bundle, model.id, model.provider, selectedSnapshotSignature],
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v6:${selectedSnapshotSignature}:${documentPromptRules}`,
+    [bundle, documentPromptRules, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
   // Saved Supabase results remain authoritative until the Step 1 selection
@@ -245,6 +267,12 @@ export default function Step2CoreIdea({
     setLoading(true);
     setError(null);
     try {
+      const seeds = [
+        ...(selectedSnapshot?.keywords ?? []),
+        selectedSnapshot?.label ?? "",
+        article.contentType ?? "",
+      ].map(seed => seed.trim()).filter(Boolean);
+      const seoResearch = await researchSeoKeywords(seeds, railwayUrl);
       const systemPrompt = buildRoleSystemPrompt(
         [
           outputInstruction,
@@ -253,7 +281,9 @@ export default function Step2CoreIdea({
             ? `- Dùng lựa chọn Step 1 đã khóa làm định hướng bắt buộc: ${selectedSnapshot.label}; Type ${selectedSnapshot.typeGroup ?? "không xác định"}; ${selectedSnapshot.wave ?? ""}; ${selectedSnapshot.timeframe ?? ""}; keywords: ${(selectedSnapshot.keywords ?? []).join(", ")}.`
             : "- Không có snapshot cấu trúc từ Step 1; chỉ dùng content type đã chọn.",
           "- Mọi ý tưởng phải suy ra từ Knowledge Base (nội dung), Action Plan (định hướng), Rules (chuẩn output).",
-          "- Không dùng dữ liệu ngoài tài liệu được cấp. Nếu không đủ, tạo ít ý tưởng hơn.",
+          "- Dữ liệu SEO thị trường duy nhất được phép dùng là SEO_RESEARCH_TOP_10 do backend cung cấp từ DataForSEO.",
+          "- Đánh giá đủ cả 10 keyword: đối chiếu từng keyword với Rules và KB/Action, rồi ghi accepted/rejected cùng lý do cụ thể trong keywordAudit.",
+          "- primary/secondary keywords chỉ được lấy từ các keyword accepted trong SEO_RESEARCH_TOP_10; không tự tạo keyword mới.",
           "- Mỗi idea phải có tiêu đề rõ ràng, main argument (luận điểm cốt lõi), Top SEO keywords, và rating chi tiết.",
           "- Rating cho theo thang 0-10 với 5 tiêu chí (overall, seoPotential, audienceFit, docSupport, uniqueness). Ghi rõ căn cứ chấm điểm.",
           "- ratingRationales phải giải thích riêng từng điểm: overall, seoPotential, audienceFit, docSupport và uniqueness; nêu rõ điểm mạnh, điểm yếu hoặc dữ liệu còn thiếu.",
@@ -280,6 +310,7 @@ export default function Step2CoreIdea({
   },
   "ratingRationale": string (1-2 câu giải thích điểm),
   "ratingRationales": { "overall": string, "seoPotential": string, "audienceFit": string, "docSupport": string, "uniqueness": string },
+  "keywordAudit": [{ "keyword": string (chép đúng từ SEO_RESEARCH_TOP_10), "decision": "accepted" | "rejected", "reason": string, "ruleReason": string, "kbReason": string }],
   "matchedDocs": string[] (tên tài liệu KB/Action đã dùng),
   "ruleRefs": string[] (tên rule/guideline đã áp dụng),
   "evidence": [{ "source": string, "role": "kb" | "action" | "rules", "quote": string, "note": string }]
@@ -299,6 +330,9 @@ export default function Step2CoreIdea({
           "SNAPSHOT STEP 1 ĐÃ LƯU TRÊN SUPABASE (nguồn lựa chọn cố định):",
           JSON.stringify(selectedSnapshot),
         ] : []),
+        "",
+        `SEO_RESEARCH_TOP_10 — dữ liệu thị trường ${seoResearch.location}/${seoResearch.language}, research lúc ${seoResearch.researchedAt}:`,
+        JSON.stringify(seoResearch.keywords),
         "",
         "Yêu cầu: Đề xuất ít nhất 3 core ideas theo schema.",
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
@@ -337,7 +371,7 @@ export default function Step2CoreIdea({
           parsed = extractJson(repaired.content);
           res = repaired;
         }
-        return { res, ideas: normalizeIdeas(parsed, bundle, trustedSnapshotEvidence) };
+        return { res, ideas: normalizeIdeas(parsed, bundle, seoResearch, trustedSnapshotEvidence) };
       };
       let result = await requestIdeas("", manual);
       if (!result.ideas.length) {
@@ -349,6 +383,7 @@ export default function Step2CoreIdea({
           `- Tên nguồn Action hợp lệ: ${bundle.actionPlan.map(doc => JSON.stringify(doc.name)).join(", ") || "(không có)"}.`,
           `- Tên nguồn Rules hợp lệ: ${bundle.rules.map(doc => JSON.stringify(doc.name)).join(", ")}.`,
           "- Mỗi idea bắt buộc có ít nhất 1 evidence role kb/action và 1 evidence role rules.",
+          "- keywordAudit bắt buộc đánh giá đủ toàn bộ 10 keyword DataForSEO, không bỏ sót keyword accepted hoặc rejected.",
           "- source phải chép đúng một tên trong danh sách trên; quote phải là một đoạn liên tục chép nguyên văn từ chính source đó.",
           "- Chỉ trả về JSON array hoàn chỉnh, không giải thích.",
           "",
@@ -366,6 +401,7 @@ export default function Step2CoreIdea({
         selectedCoreIdeaId: undefined,
         coreIdeaSourceFingerprint: sourceFingerprint,
         coreIdeaScannedAt: result.res.servedAt ?? result.res.generatedAt ?? new Date().toISOString(),
+        seoResearch,
       });
       setSelectedId(null);
     } catch (err) {
@@ -445,6 +481,13 @@ export default function Step2CoreIdea({
               <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>
             )}
 
+            {article.seoResearch && (
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[10px] font-bold uppercase tracking-wider text-cyan-800">SEO Research Top 10 · DataForSEO</div><p className="text-[10px] text-cyan-700 mt-0.5">{article.seoResearch.location} · {article.seoResearch.language} · {new Date(article.seoResearch.researchedAt).toLocaleString()}</p></div><span className="text-[10px] font-bold rounded-full bg-white border border-cyan-200 px-2 py-1 text-cyan-800">{article.seoResearch.keywords.length} keywords</span></div>
+                <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-[10px]"><thead><tr className="text-left text-cyan-900 border-b border-cyan-200"><th className="py-1.5 pr-2">#</th><th className="py-1.5 pr-2">Keyword</th><th className="py-1.5 pr-2 text-right">Volume</th><th className="py-1.5 pr-2 text-right">Difficulty</th><th className="py-1.5 pr-2">Intent</th><th className="py-1.5 text-right">CPC</th></tr></thead><tbody>{article.seoResearch.keywords.map((keyword, index) => <tr key={keyword.keyword} className="border-b border-cyan-100 text-slate-700"><td className="py-1.5 pr-2 font-mono">{index + 1}</td><td className="py-1.5 pr-2 font-semibold">{keyword.keyword}</td><td className="py-1.5 pr-2 text-right font-mono">{keyword.searchVolume.toLocaleString()}</td><td className="py-1.5 pr-2 text-right font-mono">{keyword.keywordDifficulty ?? '—'}</td><td className="py-1.5 pr-2">{keyword.intent ?? '—'}</td><td className="py-1.5 text-right font-mono">{keyword.cpc == null ? '—' : `$${keyword.cpc.toFixed(2)}`}</td></tr>)}</tbody></table></div>
+              </div>
+            )}
+
             {loading && (
               <div className="space-y-3">
                 {[0, 1, 2].map(i => (
@@ -505,6 +548,13 @@ export default function Step2CoreIdea({
                       <div className="px-4 pb-3">
                         <h3 className="text-sm font-bold text-slate-800 leading-snug">{idea.title}</h3>
                       </div>
+
+                      {(idea.keywordAudit?.length ?? 0) > 0 && (
+                        <div className="mx-4 mb-3 rounded-lg border border-slate-200 overflow-hidden">
+                          <div className="bg-slate-50 px-3 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Đối chứng Top 10: Rules → KB', 'Top 10 validation: Rules → KB')}</div>
+                          <div className="divide-y divide-slate-100">{idea.keywordAudit?.map(item => { const metric = article.seoResearch?.keywords.find(keyword => keyword.keyword.toLocaleLowerCase() === item.keyword.toLocaleLowerCase()); return <div key={item.keyword} className="p-3 text-[10px]"><div className="flex flex-wrap items-center gap-2"><span className={`font-bold rounded-full px-2 py-0.5 ${item.decision === 'accepted' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{item.decision === 'accepted' ? tr('Chọn', 'Accepted') : tr('Loại', 'Rejected')}</span><b className="text-slate-800">{item.keyword}</b>{metric && <span className="text-slate-400">Vol {metric.searchVolume.toLocaleString()} · KD {metric.keywordDifficulty ?? '—'} · {metric.intent ?? '—'}</span>}</div><p className="text-slate-600 mt-1.5"><b>{tr('Kết luận:', 'Decision:')}</b> {item.reason}</p><p className="text-amber-700 mt-1"><b>Rules:</b> {item.ruleReason}</p><p className="text-indigo-700 mt-1"><b>KB/Action:</b> {item.kbReason}</p></div>; })}</div>
+                        </div>
+                      )}
 
                       {/* Main argument */}
                       <div className="mx-4 mb-3 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">

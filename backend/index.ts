@@ -18,6 +18,7 @@ import {
 import { extractDocumentText } from './documentParser.ts';
 import { extractStructuredSections } from './documentStructure.ts';
 import { resolveStepContext, resolveStep1WaveContexts, type StepWaveContext } from './stepContext.ts';
+import { researchSeoKeywords, seoResearchConfigured } from './seoResearch.ts';
 
 // DIST_PATH env var set by Railway start command; fallback to sibling dist/ of cwd
 const DIST = process.env.DIST_PATH
@@ -210,6 +211,7 @@ app.get('/health', (_req, res) => {
     status: 'ok',
     version: '1.0.0',
     providers: getAvailableProviders(),
+    seoResearch: seoResearchConfigured(),
     supabaseConfigured: !!(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY)),
   });
 });
@@ -222,6 +224,23 @@ app.get('/health/dependencies', async (_req, res) => {
     supabase: supabaseOk,
     supabaseUrl: process.env.SUPABASE_URL ?? null,
   });
+});
+
+app.post('/api/seo/research', async (req, res) => {
+  try {
+    const seeds = Array.isArray(req.body?.seeds) ? req.body.seeds : [];
+    const cacheKey = `writer:seo-cache:${crypto.createHash('sha256').update(JSON.stringify(seeds.map((seed: unknown) => String(seed).trim().toLocaleLowerCase()).sort())).digest('hex')}`;
+    const cached = await kvGet<any>(cacheKey);
+    if (cached?.researchedAt && Date.now() - new Date(cached.researchedAt).getTime() < 24 * 60 * 60 * 1000) {
+      return res.json({ ...cached, cacheHit: true });
+    }
+    const result = await researchSeoKeywords(seeds);
+    await kvSet(cacheKey, result);
+    res.json({ ...result, cacheHit: false });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    res.status(message.includes('chưa được cấu hình') ? 503 : 502).json({ error: message });
+  }
 });
 
 // ─── AI Generate ─────────────────────────────────────────────────────────────

@@ -31,6 +31,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
   const { language, tr } = useI18n();
   const [providers, setProviders] = useState<Record<string, boolean> | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
+  const [seoResearchOk, setSeoResearchOk] = useState<boolean | null>(null);
   const enabledModels = config.models.filter(m => m.enabled);
   const actionSources = config.actionSources ?? [];
   const invalidDocumentCount = files.filter(file => !isDocumentReady(file)).length;
@@ -39,6 +40,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
   useEffect(() => {
     pingRailway(RAILWAY_URL).then(result => {
       setBackendOk(result.ok);
+      setSeoResearchOk(result.ok ? Boolean(result.seoResearch) : null);
       if (result.ok) setProviders(result.providers ?? null);
     });
   }, []);
@@ -137,6 +139,12 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
           </div>
         )}
       </div>
+
+      {backendOk && seoResearchOk === false && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+          <b>SEO Research chưa sẵn sàng:</b> thêm <code>DATAFORSEO_LOGIN</code> và <code>DATAFORSEO_PASSWORD</code> vào Railway Variables để Step 2 chạy pipeline Top 10 thực tế.
+        </div>
+      )}
 
       {/* Info */}
       <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-3.5 flex items-start gap-2.5">

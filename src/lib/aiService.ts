@@ -1,4 +1,4 @@
-import type { AICallUsage, AIModel } from '../types';
+import type { AICallUsage, AIModel, SeoResearchResult } from '../types';
 
 export interface AIRequest {
   model: AIModel;
@@ -141,4 +141,16 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
     model: model.id,
     usage: { inputTokens: 450, outputTokens: 280 },
   };
+}
+
+export async function researchSeoKeywords(seeds: string[], railwayUrl?: string): Promise<SeoResearchResult> {
+  const baseUrl = railwayUrl || localStorage.getItem('writer:railwayUrl') || 'https://rebuildwriterstudiotool-production.up.railway.app';
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/seo/research`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ seeds }),
+  });
+  const payload = await response.json().catch(() => ({ error: response.statusText })) as SeoResearchResult & { error?: string };
+  if (!response.ok) throw new Error(payload.error || `SEO research error ${response.status}`);
+  return payload;
 }
