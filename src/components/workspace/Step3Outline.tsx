@@ -12,6 +12,7 @@ import { useI18n } from "../../lib/i18n";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
+  buildStepDocumentPromptRules,
   buildActionPlanFingerprint,
   describeBundle,
 } from "../../lib/docContext";
@@ -130,6 +131,7 @@ export default function Step3Outline({
   const outline = article.outline || [];
 
   const bundle = useMemo(() => collectStepDocs(3, config, files), [config, files]);
+  const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(3, config, files), [config, files]);
   const sourceFingerprint = useMemo(
     () => [
       buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-evidence-v1",
@@ -194,6 +196,7 @@ export default function Step3Outline({
   "ruleRefs": string[]
 }`,
         ].join("\n"),
+        documentPromptRules,
       );
 
       const userPrompt = [
@@ -290,6 +293,7 @@ export default function Step3Outline({
           "- Ưu tiên từ khóa có căn cứ trong Knowledge Base / Action Plan.",
           "- Tránh trùng lặp với keywords đã có.",
         ].join("\n"),
+        documentPromptRules,
       );
       const userPrompt = [
         `TÀI LIỆU STEP 3 (${describeBundle(bundle)}):`,

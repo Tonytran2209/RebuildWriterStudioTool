@@ -6,6 +6,7 @@ import {
   collectStepDocs,
   buildActionPlanFingerprint,
   buildRoleSystemPrompt,
+  buildStepDocumentPromptRules,
   describeBundle,
 } from '../../lib/docContext';
 
@@ -39,6 +40,7 @@ interface Props {
 export default function Step4Draft({ article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
   const { tr, outputInstruction } = useI18n();
   const bundle = useMemo(() => collectStepDocs(4, config, files), [config, files]);
+  const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(4, config, files), [config, files]);
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -84,6 +86,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           '- Khi dùng thông tin từ KB, nêu tự nhiên trong văn bản (không cần footnote).',
           '- Nếu KB không có dữ liệu cho một mục, viết mục đó ở dạng khung và ghi chú "[Cần bổ sung dữ liệu]".',
         ].join('\n'),
+        documentPromptRules,
       );
       const userPrompt = [
         `TÀI LIỆU STEP 4 (${describeBundle(bundle)}):`,

@@ -12,6 +12,7 @@ import { useI18n } from "../../lib/i18n";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
+  buildStepDocumentPromptRules,
   buildActionPlanFingerprint,
   describeBundle,
 } from "../../lib/docContext";
@@ -256,6 +257,7 @@ export default function Step1ContentType({
   const { tr, outputInstruction } = useI18n();
 
   const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
+  const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(1, config, files), [config, files]);
   const sourceFingerprint = useMemo(
     () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:${STEP1_PROMPT_VERSION}`,
     [bundle, model.id, model.provider],
@@ -334,6 +336,7 @@ export default function Step1ContentType({
           "Mỗi phần tử schema:",
           `{ "label": string (topic Action Plan), "typeGroup": "A" | "B" | "C", "wave": string, "timeframe": string (chép nguyên văn), "description": string, "keywords": string[] (chép nguyên văn), "matchedDocs": string[] (tên Action Plan), "kbRefs": string[] (tên KB), "ruleRefs": string[] (tên Rules), "kbEvidence": string, "ruleEvidence": string, "actionPlanEvidence": string (topic + keywords), "scheduleEvidence": string (wave + timeframe) }`,
         ].join("\n"),
+        documentPromptRules,
       );
 
       const prompt = [

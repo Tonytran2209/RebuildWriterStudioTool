@@ -13,6 +13,7 @@ import { useI18n } from "../../lib/i18n";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
+  buildStepDocumentPromptRules,
   buildActionPlanFingerprint,
   describeBundle,
 } from "../../lib/docContext";
@@ -181,6 +182,7 @@ export default function Step2CoreIdea({
   const { tr, outputInstruction } = useI18n();
 
   const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
+  const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(2, config, files), [config, files]);
   const selectedSnapshot = useMemo(
     () => article.selectedContentTypeSnapshot
       ?? article.contentTypeSuggestions?.find(item => item.id === article.selectedContentTypeSuggestionId)
@@ -276,6 +278,7 @@ export default function Step2CoreIdea({
   "evidence": [{ "source": string, "role": "kb" | "action" | "rules", "quote": string, "note": string }]
 }`,
         ].join("\n"),
+        documentPromptRules,
       );
 
       const userPrompt = [

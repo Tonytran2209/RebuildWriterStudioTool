@@ -32,10 +32,21 @@ export function sanitizeConfigFileAccess(config: AppConfig, files: DocumentFile[
   return {
     ...config,
     stepConfigs: Object.fromEntries(
-      Object.entries(config.stepConfigs).map(([step, stepConfig]) => [
-        step,
-        { ...stepConfig, fileAccess: sanitizeStepFileAccess(stepConfig.fileAccess, files, sources) },
-      ]),
+      Object.entries(config.stepConfigs).map(([step, stepConfig]) => {
+        const fileAccess = sanitizeStepFileAccess(stepConfig.fileAccess, files, sources);
+        const documentPromptRules = Object.fromEntries(
+          (['kb', 'action', 'rules'] as const).map(category => {
+            const authorized = new Set(fileAccess[category]);
+            const rules = Object.fromEntries(
+              Object.entries(stepConfig.documentPromptRules?.[category] ?? {})
+                .filter(([id, rule]) => authorized.has(id) && rule.trim())
+                .map(([id, rule]) => [id, rule.trim()]),
+            );
+            return [category, rules];
+          }),
+        );
+        return [step, { ...stepConfig, fileAccess, documentPromptRules }];
+      }),
     ),
   };
 }

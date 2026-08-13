@@ -80,9 +80,12 @@ export interface StepFileAccess {
   rules: string[];
 }
 
+export type StepDocumentPromptRules = Partial<Record<FileCategory, Record<string, string>>>;
+
 export interface StepConfig {
   modelId: string;
   fileAccess: StepFileAccess;
+  documentPromptRules?: StepDocumentPromptRules;
   systemPrompt?: string;
 }
 

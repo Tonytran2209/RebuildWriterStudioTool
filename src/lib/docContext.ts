@@ -1,4 +1,4 @@
-import type { AppConfig, DocumentFile, ActionDataSource } from "../types";
+import type { AppConfig, DocumentFile, ActionDataSource, FileCategory } from "../types";
 import { isActionSourceReady, isDocumentReady } from "./documentStatus";
 
 export interface DocRef {
@@ -131,8 +131,44 @@ export function buildDocContextBlock(bundle: DocBundle): string {
   ].join("\n");
 }
 
-export function buildRoleSystemPrompt(taskInstruction: string): string {
-  return `${ROLE_HIERARCHY}\n\nNHIỆM VỤ CỦA BẠN:\n${taskInstruction}`;
+export function buildStepDocumentPromptRules(
+  stepNumber: number,
+  config: AppConfig,
+  files: DocumentFile[],
+): string {
+  const stepConfig = config.stepConfigs[stepNumber];
+  if (!stepConfig) return "";
+  const names = new Map([
+    ...files.map(file => [file.id, file.name] as const),
+    ...(config.actionSources ?? []).map(source => [source.id, source.name] as const),
+  ]);
+  const categoryLabels: Record<FileCategory, string> = {
+    kb: "KNOWLEDGE BASE",
+    action: "ACTION PLAN",
+    rules: "RULES & GUIDELINES",
+  };
+  const lines = (['kb', 'action', 'rules'] as const).flatMap(category =>
+    (stepConfig.fileAccess?.[category] ?? []).flatMap(id => {
+      const rule = stepConfig.documentPromptRules?.[category]?.[id]?.trim();
+      return rule
+        ? [`- [${categoryLabels[category]}] ${names.get(id) ?? id} (id: ${id}): ${rule}`]
+        : [];
+    }),
+  );
+  if (!lines.length) return "";
+  return [
+    "QUY TẮC ĐỌC RIÊNG CHO TỪNG TÀI LIỆU (BẮT BUỘC):",
+    "Áp dụng đúng rule cho tài liệu tương ứng; không áp dụng chéo sang tài liệu khác.",
+    ...lines,
+  ].join("\n");
+}
+
+export function buildRoleSystemPrompt(taskInstruction: string, documentPromptRules = ""): string {
+  return [
+    ROLE_HIERARCHY,
+    documentPromptRules,
+    `NHIỆM VỤ CỦA BẠN:\n${taskInstruction}`,
+  ].filter(Boolean).join("\n\n");
 }
 
 export function describeBundle(bundle: DocBundle): string {
