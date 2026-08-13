@@ -229,7 +229,7 @@ app.get('/health/dependencies', async (_req, res) => {
 app.post('/api/seo/research', async (req, res) => {
   try {
     const seeds = Array.isArray(req.body?.seeds) ? req.body.seeds : [];
-    const cacheKey = `writer:seo-cache:${crypto.createHash('sha256').update(JSON.stringify(seeds.map((seed: unknown) => String(seed).trim().toLocaleLowerCase()).sort())).digest('hex')}`;
+    const cacheKey = `writer:seo-cache:web-v1:${crypto.createHash('sha256').update(JSON.stringify(seeds.map((seed: unknown) => String(seed).trim().toLocaleLowerCase()).sort())).digest('hex')}`;
     const cached = await kvGet<any>(cacheKey);
     if (cached?.researchedAt && Date.now() - new Date(cached.researchedAt).getTime() < 24 * 60 * 60 * 1000) {
       return res.json({ ...cached, cacheHit: true });
@@ -239,7 +239,7 @@ app.post('/api/seo/research', async (req, res) => {
     res.json({ ...result, cacheHit: false });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    res.status(message.includes('chưa được cấu hình') ? 503 : 502).json({ error: message });
+    res.status(message.includes('OPENAI_API_KEY') ? 503 : 502).json({ error: message });
   }
 });
 

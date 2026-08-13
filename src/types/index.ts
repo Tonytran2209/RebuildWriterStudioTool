@@ -156,12 +156,14 @@ export interface CoreIdeaRating {
 
 export interface SeoKeywordMetric {
   keyword: string;
-  searchVolume: number;
+  searchVolume: number | null;
   keywordDifficulty: number | null;
   competition: number | null;
   cpc: number | null;
   intent: string | null;
-  source: 'dataforseo';
+  source: 'dataforseo' | 'openai_web_search';
+  sources?: string[];
+  marketEvidence?: string;
   updatedAt: string | null;
 }
 

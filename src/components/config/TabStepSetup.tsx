@@ -142,7 +142,7 @@ export default function TabStepSetup({ config, files, onChange }: Props) {
 
       {backendOk && seoResearchOk === false && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
-          <b>SEO Research chưa sẵn sàng:</b> thêm <code>DATAFORSEO_LOGIN</code> và <code>DATAFORSEO_PASSWORD</code> vào Railway Variables để Step 2 chạy pipeline Top 10 thực tế.
+          <b>OpenAI Web Search chưa sẵn sàng:</b> Step 2 cần <code>OPENAI_API_KEY</code> đang dùng cho OpenAI provider.
         </div>
       )}
 
