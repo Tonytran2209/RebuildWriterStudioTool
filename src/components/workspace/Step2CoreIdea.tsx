@@ -134,6 +134,11 @@ function normalizeIdeas(
           uniqueness: toNumber(ratingObj.uniqueness, 0),
         },
         ratingRationale: String(obj.ratingRationale ?? "").trim(),
+        ratingRationales: Object.fromEntries(
+          Object.entries((obj.ratingRationales && typeof obj.ratingRationales === "object" ? obj.ratingRationales : {}) as Record<string, unknown>)
+            .map(([key, value]) => [key, String(value ?? "").trim()])
+            .filter(([, value]) => Boolean(value)),
+        ),
         matchedDocs: [...new Set(evidence.filter(item => item.role === "kb" || item.role === "action").map(item => item.source))],
         ruleRefs,
         evidence,
@@ -212,7 +217,7 @@ export default function Step2CoreIdea({
     [article.contentType, selectedSnapshot],
   );
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-evidence-json-v4:${selectedSnapshotSignature}`,
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-audit-json-v5:${selectedSnapshotSignature}`,
     [bundle, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
@@ -251,6 +256,7 @@ export default function Step2CoreIdea({
           "- Không dùng dữ liệu ngoài tài liệu được cấp. Nếu không đủ, tạo ít ý tưởng hơn.",
           "- Mỗi idea phải có tiêu đề rõ ràng, main argument (luận điểm cốt lõi), Top SEO keywords, và rating chi tiết.",
           "- Rating cho theo thang 0-10 với 5 tiêu chí (overall, seoPotential, audienceFit, docSupport, uniqueness). Ghi rõ căn cứ chấm điểm.",
+          "- ratingRationales phải giải thích riêng từng điểm: overall, seoPotential, audienceFit, docSupport và uniqueness; nêu rõ điểm mạnh, điểm yếu hoặc dữ liệu còn thiếu.",
           "- Mỗi idea phải có evidence gồm ít nhất 1 trích dẫn nguyên văn từ KB/Action và 1 trích dẫn nguyên văn từ Rules.",
           "- source phải đúng chính xác tên file được cấp; quote phải được chép nguyên văn, không diễn giải.",
           "",
@@ -273,6 +279,7 @@ export default function Step2CoreIdea({
     "uniqueness": number (0-10, độ độc đáo so với thị trường)
   },
   "ratingRationale": string (1-2 câu giải thích điểm),
+  "ratingRationales": { "overall": string, "seoPotential": string, "audienceFit": string, "docSupport": string, "uniqueness": string },
   "matchedDocs": string[] (tên tài liệu KB/Action đã dùng),
   "ruleRefs": string[] (tên rule/guideline đã áp dụng),
   "evidence": [{ "source": string, "role": "kb" | "action" | "rules", "quote": string, "note": string }]
@@ -505,6 +512,15 @@ export default function Step2CoreIdea({
                         <p className="text-[11px] text-slate-700 leading-relaxed">{idea.mainArgument}</p>
                       </div>
 
+                      <div className="px-4 pb-3 space-y-2">
+                        {idea.angleDescription && <div><div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Lý do chọn góc tiếp cận', 'Angle rationale')}</div><p className="text-[11px] text-slate-600 leading-relaxed mt-1">{idea.angleDescription}</p></div>}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
+                          <div className="rounded-lg border border-slate-100 bg-slate-50 p-2"><b className="block text-slate-500">{tr('Độc giả', 'Audience')}</b><span>{idea.targetAudience || '—'}</span></div>
+                          <div className="rounded-lg border border-slate-100 bg-slate-50 p-2"><b className="block text-slate-500">Tone</b><span>{idea.recommendedTone || '—'}</span></div>
+                          <div className="rounded-lg border border-slate-100 bg-slate-50 p-2"><b className="block text-slate-500">{tr('Độ dài', 'Length')}</b><span>{idea.recommendedWordCount.toLocaleString()} {tr('từ', 'words')}</span></div>
+                        </div>
+                      </div>
+
                       {/* Top SEO Keywords */}
                       <div className="px-4 pb-3">
                         <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Top SEO Keywords</div>
@@ -526,24 +542,27 @@ export default function Step2CoreIdea({
                       <div className="mt-auto border-t border-slate-100 p-4 space-y-1.5">
                         <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Rating breakdown</div>
                         {[
-                          { label: "SEO Potential",  val: idea.rating.seoPotential },
-                          { label: "Audience Fit",   val: idea.rating.audienceFit },
-                          { label: "Doc Support",    val: idea.rating.docSupport },
-                          { label: "Uniqueness",     val: idea.rating.uniqueness },
+                          { key: "seoPotential" as const, label: "SEO Potential", val: idea.rating.seoPotential },
+                          { key: "audienceFit" as const, label: "Audience Fit", val: idea.rating.audienceFit },
+                          { key: "docSupport" as const, label: "Doc Support", val: idea.rating.docSupport },
+                          { key: "uniqueness" as const, label: "Uniqueness", val: idea.rating.uniqueness },
                         ].map(r => (
-                          <div key={r.label} className="flex items-center gap-2">
-                            <span className="text-[10px] text-slate-500 font-medium w-24 shrink-0">{r.label}</span>
-                            <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${ratingBar(r.val)}`}
-                                style={{ width: `${Math.min(r.val * 10, 100)}%` }}
-                              />
+                          <div key={r.label} className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-500 font-medium w-24 shrink-0">{r.label}</span>
+                              <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden"><div className={`h-full rounded-full ${ratingBar(r.val)}`} style={{ width: `${Math.min(r.val * 10, 100)}%` }} /></div>
+                              <span className={`text-[10px] font-mono font-bold w-6 text-right ${ratingColor(r.val)}`}>{r.val.toFixed(1)}</span>
                             </div>
-                            <span className={`text-[10px] font-mono font-bold w-6 text-right ${ratingColor(r.val)}`}>
-                              {r.val.toFixed(1)}
-                            </span>
+                            {(idea.ratingRationales?.[r.key] || idea.ratingRationale) && <p className="pl-[6.5rem] text-[10px] text-slate-500 leading-relaxed">{idea.ratingRationales?.[r.key] || idea.ratingRationale}</p>}
                           </div>
                         ))}
+                        {idea.ratingRationale && <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-[10px] text-blue-800"><b>{tr('Đánh giá tổng quan:', 'Overall assessment:')}</b> {idea.ratingRationales?.overall || idea.ratingRationale}</div>}
+                      </div>
+
+                      <div className="border-t border-slate-100 px-4 py-4 space-y-2">
+                        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Toàn bộ dẫn chứng đã kiểm chứng', 'All verified evidence')}</div>
+                        {(idea.evidence ?? []).map((e, i) => <div key={`${e.source}-${i}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap gap-1.5 mb-1.5"><span className="text-[9px] font-bold uppercase text-slate-500">{e.role}</span><span className="text-[10px] font-semibold text-slate-700">{e.source}</span></div>{e.quote && <blockquote className="border-l-2 border-slate-300 pl-2 text-[10px] text-slate-700 leading-relaxed whitespace-pre-wrap">“{e.quote}”</blockquote>}{e.note && <p className="text-[10px] text-slate-500 mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]"><div><b className="text-slate-500">KB / Action:</b> {idea.matchedDocs.join(', ') || '—'}</div><div><b className="text-slate-500">Rules:</b> {idea.ruleRefs.join(', ') || '—'}</div></div>
                       </div>
 
                       {isSelected && (

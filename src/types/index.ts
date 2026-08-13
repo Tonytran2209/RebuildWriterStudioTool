@@ -112,6 +112,7 @@ export interface OutlineSection {
   id: string;
   heading: string;
   notes: string;
+  rationale?: string;
   level: 'h2' | 'h3';
   keywords?: string[];
   searchIntent?: SearchIntent;
@@ -166,6 +167,7 @@ export interface CoreIdeaSuggestion {
   recommendedWordCount: number;
   rating: CoreIdeaRating;
   ratingRationale: string;
+  ratingRationales?: Partial<Record<keyof CoreIdeaRating, string>>;
   matchedDocs: string[];
   ruleRefs: string[];
   evidence?: EvidenceRef[];

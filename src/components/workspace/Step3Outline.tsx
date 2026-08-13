@@ -90,6 +90,7 @@ function normalizeSections(parsed: unknown, bundle: ReturnType<typeof collectSte
         id: generateId(),
         heading,
         notes: String(obj.notes ?? obj.description ?? "").trim(),
+        rationale: String(obj.rationale ?? obj.reasoning ?? "").trim(),
         level: lvl === "h3" ? "h3" : "h2",
         keywords: toStringArr(obj.keywords),
         searchIntent: normalizeIntent(obj.searchIntent),
@@ -134,7 +135,7 @@ export default function Step3Outline({
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(3, config, files), [config, files]);
   const sourceFingerprint = useMemo(
     () => [
-      buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-evidence-v1",
+      buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-audit-v2",
       article.contentType, article.topic, article.angle, article.keywords,
       article.targetAudience, article.tone, article.wordCount,
     ].join(":"),
@@ -180,6 +181,7 @@ export default function Step3Outline({
           "- Action Plan xác định cấu trúc mẫu và các mục bắt buộc phải có.",
           "- Rules & Guidelines quyết định định dạng heading, độ sâu H2/H3, cách đặt tiêu đề, quy tắc SEO.",
           "- Mỗi section PHẢI ghi rõ: keywords được nhắm tới, searchIntent, evidence (nguồn tài liệu KB/Action/Rules đã dùng).",
+          "- Mỗi section phải có rationale giải thích vì sao section này cần thiết, vì sao đặt ở vị trí đó và evidence hỗ trợ quyết định như thế nào.",
           "- Mỗi section phải có ít nhất 1 quote nguyên văn từ KB/Action và 1 quote nguyên văn từ Rules.",
           "- source phải đúng chính xác tên file được cấp; quote phải chép nguyên văn, không diễn giải.",
           "",
@@ -190,6 +192,7 @@ export default function Step3Outline({
   "heading": string (tiêu đề section, sẵn sàng dùng),
   "level": "h2" | "h3",
   "notes": string (1 câu ngắn mô tả nội dung, tối đa 120 ký tự),
+  "rationale": string (2-3 câu giải thích lý do chọn section, vị trí và căn cứ tài liệu),
   "keywords": string[] (2-5 từ khóa nhắm tới),
   "searchIntent": "informational" | "commercial" | "transactional" | "navigational",
   "evidence": [{ "source": string, "note": string, "quote": string, "role": "kb" | "action" | "rules" }],
@@ -529,7 +532,7 @@ function SectionRow({
   onAddKeyword: (kw: string) => void;
 }) {
   const { tr } = useI18n();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const isH3 = section.level === "h3";
 
   return (
@@ -615,6 +618,10 @@ function SectionRow({
               className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 resize-none mt-1"
             />
           </div>
+          <div>
+            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Lý do & điểm cần đánh giá', 'Rationale & review points')}</label>
+            <textarea value={section.rationale ?? ''} onChange={e => onChange({ rationale: e.target.value })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 resize-y mt-1" />
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Search Intent</label>
@@ -655,22 +662,24 @@ function SectionRow({
           )}
           {(section.evidence?.length ?? 0) > 0 && (
             <div>
-              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Nguồn tham khảo', 'Sources')}</label>
-              <div className="flex flex-wrap gap-1 mt-1">
+              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Toàn bộ dẫn chứng đã kiểm chứng', 'All verified evidence')}</label>
+              <div className="space-y-2 mt-1">
                 {section.evidence?.map((e, i) => (
-                  <span
+                  <div
                     key={i}
-                    className={`text-[10px] rounded-md px-2 py-0.5 border ${
+                    className={`text-[10px] rounded-lg px-3 py-2 border ${
                       e.role ? EVIDENCE_ROLE_STYLE[e.role] : "bg-white text-slate-600 border-slate-200"
                     }`}
-                    title={e.note ? `${e.source} — ${e.note}` : e.source}
                   >
-                    {e.source}
-                  </span>
+                    <div className="font-bold mb-1">{e.role?.toUpperCase()} · {e.source}</div>
+                    {e.quote && <blockquote className="border-l-2 border-current/30 pl-2 leading-relaxed whitespace-pre-wrap">“{e.quote}”</blockquote>}
+                    {e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}
+                  </div>
                 ))}
               </div>
             </div>
           )}
+          {(section.ruleRefs?.length ?? 0) > 0 && <div><label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Rules áp dụng</label><div className="flex flex-wrap gap-1 mt-1">{section.ruleRefs?.map(rule => <span key={rule} className="text-[10px] rounded-md px-2 py-0.5 border bg-amber-50 text-amber-700 border-amber-100">{rule}</span>)}</div></div>}
           {keywordSuggestions.length > 0 && (
             <div>
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
