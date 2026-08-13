@@ -32,8 +32,8 @@ export async function researchSeoKeywords(seeds: string[]): Promise<{
   }
   const cleanSeeds = [...new Set(seeds.map(seed => String(seed).trim()).filter(Boolean))].slice(0, 20);
   if (!cleanSeeds.length) throw new Error('Cần ít nhất một seed keyword để research SEO.');
-  const location = process.env.SEO_LOCATION_NAME || 'Vietnam';
-  const language = process.env.SEO_LANGUAGE_CODE || 'vi';
+  const location = process.env.SEO_LOCATION_NAME || 'United States';
+  const language = process.env.SEO_LANGUAGE_CODE || 'en';
   const response = await fetch('https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_ideas/live', {
     method: 'POST',
     headers: {
