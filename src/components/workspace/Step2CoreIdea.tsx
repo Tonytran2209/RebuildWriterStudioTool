@@ -9,6 +9,7 @@ import type {
   EvidenceRef,
   SeoResearchResult,
   KeywordAuditItem,
+  AIProcessTraceEvent,
 } from "../../types";
 import { callAI, researchSeoKeywords } from "../../lib/aiService";
 import { useI18n } from "../../lib/i18n";
@@ -20,6 +21,7 @@ import {
   describeBundle,
 } from "../../lib/docContext";
 import { hasResearchEvidence, hasRulesEvidence, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
+import ProcessTrace from './ProcessTrace';
 
 interface Props {
   article: Article;
@@ -338,7 +340,12 @@ export default function Step2CoreIdea({
         "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
       ].join("\n");
 
+      let modelCalls = 0;
+      let jsonRepairCalls = 0;
+      let evidenceCorrectionCalls = 0;
+      const aiResponses: Awaited<ReturnType<typeof callAI>>[] = [];
       const requestIdeas = async (correction = "", bypassCache = false) => {
+        modelCalls += 1;
         let res = await callAI({
           model,
           railwayUrl,
@@ -349,10 +356,13 @@ export default function Step2CoreIdea({
           stepNumber: 2,
           bypassCache,
         });
+        aiResponses.push(res);
         let parsed: unknown;
         try {
           parsed = extractJson(res.content);
         } catch {
+          jsonRepairCalls += 1;
+          modelCalls += 1;
           const repaired = await callAI({
             model,
             railwayUrl,
@@ -368,6 +378,7 @@ export default function Step2CoreIdea({
             temperature: 0,
             stepNumber: 2,
           });
+          aiResponses.push(repaired);
           parsed = extractJson(repaired.content);
           res = repaired;
         }
@@ -375,6 +386,7 @@ export default function Step2CoreIdea({
       };
       let result = await requestIdeas("", manual);
       if (!result.ideas.length) {
+        evidenceCorrectionCalls += 1;
         const rejectedJson = result.res.content;
         result = await requestIdeas([
           "\n\nNHIỆM VỤ SỬA RESPONSE BỊ TỪ CHỐI:",
@@ -396,12 +408,24 @@ export default function Step2CoreIdea({
           `AI chưa trả về core idea có evidence kiểm chứng được. Đã đối chiếu ${bundle.knowledgeBase.length + bundle.actionPlan.length} nguồn KB/Action và ${bundle.rules.length} nguồn Rules được cấp cho Step 2.`,
         );
       }
+      const allAudits = result.ideas.flatMap(idea => idea.keywordAudit ?? []);
+      const acceptedKeywords = new Set(allAudits.filter(item => item.decision === 'accepted').map(item => item.keyword.toLocaleLowerCase())).size;
+      const rejectedKeywords = new Set(allAudits.filter(item => item.decision === 'rejected').map(item => item.keyword.toLocaleLowerCase())).size;
+      const trace: AIProcessTraceEvent[] = [
+        { id: 'step2-seeds', stage: 'input', status: 'completed', title: '1. Thu thập seed keyword', detail: 'Lấy seed từ Content Type và snapshot Step 1 đã chọn.', facts: { seeds: seeds.length, contentType: article.contentType } },
+        { id: 'step2-web-search', stage: 'tool', status: 'completed', title: '2. OpenAI Web Search thị trường USA', detail: 'Tìm tín hiệu SERP, related-query patterns và search intent. Hệ thống chỉ giữ keyword có URL nguồn hợp lệ.', facts: { keywords: seoResearch.keywords.length, cacheHit: Boolean(seoResearch.cacheHit), market: seoResearch.location }, sources: [...new Set(seoResearch.keywords.flatMap(keyword => keyword.sources ?? []))] },
+        { id: 'step2-docs', stage: 'retrieval', status: 'completed', title: '3. Nạp tài liệu được phân quyền', detail: `Railway nạp đúng KB, Action Plan và Rules được cấp cho Step 2 từ Supabase.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
+        { id: 'step2-model', stage: 'generation', status: 'completed', title: '4. Model tạo và chấm Core Idea', detail: `Model ${result.res.model} nhận Top 10 Web Search cùng tài liệu nội bộ, sau đó đề xuất Core Idea và giải thích điểm số.`, facts: { modelCalls, inputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.inputTokens ?? 0), 0), outputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.outputTokens ?? 0), 0), cacheHits: aiResponses.filter(response => response.cacheHit).length, durationMs: aiResponses.reduce((sum, response) => sum + (response.timing?.totalMs ?? 0), 0) } },
+        { id: 'step2-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls ? 'warning' : 'completed', title: '5. Đối chứng Rules → KB và kiểm tra output', detail: 'Mỗi Core Idea phải audit đủ Top 10, chỉ dùng keyword accepted, có quote thật từ KB/Action và Rules. Output sai JSON hoặc thiếu evidence được sửa và kiểm tra lại.', facts: { acceptedKeywords, rejectedKeywords, ideasAccepted: result.ideas.length, jsonRepairCalls, evidenceCorrectionCalls } },
+        { id: 'step2-persist', stage: 'persistence', status: 'completed', title: '6. Lưu kết quả có thể audit', detail: 'Lưu Top 10, quyết định chọn/loại, evidence, điểm số, lý do và nhật ký này cùng bài viết trong Supabase.' },
+      ];
       onUpdate({
         coreIdeaSuggestions: result.ideas,
         selectedCoreIdeaId: undefined,
         coreIdeaSourceFingerprint: sourceFingerprint,
         coreIdeaScannedAt: result.res.servedAt ?? result.res.generatedAt ?? new Date().toISOString(),
         seoResearch,
+        step2ProcessTrace: trace,
       });
       setSelectedId(null);
     } catch (err) {
@@ -443,6 +467,7 @@ export default function Step2CoreIdea({
         outline: [],
         outlineSourceFingerprint: null,
         outlineScannedAt: null,
+        step3ProcessTrace: [],
         draft: "",
         draftSourceFingerprint: null,
         draftScannedAt: null,
@@ -487,6 +512,8 @@ export default function Step2CoreIdea({
                 <div className="space-y-2">{article.seoResearch.keywords.map((keyword, index) => <div key={keyword.keyword} className="rounded-lg border border-cyan-100 bg-white/70 p-2.5 text-[10px]"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-cyan-700">#{index + 1}</span><b className="text-slate-800">{keyword.keyword}</b><span className="rounded-full bg-cyan-100 px-2 py-0.5 text-cyan-800">{keyword.intent ?? 'intent n/a'}</span></div>{keyword.marketEvidence && <p className="mt-1.5 text-slate-600 leading-relaxed">{keyword.marketEvidence}</p>}<div className="flex flex-wrap gap-2 mt-1.5">{keyword.sources?.map((url, sourceIndex) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-cyan-700 underline hover:text-cyan-900" onClick={event => event.stopPropagation()}>Source {sourceIndex + 1}</a>)}</div><p className="mt-1 text-slate-400">Volume / KD / CPC: {tr('không được Web Search cung cấp — không ước đoán', 'not provided by Web Search — not estimated')}</p></div>)}</div>
               </div>
             )}
+
+            <ProcessTrace events={article.step2ProcessTrace} />
 
             {loading && (
               <div className="space-y-3">

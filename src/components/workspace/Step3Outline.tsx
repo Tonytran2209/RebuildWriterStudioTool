@@ -6,6 +6,7 @@ import type {
   DocumentFile,
   OutlineSection,
   SearchIntent,
+  AIProcessTraceEvent,
 } from "../../types";
 import { callAI } from "../../lib/aiService";
 import { useI18n } from "../../lib/i18n";
@@ -17,6 +18,7 @@ import {
   describeBundle,
 } from "../../lib/docContext";
 import { hasResearchEvidence, hasRulesEvidence, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
+import ProcessTrace from './ProcessTrace';
 
 function generateId() {
   return Math.random().toString(36).slice(2, 9);
@@ -219,6 +221,10 @@ export default function Step3Outline({
         "Yêu cầu: Trả về outline dạng JSON array với keyword mapping, search intent và evidence chi tiết cho từng section.",
       ].join("\n");
 
+      let modelCalls = 1;
+      let jsonRepairCalls = 0;
+      let evidenceCorrectionCalls = 0;
+      const aiResponses: Awaited<ReturnType<typeof callAI>>[] = [];
       const res = await callAI({
         model,
         railwayUrl,
@@ -229,10 +235,14 @@ export default function Step3Outline({
         stepNumber: 3,
         bypassCache: manual,
       });
+      aiResponses.push(res);
+      let lastResponse = res;
       let parsed: unknown;
       try {
         parsed = extractJson(res.content);
       } catch {
+        jsonRepairCalls += 1;
+        modelCalls += 1;
         const repairPrompt = [
           "Chuẩn hóa nội dung bên dưới thành đúng một JSON array hợp lệ.",
           "Giữ nguyên dữ liệu và thứ tự section; chỉ sửa cú pháp JSON, dấu phẩy và escape chuỗi.",
@@ -249,11 +259,15 @@ export default function Step3Outline({
           temperature: 0,
           stepNumber: 3,
         });
+        aiResponses.push(repaired);
+        lastResponse = repaired;
         parsed = extractJson(repaired.content);
       }
       let sections = normalizeSections(parsed, bundle);
       let generatedAt = res.servedAt ?? res.generatedAt ?? new Date().toISOString();
       if (!sections.length) {
+        evidenceCorrectionCalls += 1;
+        modelCalls += 1;
         const corrected = await callAI({
           model,
           railwayUrl,
@@ -263,14 +277,24 @@ export default function Step3Outline({
           temperature: 0.1,
           stepNumber: 3,
         });
+        aiResponses.push(corrected);
+        lastResponse = corrected;
         sections = normalizeSections(extractJson(corrected.content), bundle);
         generatedAt = corrected.servedAt ?? corrected.generatedAt ?? new Date().toISOString();
       }
       if (!sections.length) throw new Error("AI chưa trả về outline có đủ evidence KB/Action và Rules.");
+      const trace: AIProcessTraceEvent[] = [
+        { id: 'step3-handoff', stage: 'input', status: 'completed', title: '1. Nhận kết quả từ Step 1–2', detail: 'Khóa Content Type, Core Idea, angle, audience, tone, word count và bộ keyword đã chọn để làm đầu vào outline.', facts: { contentType: contextBrief.contentType, topic: contextBrief.topic, primaryKeyword: contextBrief.primaryKeyword, secondaryKeywords: contextBrief.secondaryKeywords.length } },
+        { id: 'step3-docs', stage: 'retrieval', status: 'completed', title: '2. Nạp tài liệu Step 3', detail: `Railway chỉ nạp KB, Action Plan và Rules được phân quyền cho Step 3.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
+        { id: 'step3-generation', stage: 'generation', status: 'completed', title: '3. Model dựng outline', detail: `Model ${lastResponse.model} tạo heading, notes, rationale, keyword mapping, search intent và evidence cho từng section.`, facts: { modelCalls, inputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.inputTokens ?? 0), 0), outputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.outputTokens ?? 0), 0), cacheHits: aiResponses.filter(response => response.cacheHit).length, durationMs: aiResponses.reduce((sum, response) => sum + (response.timing?.totalMs ?? 0), 0) } },
+        { id: 'step3-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls ? 'warning' : 'completed', title: '4. Kiểm tra cấu trúc và dẫn chứng', detail: 'Loại section không có quote nguyên văn từ KB/Action hoặc Rules; xác minh tên nguồn và ruleRefs; sửa JSON hoặc yêu cầu model làm lại khi cần.', facts: { sectionsAccepted: sections.length, evidenceVerified: sections.reduce((sum, section) => sum + (section.evidence?.length ?? 0), 0), jsonRepairCalls, evidenceCorrectionCalls } },
+        { id: 'step3-persist', stage: 'persistence', status: 'completed', title: '5. Lưu outline và audit trail', detail: 'Lưu section, rationale, evidence, nguồn Rules và nhật ký hành động này cùng bài viết trong Supabase.' },
+      ];
       onUpdate({
         outline: sections,
         outlineSourceFingerprint: sourceFingerprint,
         outlineScannedAt: generatedAt,
+        step3ProcessTrace: trace,
         draft: "",
         draftSourceFingerprint: null,
         draftScannedAt: null,
@@ -390,6 +414,8 @@ export default function Step3Outline({
             )}
 
             {error && <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>}
+
+            <ProcessTrace events={article.step3ProcessTrace} />
 
             {generating && (
               <div className="space-y-2">

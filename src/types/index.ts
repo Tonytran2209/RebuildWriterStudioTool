@@ -184,6 +184,16 @@ export interface KeywordAuditItem {
   kbReason: string;
 }
 
+export interface AIProcessTraceEvent {
+  id: string;
+  stage: string;
+  status: 'completed' | 'warning' | 'failed';
+  title: string;
+  detail: string;
+  facts?: Record<string, string | number | boolean | null>;
+  sources?: string[];
+}
+
 export interface CoreIdeaSuggestion {
   id: string;
   title: string;
@@ -232,10 +242,12 @@ export interface Article {
   coreIdeaSourceFingerprint?: string | null;
   coreIdeaScannedAt?: string | null;
   seoResearch?: SeoResearchResult | null;
+  step2ProcessTrace?: AIProcessTraceEvent[];
   // Step 3 data
   outline?: OutlineSection[];
   outlineSourceFingerprint?: string | null;
   outlineScannedAt?: string | null;
+  step3ProcessTrace?: AIProcessTraceEvent[];
   // Step 4 data
   draft?: string;
   draftSourceFingerprint?: string | null;

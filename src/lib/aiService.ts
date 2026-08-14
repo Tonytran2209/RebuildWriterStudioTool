@@ -20,6 +20,7 @@ export interface AIResponse {
   servedAt?: string;
   cacheHit?: boolean;
   timing?: { contextMs: number; providerMs: number; totalMs: number };
+  context?: { stepNumber: number; kb: string[]; action: string[]; rules: string[]; totalChars: number; waves?: number };
   costUsd?: number | null;
 }
 
