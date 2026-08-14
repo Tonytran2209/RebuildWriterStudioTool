@@ -21,7 +21,7 @@ import {
   describeBundle,
 } from "../../lib/docContext";
 import { hasResearchEvidence, hasRulesEvidence, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
-import ProcessTrace from './ProcessTrace';
+import { ProcessTraceModal } from './ProcessTrace';
 
 interface Props {
   article: Article;
@@ -207,6 +207,7 @@ export default function Step2CoreIdea({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(article.selectedCoreIdeaId ?? null);
+  const [auditIdeaId, setAuditIdeaId] = useState<string | null>(null);
   const autoRequestedRef = useRef<string | null>(null);
   const { tr, outputInstruction } = useI18n();
 
@@ -506,15 +507,6 @@ export default function Step2CoreIdea({
               <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>
             )}
 
-            {article.seoResearch && (
-              <div className="rounded-xl border border-cyan-200 bg-cyan-50/60 p-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[10px] font-bold uppercase tracking-wider text-cyan-800">SEO Research Top 10 · OpenAI Web Search</div><p className="text-[10px] text-cyan-700 mt-0.5">{article.seoResearch.location} · {article.seoResearch.language} · {new Date(article.seoResearch.researchedAt).toLocaleString()}</p></div><span className="text-[10px] font-bold rounded-full bg-white border border-cyan-200 px-2 py-1 text-cyan-800">{article.seoResearch.keywords.length} keywords</span></div>
-                <div className="space-y-2">{article.seoResearch.keywords.map((keyword, index) => <div key={keyword.keyword} className="rounded-lg border border-cyan-100 bg-white/70 p-2.5 text-[10px]"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-cyan-700">#{index + 1}</span><b className="text-slate-800">{keyword.keyword}</b><span className="rounded-full bg-cyan-100 px-2 py-0.5 text-cyan-800">{keyword.intent ?? 'intent n/a'}</span></div>{keyword.marketEvidence && <p className="mt-1.5 text-slate-600 leading-relaxed">{keyword.marketEvidence}</p>}<div className="flex flex-wrap gap-2 mt-1.5">{keyword.sources?.map((url, sourceIndex) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-cyan-700 underline hover:text-cyan-900" onClick={event => event.stopPropagation()}>Source {sourceIndex + 1}</a>)}</div><p className="mt-1 text-slate-400">Volume / KD / CPC: {tr('không được Web Search cung cấp — không ước đoán', 'not provided by Web Search — not estimated')}</p></div>)}</div>
-              </div>
-            )}
-
-            <ProcessTrace events={article.step2ProcessTrace} />
-
             {loading && (
               <div className="space-y-3">
                 {[0, 1, 2].map(i => (
@@ -542,8 +534,8 @@ export default function Step2CoreIdea({
                   const isSelected = selectedId === idea.id;
                   const tag = ratingTag(idea.rating.overall);
                   return (
+                    <div key={idea.id} className="relative">
                     <button
-                      key={idea.id}
                       onClick={() => handleSelect(idea)}
                       className={`w-full text-left rounded-xl border transition-all flex flex-col ${
                         isSelected
@@ -575,13 +567,6 @@ export default function Step2CoreIdea({
                       <div className="px-4 pb-3">
                         <h3 className="text-sm font-bold text-slate-800 leading-snug">{idea.title}</h3>
                       </div>
-
-                      {(idea.keywordAudit?.length ?? 0) > 0 && (
-                        <div className="mx-4 mb-3 rounded-lg border border-slate-200 overflow-hidden">
-                          <div className="bg-slate-50 px-3 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Đối chứng Top 10: Rules → KB', 'Top 10 validation: Rules → KB')}</div>
-                          <div className="divide-y divide-slate-100">{idea.keywordAudit?.map(item => { const metric = article.seoResearch?.keywords.find(keyword => keyword.keyword.toLocaleLowerCase() === item.keyword.toLocaleLowerCase()); return <div key={item.keyword} className="p-3 text-[10px]"><div className="flex flex-wrap items-center gap-2"><span className={`font-bold rounded-full px-2 py-0.5 ${item.decision === 'accepted' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{item.decision === 'accepted' ? tr('Chọn', 'Accepted') : tr('Loại', 'Rejected')}</span><b className="text-slate-800">{item.keyword}</b>{metric && <span className="text-slate-400">Web Search · {metric.intent ?? 'intent n/a'}</span>}</div><p className="text-slate-600 mt-1.5"><b>{tr('Kết luận:', 'Decision:')}</b> {item.reason}</p><p className="text-amber-700 mt-1"><b>Rules:</b> {item.ruleReason}</p><p className="text-indigo-700 mt-1"><b>KB/Action:</b> {item.kbReason}</p></div>; })}</div>
-                        </div>
-                      )}
 
                       {/* Main argument */}
                       <div className="mx-4 mb-3 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
@@ -648,6 +633,10 @@ export default function Step2CoreIdea({
                         </div>
                       )}
                     </button>
+                    <button type="button" onClick={() => setAuditIdeaId(idea.id)} className="absolute top-3 right-16 w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-violet-50 hover:border-violet-300 text-slate-500 hover:text-violet-700 flex items-center justify-center shadow-sm" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${idea.title}`}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" strokeWidth="2"/><path d="m20 20-3.5-3.5" strokeWidth="2" strokeLinecap="round"/></svg>
+                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -661,6 +650,8 @@ export default function Step2CoreIdea({
           </div>
         </div>
       </div>
+
+      {auditIdeaId && (() => { const idea = ideas.find(item => item.id === auditIdeaId); if (!idea) return null; return <ProcessTraceModal title={idea.title} events={article.step2ProcessTrace} onClose={() => setAuditIdeaId(null)}><div className="space-y-4"><div><h4 className="text-xs font-bold text-slate-800">SEO Research Top 10</h4><div className="space-y-2 mt-2">{article.seoResearch?.keywords.map((keyword, index) => <div key={keyword.keyword} className="rounded-lg border border-cyan-100 bg-cyan-50/50 p-3 text-[10px]"><div className="flex flex-wrap gap-2"><span className="font-mono text-cyan-700">#{index + 1}</span><b>{keyword.keyword}</b><span>{keyword.intent ?? 'intent n/a'}</span></div>{keyword.marketEvidence && <p className="mt-1 text-slate-600">{keyword.marketEvidence}</p>}<div className="flex gap-2 mt-1">{keyword.sources?.map((url, i) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-cyan-700 underline">Source {i + 1}</a>)}</div></div>)}</div></div><div><h4 className="text-xs font-bold text-slate-800">{tr('Đối chứng keyword của lựa chọn', 'Keyword validation for this idea')}</h4><div className="divide-y divide-slate-100 rounded-lg border border-slate-200 mt-2">{idea.keywordAudit?.map(item => <div key={item.keyword} className="p-3 text-[10px]"><div className="flex gap-2"><span className={`font-bold ${item.decision === 'accepted' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.decision}</span><b>{item.keyword}</b></div><p className="mt-1">{item.reason}</p><p className="mt-1 text-amber-700"><b>Rules:</b> {item.ruleReason}</p><p className="mt-1 text-indigo-700"><b>KB/Action:</b> {item.kbReason}</p></div>)}</div></div></div></ProcessTraceModal>; })()}
 
       <div className="flex justify-between gap-2 shrink-0">
         <button

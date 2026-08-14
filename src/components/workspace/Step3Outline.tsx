@@ -18,7 +18,7 @@ import {
   describeBundle,
 } from "../../lib/docContext";
 import { hasResearchEvidence, hasRulesEvidence, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
-import ProcessTrace from './ProcessTrace';
+import { ProcessTraceModal } from './ProcessTrace';
 
 function generateId() {
   return Math.random().toString(36).slice(2, 9);
@@ -415,8 +415,6 @@ export default function Step3Outline({
 
             {error && <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>}
 
-            <ProcessTrace events={article.step3ProcessTrace} />
-
             {generating && (
               <div className="space-y-2">
                 {[...Array(4)].map((_, i) => (
@@ -455,6 +453,7 @@ export default function Step3Outline({
                       onMove={dir => moveSection(section.id, dir)}
                       keywordSuggestions={suggestedKeywords}
                       onAddKeyword={kw => addKeywordToSection(section.id, kw)}
+                      processTrace={article.step3ProcessTrace}
                     />
                   ))}
                 </div>
@@ -548,6 +547,7 @@ function SectionRow({
   onMove,
   keywordSuggestions,
   onAddKeyword,
+  processTrace,
 }: {
   index: number;
   section: OutlineSection;
@@ -556,9 +556,11 @@ function SectionRow({
   onMove: (dir: -1 | 1) => void;
   keywordSuggestions: string[];
   onAddKeyword: (kw: string) => void;
+  processTrace?: AIProcessTraceEvent[];
 }) {
   const { tr } = useI18n();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
   const isH3 = section.level === "h3";
 
   return (
@@ -611,6 +613,9 @@ function SectionRow({
         </div>
 
         <div className="flex items-center justify-end gap-0.5 shrink-0 w-full sm:w-auto">
+          <button onClick={() => setShowAudit(true)} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-violet-700 hover:bg-violet-50 rounded-md" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${section.heading}`}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" strokeWidth="2"/><path d="m20 20-3.5-3.5" strokeWidth="2" strokeLinecap="round"/></svg>
+          </button>
           <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title={tr('Lên', 'Move up')}>
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>
           </button>
@@ -728,6 +733,7 @@ function SectionRow({
           )}
         </div>
       )}
+      {showAudit && <ProcessTraceModal title={section.heading} events={processTrace} onClose={() => setShowAudit(false)}><div className="space-y-4"><div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{tr('Lý do tạo section', 'Section rationale')}</div><p className="text-xs text-slate-700 leading-relaxed mt-2 whitespace-pre-wrap">{section.rationale || tr('Chưa có rationale trong kết quả đã lưu.', 'No rationale in the saved result.')}</p></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">{tr('Dẫn chứng của section', 'Section evidence')}</div><div className="space-y-2">{section.evidence?.map((e, i) => <div key={`${e.source}-${i}`} className={`rounded-lg border p-3 text-[10px] ${e.role ? EVIDENCE_ROLE_STYLE[e.role] : 'bg-white border-slate-200'}`}><b>{e.role?.toUpperCase()} · {e.source}</b>{e.quote && <blockquote className="border-l-2 border-current/30 pl-2 mt-1.5 whitespace-pre-wrap">“{e.quote}”</blockquote>}{e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}</div></div></div></ProcessTraceModal>}
     </div>
   );
 }
