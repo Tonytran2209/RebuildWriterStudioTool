@@ -10,6 +10,7 @@ export interface AIRequest {
   stepNumber: 1 | 2 | 3 | 4;
   splitByWave?: boolean;
   bypassCache?: boolean;
+  articleId: string;
 }
 
 export interface AIResponse {
@@ -21,6 +22,7 @@ export interface AIResponse {
   cacheHit?: boolean;
   timing?: { contextMs: number; providerMs: number; totalMs: number };
   context?: { stepNumber: number; kb: string[]; action: string[]; rules: string[]; totalChars: number; waves?: number };
+  budget?: { used: number; limit: number };
   costUsd?: number | null;
 }
 
@@ -79,7 +81,7 @@ function getDemoKey(prompt: string): string {
 }
 
 export async function callAI(req: AIRequest): Promise<AIResponse> {
-  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber, splitByWave, bypassCache } = req;
+  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber, splitByWave, bypassCache, articleId } = req;
 
   // Resolve railway URL — prop → localStorage → hardcoded production URL
   const railwayUrl = req.railwayUrl
@@ -102,6 +104,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
           splitByWave,
           bypassCache,
           pricing: model.pricing,
+          articleId,
         }),
       });
 
@@ -144,12 +147,12 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
   };
 }
 
-export async function researchSeoKeywords(seeds: string[], railwayUrl?: string): Promise<SeoResearchResult> {
+export async function researchSeoKeywords(seeds: string[], articleId: string, railwayUrl?: string): Promise<SeoResearchResult> {
   const baseUrl = railwayUrl || localStorage.getItem('writer:railwayUrl') || 'https://rebuildwriterstudiotool-production.up.railway.app';
   const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/seo/research`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ seeds }),
+    body: JSON.stringify({ seeds, articleId }),
   });
   const payload = await response.json().catch(() => ({ error: response.statusText })) as SeoResearchResult & { error?: string };
   if (!response.ok) throw new Error(payload.error || `SEO research error ${response.status}`);

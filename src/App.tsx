@@ -93,11 +93,12 @@ export default function App() {
       a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a
     ));
     setSyncStatus('saving');
-    enqueueArticleMutation(() => db.updateArticle(id, updates))
-      .then(() => setSyncStatus('idle'))
+    return enqueueArticleMutation(() => db.updateArticle(id, updates))
+      .then(() => { setSyncStatus('idle'); return true; })
       .catch((error: unknown) => {
         setArticleActionError(`Không đồng bộ được bài viết với Supabase: ${error instanceof Error ? error.message : String(error)}`);
         setSyncStatus('error');
+        return false;
       });
   }, [enqueueArticleMutation]);
 

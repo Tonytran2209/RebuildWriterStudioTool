@@ -23,7 +23,7 @@ interface Props {
   files: DocumentFile[];
   model: AIModel;
   railwayUrl: string;
-  onUpdate: (updates: Partial<Article>) => void;
+  onUpdate: (updates: Partial<Article>) => Promise<boolean>;
   onNext: () => void;
 }
 
@@ -348,6 +348,7 @@ export default function Step1ContentType({
       ].join("\n");
 
       const res = await callAI({
+        articleId: article.id,
         model,
         railwayUrl,
         prompt,
@@ -378,7 +379,7 @@ export default function Step1ContentType({
       const nextSuggestions = sameSourceSnapshot
         ? preserveCompleteScopes(normalized, suggestions)
         : normalized;
-      onUpdate({
+      const saved = await onUpdate({
         // A manual rescan of unchanged sources must never silently replace a
         // fuller verified snapshot with a shorter stochastic model response.
         contentTypeSuggestions: nextSuggestions,
@@ -402,6 +403,7 @@ export default function Step1ContentType({
         draftSourceFingerprint: null,
         draftScannedAt: null,
       });
+      if (!saved) throw new Error('Kết quả Step 1 chưa được lưu vào Supabase.');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);

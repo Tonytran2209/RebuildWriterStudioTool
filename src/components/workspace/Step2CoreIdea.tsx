@@ -29,7 +29,7 @@ interface Props {
   files: DocumentFile[];
   model: AIModel;
   railwayUrl: string;
-  onUpdate: (updates: Partial<Article>) => void;
+  onUpdate: (updates: Partial<Article>) => Promise<boolean>;
   onNext: () => void;
   onPrev: () => void;
 }
@@ -275,7 +275,7 @@ export default function Step2CoreIdea({
         selectedSnapshot?.label ?? "",
         article.contentType ?? "",
       ].map(seed => seed.trim()).filter(Boolean);
-      const seoResearch = await researchSeoKeywords(seeds, railwayUrl);
+      const seoResearch = await researchSeoKeywords(seeds, article.id, railwayUrl);
       const systemPrompt = buildRoleSystemPrompt(
         [
           outputInstruction,
@@ -348,6 +348,7 @@ export default function Step2CoreIdea({
       const requestIdeas = async (correction = "", bypassCache = false) => {
         modelCalls += 1;
         let res = await callAI({
+          articleId: article.id,
           model,
           railwayUrl,
           prompt: `${userPrompt}${correction}`,
@@ -365,6 +366,7 @@ export default function Step2CoreIdea({
           jsonRepairCalls += 1;
           modelCalls += 1;
           const repaired = await callAI({
+            articleId: article.id,
             model,
             railwayUrl,
             prompt: [
@@ -420,7 +422,7 @@ export default function Step2CoreIdea({
         { id: 'step2-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls ? 'warning' : 'completed', title: '5. Đối chứng Rules → KB và kiểm tra output', detail: 'Mỗi Core Idea phải audit đủ Top 10, chỉ dùng keyword accepted, có quote thật từ KB/Action và Rules. Output sai JSON hoặc thiếu evidence được sửa và kiểm tra lại.', facts: { acceptedKeywords, rejectedKeywords, ideasAccepted: result.ideas.length, jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step2-persist', stage: 'persistence', status: 'completed', title: '6. Lưu kết quả có thể audit', detail: 'Lưu Top 10, quyết định chọn/loại, evidence, điểm số, lý do và nhật ký này cùng bài viết trong Supabase.' },
       ];
-      onUpdate({
+      const saved = await onUpdate({
         coreIdeaSuggestions: result.ideas,
         selectedCoreIdeaId: undefined,
         coreIdeaSourceFingerprint: sourceFingerprint,
@@ -428,6 +430,7 @@ export default function Step2CoreIdea({
         seoResearch,
         step2ProcessTrace: trace,
       });
+      if (!saved) throw new Error('Kết quả Step 2 chưa được lưu vào Supabase.');
       setSelectedId(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

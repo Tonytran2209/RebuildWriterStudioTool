@@ -174,6 +174,7 @@ export interface SeoResearchResult {
   language: string;
   researchedAt: string;
   cacheHit?: boolean;
+  budget?: { used: number; limit: number };
 }
 
 export interface KeywordAuditItem {
@@ -248,6 +249,7 @@ export interface Article {
   outlineSourceFingerprint?: string | null;
   outlineScannedAt?: string | null;
   step3ProcessTrace?: AIProcessTraceEvent[];
+  step3SuggestedKeywords?: string[];
   // Step 4 data
   draft?: string;
   draftSourceFingerprint?: string | null;

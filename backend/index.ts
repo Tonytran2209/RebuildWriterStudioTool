@@ -9,6 +9,7 @@ import { generate, getAvailableProviders } from './providers.ts';
 import {
   kvGet,
   kvSet,
+  kvDelete,
   kvGetByPrefix,
   checkConnection,
   uploadDocumentBinary,
@@ -36,6 +37,43 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 1 },
 });
+
+const ARTICLE_PREFIX = 'writer:article:';
+const articleMutationQueues = new Map<string, Promise<unknown>>();
+const aiBudgetQueues = new Map<string, Promise<unknown>>();
+const DAILY_AI_LIMITS: Record<number, number> = { 1: 12, 2: 12, 3: 10, 4: 6 };
+
+function serializeByKey<T>(queues: Map<string, Promise<unknown>>, key: string, operation: () => Promise<T>): Promise<T> {
+  const previous = queues.get(key) ?? Promise.resolve();
+  const result = previous.then(operation, operation);
+  const queued = result.finally(() => { if (queues.get(key) === queued) queues.delete(key); });
+  queues.set(key, queued);
+  return result;
+}
+
+async function loadArticles(): Promise<any[]> {
+  const records = await kvGetByPrefix(ARTICLE_PREFIX);
+  const individual = records.map(record => record.value).filter(Boolean);
+  const legacy = (await kvGet<any[]>('writer:articles')) ?? [];
+  const individualIds = new Set(individual.map(article => article.id));
+  const missingLegacy = legacy.filter(article => article?.id && !individualIds.has(article.id));
+  await Promise.all(missingLegacy.map(article => kvSet(`${ARTICLE_PREFIX}${article.id}`, article)));
+  return [...individual, ...missingLegacy]
+    .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
+}
+
+async function reserveAIBudget(articleId: string, stepNumber: number): Promise<{ used: number; limit: number }> {
+  const date = new Date().toISOString().slice(0, 10);
+  const key = `writer:ai-budget:${date}:${articleId}:step-${stepNumber}`;
+  return serializeByKey(aiBudgetQueues, key, async () => {
+    const current = await kvGet<{ used?: number }>(key);
+    const used = Number(current?.used ?? 0);
+    const limit = DAILY_AI_LIMITS[stepNumber] ?? 6;
+    if (used >= limit) throw new Error(`Đã đạt giới hạn ${limit} AI calls tính phí cho Step ${stepNumber} hôm nay. Hãy dùng kết quả đã lưu hoặc chờ sang ngày mới.`);
+    await kvSet(key, { used: used + 1, limit, updatedAt: new Date().toISOString() });
+    return { used: used + 1, limit };
+  });
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -229,27 +267,30 @@ app.get('/health/dependencies', async (_req, res) => {
 app.post('/api/seo/research', async (req, res) => {
   try {
     const seeds = Array.isArray(req.body?.seeds) ? req.body.seeds : [];
+    const articleId = String(req.body?.articleId ?? '');
+    if (!articleId) return res.status(400).json({ error: 'articleId là bắt buộc.' });
     const cacheKey = `writer:seo-cache:web-v1:${crypto.createHash('sha256').update(JSON.stringify(seeds.map((seed: unknown) => String(seed).trim().toLocaleLowerCase()).sort())).digest('hex')}`;
     const cached = await kvGet<any>(cacheKey);
     if (cached?.researchedAt && Date.now() - new Date(cached.researchedAt).getTime() < 24 * 60 * 60 * 1000) {
       return res.json({ ...cached, cacheHit: true });
     }
+    const budget = await reserveAIBudget(articleId, 2);
     const result = await researchSeoKeywords(seeds);
     await kvSet(cacheKey, result);
-    res.json({ ...result, cacheHit: false });
+    res.json({ ...result, cacheHit: false, budget });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    res.status(message.includes('OPENAI_API_KEY') ? 503 : 502).json({ error: message });
+    res.status(message.includes('Đã đạt giới hạn') ? 429 : message.includes('OPENAI_API_KEY') ? 503 : 502).json({ error: message });
   }
 });
 
 // ─── AI Generate ─────────────────────────────────────────────────────────────
 
 app.post('/api/generate', async (req, res) => {
-  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave, bypassCache, pricing } = req.body;
+  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave, bypassCache, pricing, articleId } = req.body;
 
-  if (!modelId || !provider || !prompt || !Number.isInteger(stepNumber)) {
-    return res.status(400).json({ error: 'modelId, provider, prompt và stepNumber là bắt buộc.' });
+  if (!modelId || !provider || !prompt || !Number.isInteger(stepNumber) || !articleId) {
+    return res.status(400).json({ error: 'modelId, provider, prompt, stepNumber và articleId là bắt buộc.' });
   }
 
   const providers = getAvailableProviders();
@@ -273,6 +314,8 @@ app.post('/api/generate', async (req, res) => {
       console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
       return res.json({ ...cached, cacheHit: true, generatedAt: cached.generatedAt, servedAt: new Date().toISOString() });
     }
+
+    const budget = await reserveAIBudget(String(articleId), stepNumber);
 
     console.log(`[generate] step=${stepNumber} provider=${provider} model=${modelId} waves=${contexts.length} promptLen=${prompt.length} contextChars=${contexts.reduce((sum, item) => sum + item.summary.totalChars, 0)}`);
     const providerStartedAt = Date.now();
@@ -373,13 +416,14 @@ app.post('/api/generate', async (req, res) => {
       generatedAt,
       servedAt: generatedAt,
       timing: { contextMs, providerMs, totalMs: Date.now() - startedAt },
+      budget,
     };
     await kvSet(cacheKey, responsePayload);
     console.log(`[generate] done cache=false contextMs=${contextMs} providerMs=${providerMs} totalMs=${Date.now() - startedAt} outputTokens=${result.usage?.outputTokens}`);
     return res.json(responsePayload);
   } catch (err: any) {
     console.error('[generate] error:', err.message);
-    res.status(500).json({ error: err.message || 'Lỗi gọi AI API' });
+    res.status(/giới hạn.*AI calls/i.test(err.message) ? 429 : 500).json({ error: err.message || 'Lỗi gọi AI API' });
   }
 });
 
@@ -422,8 +466,7 @@ app.get('/api/kv-prefix/:prefix', async (req, res) => {
 
 app.get('/api/articles', async (_req, res) => {
   try {
-    const articles = await kvGet('writer:articles') ?? [];
-    res.json(articles);
+    res.json(await loadArticles());
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -433,9 +476,8 @@ app.post('/api/articles', async (req, res) => {
   try {
     const now = new Date().toISOString();
     const article = { ...req.body, updatedAt: now };
-    const articles = await kvGet('writer:articles') ?? [];
-    const updated = [article, ...(articles as any[]).filter((a: any) => a.id !== article.id)];
-    await kvSet('writer:articles', updated);
+    if (!article.id) return res.status(400).json({ error: 'Article id là bắt buộc.' });
+    await kvSet(`${ARTICLE_PREFIX}${article.id}`, article);
     res.json({ ok: true, article });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -446,15 +488,14 @@ app.put('/api/articles/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    const articles = (await kvGet('writer:articles') ?? []) as any[];
-    const existing = articles.find(a => a.id === id);
-    if (!existing) {
-      res.status(404).json({ error: 'Bài viết không tồn tại trong Supabase.' });
-      return;
-    }
-    const article = { ...existing, ...updates, id, updatedAt: new Date().toISOString() };
-    const updated = articles.map(a => a.id === id ? article : a);
-    await kvSet('writer:articles', updated);
+    const article = await serializeByKey(articleMutationQueues, id, async () => {
+      let existing = await kvGet<any>(`${ARTICLE_PREFIX}${id}`);
+      if (!existing) existing = (await loadArticles()).find(item => item.id === id);
+      if (!existing) throw new Error('Bài viết không tồn tại trong Supabase.');
+      const next = { ...existing, ...updates, id, updatedAt: new Date().toISOString() };
+      await kvSet(`${ARTICLE_PREFIX}${id}`, next);
+      return next;
+    });
     res.json({ ok: true, article });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -464,12 +505,16 @@ app.put('/api/articles/:id', async (req, res) => {
 app.delete('/api/articles/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const articles = (await kvGet('writer:articles') ?? []) as any[];
-    if (!articles.some((article: any) => article.id === id)) {
+    const existing = await kvGet(`${ARTICLE_PREFIX}${id}`);
+    if (!existing && !(await loadArticles()).some(article => article.id === id)) {
       res.status(404).json({ error: 'Bài viết không tồn tại trong Supabase.' });
       return;
     }
-    await kvSet('writer:articles', articles.filter((a: any) => a.id !== id));
+    await kvDelete(`${ARTICLE_PREFIX}${id}`);
+    const legacy = (await kvGet<any[]>('writer:articles')) ?? [];
+    if (legacy.some(article => article?.id === id)) {
+      await kvSet('writer:articles', legacy.filter(article => article?.id !== id));
+    }
     res.json({ ok: true, deletedId: id });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

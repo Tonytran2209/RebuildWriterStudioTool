@@ -109,7 +109,7 @@ interface Props {
   files: DocumentFile[];
   model: AIModel;
   railwayUrl: string;
-  onUpdate: (updates: Partial<Article>) => void;
+  onUpdate: (updates: Partial<Article>) => Promise<boolean>;
   onNext: () => void;
   onPrev: () => void;
 }
@@ -128,7 +128,7 @@ export default function Step3Outline({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestingKeywords, setSuggestingKeywords] = useState(false);
-  const [suggestedKeywords, setSuggestedKeywords] = useState<string[]>([]);
+  const suggestedKeywords = article.step3SuggestedKeywords ?? [];
   const [newSectionHeading, setNewSectionHeading] = useState("");
   const [newSectionLevel, setNewSectionLevel] = useState<"h2" | "h3">("h2");
   const outline = article.outline || [];
@@ -226,6 +226,7 @@ export default function Step3Outline({
       let evidenceCorrectionCalls = 0;
       const aiResponses: Awaited<ReturnType<typeof callAI>>[] = [];
       const res = await callAI({
+        articleId: article.id,
         model,
         railwayUrl,
         prompt: userPrompt,
@@ -251,6 +252,7 @@ export default function Step3Outline({
           res.content,
         ].join("\n");
         const repaired = await callAI({
+          articleId: article.id,
           model,
           railwayUrl,
           prompt: repairPrompt,
@@ -269,6 +271,7 @@ export default function Step3Outline({
         evidenceCorrectionCalls += 1;
         modelCalls += 1;
         const corrected = await callAI({
+          articleId: article.id,
           model,
           railwayUrl,
           prompt: `${userPrompt}\n\nLần trước không có section vượt qua kiểm chứng. Bắt buộc mỗi section chép quote nguyên văn và đúng tên source cho cả KB/Action lẫn Rules.`,
@@ -290,7 +293,7 @@ export default function Step3Outline({
         { id: 'step3-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls ? 'warning' : 'completed', title: '4. Kiểm tra cấu trúc và dẫn chứng', detail: 'Loại section không có quote nguyên văn từ KB/Action hoặc Rules; xác minh tên nguồn và ruleRefs; sửa JSON hoặc yêu cầu model làm lại khi cần.', facts: { sectionsAccepted: sections.length, evidenceVerified: sections.reduce((sum, section) => sum + (section.evidence?.length ?? 0), 0), jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step3-persist', stage: 'persistence', status: 'completed', title: '5. Lưu outline và audit trail', detail: 'Lưu section, rationale, evidence, nguồn Rules và nhật ký hành động này cùng bài viết trong Supabase.' },
       ];
-      onUpdate({
+      const saved = await onUpdate({
         outline: sections,
         outlineSourceFingerprint: sourceFingerprint,
         outlineScannedAt: generatedAt,
@@ -299,6 +302,7 @@ export default function Step3Outline({
         draftSourceFingerprint: null,
         draftScannedAt: null,
       });
+      if (!saved) throw new Error('Outline Step 3 chưa được lưu vào Supabase.');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không tạo được outline: ${message}`);
@@ -310,7 +314,6 @@ export default function Step3Outline({
   const handleSuggestKeywords = async () => {
     if (!contextBrief.angle && !contextBrief.topic) return;
     setSuggestingKeywords(true);
-    setSuggestedKeywords([]);
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -331,12 +334,13 @@ export default function Step3Outline({
         "",
         "Trả về JSON array các chuỗi keyword, không giải thích.",
       ].join("\n");
-      const res = await callAI({ model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 3 });
+      const res = await callAI({ articleId: article.id, model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 3 });
       const parsed = extractJson(res.content);
       if (!Array.isArray(parsed)) throw new Error("Không phải mảng.");
-      setSuggestedKeywords(parsed.map(String).filter(Boolean));
-    } catch {
-      setSuggestedKeywords([]);
+      const saved = await onUpdate({ step3SuggestedKeywords: parsed.map(String).filter(Boolean) });
+      if (!saved) throw new Error('Keyword gợi ý chưa được lưu vào Supabase.');
+    } catch (error) {
+      setError(`Không gợi ý được keyword: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setSuggestingKeywords(false);
     }
