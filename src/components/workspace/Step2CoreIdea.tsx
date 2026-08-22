@@ -37,9 +37,11 @@ interface Props {
 function extractJson(raw: string): unknown {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const body = (fenced ? fenced[1] : raw).trim();
-  const start = body.indexOf("[");
-  const end = body.lastIndexOf("]");
-  if (start === -1 || end === -1) throw new Error("Không tìm thấy mảng JSON trong phản hồi AI.");
+  const objectStart = body.indexOf("{");
+  const arrayStart = body.indexOf("[");
+  const start = objectStart >= 0 && (arrayStart < 0 || objectStart < arrayStart) ? objectStart : arrayStart;
+  const end = start === objectStart ? body.lastIndexOf("}") : body.lastIndexOf("]");
+  if (start === -1 || end === -1) throw new Error("Không tìm thấy JSON trong phản hồi AI.");
   const json = body.slice(start, end + 1);
   try {
     return JSON.parse(json);
@@ -99,9 +101,29 @@ function normalizeIdeas(
   seoResearch: SeoResearchResult,
   trustedSnapshotEvidence: EvidenceRef[] = [],
 ): CoreIdeaSuggestion[] {
-  if (!Array.isArray(parsed)) throw new Error("Phản hồi AI không phải mảng.");
+  const root = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : null;
+  const rawIdeas = root?.ideas ?? parsed;
+  if (!Array.isArray(rawIdeas)) throw new Error("Phản hồi AI không có mảng ideas.");
   const researchedKeywords = new Map(seoResearch.keywords.map(item => [item.keyword.toLocaleLowerCase(), item.keyword]));
-  return parsed
+  const normalizeAudit = (value: unknown): KeywordAuditItem[] => (Array.isArray(value) ? value : []).flatMap((raw): KeywordAuditItem[] => {
+    if (!raw || typeof raw !== "object") return [];
+    const item = raw as Record<string, unknown>;
+    const keyword = researchedKeywords.get(String(item.keyword ?? "").trim().toLocaleLowerCase());
+    const decision = item.decision === "accepted" ? "accepted" : item.decision === "rejected" ? "rejected" : null;
+    if (!keyword || !decision) return [];
+    const normalized = { keyword, decision, reason: String(item.reason ?? "").trim(), ruleReason: String(item.ruleReason ?? "").trim(), kbReason: String(item.kbReason ?? "").trim() };
+    const hasResearchDocs = Boolean(bundle.knowledgeBase.length || bundle.actionPlan.length);
+    return normalized.reason
+      && (!bundle.rules.length || normalized.ruleReason)
+      && (!hasResearchDocs || normalized.kbReason)
+      ? [normalized]
+      : [];
+  });
+  const sharedKeywordAudit = normalizeAudit(root?.keywordAudit);
+  const hasCompleteSharedAudit = new Set(sharedKeywordAudit.map(item => item.keyword.toLocaleLowerCase())).size === seoResearch.keywords.length;
+  return rawIdeas
     .map((raw, idx) => {
       if (!raw || typeof raw !== "object") return null;
       const obj = raw as Record<string, unknown>;
@@ -120,20 +142,7 @@ function normalizeIdeas(
         ...verifiedRuleRefs(obj.ruleRefs, bundle),
         ...evidence.filter(item => item.role === "rules").map(item => item.source),
       ])];
-      const keywordAudit = (Array.isArray(obj.keywordAudit) ? obj.keywordAudit : []).flatMap((raw): KeywordAuditItem[] => {
-        if (!raw || typeof raw !== "object") return [];
-        const item = raw as Record<string, unknown>;
-        const keyword = researchedKeywords.get(String(item.keyword ?? "").trim().toLocaleLowerCase());
-        const decision = item.decision === "accepted" ? "accepted" : item.decision === "rejected" ? "rejected" : null;
-        if (!keyword || !decision) return [];
-        const normalized = { keyword, decision, reason: String(item.reason ?? "").trim(), ruleReason: String(item.ruleReason ?? "").trim(), kbReason: String(item.kbReason ?? "").trim() };
-        const hasResearchDocs = Boolean(bundle.knowledgeBase.length || bundle.actionPlan.length);
-        return normalized.reason
-          && (!bundle.rules.length || normalized.ruleReason)
-          && (!hasResearchDocs || normalized.kbReason)
-          ? [normalized]
-          : [];
-      });
+      const keywordAudit = hasCompleteSharedAudit ? sharedKeywordAudit : normalizeAudit(obj.keywordAudit);
       if (new Set(keywordAudit.map(item => item.keyword.toLocaleLowerCase())).size !== seoResearch.keywords.length) return null;
       const accepted = new Set(keywordAudit.filter(item => item.decision === "accepted").map(item => item.keyword.toLocaleLowerCase()));
       const primaryKeyword = researchedKeywords.get(String(seo.primary ?? obj.primaryKeyword ?? "").trim().toLocaleLowerCase()) ?? "";
@@ -247,7 +256,7 @@ export default function Step2CoreIdea({
     [article.contentType, selectedSnapshot],
   );
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v6:${selectedSnapshotSignature}:${documentPromptRules}`,
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v7:${selectedSnapshotSignature}:${documentPromptRules}`,
     [bundle, documentPromptRules, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
@@ -282,7 +291,7 @@ export default function Step2CoreIdea({
             : "- Không có snapshot cấu trúc từ Step 1; chỉ dùng content type đã chọn.",
           "- Mọi ý tưởng phải suy ra từ các phân vùng tài liệu thực sự được cấp quyền; không yêu cầu hoặc suy đoán dữ liệu từ phân vùng đang trống.",
           "- Dữ liệu SEO thị trường duy nhất được phép dùng là SEO_RESEARCH_TOP_10 do OpenAI Web Search thu thập kèm URL nguồn.",
-          "- Đánh giá đủ cả 10 keyword: đối chiếu với từng phân vùng tài liệu đang được cấp quyền, rồi ghi accepted/rejected cùng lý do cụ thể trong keywordAudit.",
+          "- Đánh giá đủ cả 10 keyword đúng MỘT LẦN ở keywordAudit cấp cao nhất: đối chiếu với từng phân vùng tài liệu đang được cấp quyền, rồi ghi accepted/rejected cùng lý do cụ thể.",
           "- primary/secondary keywords chỉ được lấy từ các keyword accepted trong SEO_RESEARCH_TOP_10; không tự tạo keyword mới.",
           "- Mỗi idea phải có tiêu đề rõ ràng, main argument (luận điểm cốt lõi), Top SEO keywords, và rating chi tiết.",
           "- Rating cho theo thang 0-10 với 5 tiêu chí (overall, seoPotential, audienceFit, docSupport, uniqueness). Ghi rõ căn cứ chấm điểm.",
@@ -290,9 +299,11 @@ export default function Step2CoreIdea({
           "- Nếu có KB/Action, mỗi idea cần ít nhất 1 quote từ KB hoặc Action. Nếu có Rules, cần thêm ít nhất 1 quote từ Rules. Bỏ qua nhóm đang trống.",
           "- source phải đúng chính xác tên file được cấp; quote phải được chép nguyên văn, không diễn giải.",
           "",
-          "Trả về DUY NHẤT một mảng JSON hợp lệ, không kèm markdown fences hay text giải thích.",
-          "Schema mỗi phần tử:",
+          "Trả về DUY NHẤT một JSON object hợp lệ, không kèm markdown fences hay text giải thích.",
+          "Schema:",
           `{
+  "keywordAudit": [{ "keyword": string (chép đúng từ SEO_RESEARCH_TOP_10), "decision": "accepted" | "rejected", "reason": string, "ruleReason": string, "kbReason": string }],
+  "ideas": [{
   "title": string (tiêu đề bài viết đề xuất, sẵn sàng dùng),
   "angleLabel": string (tên góc tiếp cận ngắn gọn, ví dụ "So sánh benchmark", "Hướng dẫn thực chiến"),
   "angleDescription": string (1-2 câu giải thích góc tiếp cận),
@@ -310,10 +321,10 @@ export default function Step2CoreIdea({
   },
   "ratingRationale": string (1-2 câu giải thích điểm),
   "ratingRationales": { "overall": string, "seoPotential": string, "audienceFit": string, "docSupport": string, "uniqueness": string },
-  "keywordAudit": [{ "keyword": string (chép đúng từ SEO_RESEARCH_TOP_10), "decision": "accepted" | "rejected", "reason": string, "ruleReason": string, "kbReason": string }],
   "matchedDocs": string[] (tên tài liệu KB/Action đã dùng),
   "ruleRefs": string[] (tên rule/guideline đã áp dụng),
   "evidence": [{ "source": string, "role": "kb" | "action" | "rules", "quote": string, "note": string }]
+  }]
 }`,
         ].join("\n"),
         documentPromptRules,
@@ -335,11 +346,11 @@ export default function Step2CoreIdea({
         JSON.stringify(seoResearch.keywords),
         "",
         "Yêu cầu: Đề xuất ít nhất 3 core ideas theo schema.",
-        "Chỉ trả về JSON array — không markdown, không giải thích, không text thừa.",
+        "Chỉ trả về JSON object theo schema — không markdown, không giải thích, không text thừa.",
       ].join("\n");
 
       let modelCalls = 0;
-      let jsonRepairCalls = 0;
+      const jsonRepairCalls = 0;
       let evidenceCorrectionCalls = 0;
       const aiResponses: Awaited<ReturnType<typeof callAI>>[] = [];
       const requestIdeas = async (correction = "", bypassCache = false) => {
@@ -354,58 +365,42 @@ export default function Step2CoreIdea({
           temperature: 0.1,
           stepNumber: 2,
           bypassCache,
+          jsonMode: model.provider === "deepseek",
         });
         aiResponses.push(res);
         let parsed: unknown;
-        try {
-          parsed = extractJson(res.content);
-        } catch {
-          jsonRepairCalls += 1;
-          modelCalls += 1;
-          const repaired = await callAI({
-            articleId: article.id,
-            model,
-            railwayUrl,
-            prompt: [
-              "Sửa nội dung dưới đây thành đúng một JSON array hợp lệ.",
-              "Giữ nguyên toàn bộ giá trị, quote evidence và thứ tự; chỉ sửa dấu phẩy, ngoặc và escape chuỗi.",
-              "Không thêm markdown hoặc giải thích.",
-              "",
-              res.content,
-            ].join("\n"),
-            systemPrompt: "Bạn là JSON formatter. Chỉ trả về JSON array parse được bằng JSON.parse.",
-            maxTokens: 8000,
-            temperature: 0,
-            stepNumber: 2,
-          });
-          aiResponses.push(repaired);
-          parsed = extractJson(repaired.content);
-          res = repaired;
-        }
+        parsed = extractJson(res.content);
         return { res, ideas: normalizeIdeas(parsed, bundle, seoResearch, trustedSnapshotEvidence) };
       };
       let result = await requestIdeas("", manual);
-      if (!result.ideas.length) {
+      if (result.ideas.length < 3) {
         evidenceCorrectionCalls += 1;
+        const acceptedIdeas = result.ideas;
         const rejectedJson = result.res.content;
-        result = await requestIdeas([
+        const correctionResult = await requestIdeas([
           "\n\nNHIỆM VỤ SỬA RESPONSE BỊ TỪ CHỐI:",
-          "- Giữ các core idea hữu ích, nhưng đọc lại DOCUMENT trong context và thay evidence bằng quote nguyên văn có thật.",
+          `- Chỉ tạo thêm ${3 - acceptedIdeas.length} core idea còn thiếu; không lặp lại các idea đã hợp lệ.`,
+          `- Các tiêu đề đã hợp lệ, không được trả lại: ${acceptedIdeas.map(item => JSON.stringify(item.title)).join(", ") || "(chưa có)"}.`,
+          "- Đọc lại DOCUMENT trong context và dùng evidence là quote nguyên văn có thật.",
           `- Tên nguồn KB hợp lệ: ${bundle.knowledgeBase.map(doc => JSON.stringify(doc.name)).join(", ") || "(không có)"}.`,
           `- Tên nguồn Action hợp lệ: ${bundle.actionPlan.map(doc => JSON.stringify(doc.name)).join(", ") || "(không có)"}.`,
           `- Tên nguồn Rules hợp lệ: ${bundle.rules.map(doc => JSON.stringify(doc.name)).join(", ")}.`,
           "- Nếu danh sách KB/Action có nguồn, cần ít nhất 1 evidence role kb/action. Nếu danh sách Rules có nguồn, cần thêm 1 evidence role rules. Bỏ qua nhóm ghi (không có).",
-          "- keywordAudit bắt buộc đánh giá đủ toàn bộ 10 keyword OpenAI Web Search, không bỏ sót keyword accepted hoặc rejected.",
+          "- keywordAudit cấp cao nhất bắt buộc đánh giá đủ toàn bộ 10 keyword OpenAI Web Search đúng một lần, không bỏ sót keyword accepted hoặc rejected.",
           "- source phải chép đúng một tên trong danh sách trên; quote phải là một đoạn liên tục chép nguyên văn từ chính source đó.",
-          "- Chỉ trả về JSON array hoàn chỉnh, không giải thích.",
+          "- Chỉ trả về JSON object hoàn chỉnh theo schema { keywordAudit, ideas }, không giải thích.",
           "",
           "RESPONSE BỊ TỪ CHỐI CẦN SỬA:",
           rejectedJson,
         ].join("\n"), true);
+        const mergedIdeas = [...acceptedIdeas, ...correctionResult.ideas]
+          .filter((idea, index, all) => all.findIndex(candidate => candidate.title.toLocaleLowerCase() === idea.title.toLocaleLowerCase()) === index)
+          .slice(0, Math.max(3, acceptedIdeas.length));
+        result = { ...correctionResult, ideas: mergedIdeas };
       }
-      if (!result.ideas.length) {
+      if (result.ideas.length < 3) {
         throw new Error(
-          `AI chưa trả về core idea có evidence cho các phân vùng được cấp quyền. Đã đối chiếu ${bundle.knowledgeBase.length} KB, ${bundle.actionPlan.length} Action và ${bundle.rules.length} Rules.`,
+          `AI chỉ trả về ${result.ideas.length}/3 core idea hợp lệ sau một lần bổ sung có mục tiêu. Đã đối chiếu ${bundle.knowledgeBase.length} KB, ${bundle.actionPlan.length} Action và ${bundle.rules.length} Rules.`,
         );
       }
       const allAudits = result.ideas.flatMap(idea => idea.keywordAudit ?? []);

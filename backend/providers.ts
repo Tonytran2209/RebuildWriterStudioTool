@@ -11,6 +11,7 @@ export interface GenerateRequest {
   contextDocs?: string[];
   maxTokens?: number;
   temperature?: number;
+  jsonMode?: boolean;
 }
 
 export interface GenerateResponse {
@@ -228,6 +229,7 @@ async function callDeepSeek(req: GenerateRequest): Promise<GenerateResponse> {
       reasoning_effort: 'high',
       max_tokens: req.maxTokens ?? 4096,
       temperature: req.temperature ?? 0.7,
+      ...(req.jsonMode ? { response_format: { type: 'json_object' } } : {}),
       stream: false,
     }),
   });

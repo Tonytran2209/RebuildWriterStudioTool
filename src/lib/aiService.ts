@@ -10,6 +10,7 @@ export interface AIRequest {
   stepNumber: 1 | 2 | 3 | 4;
   splitByWave?: boolean;
   bypassCache?: boolean;
+  jsonMode?: boolean;
   articleId: string;
 }
 
@@ -113,7 +114,7 @@ function getDemoKey(prompt: string): string {
 }
 
 export async function callAI(req: AIRequest): Promise<AIResponse> {
-  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber, splitByWave, bypassCache, articleId } = req;
+  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber, splitByWave, bypassCache, jsonMode, articleId } = req;
 
   // Resolve railway URL — prop → localStorage → hardcoded production URL
   const railwayUrl = req.railwayUrl
@@ -135,6 +136,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
           temperature,
           splitByWave,
           bypassCache,
+          jsonMode,
           pricing: model.pricing,
           articleId,
         }),

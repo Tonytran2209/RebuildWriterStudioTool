@@ -379,7 +379,7 @@ app.post('/api/seo/research', async (req, res) => {
 // ─── AI Generate ─────────────────────────────────────────────────────────────
 
 app.post('/api/generate', async (req, res) => {
-  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave, bypassCache, pricing, articleId } = req.body;
+  const { modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave, bypassCache, jsonMode, pricing, articleId } = req.body;
 
   if (!modelId || !provider || !prompt || !Number.isInteger(stepNumber) || !articleId) {
     return res.status(400).json({ error: 'modelId, provider, prompt, stepNumber và articleId là bắt buộc.' });
@@ -403,7 +403,7 @@ app.post('/api/generate', async (req, res) => {
       : [await resolveStepContext(stepNumber)];
     const contextMs = Date.now() - contextsStartedAt;
     const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
-    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), sourceFingerprint, promptVersion: 9 });
+    const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), jsonMode: Boolean(jsonMode), sourceFingerprint, promptVersion: 10 });
     const cached = bypassCache ? null : await kvGet<any>(cacheKey);
     if (cached?.content) {
       console.log(`[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`);
@@ -460,6 +460,7 @@ app.post('/api/generate', async (req, res) => {
               contextDocs: context.contextDocs,
               maxTokens: Math.min(maxTokens ?? 12000, Math.max(6000, context.expectedItemCount * 1000)),
               temperature,
+              jsonMode,
             });
             const items = normalizeStep1ScopeItems(extractJsonArray(response.content), context);
             return { response, items };
@@ -510,7 +511,7 @@ app.post('/api/generate', async (req, res) => {
       }
     } else {
       const context = contexts[0];
-      result = await generate({ modelId, provider, prompt, systemPrompt, contextDocs: context.contextDocs, maxTokens, temperature });
+      result = await generate({ modelId, provider, prompt, systemPrompt, contextDocs: context.contextDocs, maxTokens, temperature, jsonMode });
     }
     const providerMs = Date.now() - providerStartedAt;
     const generatedAt = new Date().toISOString();
