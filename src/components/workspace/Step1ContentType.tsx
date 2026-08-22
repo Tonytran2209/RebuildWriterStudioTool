@@ -290,16 +290,8 @@ export default function Step1ContentType({
       setError("Chưa có tài liệu nào được phân quyền cho Step 1. Vui lòng mở Cấu hình → Step Setup để gán tài liệu.");
       return;
     }
-    if (!bundle.actionPlan.length && !bundle.knowledgeBase.length) {
-      setError("Cần ít nhất 1 tài liệu Knowledge Base hoặc Action Plan để AI đề xuất loại nội dung.");
-      return;
-    }
     if (!bundle.actionPlan.some(doc => doc.content)) {
-      setError("Action Plan chưa có nội dung có thể kiểm chứng. Vui lòng tải lại file để AI đọc chính xác timeframe và keywords.");
-      return;
-    }
-    if (!bundle.knowledgeBase.some(doc => doc.content) || !bundle.rules.some(doc => doc.content)) {
-      setError("Step 1 cần nội dung thật của cả Knowledge Base và Rules. Vui lòng tải lại các file cũ chưa được trích xuất nội dung.");
+      setError("Step 1 cần ít nhất một Action Plan có nội dung để xác định Content Type, timeframe và keywords. Knowledge Base và Rules là tùy chọn.");
       return;
     }
     setLoading(true);
@@ -308,7 +300,7 @@ export default function Step1ContentType({
       const systemPrompt = buildRoleSystemPrompt(
         [
           outputInstruction,
-          "Tổng hợp ĐẦY ĐỦ Content Type A/B/C từ toàn bộ Action Plan được cấp quyền; dùng Knowledge Base + Rules để bổ sung mô tả và kiểm chứng.",
+          "Tổng hợp ĐẦY ĐỦ Content Type A/B/C từ toàn bộ Action Plan được cấp quyền; chỉ dùng thêm Knowledge Base hoặc Rules khi các phân vùng đó được cấp tài liệu.",
           "",
           "QUY TẮC PHÂN LOẠI (bắt buộc):",
           "- Action Plan là nguồn sự thật cho danh sách lựa chọn: nhận diện tên Content Type, typeGroup (A/B/C), topic, wave, timeline và keywords trực tiếp từ TOÀN BỘ Action Plan.",

@@ -75,3 +75,12 @@ export function hasResearchEvidence(evidence: EvidenceRef[]): boolean {
 export function hasRulesEvidence(evidence: EvidenceRef[]): boolean {
   return evidence.some(item => item.role === "rules");
 }
+
+/** Require only the evidence groups that are actually available to the step. */
+export function hasEvidenceForAuthorizedCategories(evidence: EvidenceRef[], bundle: DocBundle): boolean {
+  const hasResearchDocs = Boolean(bundle.knowledgeBase.length || bundle.actionPlan.length);
+  return (
+    (!hasResearchDocs || evidence.some(item => item.role === "kb" || item.role === "action"))
+    && (!bundle.rules.length || evidence.some(item => item.role === "rules"))
+  );
+}

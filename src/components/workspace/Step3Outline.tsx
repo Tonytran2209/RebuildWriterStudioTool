@@ -17,7 +17,7 @@ import {
   buildActionPlanFingerprint,
   describeBundle,
 } from "../../lib/docContext";
-import { hasResearchEvidence, hasRulesEvidence, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
+import { hasEvidenceForAuthorizedCategories, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
 import { ProcessTraceModal } from './ProcessTrace';
 
 function generateId() {
@@ -87,7 +87,7 @@ function normalizeSections(parsed: unknown, bundle: ReturnType<typeof collectSte
       if (!heading) return null;
       const lvl = String(obj.level ?? "h2").toLowerCase();
       const evidence = verifyEvidence(obj.evidence, bundle);
-      if (!hasResearchEvidence(evidence) || !hasRulesEvidence(evidence)) return null;
+      if (!hasEvidenceForAuthorizedCategories(evidence, bundle)) return null;
       return {
         id: generateId(),
         heading,
@@ -164,12 +164,8 @@ export default function Step3Outline({
       setError("Chưa có Core Idea từ Step 2.");
       return;
     }
-    if (!bundle.knowledgeBase.length && !bundle.actionPlan.length) {
-      setError("Step 3 cần ít nhất một Knowledge Base hoặc Action Plan có nội dung thật.");
-      return;
-    }
-    if (!bundle.rules.length) {
-      setError("Step 3 chưa được cấp Rules & Guidelines để kiểm chứng outline.");
+    if (!bundle.totalCount) {
+      setError("Chưa có tài liệu nào được phân quyền cho Step 3. Chỉ cần chọn ít nhất một tài liệu từ KB, Action Plan hoặc Rules.");
       return;
     }
     setGenerating(true);
@@ -184,7 +180,7 @@ export default function Step3Outline({
           "- Rules & Guidelines quyết định định dạng heading, độ sâu H2/H3, cách đặt tiêu đề, quy tắc SEO.",
           "- Mỗi section PHẢI ghi rõ: keywords được nhắm tới, searchIntent, evidence (nguồn tài liệu KB/Action/Rules đã dùng).",
           "- Mỗi section phải có rationale giải thích vì sao section này cần thiết, vì sao đặt ở vị trí đó và evidence hỗ trợ quyết định như thế nào.",
-          "- Mỗi section phải có ít nhất 1 quote nguyên văn từ KB/Action và 1 quote nguyên văn từ Rules.",
+          "- Nếu có KB/Action, mỗi section cần ít nhất 1 quote từ KB hoặc Action. Nếu có Rules, cần thêm ít nhất 1 quote từ Rules. Bỏ qua nhóm đang trống.",
           "- source phải đúng chính xác tên file được cấp; quote phải chép nguyên văn, không diễn giải.",
           "",
           "Trả về DUY NHẤT một mảng JSON hợp lệ, không markdown fences, không giải thích.",
@@ -274,7 +270,7 @@ export default function Step3Outline({
           articleId: article.id,
           model,
           railwayUrl,
-          prompt: `${userPrompt}\n\nLần trước không có section vượt qua kiểm chứng. Bắt buộc mỗi section chép quote nguyên văn và đúng tên source cho cả KB/Action lẫn Rules.`,
+          prompt: `${userPrompt}\n\nLần trước không có section vượt qua kiểm chứng. Nếu KB/Action có nguồn, chép ít nhất 1 quote từ KB hoặc Action. Nếu Rules có nguồn, chép thêm ít nhất 1 quote từ Rules. Bỏ qua nhóm trống.`,
           systemPrompt,
           maxTokens: 8000,
           temperature: 0.1,
@@ -285,12 +281,12 @@ export default function Step3Outline({
         sections = normalizeSections(extractJson(corrected.content), bundle);
         generatedAt = corrected.servedAt ?? corrected.generatedAt ?? new Date().toISOString();
       }
-      if (!sections.length) throw new Error("AI chưa trả về outline có đủ evidence KB/Action và Rules.");
+      if (!sections.length) throw new Error("AI chưa trả về outline có đủ evidence cho các phân vùng tài liệu đang được cấp quyền.");
       const trace: AIProcessTraceEvent[] = [
         { id: 'step3-handoff', stage: 'input', status: 'completed', title: '1. Nhận kết quả từ Step 1–2', detail: 'Khóa Content Type, Core Idea, angle, audience, tone, word count và bộ keyword đã chọn để làm đầu vào outline.', facts: { contentType: contextBrief.contentType, topic: contextBrief.topic, primaryKeyword: contextBrief.primaryKeyword, secondaryKeywords: contextBrief.secondaryKeywords.length } },
         { id: 'step3-docs', stage: 'retrieval', status: 'completed', title: '2. Nạp tài liệu Step 3', detail: `Railway chỉ nạp KB, Action Plan và Rules được phân quyền cho Step 3.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
         { id: 'step3-generation', stage: 'generation', status: 'completed', title: '3. Model dựng outline', detail: `Model ${lastResponse.model} tạo heading, notes, rationale, keyword mapping, search intent và evidence cho từng section.`, facts: { modelCalls, inputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.inputTokens ?? 0), 0), outputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.outputTokens ?? 0), 0), cacheHits: aiResponses.filter(response => response.cacheHit).length, durationMs: aiResponses.reduce((sum, response) => sum + (response.timing?.totalMs ?? 0), 0) } },
-        { id: 'step3-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls ? 'warning' : 'completed', title: '4. Kiểm tra cấu trúc và dẫn chứng', detail: 'Loại section không có quote nguyên văn từ KB/Action hoặc Rules; xác minh tên nguồn và ruleRefs; sửa JSON hoặc yêu cầu model làm lại khi cần.', facts: { sectionsAccepted: sections.length, evidenceVerified: sections.reduce((sum, section) => sum + (section.evidence?.length ?? 0), 0), jsonRepairCalls, evidenceCorrectionCalls } },
+        { id: 'step3-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls ? 'warning' : 'completed', title: '4. Kiểm tra cấu trúc và dẫn chứng', detail: 'Loại section thiếu quote nguyên văn ở bất kỳ phân vùng nào đang được cấp quyền; xác minh tên nguồn và sửa JSON khi cần.', facts: { sectionsAccepted: sections.length, evidenceVerified: sections.reduce((sum, section) => sum + (section.evidence?.length ?? 0), 0), jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step3-persist', stage: 'persistence', status: 'completed', title: '5. Lưu outline và audit trail', detail: 'Lưu section, rationale, evidence, nguồn Rules và nhật ký hành động này cùng bài viết trong Supabase.' },
       ];
       const saved = await onUpdate({
