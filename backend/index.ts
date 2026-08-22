@@ -179,15 +179,35 @@ function canonicalEvidence(value: unknown): string {
     .trim();
 }
 
+function extractWaveNumber(value: unknown): string | undefined {
+  const canonical = canonicalEvidence(value);
+  return canonical.match(/\b(?:publishing\s+)?wave\s*(\d+)\b/)?.[1]
+    ?? canonical.match(/^w?\s*(\d+)$/)?.[1];
+}
+
+function normalizeStep1ScopeItems(items: unknown[], context: StepWaveContext): unknown[] {
+  const expectedWaveNumber = extractWaveNumber(context.wave);
+  const expectedTimeframe = canonicalEvidence(context.timeframe);
+  return items.map(item => {
+    if (!item || typeof item !== 'object') return item;
+    const record = item as Record<string, unknown>;
+    const waveMatches = expectedWaveNumber && extractWaveNumber(record.wave) === expectedWaveNumber;
+    const timeframeMatches = !expectedTimeframe || canonicalEvidence(record.timeframe).includes(expectedTimeframe);
+    return waveMatches && timeframeMatches
+      ? { ...record, wave: context.wave, timeframe: context.timeframe ?? record.timeframe }
+      : record;
+  });
+}
+
 function missingStep1Coverage(items: unknown[], context: StepWaveContext): string[] {
   const records = items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
   const expectedWave = canonicalEvidence(context.wave);
-  const expectedWaveNumber = expectedWave.match(/\bwave\s*(\d+)\b/)?.[1];
+  const expectedWaveNumber = extractWaveNumber(context.wave);
   const expectedTimeframe = canonicalEvidence(context.timeframe);
   const inScope = records.filter(item => {
     const wave = canonicalEvidence(item.wave);
     const timeframe = canonicalEvidence(item.timeframe);
-    const waveNumber = wave.match(/\bwave\s*(\d+)\b/)?.[1];
+    const waveNumber = extractWaveNumber(item.wave);
     const waveMatches = expectedWaveNumber ? waveNumber === expectedWaveNumber : wave === expectedWave;
     return waveMatches && (!expectedTimeframe || timeframe.includes(expectedTimeframe));
   });
@@ -204,11 +224,11 @@ function missingStep1Coverage(items: unknown[], context: StepWaveContext): strin
 
 function step1CoverageEstimate(items: unknown[], context: StepWaveContext): string | null {
   const records = items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
-  const expectedWaveNumber = canonicalEvidence(context.wave).match(/\bwave\s*(\d+)\b/)?.[1];
+  const expectedWaveNumber = extractWaveNumber(context.wave);
   const expectedTimeframe = canonicalEvidence(context.timeframe);
   const count = records.filter(item => {
     const wave = canonicalEvidence(item.wave);
-    const waveNumber = wave.match(/\bwave\s*(\d+)\b/)?.[1];
+    const waveNumber = extractWaveNumber(item.wave);
     const waveMatches = expectedWaveNumber ? waveNumber === expectedWaveNumber : wave === canonicalEvidence(context.wave);
     return waveMatches && (!expectedTimeframe || canonicalEvidence(item.timeframe).includes(expectedTimeframe));
   }).length;
@@ -441,7 +461,7 @@ app.post('/api/generate', async (req, res) => {
               maxTokens: Math.min(maxTokens ?? 12000, Math.max(6000, context.expectedItemCount * 1000)),
               temperature,
             });
-            const items = extractJsonArray(response.content);
+            const items = normalizeStep1ScopeItems(extractJsonArray(response.content), context);
             return { response, items };
           };
 
