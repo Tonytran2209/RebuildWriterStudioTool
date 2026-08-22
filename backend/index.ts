@@ -229,6 +229,17 @@ function mergeStep1Items(...groups: unknown[][]): unknown[] {
   });
 }
 
+function summarizeStep1Items(items: unknown[]): Array<Record<string, string>> {
+  return items.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+    .slice(0, 12)
+    .map(item => ({
+      label: String(item.label ?? item.name ?? '').slice(0, 100),
+      typeGroup: String(item.typeGroup ?? item.type ?? ''),
+      wave: String(item.wave ?? ''),
+      timeframe: String(item.timeframe ?? ''),
+    }));
+}
+
 function combineStep1Responses(first: any, second: any) {
   return {
     ...second,
@@ -452,7 +463,7 @@ app.post('/api/generate', async (req, res) => {
           const mergedItems = mergeStep1Items(first.items, second.items);
           const hardMissing = missingStep1Coverage(mergedItems, context);
           if (hardMissing.length) {
-            throw new Error(`${context.scopeKey} thiếu scope/Type bắt buộc: ${hardMissing.join(', ')}`);
+            throw new Error(`${context.scopeKey} thiếu scope/Type bắt buộc: ${hardMissing.join(', ')}. AI đã trả: ${JSON.stringify(summarizeStep1Items(mergedItems))}`);
           }
           const remainingEstimate = step1CoverageEstimate(mergedItems, context);
           if (remainingEstimate) console.warn(`[generate] accepted scope=${context.scopeKey} ${remainingEstimate}; parser rows include repeated headers/evidence`);
