@@ -40,6 +40,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   mistral: 'Mistral',
   groq: 'Groq',
   together: 'Together AI',
+  deepseek: 'DeepSeek',
 };
 
 function formatAIError(payload: AIErrorPayload, fallbackProvider: string, fallbackModel: string): string {

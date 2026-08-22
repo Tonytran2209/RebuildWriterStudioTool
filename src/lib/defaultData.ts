@@ -20,9 +20,11 @@ export const DEFAULT_MODELS: AIModel[] = [
   // Mistral
   { id: 'mistral-medium-3-5', name: 'Mistral Medium 3.5', provider: 'mistral', description: 'Frontier multimodal cho agent, coding và tổng hợp chuyên sâu.', enabled: false, contextWindow: '256K', speed: 'medium', pricing: { inputUsdPerMillion: 1.5, outputUsdPerMillion: 7.5 } },
   { id: 'mistral-small-2603', name: 'Mistral Small 4', provider: 'mistral', description: 'Model hybrid nhanh, hiệu quả cho instruct và reasoning.', enabled: false, contextWindow: '256K', speed: 'fast', pricing: { inputUsdPerMillion: 0.15, outputUsdPerMillion: 0.6 } },
+  // DeepSeek official API
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', provider: 'deepseek', description: 'Model V4 mạnh nhất cho suy luận sâu, nội dung dài và tác vụ agent phức tạp.', enabled: false, contextWindow: '1M', speed: 'medium', pricing: { inputUsdPerMillion: 1.74, cachedInputUsdPerMillion: 0.145, outputUsdPerMillion: 3.48 } },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', provider: 'deepseek', description: 'Model V4 mới nhất, nhanh và tiết kiệm cho workflow nội dung sản lượng lớn.', enabled: false, contextWindow: '1M', speed: 'fast', pricing: { inputUsdPerMillion: 0.14, cachedInputUsdPerMillion: 0.028, outputUsdPerMillion: 0.28 } },
   // Together AI
   { id: 'moonshotai/Kimi-K3', name: 'Kimi K3', provider: 'together', description: 'Model context dài chất lượng cao qua Together Serverless.', enabled: false, contextWindow: '1M', speed: 'medium' },
-  { id: 'deepseek-ai/DeepSeek-V4-Pro', name: 'DeepSeek V4 Pro', provider: 'together', description: 'Phân tích và suy luận mạnh với context lớn.', enabled: false, contextWindow: '512K', speed: 'medium' },
   { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B', provider: 'together', description: 'Model open-weight ổn định, hỗ trợ structured output.', enabled: false, contextWindow: '128K', speed: 'fast' },
   // Groq
   { id: 'groq-gpt-oss-120b', name: 'GPT-OSS 120B (Groq)', provider: 'groq', description: 'Model open-weight reasoning cao với inference rất nhanh.', enabled: false, contextWindow: '131K', speed: 'fast', pricing: { inputUsdPerMillion: 0.15, outputUsdPerMillion: 0.60 } },
@@ -80,4 +82,5 @@ export const PROVIDER_LABELS: Record<string, { label: string; color: string; ico
   mistral:   { label: 'Mistral AI',color: 'text-orange-600',  icon: '▲' },
   together:  { label: 'Together AI',color: 'text-pink-600',   icon: '◈' },
   groq:      { label: 'Groq',      color: 'text-amber-600',   icon: '⚡' },
+  deepseek:  { label: 'DeepSeek',  color: 'text-cyan-700',    icon: '✦' },
 };

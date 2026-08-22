@@ -25,6 +25,8 @@ const PROVIDER_META: Record<string, { icon: string; name: string; color: string 
   google:    { icon: '◉', name: 'Google',    color: 'text-blue-600' },
   mistral:   { icon: '▲', name: 'Mistral',   color: 'text-orange-600' },
   groq:      { icon: '⚡', name: 'Groq',     color: 'text-amber-600' },
+  together:  { icon: '◈', name: 'Together AI', color: 'text-pink-600' },
+  deepseek:  { icon: '✦', name: 'DeepSeek', color: 'text-cyan-700' },
 };
 
 export default function TabStepSetup({ config, files, onChange }: Props) {

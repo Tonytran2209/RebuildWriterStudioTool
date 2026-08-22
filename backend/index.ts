@@ -50,6 +50,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   mistral: 'Mistral',
   groq: 'Groq',
   together: 'Together AI',
+  deepseek: 'DeepSeek',
 };
 
 function classifyAIError(error: unknown, provider: string, modelId: string) {

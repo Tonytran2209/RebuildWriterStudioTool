@@ -205,6 +205,45 @@ async function callTogether(req: GenerateRequest): Promise<GenerateResponse> {
   };
 }
 
+// ── DeepSeek (official OpenAI-compatible API) ───────────────────────────────
+
+async function callDeepSeek(req: GenerateRequest): Promise<GenerateResponse> {
+  const systemContent = [
+    req.systemPrompt ?? '',
+    req.contextDocs?.length ? '\n\n=== TÀI LIỆU THAM KHẢO ===\n' + req.contextDocs.join('\n\n---\n\n') : '',
+  ].filter(Boolean).join('\n');
+  const res = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: req.modelId,
+      messages: [
+        ...(systemContent ? [{ role: 'system', content: systemContent }] : []),
+        { role: 'user', content: req.prompt },
+      ],
+      thinking: { type: req.modelId === 'deepseek-v4-pro' ? 'enabled' : 'disabled' },
+      reasoning_effort: 'high',
+      max_tokens: req.maxTokens ?? 4096,
+      temperature: req.temperature ?? 0.7,
+      stream: false,
+    }),
+  });
+  if (!res.ok) throw new Error(`DeepSeek API error: ${await res.text()}`);
+  const data = await res.json() as any;
+  return {
+    content: data.choices?.[0]?.message?.content ?? '',
+    model: data.model ?? req.modelId,
+    usage: {
+      inputTokens: data.usage?.prompt_tokens ?? 0,
+      outputTokens: data.usage?.completion_tokens ?? 0,
+      cachedInputTokens: data.usage?.prompt_cache_hit_tokens ?? 0,
+    },
+  };
+}
+
 // ── Groq ─────────────────────────────────────────────────────────────────────
 
 async function callGroq(req: GenerateRequest): Promise<GenerateResponse> {
@@ -255,6 +294,7 @@ export async function generate(req: GenerateRequest): Promise<GenerateResponse> 
     case 'mistral':   return callMistral(req);
     case 'together':  return callTogether(req);
     case 'groq':      return callGroq(req);
+    case 'deepseek':  return callDeepSeek(req);
     default:
       throw new Error(`Unknown provider: ${req.provider}`);
   }
@@ -269,5 +309,6 @@ export function getAvailableProviders(): Record<string, boolean> {
     mistral:   !!process.env.MISTRAL_API_KEY,
     groq:      !!process.env.GROQ_API_KEY,
     together:  !!process.env.TOGETHER_API_KEY,
+    deepseek:  !!process.env.DEEPSEEK_API_KEY,
   };
 }

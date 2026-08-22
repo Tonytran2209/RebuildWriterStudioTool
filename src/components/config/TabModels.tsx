@@ -18,6 +18,7 @@ const API_KEY_NAMES: Record<AIProvider, string> = {
   mistral: 'MISTRAL_API_KEY',
   together: 'TOGETHER_API_KEY',
   groq: 'GROQ_API_KEY',
+  deepseek: 'DEEPSEEK_API_KEY',
 };
 
 export default function TabModels({ config, onChange }: Props) {
