@@ -26,6 +26,37 @@ export interface AIResponse {
   costUsd?: number | null;
 }
 
+interface AIErrorPayload {
+  error?: string;
+  code?: 'AI_CREDITS_EXHAUSTED' | 'AI_PROVIDER_QUOTA_EXCEEDED' | 'AI_PROVIDER_NOT_CONFIGURED' | 'ARTICLE_DAILY_AI_LIMIT' | 'AI_PROVIDER_ERROR';
+  provider?: string;
+  modelId?: string;
+}
+
+const PROVIDER_LABELS: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  google: 'Google Gemini',
+  mistral: 'Mistral',
+  groq: 'Groq',
+  together: 'Together AI',
+};
+
+function formatAIError(payload: AIErrorPayload, fallbackProvider: string, fallbackModel: string): string {
+  const provider = PROVIDER_LABELS[payload.provider ?? fallbackProvider] ?? payload.provider ?? fallbackProvider;
+  const model = payload.modelId ?? fallbackModel;
+  if (payload.code === 'AI_CREDITS_EXHAUSTED') {
+    return `⚠️ ${provider} API đã hết credits. Model ${model} không thể tiếp tục. Vui lòng nạp credits trong tài khoản ${provider} hoặc chọn model thuộc provider khác trong Model & Rules DB.`;
+  }
+  if (payload.code === 'AI_PROVIDER_QUOTA_EXCEEDED') {
+    return `⚠️ ${provider} đang vượt quota hoặc rate limit cho model ${model}. Vui lòng thử lại sau hoặc chọn provider khác.`;
+  }
+  if (payload.code === 'AI_PROVIDER_NOT_CONFIGURED') {
+    return `⚠️ ${provider} chưa được cấu hình API key cho model ${model}. Vui lòng kiểm tra Railway Variables hoặc chọn provider khác.`;
+  }
+  return payload.error || `Lỗi AI provider ${provider} với model ${model}.`;
+}
+
 const DEMO_RESPONSES: Record<string, string> = {
   outline: `## Dàn bài đề xuất
 
@@ -109,8 +140,8 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText })) as any;
-        throw new Error(err.error || `Railway error ${res.status}`);
+        const err = await res.json().catch(() => ({ error: res.statusText })) as AIErrorPayload;
+        throw new Error(formatAIError(err, model.provider, model.id));
       }
 
       const response = await res.json() as AIResponse;
@@ -133,8 +164,10 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
       window.dispatchEvent(new CustomEvent<AICallUsage>('writer:ai-usage', { detail: usage }));
       return response;
     } catch (err: any) {
-      // Re-throw with clear message — UI will show it
-      throw new Error(`Railway: ${err.message}`);
+      // Preserve actionable provider/billing messages instead of hiding them
+      // behind a generic Railway prefix in every workflow step.
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(message.startsWith('⚠️') ? message : `Railway: ${message}`);
     }
   }
 
@@ -154,7 +187,7 @@ export async function researchSeoKeywords(seeds: string[], articleId: string, ra
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ seeds, articleId }),
   });
-  const payload = await response.json().catch(() => ({ error: response.statusText })) as SeoResearchResult & { error?: string };
-  if (!response.ok) throw new Error(payload.error || `SEO research error ${response.status}`);
+  const payload = await response.json().catch(() => ({ error: response.statusText })) as SeoResearchResult & AIErrorPayload;
+  if (!response.ok) throw new Error(formatAIError(payload, 'openai', payload.modelId ?? 'gpt-5.4-mini'));
   return payload;
 }

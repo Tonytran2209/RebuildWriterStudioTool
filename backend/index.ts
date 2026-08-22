@@ -43,6 +43,64 @@ const articleMutationQueues = new Map<string, Promise<unknown>>();
 const aiBudgetQueues = new Map<string, Promise<unknown>>();
 const DAILY_AI_LIMITS: Record<number, number> = { 1: 12, 2: 12, 3: 10, 4: 6 };
 
+const PROVIDER_NAMES: Record<string, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  google: 'Google Gemini',
+  mistral: 'Mistral',
+  groq: 'Groq',
+  together: 'Together AI',
+};
+
+function classifyAIError(error: unknown, provider: string, modelId: string) {
+  const raw = error instanceof Error ? error.message : String(error);
+  const details = typeof error === 'object' && error
+    ? JSON.stringify(error, Object.getOwnPropertyNames(error))
+    : raw;
+  const searchable = `${raw} ${details}`.toLocaleLowerCase();
+  const providerName = PROVIDER_NAMES[provider] ?? provider;
+  const creditsExhausted = [
+    /no credits? remaining/,
+    /not enough credits?/,
+    /credits?.*(?:exhausted|depleted|empty)/,
+    /insufficient[_ -]?quota/,
+    /insufficient.*(?:balance|funds|credits?)/,
+    /credit balance.*(?:low|insufficient|exhausted|empty)/,
+    /payment required/,
+    /billing hard limit/,
+    /(?:billing|payment).*(?:quota|limit|required|inactive|disabled)/,
+    /(?:quota|limit).*(?:billing|payment)/,
+    /add credits? to continue/,
+  ].some(pattern => pattern.test(searchable));
+  if (creditsExhausted) {
+    return {
+      status: 402,
+      body: {
+        code: 'AI_CREDITS_EXHAUSTED',
+        provider,
+        modelId,
+        error: `${providerName} API đã hết credits hoặc tài khoản billing không còn hoạt động. Model ${modelId} tạm thời không thể chạy. Vui lòng nạp credits hoặc chọn model thuộc provider khác.`,
+      },
+    };
+  }
+  if (/giới hạn.*ai calls/i.test(raw)) {
+    return { status: 429, body: { code: 'ARTICLE_DAILY_AI_LIMIT', provider, modelId, error: raw } };
+  }
+  const status = Number((error as any)?.status ?? (error as any)?.statusCode ?? 0);
+  if (status === 429 || /rate[_ -]?limit|resource[_ -]?exhausted|too many requests|quota exceeded/i.test(searchable)) {
+    return {
+      status: 429,
+      body: {
+        code: 'AI_PROVIDER_QUOTA_EXCEEDED',
+        provider,
+        modelId,
+        error: `${providerName} đang vượt quota hoặc rate limit cho model ${modelId}. Vui lòng thử lại sau hoặc chọn provider khác.`,
+      },
+    };
+  }
+  return { status: 500, body: { code: 'AI_PROVIDER_ERROR', provider, modelId, error: raw || 'Lỗi gọi AI API' } };
+}
+
 function serializeByKey<T>(queues: Map<string, Promise<unknown>>, key: string, operation: () => Promise<T>): Promise<T> {
   const previous = queues.get(key) ?? Promise.resolve();
   const result = previous.then(operation, operation);
@@ -280,7 +338,9 @@ app.post('/api/seo/research', async (req, res) => {
     res.json({ ...result, cacheHit: false, budget });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    res.status(message.includes('Đã đạt giới hạn') ? 429 : message.includes('OPENAI_API_KEY') ? 503 : 502).json({ error: message });
+    if (message.includes('OPENAI_API_KEY')) return res.status(503).json({ code: 'AI_PROVIDER_NOT_CONFIGURED', provider: 'openai', modelId: 'gpt-5.4-mini', error: message });
+    const failure = classifyAIError(error, 'openai', 'gpt-5.4-mini');
+    res.status(failure.status).json(failure.body);
   }
 });
 
@@ -296,6 +356,9 @@ app.post('/api/generate', async (req, res) => {
   const providers = getAvailableProviders();
   if (!providers[provider]) {
     return res.status(400).json({
+      code: 'AI_PROVIDER_NOT_CONFIGURED',
+      provider,
+      modelId,
       error: `API key cho provider "${provider}" chưa được cấu hình. Thêm ${provider.toUpperCase()}_API_KEY vào Railway env.`,
     });
   }
@@ -423,7 +486,8 @@ app.post('/api/generate', async (req, res) => {
     return res.json(responsePayload);
   } catch (err: any) {
     console.error('[generate] error:', err.message);
-    res.status(/giới hạn.*AI calls/i.test(err.message) ? 429 : 500).json({ error: err.message || 'Lỗi gọi AI API' });
+    const failure = classifyAIError(err, provider, modelId);
+    res.status(failure.status).json(failure.body);
   }
 });
 
