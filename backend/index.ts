@@ -387,6 +387,25 @@ app.post('/api/generate', async (req, res) => {
     if (stepNumber === 1 && splitByWave) {
       try {
         const waveResults = await runWithConcurrency(contexts as StepWaveContext[], 3, async context => {
+          const scopeCacheKey = aiCacheKey({
+            kind: 'step1-scope-v2',
+            modelId,
+            provider,
+            prompt,
+            systemPrompt,
+            maxTokens,
+            temperature,
+            sourceFingerprint: context.summary.sourceFingerprint,
+            scopeKey: context.scopeKey,
+          });
+          if (!bypassCache) {
+            const cachedScope = await kvGet<{ response?: any; items?: unknown[] }>(scopeCacheKey);
+            if (cachedScope?.response && Array.isArray(cachedScope.items)
+              && !missingStep1Coverage(cachedScope.items, context).length) {
+              console.log(`[generate] step1-scope-cache-hit scope=${context.scopeKey}`);
+              return { response: cachedScope.response, items: cachedScope.items };
+            }
+          }
           const callWave = async (correction?: string) => {
             const waveInstruction = [
               systemPrompt ?? '',
@@ -418,18 +437,28 @@ app.post('/api/generate', async (req, res) => {
           const first = await callWave();
           const firstMissing = missingStep1Coverage(first.items, context);
           const firstEstimate = step1CoverageEstimate(first.items, context);
-          if (!firstMissing.length && !firstEstimate) return first;
+          if (!firstMissing.length && !firstEstimate) {
+            await kvSet(scopeCacheKey, first);
+            return first;
+          }
 
           console.warn(`[generate] retry scope=${context.scopeKey} reason=${[...firstMissing, firstEstimate].filter(Boolean).join(', ')}`);
-          const second = await callWave(`LẦN TRƯỚC CHƯA BAO PHỦ HẾT CHECKLIST. Hãy trả các lựa chọn hợp lệ còn thiếu trong section; không tạo bản sao cho header hoặc evidence lặp.`);
+          const second = await callWave([
+            `LẦN TRƯỚC CÒN THIẾU CHÍNH XÁC: ${firstMissing.length ? firstMissing.join(', ') : firstEstimate}.`,
+            'Chỉ trả các lựa chọn hợp lệ còn thiếu; không lặp lại item đã có và không tạo item cho header/evidence tham chiếu.',
+            'DANH SÁCH ĐÃ CÓ Ở LẦN TRƯỚC (dùng để đối chiếu, không chép lại):',
+            JSON.stringify(first.items),
+          ].join('\n'));
           const mergedItems = mergeStep1Items(first.items, second.items);
           const hardMissing = missingStep1Coverage(mergedItems, context);
           if (hardMissing.length) {
-            throw new Error(`Thiếu scope/Type bắt buộc: ${hardMissing.join(', ')}`);
+            throw new Error(`${context.scopeKey} thiếu scope/Type bắt buộc: ${hardMissing.join(', ')}`);
           }
           const remainingEstimate = step1CoverageEstimate(mergedItems, context);
           if (remainingEstimate) console.warn(`[generate] accepted scope=${context.scopeKey} ${remainingEstimate}; parser rows include repeated headers/evidence`);
-          return { response: combineStep1Responses(first.response, second.response), items: mergedItems };
+          const completed = { response: combineStep1Responses(first.response, second.response), items: mergedItems };
+          await kvSet(scopeCacheKey, completed);
+          return completed;
         });
         const merged = waveResults.flatMap(item => item.items);
         assertCompleteStep1Result(merged, contexts as StepWaveContext[]);

@@ -1,5 +1,5 @@
 import { kvGet } from './supabase.ts';
-import { extractStructuredSections, type StructuredSection } from './documentStructure.ts';
+import type { StructuredSection } from './documentStructure.ts';
 
 type Role = 'KNOWLEDGE_BASE' | 'ACTION_PLAN' | 'RULES';
 
@@ -53,7 +53,10 @@ function extractExpectedRows(content: string): string[] {
     .replace(/\r\n?/g, '\n')
     .split('\n')
     .map(line => line.replace(/\s+/g, ' ').trim())
-    .filter(line => /\b(?:content\s*)?type\s*[ABC]\b/i.test(line))
+    // Topic rows in the Action Plan use an explicit [Type X] marker. Plain
+    // mentions such as "feeds Type B" or "use the Type A template" are
+    // references, not additional deliverables.
+    .filter(line => /\[\s*(?:content\s*)?type\s*[ABC]\b/i.test(line))
     .filter(line => {
       const key = line.toLocaleLowerCase();
       if (seen.has(key)) return false;
@@ -61,6 +64,53 @@ function extractExpectedRows(content: string): string[] {
       return true;
     })
     .map(line => line.slice(0, 500));
+}
+
+export interface PublishingScope {
+  wave: string;
+  timeframe: string;
+  content: string;
+}
+
+function normalizeTimeframe(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.replace(/^(tháng|month)\b/i, match => match[0].toLocaleUpperCase() + match.slice(1).toLocaleLowerCase());
+}
+
+function canonicalScopePart(value: string): string {
+  return value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Step 1 scopes must come from explicit publishing headings, not inherited
+ * mentions inside tables, feed notes, TOCs or unrelated action groups.
+ */
+export function extractStep1PublishingScopes(content: string): PublishingScope[] {
+  const lines = content.replace(/\r\n?/g, '\n').split('\n');
+  const headingPattern = /^\s*(?:#{1,6}\s*)?(?:publishing\s+)?wave\s*(\d+)\s*[–—-]\s*((?:tháng|month)\s+\d{1,2}(?:\s*[/-]\s*(?:19|20)\d{2})?|Q[1-4]\s*[/-]?\s*(?:19|20)\d{2}|(?:19|20)\d{2}\s*[/-]?\s*Q[1-4])\b/i;
+  const groupPattern = /^\s*(?:#{1,6}\s*)?group\s+\d+\b/i;
+  const starts = lines.flatMap((line, index) => {
+    const match = line.match(headingPattern);
+    // Long TOC lines can contain several waves but are not publishing scopes.
+    if (!match || line.trim().length > 180) return [];
+    return [{ index, wave: `Wave ${match[1]}`, timeframe: normalizeTimeframe(match[2]) }];
+  });
+
+  return starts.map((start, index) => {
+    const nextScope = starts[index + 1]?.index ?? lines.length;
+    let end = nextScope;
+    for (let lineIndex = start.index + 1; lineIndex < nextScope; lineIndex += 1) {
+      if (groupPattern.test(lines[lineIndex])) {
+        end = lineIndex;
+        break;
+      }
+    }
+    return {
+      wave: start.wave,
+      timeframe: start.timeframe,
+      content: lines.slice(start.index, end).join('\n').trim(),
+    };
+  }).filter(scope => scope.content);
 }
 
 function sourceFingerprint(items: Array<{ role: Role; document: StoredDocument }>): string {
@@ -143,50 +193,34 @@ export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
   }>();
 
   for (const item of action) {
-    // Rebuild with the current parser. Persisted sections may predate timeframe
-    // splitting and would otherwise keep merging August into an earlier month.
-    const extractedSections = extractStructuredSections(item.document.content);
-    const sections = extractedSections.length
-      ? extractedSections
-      : (item.document.structuredSections ?? []);
-    const waveSections = sections.filter(section =>
-      section.wave && (section.timeframe || section.typeGroups.length || extractExpectedRows(section.content).length),
-    );
-    const sharedSections = sections.filter(section => !section.wave);
-    const sharedContent = sharedSections.map(section => section.content).join('\n\n');
-    if (!waveSections.length) {
-      // Templates/outlines without a publishing wave can enrich a real scope,
-      // but must never become a fake wave named after the file.
+    const publishingScopes = extractStep1PublishingScopes(item.document.content);
+    if (!publishingScopes.length) {
+      // Templates/outlines without an explicit publishing heading enrich real
+      // scopes but never create a fake scope of their own.
       supportingAction.push(item);
       continue;
     }
-    for (const section of waveSections) {
-      // A publishing wave can contain multiple independent monthly/quarterly
-      // plans. Never merge them: doing so lets the first timeframe mask later ones.
-      const key = `${item.document.id}:${section.wave}:${section.timeframe ?? 'no-timeframe'}`;
+    for (const scope of publishingScopes) {
+      const waveNumber = scope.wave.match(/\d+/)?.[0] ?? scope.wave;
+      const key = `${waveNumber}:${canonicalScopePart(scope.timeframe)}`;
       const group = groups.get(key) ?? {
-        wave: section.wave!,
-        timeframe: section.timeframe,
+        wave: scope.wave,
+        timeframe: scope.timeframe,
         expectedTypeGroups: new Set<'A' | 'B' | 'C'>(),
         expectedRows: [],
         documents: [],
       };
-      if (!group.timeframe && section.timeframe) group.timeframe = section.timeframe;
-      section.typeGroups.forEach(typeGroup => group.expectedTypeGroups.add(typeGroup));
-      group.expectedRows.push(...extractExpectedRows(section.content));
+      const scopeRows = extractExpectedRows(scope.content);
+      const typeGroups = (['A', 'B', 'C'] as const).filter(typeGroup =>
+        new RegExp(`\\[\\s*(?:content\\s*)?type\\s*${typeGroup}\\b`, 'i').test(scopeRows.join('\n')),
+      );
+      typeGroups.forEach(typeGroup => group.expectedTypeGroups.add(typeGroup));
+      group.expectedRows.push(...scopeRows);
       group.expectedRows = [...new Set(group.expectedRows)];
-      const waveHeadingContent = sections
-        .filter(candidate => candidate.wave === section.wave && !candidate.timeframe && candidate.id !== section.id)
-        .map(candidate => candidate.content)
-        .join('\n\n');
-      const existing = group.documents[0]?.document;
-      const content = existing
-        ? `${existing.content}\n\n${section.content}`
-        : [sharedContent, waveHeadingContent, section.content].filter(Boolean).join('\n\n');
-      group.documents = [{
+      group.documents.push({
         role: 'ACTION_PLAN',
-        document: { ...item.document, content },
-      }];
+        document: { ...item.document, content: scope.content },
+      });
       groups.set(key, group);
     }
   }
