@@ -167,6 +167,13 @@ export function buildRoleSystemPrompt(taskInstruction: string, documentPromptRul
     ROLE_HIERARCHY,
     documentPromptRules,
     `NHIỆM VỤ CỦA BẠN:\n${taskInstruction}`,
+    [
+      "CANONICAL OUTPUT CONTRACT (HIGHEST PRIORITY):",
+      "- Produce all generated semantic content in English, regardless of the UI language or the language used in these instructions.",
+      "- This includes titles, descriptions, rationales, reasons, notes, recommendations, headings, summaries, audience/tone descriptions, and the final article.",
+      "- Preserve only proper nouns, file names, URLs, source-defined identifiers/taxonomy values, SEO keywords, and verbatim evidence quotes in their original language.",
+      "- A document-level prompting rule may control style and terminology, but it must not change the canonical output language away from English.",
+    ].join("\n"),
   ].filter(Boolean).join("\n\n");
 }
 

@@ -223,7 +223,7 @@ export default function Step2CoreIdea({
   const [selectedId, setSelectedId] = useState<string | null>(article.selectedCoreIdeaId ?? null);
   const [auditIdeaId, setAuditIdeaId] = useState<string | null>(null);
   const autoRequestedRef = useRef<string | null>(null);
-  const { tr, outputInstruction } = useI18n();
+  const { tr, canonicalAIOutputInstruction } = useI18n();
 
   const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(2, config, files), [config, files]);
@@ -256,7 +256,7 @@ export default function Step2CoreIdea({
     [article.contentType, selectedSnapshot],
   );
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v7:${selectedSnapshotSignature}:${documentPromptRules}`,
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v8-en:${selectedSnapshotSignature}:${documentPromptRules}`,
     [bundle, documentPromptRules, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
@@ -284,7 +284,7 @@ export default function Step2CoreIdea({
       const seoResearch = await researchSeoKeywords(seeds, article.id, railwayUrl);
       const systemPrompt = buildRoleSystemPrompt(
         [
-          outputInstruction,
+          canonicalAIOutputInstruction,
           `Đề xuất ÍT NHẤT 3 core ideas / góc độ cho bài viết dạng "${article.contentType}".`,
           selectedSnapshot
             ? `- Dùng lựa chọn Step 1 đã khóa làm định hướng bắt buộc: ${selectedSnapshot.label}; Type ${selectedSnapshot.typeGroup ?? "không xác định"}; ${selectedSnapshot.wave ?? ""}; ${selectedSnapshot.timeframe ?? ""}; keywords: ${(selectedSnapshot.keywords ?? []).join(", ")}.`

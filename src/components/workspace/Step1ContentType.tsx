@@ -205,7 +205,7 @@ const GROUP_META: Record<ContentTypeGroup, { title: string; accent: string; badg
 };
 
 const GROUP_ORDER: ContentTypeGroup[] = ["A", "B", "C"];
-const STEP1_PROMPT_VERSION = "step1-manifest-v9-merged-retries";
+const STEP1_PROMPT_VERSION = "step1-manifest-v10-en-output";
 
 function suggestionScopeKey(suggestion: ContentTypeSuggestion): string {
   return [
@@ -254,17 +254,13 @@ export default function Step1ContentType({
   const [error, setError] = useState<string | null>(null);
   const [customLabel, setCustomLabel] = useState("");
   const autoRequestedRef = useRef<string | null>(null);
-  const { tr, outputInstruction } = useI18n();
+  const { tr, canonicalAIOutputInstruction } = useI18n();
 
   const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(1, config, files), [config, files]);
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:${STEP1_PROMPT_VERSION}`,
-    [bundle, model.id, model.provider],
-  );
-  const sourceModelPrefix = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:`,
-    [bundle, model.id, model.provider],
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:${STEP1_PROMPT_VERSION}:${documentPromptRules}`,
+    [bundle, documentPromptRules, model.id, model.provider],
   );
   const hasCachedScan = Boolean(
     suggestions.length || article.contentTypeSourceFingerprint || article.contentTypeScannedAt,
@@ -299,7 +295,7 @@ export default function Step1ContentType({
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
-          outputInstruction,
+          canonicalAIOutputInstruction,
           "Tổng hợp ĐẦY ĐỦ Content Type A/B/C từ toàn bộ Action Plan được cấp quyền; chỉ dùng thêm Knowledge Base hoặc Rules khi các phân vùng đó được cấp tài liệu.",
           "",
           "QUY TẮC PHÂN LOẠI (bắt buộc):",
@@ -366,8 +362,7 @@ export default function Step1ContentType({
       if (!normalized.length) {
         throw new Error("Toàn bộ đề xuất bị từ chối vì thiếu dẫn chứng Type A/B/C, timeframe hoặc keyword trong Action Plan.");
       }
-      const sameSourceSnapshot = manual
-        && Boolean(article.contentTypeSourceFingerprint?.startsWith(sourceModelPrefix));
+      const sameSourceSnapshot = manual && article.contentTypeSourceFingerprint === sourceFingerprint;
       const nextSuggestions = sameSourceSnapshot
         ? preserveCompleteScopes(normalized, suggestions)
         : normalized;

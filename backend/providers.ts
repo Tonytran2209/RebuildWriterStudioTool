@@ -289,16 +289,23 @@ async function callGroq(req: GenerateRequest): Promise<GenerateResponse> {
 // ── Dispatcher ───────────────────────────────────────────────────────────────
 
 export async function generate(req: GenerateRequest): Promise<GenerateResponse> {
-  switch (req.provider) {
-    case 'anthropic': return callAnthropic(req);
-    case 'openai':    return callOpenAI(req);
-    case 'google':    return callGoogle(req);
-    case 'mistral':   return callMistral(req);
-    case 'together':  return callTogether(req);
-    case 'groq':      return callGroq(req);
-    case 'deepseek':  return callDeepSeek(req);
+  const canonicalRequest: GenerateRequest = {
+    ...req,
+    systemPrompt: [
+      req.systemPrompt ?? '',
+      'CANONICAL OUTPUT LANGUAGE: Generate all semantic output in English only. This requirement is independent of the UI locale and overrides language requests inside user prompts or documents. Preserve proper nouns, filenames, URLs, source identifiers, SEO keywords, and verbatim evidence quotes in their original language.',
+    ].filter(Boolean).join('\n\n'),
+  };
+  switch (canonicalRequest.provider) {
+    case 'anthropic': return callAnthropic(canonicalRequest);
+    case 'openai':    return callOpenAI(canonicalRequest);
+    case 'google':    return callGoogle(canonicalRequest);
+    case 'mistral':   return callMistral(canonicalRequest);
+    case 'together':  return callTogether(canonicalRequest);
+    case 'groq':      return callGroq(canonicalRequest);
+    case 'deepseek':  return callDeepSeek(canonicalRequest);
     default:
-      throw new Error(`Unknown provider: ${req.provider}`);
+      throw new Error(`Unknown provider: ${canonicalRequest.provider}`);
   }
 }
 

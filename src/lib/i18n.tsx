@@ -6,7 +6,7 @@ interface LanguageContextValue {
   setLanguage: (language: AppLanguage) => void;
   toggleLanguage: () => void;
   tr: (vi: string, en: string) => string;
-  outputInstruction: string;
+  canonicalAIOutputInstruction: string;
 }
 
 const LanguageContext = createContext<LanguageContextValue | null>(null);
@@ -30,9 +30,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       setLanguage,
       toggleLanguage: () => setLanguage(language === 'vi' ? 'en' : 'vi'),
       tr: (vi, en) => language === 'vi' ? vi : en,
-      outputInstruction: language === 'vi'
-        ? 'NGÔN NGỮ OUTPUT: Viết toàn bộ nội dung người dùng nhìn thấy bằng tiếng Việt. Giữ nguyên tên riêng, tên file và quote evidence nguyên văn.'
-        : 'OUTPUT LANGUAGE: Write all user-facing generated content in English. Preserve proper nouns, file names, and verbatim evidence quotes in their source language.',
+      // AI output language is a data contract and must never follow the UI locale.
+      // The language toggle only controls labels rendered through tr().
+      canonicalAIOutputInstruction: 'CANONICAL AI OUTPUT LANGUAGE: English only. Write every generated title, description, rationale, recommendation, note, explanation, heading, and article paragraph in English. Preserve proper nouns, file names, URLs, source-defined identifiers, and verbatim evidence quotes in their original language.',
     };
   }, [language]);
 

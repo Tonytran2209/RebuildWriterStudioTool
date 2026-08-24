@@ -81,7 +81,7 @@ interface Props {
 }
 
 export default function Step4Draft({ article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
-  const { tr, outputInstruction } = useI18n();
+  const { tr, canonicalAIOutputInstruction } = useI18n();
   const bundle = useMemo(() => collectStepDocs(4, config, files), [config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(4, config, files), [config, files]);
   const [generating, setGenerating] = useState(false);
@@ -97,7 +97,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const draft = article.draft || '';
   const draftSourceFingerprint = useMemo(
     () => [
-      buildActionPlanFingerprint(bundle), model.provider, model.id, 'step4-draft-v2',
+      buildActionPlanFingerprint(bundle), model.provider, model.id, 'step4-draft-v3-en',
       article.selectedCoreIdeaId, article.topic, article.angle,
       JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount, documentPromptRules,
     ].join(':'),
@@ -138,7 +138,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
       const systemPrompt = buildRoleSystemPrompt(
         [
-          outputInstruction,
+          canonicalAIOutputInstruction,
           'Viết bài hoàn chỉnh theo dàn bài và tài liệu được cấp.',
           '- Knowledge Base là nguồn dữ liệu duy nhất cho số liệu, dẫn chứng, thông tin sản phẩm. KHÔNG bịa dữ liệu.',
           '- Action Plan xác định định hướng nội dung và các mục bắt buộc.',

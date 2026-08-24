@@ -62,50 +62,50 @@ function formatAIError(payload: AIErrorPayload, fallbackProvider: string, fallba
 }
 
 const DEMO_RESPONSES: Record<string, string> = {
-  outline: `## Dàn bài đề xuất
+  outline: `## Proposed outline
 
-**I. Giới thiệu tổng quan**
-- Bối cảnh thị trường và lý do so sánh
-- Tiêu chí đánh giá chính được sử dụng
+**I. Introduction**
+- Market context and purpose of the comparison
+- Primary evaluation criteria
 
-**II. Tổng quan sản phẩm**
-- Thông số kỹ thuật và tính năng nổi bật
-- Đối tượng người dùng mục tiêu
+**II. Product overview**
+- Specifications and notable features
+- Target users
 
-**III. Phân tích chi tiết theo tiêu chí**
-- Hiệu năng và tốc độ xử lý
-- Chất lượng, độ bền và thiết kế
-- Giá trị so với chi phí đầu tư
+**III. Detailed analysis**
+- Performance and processing speed
+- Quality, durability, and design
+- Value relative to cost
 
-**IV. Ưu điểm & Nhược điểm**
-- Bảng so sánh trực quan
-- Kịch bản sử dụng phù hợp cho từng nhóm người dùng
+**IV. Pros and cons**
+- Clear comparison table
+- Recommended use cases by audience
 
-**V. Kết luận & Khuyến nghị**
-- Lời khuyên theo nhu cầu cụ thể
-- Điểm đánh giá tổng thể (thang 10)`,
+**V. Conclusion and recommendation**
+- Advice for specific needs
+- Overall score out of 10`,
 
-  draft: `# Tiêu đề bài viết
+  draft: `# Article title
 
-Mở đầu hấp dẫn thu hút độc giả ngay từ những dòng đầu tiên. Đặt vấn đề rõ ràng và nêu lý do tại sao bài viết này quan trọng với người đọc.
+Open with a clear, engaging introduction that explains why the subject matters to the reader.
 
-## Phần 1: Tổng quan
+## Section 1: Overview
 
-Nội dung phần mở đầu chi tiết, cung cấp bối cảnh cần thiết để độc giả hiểu được vấn đề đang được đề cập.
+Provide the background readers need to understand the subject.
 
-## Phần 2: Phân tích chuyên sâu
+## Section 2: Detailed analysis
 
-Đây là phần nội dung chính của bài viết. Trình bày các luận điểm theo thứ tự logic, có dẫn chứng cụ thể và số liệu thực tế.
+Present the main arguments in a logical order with specific supporting evidence.
 
-## Kết luận
+## Conclusion
 
-Tóm tắt các điểm chính và đưa ra lời khuyên hoặc kêu gọi hành động rõ ràng.`,
+Summarize the key points and provide a clear recommendation or call to action.`,
 
-  angle: `**Góc độ đề xuất:** *"Điều mà 90% người dùng bỏ qua khi đưa ra quyết định này"*
+  angle: `**Proposed angle:** *"What most users overlook when making this decision"*
 
-Thay vì tiếp cận từ góc độ thông thường, hãy khai thác khía cạnh ít được đề cập nhưng có tác động lớn nhất đến quyết định của người dùng.
+Focus on an underexplored factor that has a meaningful impact on the reader's decision.
 
-**Từ khóa gợi ý bổ sung:** review chi tiết, so sánh toàn diện, kinh nghiệm thực tế, đánh giá khách quan 2026`,
+**Additional keyword ideas:** detailed review, complete comparison, practical experience, objective assessment 2026`,
 };
 
 function getDemoKey(prompt: string): string {

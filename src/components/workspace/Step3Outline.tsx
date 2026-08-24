@@ -170,7 +170,7 @@ export default function Step3Outline({
   onNext,
   onPrev,
 }: Props) {
-  const { tr, outputInstruction } = useI18n();
+  const { tr, canonicalAIOutputInstruction } = useI18n();
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestingKeywords, setSuggestingKeywords] = useState(false);
@@ -191,7 +191,7 @@ export default function Step3Outline({
   );
   const sourceFingerprint = useMemo(
     () => [
-      buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-audit-v4",
+      buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-audit-v5-en",
       article.contentType, article.topic, article.angle, article.keywords,
       article.targetAudience, article.tone, article.wordCount, article.selectedCoreIdeaId, documentPromptRules,
     ].join(":"),
@@ -236,7 +236,7 @@ export default function Step3Outline({
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
-          outputInstruction,
+          canonicalAIOutputInstruction,
           "Tạo dàn bài (outline) chi tiết với keyword mapping và search intent cho từng section.",
           "- Knowledge Base cung cấp luận điểm và evidence cho từng mục.",
           "- Action Plan xác định cấu trúc mẫu và các mục bắt buộc phải có.",
