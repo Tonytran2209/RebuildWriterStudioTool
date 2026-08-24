@@ -182,10 +182,23 @@ function relevantTerms(query: string): string[] {
 
 function selectRelevantContent(document: StoredDocument & { content: string }, query: string): string {
   const terms = relevantTerms(query);
-  if (!terms.length || document.content.length <= 24_000) return document.content;
-  const sections = document.structuredSections?.length
+  if (!terms.length || document.content.length <= 12_000) return document.content;
+  const sourceSections = document.structuredSections?.length
     ? document.structuredSections
     : extractStructuredSections(document.content);
+  const sections = sourceSections.flatMap(section => {
+    if (section.content.length <= 6_000) return [section];
+    const chunks = Array.from(
+      { length: Math.ceil(section.content.length / 6_000) },
+      (_, index) => section.content.slice(index * 6_000, (index + 1) * 6_000),
+    );
+    return chunks.map((content, index) => ({
+      ...section,
+      id: `${section.id}-chunk-${index + 1}`,
+      heading: `${section.heading} (part ${index + 1})`,
+      content,
+    }));
+  });
   const ranked = sections.map((section, index) => {
     const heading = section.heading.toLocaleLowerCase();
     const content = section.content.toLocaleLowerCase();
@@ -197,8 +210,8 @@ function selectRelevantContent(document: StoredDocument & { content: string }, q
   const selected: typeof ranked = [];
   let chars = 0;
   for (const candidate of ranked) {
-    if (selected.length >= 8 || chars >= 30_000) break;
-    if (candidate.score <= 0 && selected.length >= 3) continue;
+    if (selected.length >= 4 || chars >= 16_000) break;
+    if (candidate.score <= 0 && selected.length >= 1) continue;
     selected.push(candidate);
     chars += candidate.section.content.length;
   }

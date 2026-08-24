@@ -173,6 +173,7 @@ export default function Step3Outline({
   const { tr, canonicalAIOutputInstruction } = useI18n();
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [suggestingKeywords, setSuggestingKeywords] = useState(false);
   const suggestedKeywords = article.step3SuggestedKeywords ?? [];
   const [newSectionHeading, setNewSectionHeading] = useState("");
@@ -233,6 +234,7 @@ export default function Step3Outline({
     }
     setGenerating(true);
     setError(null);
+    setWarning(null);
     try {
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -348,10 +350,11 @@ export default function Step3Outline({
           .slice(0, desiredSections);
         generatedAt = corrected.servedAt ?? corrected.generatedAt ?? new Date().toISOString();
       }
-      if (sections.length < minimumSections) throw new Error(
-        `AI chỉ trả về ${sections.length}/${minimumSections} section tối thiểu có đủ evidence sau một lần bổ sung có mục tiêu. `
+      if (!sections.length) throw new Error(
+        `Không có section nào vượt qua kiểm chứng sau một lần bổ sung có mục tiêu. `
         + `Đã đọc ${normalized.rawSectionCount} section, ${normalized.registryCount} evidence registry và ${trustedCoreIdeaEvidence.length} evidence kế thừa từ Step 2.`,
       );
+      const partialResult = sections.length < minimumSections;
       const trace: AIProcessTraceEvent[] = [
         { id: 'step3-handoff', stage: 'input', status: 'completed', title: '1. Nhận kết quả từ Step 1–2', detail: 'Khóa Content Type, Core Idea, angle, audience, tone, word count và bộ keyword đã chọn để làm đầu vào outline.', facts: { contentType: contextBrief.contentType, topic: contextBrief.topic, primaryKeyword: contextBrief.primaryKeyword, secondaryKeywords: contextBrief.secondaryKeywords.length } },
         { id: 'step3-docs', stage: 'retrieval', status: 'completed', title: '2. Nạp tài liệu Step 3', detail: `Railway chọn các đoạn KB, Action Plan và Rules liên quan nhất theo topic, angle và keyword; quote vẫn được đối chiếu với bản đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
@@ -369,6 +372,9 @@ export default function Step3Outline({
         draftScannedAt: null,
       });
       if (!saved) throw new Error('Outline Step 3 chưa được lưu vào Supabase.');
+      if (partialResult) {
+        setWarning(`Đã lưu ${sections.length}/${minimumSections} section tối thiểu vượt qua kiểm chứng. Bạn có thể chỉnh sửa thủ công hoặc nhấn “Tạo lại” để thử bổ sung.`);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không tạo được outline: ${message}`);
@@ -475,6 +481,7 @@ export default function Step3Outline({
             )}
 
             {error && <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>}
+            {warning && <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">{warning}</div>}
 
             {generating && (
               <div className="space-y-2">

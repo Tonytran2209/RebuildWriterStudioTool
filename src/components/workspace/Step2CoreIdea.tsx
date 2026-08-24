@@ -106,6 +106,28 @@ function normalizeIdeas(
     : null;
   const rawIdeas = root?.ideas ?? parsed;
   if (!Array.isArray(rawIdeas)) throw new Error("Phản hồi AI không có mảng ideas.");
+  const registryValue = root?.evidenceRegistry;
+  const evidenceRegistry: Record<string, unknown> = registryValue && typeof registryValue === "object" && !Array.isArray(registryValue)
+    ? registryValue as Record<string, unknown>
+    : Object.fromEntries((Array.isArray(registryValue) ? registryValue : []).flatMap((item, index) => {
+      if (!item || typeof item !== "object") return [];
+      const record = item as Record<string, unknown>;
+      const id = String(record.id ?? record.key ?? record.ref ?? `ev-${index + 1}`).trim();
+      return id ? [[id, record]] : [];
+    }));
+  const resolveEvidenceRefs = (value: unknown): unknown[] => (Array.isArray(value) ? value : []).flatMap(ref => {
+    if (ref && typeof ref === "object") {
+      const record = ref as Record<string, unknown>;
+      const id = String(record.id ?? record.ref ?? record.evidenceId ?? "").trim();
+      return id && evidenceRegistry[id] ? [evidenceRegistry[id]] : [record];
+    }
+    const id = String(ref ?? "").trim();
+    return evidenceRegistry[id] ? [evidenceRegistry[id]] : [];
+  });
+  const sharedEvidence = verifyEvidence([
+    ...(Array.isArray(root?.sharedEvidence) ? root.sharedEvidence : []),
+    ...resolveEvidenceRefs(root?.sharedEvidenceRefs),
+  ], bundle);
   const researchedKeywords = new Map(seoResearch.keywords.map(item => [item.keyword.toLocaleLowerCase(), item.keyword]));
   const normalizeAudit = (value: unknown): KeywordAuditItem[] => (Array.isArray(value) ? value : []).flatMap((raw): KeywordAuditItem[] => {
     if (!raw || typeof raw !== "object") return [];
@@ -133,7 +155,11 @@ function normalizeIdeas(
       const ratingObj = (obj.rating && typeof obj.rating === "object" ? obj.rating : {}) as Record<string, unknown>;
       const seo = (obj.seoKeywords && typeof obj.seoKeywords === "object" ? obj.seoKeywords : {}) as Record<string, unknown>;
       const evidence = [
-        ...verifyEvidence(obj.evidence, bundle),
+        ...verifyEvidence([
+          ...(Array.isArray(obj.evidence) ? obj.evidence : []),
+          ...resolveEvidenceRefs(obj.evidenceRefs),
+        ], bundle),
+        ...sharedEvidence,
         ...trustedSnapshotEvidence,
       ].filter((item, index, all) => all.findIndex(candidate =>
         candidate.role === item.role && candidate.source === item.source && candidate.quote === item.quote
@@ -220,6 +246,7 @@ export default function Step2CoreIdea({
   const storedIdeas = article.coreIdeaSuggestions ?? [];
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(article.selectedCoreIdeaId ?? null);
   const [auditIdeaId, setAuditIdeaId] = useState<string | null>(null);
   const autoRequestedRef = useRef<string | null>(null);
@@ -256,7 +283,7 @@ export default function Step2CoreIdea({
     [article.contentType, selectedSnapshot],
   );
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v8-en:${selectedSnapshotSignature}:${documentPromptRules}`,
+    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v9-en-shared-evidence:${selectedSnapshotSignature}:${documentPromptRules}`,
     [bundle, documentPromptRules, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
@@ -275,6 +302,7 @@ export default function Step2CoreIdea({
     }
     setLoading(true);
     setError(null);
+    setWarning(null);
     try {
       const seeds = [
         ...(selectedSnapshot?.keywords ?? []),
@@ -282,6 +310,10 @@ export default function Step2CoreIdea({
         article.contentType ?? "",
       ].map(seed => seed.trim()).filter(Boolean);
       const seoResearch = await researchSeoKeywords(seeds, article.id, railwayUrl);
+      const contextQuery = [
+        ...seeds,
+        ...seoResearch.keywords.map(item => item.keyword),
+      ].join(" ");
       const systemPrompt = buildRoleSystemPrompt(
         [
           canonicalAIOutputInstruction,
@@ -297,12 +329,14 @@ export default function Step2CoreIdea({
           "- Rating cho theo thang 0-10 với 5 tiêu chí (overall, seoPotential, audienceFit, docSupport, uniqueness). Ghi rõ căn cứ chấm điểm.",
           "- ratingRationales phải giải thích riêng từng điểm: overall, seoPotential, audienceFit, docSupport và uniqueness; nêu rõ điểm mạnh, điểm yếu hoặc dữ liệu còn thiếu.",
           "- Nếu có KB/Action, mỗi idea cần ít nhất 1 quote từ KB hoặc Action. Nếu có Rules, cần thêm ít nhất 1 quote từ Rules. Bỏ qua nhóm đang trống.",
+          "- Đặt evidence áp dụng chung cho cả bộ ý tưởng trong sharedEvidence đúng MỘT LẦN; mỗi idea chỉ thêm evidence riêng khi thật sự cần.",
           "- source phải đúng chính xác tên file được cấp; quote phải được chép nguyên văn, không diễn giải.",
           "",
           "Trả về DUY NHẤT một JSON object hợp lệ, không kèm markdown fences hay text giải thích.",
           "Schema:",
           `{
   "keywordAudit": [{ "keyword": string (chép đúng từ SEO_RESEARCH_TOP_10), "decision": "accepted" | "rejected", "reason": string, "ruleReason": string, "kbReason": string }],
+  "sharedEvidence": [{ "source": string, "role": "kb" | "action" | "rules", "quote": string, "note": string }],
   "ideas": [{
   "title": string (tiêu đề bài viết đề xuất, sẵn sàng dùng),
   "angleLabel": string (tên góc tiếp cận ngắn gọn, ví dụ "So sánh benchmark", "Hướng dẫn thực chiến"),
@@ -323,7 +357,7 @@ export default function Step2CoreIdea({
   "ratingRationales": { "overall": string, "seoPotential": string, "audienceFit": string, "docSupport": string, "uniqueness": string },
   "matchedDocs": string[] (tên tài liệu KB/Action đã dùng),
   "ruleRefs": string[] (tên rule/guideline đã áp dụng),
-  "evidence": [{ "source": string, "role": "kb" | "action" | "rules", "quote": string, "note": string }]
+  "evidence": [{ "source": string, "role": "kb" | "action" | "rules", "quote": string, "note": string }] (chỉ evidence riêng; có thể rỗng khi sharedEvidence đã đủ)
   }]
 }`,
         ].join("\n"),
@@ -366,6 +400,7 @@ export default function Step2CoreIdea({
           stepNumber: 2,
           bypassCache,
           jsonMode: model.provider === "deepseek",
+          contextQuery,
         });
         aiResponses.push(res);
         let parsed: unknown;
@@ -386,9 +421,10 @@ export default function Step2CoreIdea({
           `- Tên nguồn Action hợp lệ: ${bundle.actionPlan.map(doc => JSON.stringify(doc.name)).join(", ") || "(không có)"}.`,
           `- Tên nguồn Rules hợp lệ: ${bundle.rules.map(doc => JSON.stringify(doc.name)).join(", ")}.`,
           "- Nếu danh sách KB/Action có nguồn, cần ít nhất 1 evidence role kb/action. Nếu danh sách Rules có nguồn, cần thêm 1 evidence role rules. Bỏ qua nhóm ghi (không có).",
+          "- Đặt quote dùng chung cho các idea mới trong sharedEvidence; không lặp cùng quote trong từng idea.",
           "- keywordAudit cấp cao nhất bắt buộc đánh giá đủ toàn bộ 10 keyword OpenAI Web Search đúng một lần, không bỏ sót keyword accepted hoặc rejected.",
           "- source phải chép đúng một tên trong danh sách trên; quote phải là một đoạn liên tục chép nguyên văn từ chính source đó.",
-          "- Chỉ trả về JSON object hoàn chỉnh theo schema { keywordAudit, ideas }, không giải thích.",
+          "- Chỉ trả về JSON object hoàn chỉnh theo schema { keywordAudit, sharedEvidence, ideas }, không giải thích.",
           "",
           "RESPONSE BỊ TỪ CHỐI CẦN SỬA:",
           rejectedJson,
@@ -398,20 +434,21 @@ export default function Step2CoreIdea({
           .slice(0, Math.max(3, acceptedIdeas.length));
         result = { ...correctionResult, ideas: mergedIdeas };
       }
-      if (result.ideas.length < 3) {
+      if (!result.ideas.length) {
         throw new Error(
-          `AI chỉ trả về ${result.ideas.length}/3 core idea hợp lệ sau một lần bổ sung có mục tiêu. Đã đối chiếu ${bundle.knowledgeBase.length} KB, ${bundle.actionPlan.length} Action và ${bundle.rules.length} Rules.`,
+          `Không có core idea nào vượt qua kiểm chứng sau một lần bổ sung có mục tiêu. Đã đối chiếu ${bundle.knowledgeBase.length} KB, ${bundle.actionPlan.length} Action và ${bundle.rules.length} Rules.`,
         );
       }
+      const partialResult = result.ideas.length < 3;
       const allAudits = result.ideas.flatMap(idea => idea.keywordAudit ?? []);
       const acceptedKeywords = new Set(allAudits.filter(item => item.decision === 'accepted').map(item => item.keyword.toLocaleLowerCase())).size;
       const rejectedKeywords = new Set(allAudits.filter(item => item.decision === 'rejected').map(item => item.keyword.toLocaleLowerCase())).size;
       const trace: AIProcessTraceEvent[] = [
         { id: 'step2-seeds', stage: 'input', status: 'completed', title: '1. Thu thập seed keyword', detail: 'Lấy seed từ Content Type và snapshot Step 1 đã chọn.', facts: { seeds: seeds.length, contentType: article.contentType } },
         { id: 'step2-web-search', stage: 'tool', status: 'completed', title: '2. OpenAI Web Search thị trường USA', detail: 'Tìm tín hiệu SERP, related-query patterns và search intent. Hệ thống chỉ giữ keyword có URL nguồn hợp lệ.', facts: { keywords: seoResearch.keywords.length, cacheHit: Boolean(seoResearch.cacheHit), market: seoResearch.location }, sources: [...new Set(seoResearch.keywords.flatMap(keyword => keyword.sources ?? []))] },
-        { id: 'step2-docs', stage: 'retrieval', status: 'completed', title: '3. Nạp tài liệu được phân quyền', detail: `Railway nạp đúng KB, Action Plan và Rules được cấp cho Step 2 từ Supabase.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
+        { id: 'step2-docs', stage: 'retrieval', status: 'completed', title: '3. Nạp tài liệu được phân quyền', detail: `Railway chọn các đoạn liên quan nhất từ KB, Action Plan và Rules được cấp cho Step 2; quote vẫn được kiểm chứng với nội dung đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
         { id: 'step2-model', stage: 'generation', status: 'completed', title: '4. Model tạo và chấm Core Idea', detail: `Model ${result.res.model} nhận Top 10 Web Search cùng tài liệu nội bộ, sau đó đề xuất Core Idea và giải thích điểm số.`, facts: { modelCalls, inputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.inputTokens ?? 0), 0), outputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.outputTokens ?? 0), 0), cacheHits: aiResponses.filter(response => response.cacheHit).length, durationMs: aiResponses.reduce((sum, response) => sum + (response.timing?.totalMs ?? 0), 0) } },
-        { id: 'step2-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls ? 'warning' : 'completed', title: '5. Đối chứng tài liệu và kiểm tra output', detail: 'Mỗi Core Idea phải audit đủ Top 10, chỉ dùng keyword accepted và có quote thật cho từng phân vùng đang được cấp quyền. Output sai JSON hoặc thiếu evidence được sửa và kiểm tra lại.', facts: { acceptedKeywords, rejectedKeywords, ideasAccepted: result.ideas.length, jsonRepairCalls, evidenceCorrectionCalls } },
+        { id: 'step2-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls || partialResult ? 'warning' : 'completed', title: '5. Đối chứng tài liệu và kiểm tra output', detail: 'Cả bộ Core Idea phải audit đủ Top 10, chỉ dùng keyword accepted và có shared/idea evidence là quote thật cho từng phân vùng được cấp quyền. Kết quả hợp lệ được giữ lại thay vì bị hủy chỉ vì chưa đủ ba lựa chọn.', facts: { acceptedKeywords, rejectedKeywords, ideasAccepted: result.ideas.length, jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step2-persist', stage: 'persistence', status: 'completed', title: '6. Lưu kết quả có thể audit', detail: 'Lưu Top 10, quyết định chọn/loại, evidence, điểm số, lý do và nhật ký này cùng bài viết trong Supabase.' },
       ];
       const saved = await onUpdate({
@@ -423,6 +460,9 @@ export default function Step2CoreIdea({
         step2ProcessTrace: trace,
       });
       if (!saved) throw new Error('Kết quả Step 2 chưa được lưu vào Supabase.');
+      if (partialResult) {
+        setWarning(`Đã lưu ${result.ideas.length}/3 core idea vượt qua đầy đủ kiểm chứng. Bạn có thể tiếp tục với kết quả hợp lệ hoặc nhấn “Đề xuất lại” để thử bổ sung.`);
+      }
       setSelectedId(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -500,6 +540,10 @@ export default function Step2CoreIdea({
 
             {error && (
               <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>
+            )}
+
+            {warning && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">{warning}</div>
             )}
 
             {loading && (
