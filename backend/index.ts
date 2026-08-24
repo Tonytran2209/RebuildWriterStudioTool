@@ -399,7 +399,7 @@ app.post('/api/generate', async (req, res) => {
     const startedAt = Date.now();
     const contextsStartedAt = Date.now();
     const normalizedContextQuery = String(contextQuery ?? '').trim().slice(0, 4_000);
-    const contexts = skipDocumentContext && stepNumber === 4
+    const contexts = skipDocumentContext && (stepNumber === 2 || stepNumber === 4)
       ? [{ contextDocs: [], actionText: '', summary: { stepNumber, kb: [], action: [], rules: [], totalChars: 0, sourceFingerprint: `empty-step-${stepNumber}` } }]
       : stepNumber === 1 && splitByWave
       ? await resolveStep1WaveContexts()

@@ -182,15 +182,15 @@ function relevantTerms(query: string): string[] {
 
 function selectRelevantContent(document: StoredDocument & { content: string }, query: string): string {
   const terms = relevantTerms(query);
-  if (!terms.length || document.content.length <= 12_000) return document.content;
+  if (!terms.length || document.content.length <= 6_000) return document.content;
   const sourceSections = document.structuredSections?.length
     ? document.structuredSections
     : extractStructuredSections(document.content);
   const sections = sourceSections.flatMap(section => {
-    if (section.content.length <= 6_000) return [section];
+    if (section.content.length <= 4_000) return [section];
     const chunks = Array.from(
-      { length: Math.ceil(section.content.length / 6_000) },
-      (_, index) => section.content.slice(index * 6_000, (index + 1) * 6_000),
+      { length: Math.ceil(section.content.length / 4_000) },
+      (_, index) => section.content.slice(index * 4_000, (index + 1) * 4_000),
     );
     return chunks.map((content, index) => ({
       ...section,
@@ -210,7 +210,7 @@ function selectRelevantContent(document: StoredDocument & { content: string }, q
   const selected: typeof ranked = [];
   let chars = 0;
   for (const candidate of ranked) {
-    if (selected.length >= 4 || chars >= 16_000) break;
+    if (selected.length >= 2 || chars >= 8_000) break;
     if (candidate.score <= 0 && selected.length >= 1) continue;
     selected.push(candidate);
     chars += candidate.section.content.length;
