@@ -2,6 +2,7 @@ import type { AppConfig, DocumentFile, ActionDataSource, FileCategory } from "..
 import { isActionSourceReady, isDocumentReady } from "./documentStatus";
 
 export interface DocRef {
+  id?: string;
   name: string;
   meta?: string;
   preview?: string;
@@ -41,6 +42,7 @@ NGUYÊN TẮC CHUNG:
 
 function formatFile(file: DocumentFile): DocRef {
   return {
+    id: file.id,
     name: file.name,
     meta: `${file.fileType.toUpperCase()} · ${file.size}`,
     content: file.content?.trim(),
@@ -54,6 +56,7 @@ function formatActionSource(src: ActionDataSource): DocRef {
     src.columns?.length ? `cột: ${src.columns.join(", ")}` : "",
   ].filter(Boolean);
   return {
+    id: src.id,
     name: src.name,
     meta: metaParts.join(" · "),
     preview: src.preview?.slice(0, 240),

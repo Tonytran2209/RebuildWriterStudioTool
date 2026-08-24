@@ -36,6 +36,9 @@ function docIndex(bundle: DocBundle): Map<string, { role: EvidenceRef["role"]; d
     ...bundle.rules.map(doc => [canonical(doc.name), { role: "rules" as const, doc }] as const),
   ];
   const index = new Map<string, { role: EvidenceRef["role"]; doc: DocRef }>(documents);
+  documents.forEach(([, match]) => {
+    if (match.doc.id) index.set(canonical(match.doc.id), match);
+  });
   const aliases = new Map<string, Array<{ role: EvidenceRef["role"]; doc: DocRef }>>();
   documents.forEach(([, match]) => {
     const basename = match.doc.name.split(/[\\/]/).pop() ?? match.doc.name;

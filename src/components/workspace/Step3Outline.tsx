@@ -79,15 +79,25 @@ function normalizeIntent(v: unknown): SearchIntent | undefined {
   return undefined;
 }
 
-function normalizeSections(parsed: unknown, bundle: ReturnType<typeof collectStepDocs>): { sections: OutlineSection[]; rejectedHeadings: string[] } {
+function normalizeSections(
+  parsed: unknown,
+  bundle: ReturnType<typeof collectStepDocs>,
+  trustedEvidence: ReturnType<typeof verifyEvidence> = [],
+): { sections: OutlineSection[]; rejectedHeadings: string[]; rawSectionCount: number; registryCount: number } {
   const root = parsed && typeof parsed === "object" && !Array.isArray(parsed)
     ? parsed as Record<string, unknown>
     : null;
   const rawSections = root?.sections ?? parsed;
   if (!Array.isArray(rawSections)) throw new Error("Phản hồi AI không có mảng sections.");
-  const registry = root?.evidenceRegistry && typeof root.evidenceRegistry === "object" && !Array.isArray(root.evidenceRegistry)
-    ? root.evidenceRegistry as Record<string, unknown>
-    : {};
+  const registryValue = root?.evidenceRegistry;
+  const registry: Record<string, unknown> = registryValue && typeof registryValue === "object" && !Array.isArray(registryValue)
+    ? registryValue as Record<string, unknown>
+    : Object.fromEntries((Array.isArray(registryValue) ? registryValue : []).flatMap((item, index) => {
+      if (!item || typeof item !== "object") return [];
+      const record = item as Record<string, unknown>;
+      const id = String(record.id ?? record.key ?? record.ref ?? `ev-${index + 1}`).trim();
+      return id ? [[id, record]] : [];
+    }));
   const rejectedHeadings: string[] = [];
   const sections = rawSections
     .map(raw => {
@@ -96,12 +106,23 @@ function normalizeSections(parsed: unknown, bundle: ReturnType<typeof collectSte
       const heading = String(obj.heading ?? obj.title ?? "").trim();
       if (!heading) return null;
       const lvl = String(obj.level ?? "h2").toLowerCase();
-      const evidenceRefs = toStringArr(obj.evidenceRefs);
-      const registryEvidence = evidenceRefs.map(ref => registry[ref]).filter(Boolean);
+      const rawRefs = Array.isArray(obj.evidenceRefs) ? obj.evidenceRefs : toStringArr(obj.evidenceRefs);
+      const registryEvidence = rawRefs.flatMap(ref => {
+        if (ref && typeof ref === "object") {
+          const record = ref as Record<string, unknown>;
+          const id = String(record.id ?? record.ref ?? record.evidenceId ?? "").trim();
+          return id && registry[id] ? [registry[id]] : [record];
+        }
+        const id = String(ref).trim();
+        return registry[id] ? [registry[id]] : [];
+      });
       const evidence = verifyEvidence([
         ...(Array.isArray(obj.evidence) ? obj.evidence : []),
         ...registryEvidence,
-      ], bundle);
+        ...trustedEvidence,
+      ], bundle).filter((item, index, all) => all.findIndex(candidate =>
+        candidate.source === item.source && candidate.role === item.role && candidate.quote === item.quote
+      ) === index);
       if (!hasEvidenceForAuthorizedCategories(evidence, bundle)) {
         rejectedHeadings.push(heading);
         return null;
@@ -119,7 +140,7 @@ function normalizeSections(parsed: unknown, bundle: ReturnType<typeof collectSte
       } as OutlineSection;
     })
     .filter((v): v is OutlineSection => v !== null);
-  return { sections, rejectedHeadings };
+  return { sections, rejectedHeadings, rawSectionCount: rawSections.length, registryCount: Object.keys(registry).length };
 }
 
 function targetSectionCount(wordCount: number): number {
@@ -160,13 +181,21 @@ export default function Step3Outline({
 
   const bundle = useMemo(() => collectStepDocs(3, config, files), [config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(3, config, files), [config, files]);
+  const selectedCoreIdea = useMemo(
+    () => article.coreIdeaSuggestions?.find(idea => idea.id === article.selectedCoreIdeaId) ?? null,
+    [article.coreIdeaSuggestions, article.selectedCoreIdeaId],
+  );
+  const trustedCoreIdeaEvidence = useMemo(
+    () => verifyEvidence(selectedCoreIdea?.evidence, bundle),
+    [bundle, selectedCoreIdea],
+  );
   const sourceFingerprint = useMemo(
     () => [
-      buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-audit-v3",
+      buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-audit-v4",
       article.contentType, article.topic, article.angle, article.keywords,
-      article.targetAudience, article.tone, article.wordCount, documentPromptRules,
+      article.targetAudience, article.tone, article.wordCount, article.selectedCoreIdeaId, documentPromptRules,
     ].join(":"),
-    [article.angle, article.contentType, article.keywords, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, documentPromptRules, model.id, model.provider],
+    [article.angle, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, documentPromptRules, model.id, model.provider],
   );
   const outlineIsStale = Boolean(outline.length) && article.outlineSourceFingerprint !== sourceFingerprint;
 
@@ -253,6 +282,11 @@ export default function Step3Outline({
         `- Số từ mục tiêu: ${contextBrief.wordCount}`,
         `- Primary keyword: ${contextBrief.primaryKeyword}`,
         `- Secondary keywords: ${contextBrief.secondaryKeywords.join(", ")}`,
+        ...(trustedCoreIdeaEvidence.length ? [
+          "",
+          "EVIDENCE STEP 2 ĐÃ ĐƯỢC XÁC MINH (có thể tái sử dụng bằng quote/source tương ứng):",
+          JSON.stringify(trustedCoreIdeaEvidence),
+        ] : []),
         "",
         `Yêu cầu: Trả về khoảng ${desiredSections} section trong JSON object với keyword mapping, search intent và evidence chi tiết.`,
       ].join("\n");
@@ -277,7 +311,7 @@ export default function Step3Outline({
       aiResponses.push(res);
       let lastResponse = res;
       const parsed = extractJson(res.content);
-      const normalized = normalizeSections(parsed, bundle);
+      const normalized = normalizeSections(parsed, bundle, trustedCoreIdeaEvidence);
       let sections = normalized.sections;
       let generatedAt = res.servedAt ?? res.generatedAt ?? new Date().toISOString();
       if (sections.length < minimumSections) {
@@ -307,13 +341,17 @@ export default function Step3Outline({
         });
         aiResponses.push(corrected);
         lastResponse = corrected;
-        const additions = normalizeSections(extractJson(corrected.content), bundle).sections;
+        const correctedNormalized = normalizeSections(extractJson(corrected.content), bundle, trustedCoreIdeaEvidence);
+        const additions = correctedNormalized.sections;
         sections = [...sections, ...additions]
           .filter((section, index, all) => all.findIndex(candidate => candidate.heading.toLocaleLowerCase() === section.heading.toLocaleLowerCase()) === index)
           .slice(0, desiredSections);
         generatedAt = corrected.servedAt ?? corrected.generatedAt ?? new Date().toISOString();
       }
-      if (sections.length < minimumSections) throw new Error(`AI chỉ trả về ${sections.length}/${minimumSections} section tối thiểu có đủ evidence sau một lần bổ sung có mục tiêu.`);
+      if (sections.length < minimumSections) throw new Error(
+        `AI chỉ trả về ${sections.length}/${minimumSections} section tối thiểu có đủ evidence sau một lần bổ sung có mục tiêu. `
+        + `Đã đọc ${normalized.rawSectionCount} section, ${normalized.registryCount} evidence registry và ${trustedCoreIdeaEvidence.length} evidence kế thừa từ Step 2.`,
+      );
       const trace: AIProcessTraceEvent[] = [
         { id: 'step3-handoff', stage: 'input', status: 'completed', title: '1. Nhận kết quả từ Step 1–2', detail: 'Khóa Content Type, Core Idea, angle, audience, tone, word count và bộ keyword đã chọn để làm đầu vào outline.', facts: { contentType: contextBrief.contentType, topic: contextBrief.topic, primaryKeyword: contextBrief.primaryKeyword, secondaryKeywords: contextBrief.secondaryKeywords.length } },
         { id: 'step3-docs', stage: 'retrieval', status: 'completed', title: '2. Nạp tài liệu Step 3', detail: `Railway chọn các đoạn KB, Action Plan và Rules liên quan nhất theo topic, angle và keyword; quote vẫn được đối chiếu với bản đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
