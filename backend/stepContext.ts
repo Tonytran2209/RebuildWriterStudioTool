@@ -1,5 +1,5 @@
 import { kvGet } from './supabase.ts';
-import type { StructuredSection } from './documentStructure.ts';
+import { extractStructuredSections, type StructuredSection } from './documentStructure.ts';
 
 type Role = 'KNOWLEDGE_BASE' | 'ACTION_PLAN' | 'RULES';
 
@@ -174,8 +174,46 @@ async function resolveDocuments(stepNumber: number) {
   return resolved;
 }
 
-export async function resolveStepContext(stepNumber: number): Promise<StepContextResult> {
-  return buildResult(stepNumber, await resolveDocuments(stepNumber));
+function relevantTerms(query: string): string[] {
+  const stopWords = new Set(['the', 'and', 'for', 'with', 'from', 'this', 'that', 'của', 'và', 'cho', 'với', 'trong', 'các', 'một']);
+  return [...new Set(query.normalize('NFKC').toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u)
+    .filter(term => term.length >= 3 && !stopWords.has(term)))].slice(0, 40);
+}
+
+function selectRelevantContent(document: StoredDocument & { content: string }, query: string): string {
+  const terms = relevantTerms(query);
+  if (!terms.length || document.content.length <= 24_000) return document.content;
+  const sections = document.structuredSections?.length
+    ? document.structuredSections
+    : extractStructuredSections(document.content);
+  const ranked = sections.map((section, index) => {
+    const heading = section.heading.toLocaleLowerCase();
+    const content = section.content.toLocaleLowerCase();
+    const score = terms.reduce((sum, term) => sum
+      + (heading.includes(term) ? 5 : 0)
+      + Math.min(content.split(term).length - 1, 3), 0);
+    return { section, index, score };
+  }).sort((a, b) => b.score - a.score || a.index - b.index);
+  const selected: typeof ranked = [];
+  let chars = 0;
+  for (const candidate of ranked) {
+    if (selected.length >= 8 || chars >= 30_000) break;
+    if (candidate.score <= 0 && selected.length >= 3) continue;
+    selected.push(candidate);
+    chars += candidate.section.content.length;
+  }
+  return selected.sort((a, b) => a.index - b.index)
+    .map(item => item.section.content)
+    .join('\n\n');
+}
+
+export async function resolveStepContext(stepNumber: number, query = ''): Promise<StepContextResult> {
+  const resolved = await resolveDocuments(stepNumber);
+  if (!query.trim()) return buildResult(stepNumber, resolved);
+  return buildResult(stepNumber, resolved.map(item => ({
+    ...item,
+    document: { ...item.document, content: selectRelevantContent(item.document, query) },
+  })));
 }
 
 export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {

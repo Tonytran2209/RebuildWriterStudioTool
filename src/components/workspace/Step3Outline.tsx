@@ -40,9 +40,11 @@ const EVIDENCE_ROLE_STYLE: Record<string, string> = {
 function extractJson(raw: string): unknown {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const body = (fenced ? fenced[1] : raw).trim();
-  const start = body.indexOf("[");
-  const end = body.lastIndexOf("]");
-  if (start === -1 || end === -1) throw new Error("Không tìm thấy mảng JSON.");
+  const objectStart = body.indexOf("{");
+  const arrayStart = body.indexOf("[");
+  const start = objectStart >= 0 && (arrayStart < 0 || objectStart < arrayStart) ? objectStart : arrayStart;
+  const end = start === objectStart ? body.lastIndexOf("}") : body.lastIndexOf("]");
+  if (start === -1 || end === -1) throw new Error("Không tìm thấy JSON.");
   const json = body.slice(start, end + 1);
   try {
     return JSON.parse(json);
@@ -77,17 +79,33 @@ function normalizeIntent(v: unknown): SearchIntent | undefined {
   return undefined;
 }
 
-function normalizeSections(parsed: unknown, bundle: ReturnType<typeof collectStepDocs>): OutlineSection[] {
-  if (!Array.isArray(parsed)) throw new Error("Phản hồi AI không phải mảng.");
-  return parsed
+function normalizeSections(parsed: unknown, bundle: ReturnType<typeof collectStepDocs>): { sections: OutlineSection[]; rejectedHeadings: string[] } {
+  const root = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : null;
+  const rawSections = root?.sections ?? parsed;
+  if (!Array.isArray(rawSections)) throw new Error("Phản hồi AI không có mảng sections.");
+  const registry = root?.evidenceRegistry && typeof root.evidenceRegistry === "object" && !Array.isArray(root.evidenceRegistry)
+    ? root.evidenceRegistry as Record<string, unknown>
+    : {};
+  const rejectedHeadings: string[] = [];
+  const sections = rawSections
     .map(raw => {
       if (!raw || typeof raw !== "object") return null;
       const obj = raw as Record<string, unknown>;
       const heading = String(obj.heading ?? obj.title ?? "").trim();
       if (!heading) return null;
       const lvl = String(obj.level ?? "h2").toLowerCase();
-      const evidence = verifyEvidence(obj.evidence, bundle);
-      if (!hasEvidenceForAuthorizedCategories(evidence, bundle)) return null;
+      const evidenceRefs = toStringArr(obj.evidenceRefs);
+      const registryEvidence = evidenceRefs.map(ref => registry[ref]).filter(Boolean);
+      const evidence = verifyEvidence([
+        ...(Array.isArray(obj.evidence) ? obj.evidence : []),
+        ...registryEvidence,
+      ], bundle);
+      if (!hasEvidenceForAuthorizedCategories(evidence, bundle)) {
+        rejectedHeadings.push(heading);
+        return null;
+      }
       return {
         id: generateId(),
         heading,
@@ -101,6 +119,13 @@ function normalizeSections(parsed: unknown, bundle: ReturnType<typeof collectSte
       } as OutlineSection;
     })
     .filter((v): v is OutlineSection => v !== null);
+  return { sections, rejectedHeadings };
+}
+
+function targetSectionCount(wordCount: number): number {
+  if (wordCount <= 1000) return 6;
+  if (wordCount <= 1800) return 8;
+  return 10;
 }
 
 interface Props {
@@ -137,11 +162,11 @@ export default function Step3Outline({
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(3, config, files), [config, files]);
   const sourceFingerprint = useMemo(
     () => [
-      buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-audit-v2",
+      buildActionPlanFingerprint(bundle), model.provider, model.id, "step3-audit-v3",
       article.contentType, article.topic, article.angle, article.keywords,
-      article.targetAudience, article.tone, article.wordCount,
+      article.targetAudience, article.tone, article.wordCount, documentPromptRules,
     ].join(":"),
-    [article.angle, article.contentType, article.keywords, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, model.id, model.provider],
+    [article.angle, article.contentType, article.keywords, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, documentPromptRules, model.id, model.provider],
   );
   const outlineIsStale = Boolean(outline.length) && article.outlineSourceFingerprint !== sourceFingerprint;
 
@@ -158,6 +183,15 @@ export default function Step3Outline({
       secondaryKeywords: kws.slice(1),
     };
   }, [article]);
+  const desiredSections = targetSectionCount(contextBrief.wordCount);
+  const minimumSections = Math.max(4, desiredSections - 2);
+  const contextQuery = [
+    contextBrief.contentType,
+    contextBrief.topic,
+    contextBrief.angle,
+    contextBrief.primaryKeyword,
+    ...contextBrief.secondaryKeywords,
+  ].filter(Boolean).join(" ");
 
   const handleGenerate = async (manual = false) => {
     if (!article.topic) {
@@ -178,23 +212,29 @@ export default function Step3Outline({
           "- Knowledge Base cung cấp luận điểm và evidence cho từng mục.",
           "- Action Plan xác định cấu trúc mẫu và các mục bắt buộc phải có.",
           "- Rules & Guidelines quyết định định dạng heading, độ sâu H2/H3, cách đặt tiêu đề, quy tắc SEO.",
-          "- Mỗi section PHẢI ghi rõ: keywords được nhắm tới, searchIntent, evidence (nguồn tài liệu KB/Action/Rules đã dùng).",
+          "- Mỗi section PHẢI ghi rõ: keywords được nhắm tới, searchIntent và evidenceRefs trỏ tới evidenceRegistry dùng chung.",
           "- Mỗi section phải có rationale giải thích vì sao section này cần thiết, vì sao đặt ở vị trí đó và evidence hỗ trợ quyết định như thế nào.",
           "- Nếu có KB/Action, mỗi section cần ít nhất 1 quote từ KB hoặc Action. Nếu có Rules, cần thêm ít nhất 1 quote từ Rules. Bỏ qua nhóm đang trống.",
           "- source phải đúng chính xác tên file được cấp; quote phải chép nguyên văn, không diễn giải.",
           "",
-          "Trả về DUY NHẤT một mảng JSON hợp lệ, không markdown fences, không giải thích.",
+          "Mỗi quote chỉ khai báo MỘT LẦN trong evidenceRegistry; nhiều section dùng chung quote phải tham chiếu cùng ID để tiết kiệm output.",
+          "Trả về DUY NHẤT một JSON object hợp lệ, không markdown fences, không giải thích.",
           "- JSON phải parse được bằng JSON.parse: dùng dấu phẩy giữa mọi field/phần tử và escape dấu ngoặc kép nằm trong chuỗi bằng \\\".",
-          "Schema mỗi phần tử:",
+          "Schema:",
           `{
+  "evidenceRegistry": {
+    "ev-1": { "source": string, "note": string, "quote": string, "role": "kb" | "action" | "rules" }
+  },
+  "sections": [{
   "heading": string (tiêu đề section, sẵn sàng dùng),
   "level": "h2" | "h3",
   "notes": string (1 câu ngắn mô tả nội dung, tối đa 120 ký tự),
   "rationale": string (2-3 câu giải thích lý do chọn section, vị trí và căn cứ tài liệu),
   "keywords": string[] (2-5 từ khóa nhắm tới),
   "searchIntent": "informational" | "commercial" | "transactional" | "navigational",
-  "evidence": [{ "source": string, "note": string, "quote": string, "role": "kb" | "action" | "rules" }],
+  "evidenceRefs": string[] (ID tồn tại trong evidenceRegistry),
   "ruleRefs": string[]
+  }]
 }`,
         ].join("\n"),
         documentPromptRules,
@@ -214,11 +254,11 @@ export default function Step3Outline({
         `- Primary keyword: ${contextBrief.primaryKeyword}`,
         `- Secondary keywords: ${contextBrief.secondaryKeywords.join(", ")}`,
         "",
-        "Yêu cầu: Trả về outline dạng JSON array với keyword mapping, search intent và evidence chi tiết cho từng section.",
+        `Yêu cầu: Trả về khoảng ${desiredSections} section trong JSON object với keyword mapping, search intent và evidence chi tiết.`,
       ].join("\n");
 
       let modelCalls = 1;
-      let jsonRepairCalls = 0;
+      const jsonRepairCalls = 0;
       let evidenceCorrectionCalls = 0;
       const aiResponses: Awaited<ReturnType<typeof callAI>>[] = [];
       const res = await callAI({
@@ -227,66 +267,58 @@ export default function Step3Outline({
         railwayUrl,
         prompt: userPrompt,
         systemPrompt,
-        maxTokens: 8000,
+        maxTokens: Math.min(6000, 1800 + desiredSections * 400),
         temperature: 0.1,
         stepNumber: 3,
         bypassCache: manual,
+        jsonMode: model.provider === "deepseek",
+        contextQuery,
       });
       aiResponses.push(res);
       let lastResponse = res;
-      let parsed: unknown;
-      try {
-        parsed = extractJson(res.content);
-      } catch {
-        jsonRepairCalls += 1;
-        modelCalls += 1;
-        const repairPrompt = [
-          "Chuẩn hóa nội dung bên dưới thành đúng một JSON array hợp lệ.",
-          "Giữ nguyên dữ liệu và thứ tự section; chỉ sửa cú pháp JSON, dấu phẩy và escape chuỗi.",
-          "Không thêm markdown hoặc giải thích.",
-          "",
-          res.content,
-        ].join("\n");
-        const repaired = await callAI({
-          articleId: article.id,
-          model,
-          railwayUrl,
-          prompt: repairPrompt,
-          systemPrompt: "Bạn là JSON formatter. Chỉ trả về JSON array parse được bằng JSON.parse.",
-          maxTokens: 8000,
-          temperature: 0,
-          stepNumber: 3,
-        });
-        aiResponses.push(repaired);
-        lastResponse = repaired;
-        parsed = extractJson(repaired.content);
-      }
-      let sections = normalizeSections(parsed, bundle);
+      const parsed = extractJson(res.content);
+      const normalized = normalizeSections(parsed, bundle);
+      let sections = normalized.sections;
       let generatedAt = res.servedAt ?? res.generatedAt ?? new Date().toISOString();
-      if (!sections.length) {
+      if (sections.length < minimumSections) {
         evidenceCorrectionCalls += 1;
         modelCalls += 1;
+        const missingCount = desiredSections - sections.length;
         const corrected = await callAI({
           articleId: article.id,
           model,
           railwayUrl,
-          prompt: `${userPrompt}\n\nLần trước không có section vượt qua kiểm chứng. Nếu KB/Action có nguồn, chép ít nhất 1 quote từ KB hoặc Action. Nếu Rules có nguồn, chép thêm ít nhất 1 quote từ Rules. Bỏ qua nhóm trống.`,
+          prompt: [
+            userPrompt,
+            "",
+            `CHỈ BỔ SUNG ${missingCount} SECTION CÒN THIẾU; không tạo lại section đã hợp lệ.`,
+            `Heading đã hợp lệ, không được lặp: ${sections.map(section => JSON.stringify(section.heading)).join(", ") || "(chưa có)"}.`,
+            `Heading bị loại do evidence không hợp lệ: ${normalized.rejectedHeadings.map(JSON.stringify).join(", ") || "(không xác định)"}.`,
+            "Nếu KB/Action có nguồn, mỗi section mới cần ít nhất 1 evidenceRef tới quote KB hoặc Action. Nếu Rules có nguồn, cần thêm evidenceRef tới quote Rules. Bỏ qua nhóm trống.",
+            "Chỉ trả về JSON object { evidenceRegistry, sections } chứa các section bổ sung.",
+          ].join("\n"),
           systemPrompt,
-          maxTokens: 8000,
+          maxTokens: Math.min(4000, 1200 + missingCount * 400),
           temperature: 0.1,
           stepNumber: 3,
+          bypassCache: true,
+          jsonMode: model.provider === "deepseek",
+          contextQuery,
         });
         aiResponses.push(corrected);
         lastResponse = corrected;
-        sections = normalizeSections(extractJson(corrected.content), bundle);
+        const additions = normalizeSections(extractJson(corrected.content), bundle).sections;
+        sections = [...sections, ...additions]
+          .filter((section, index, all) => all.findIndex(candidate => candidate.heading.toLocaleLowerCase() === section.heading.toLocaleLowerCase()) === index)
+          .slice(0, desiredSections);
         generatedAt = corrected.servedAt ?? corrected.generatedAt ?? new Date().toISOString();
       }
-      if (!sections.length) throw new Error("AI chưa trả về outline có đủ evidence cho các phân vùng tài liệu đang được cấp quyền.");
+      if (sections.length < minimumSections) throw new Error(`AI chỉ trả về ${sections.length}/${minimumSections} section tối thiểu có đủ evidence sau một lần bổ sung có mục tiêu.`);
       const trace: AIProcessTraceEvent[] = [
         { id: 'step3-handoff', stage: 'input', status: 'completed', title: '1. Nhận kết quả từ Step 1–2', detail: 'Khóa Content Type, Core Idea, angle, audience, tone, word count và bộ keyword đã chọn để làm đầu vào outline.', facts: { contentType: contextBrief.contentType, topic: contextBrief.topic, primaryKeyword: contextBrief.primaryKeyword, secondaryKeywords: contextBrief.secondaryKeywords.length } },
-        { id: 'step3-docs', stage: 'retrieval', status: 'completed', title: '2. Nạp tài liệu Step 3', detail: `Railway chỉ nạp KB, Action Plan và Rules được phân quyền cho Step 3.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
-        { id: 'step3-generation', stage: 'generation', status: 'completed', title: '3. Model dựng outline', detail: `Model ${lastResponse.model} tạo heading, notes, rationale, keyword mapping, search intent và evidence cho từng section.`, facts: { modelCalls, inputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.inputTokens ?? 0), 0), outputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.outputTokens ?? 0), 0), cacheHits: aiResponses.filter(response => response.cacheHit).length, durationMs: aiResponses.reduce((sum, response) => sum + (response.timing?.totalMs ?? 0), 0) } },
-        { id: 'step3-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls ? 'warning' : 'completed', title: '4. Kiểm tra cấu trúc và dẫn chứng', detail: 'Loại section thiếu quote nguyên văn ở bất kỳ phân vùng nào đang được cấp quyền; xác minh tên nguồn và sửa JSON khi cần.', facts: { sectionsAccepted: sections.length, evidenceVerified: sections.reduce((sum, section) => sum + (section.evidence?.length ?? 0), 0), jsonRepairCalls, evidenceCorrectionCalls } },
+        { id: 'step3-docs', stage: 'retrieval', status: 'completed', title: '2. Nạp tài liệu Step 3', detail: `Railway chọn các đoạn KB, Action Plan và Rules liên quan nhất theo topic, angle và keyword; quote vẫn được đối chiếu với bản đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
+        { id: 'step3-generation', stage: 'generation', status: 'completed', title: '3. Model dựng outline', detail: `Model ${lastResponse.model} tạo heading, notes, rationale, keyword mapping và search intent; evidence dùng registry chung để không lặp quote.`, facts: { modelCalls, inputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.inputTokens ?? 0), 0), outputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.outputTokens ?? 0), 0), cacheHits: aiResponses.filter(response => response.cacheHit).length, durationMs: aiResponses.reduce((sum, response) => sum + (response.timing?.totalMs ?? 0), 0) } },
+        { id: 'step3-validation', stage: 'validation', status: evidenceCorrectionCalls ? 'warning' : 'completed', title: '4. Kiểm tra cấu trúc và dẫn chứng', detail: 'Loại section thiếu quote nguyên văn ở bất kỳ phân vùng nào đang được cấp quyền. Nếu dưới ngưỡng tối thiểu, chỉ yêu cầu bổ sung phần còn thiếu.', facts: { sectionsAccepted: sections.length, evidenceVerified: sections.reduce((sum, section) => sum + (section.evidence?.length ?? 0), 0), jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step3-persist', stage: 'persistence', status: 'completed', title: '5. Lưu outline và audit trail', detail: 'Lưu section, rationale, evidence, nguồn Rules và nhật ký hành động này cùng bài viết trong Supabase.' },
       ];
       const saved = await onUpdate({
@@ -311,29 +343,20 @@ export default function Step3Outline({
     if (!contextBrief.angle && !contextBrief.topic) return;
     setSuggestingKeywords(true);
     try {
-      const systemPrompt = buildRoleSystemPrompt(
-        [
-          outputInstruction,
-          "Đề xuất 6-10 từ khóa phụ / long-tail liên quan tới angle và tài liệu được cấp.",
-          "- Chỉ trả về mảng JSON các chuỗi từ khóa (không kèm mô tả).",
-          "- Ưu tiên từ khóa có căn cứ trong Knowledge Base / Action Plan.",
-          "- Tránh trùng lặp với keywords đã có.",
-        ].join("\n"),
-        documentPromptRules,
-      );
-      const userPrompt = [
-        `TÀI LIỆU STEP 3 (${describeBundle(bundle)}):`,
-        "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 3 từ Supabase.",
-        "",
-        `Chủ đề: "${contextBrief.topic}" · Angle: "${contextBrief.angle}"`,
-        `Keywords đã có: ${[contextBrief.primaryKeyword, ...contextBrief.secondaryKeywords].join(", ")}`,
-        "",
-        "Trả về JSON array các chuỗi keyword, không giải thích.",
-      ].join("\n");
-      const res = await callAI({ articleId: article.id, model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 3 });
-      const parsed = extractJson(res.content);
-      if (!Array.isArray(parsed)) throw new Error("Không phải mảng.");
-      const saved = await onUpdate({ step3SuggestedKeywords: parsed.map(String).filter(Boolean) });
+      const selectedIdea = article.coreIdeaSuggestions?.find(idea => idea.id === article.selectedCoreIdeaId);
+      const existing = new Set([
+        contextBrief.primaryKeyword,
+        ...contextBrief.secondaryKeywords,
+      ].map(keyword => keyword.toLocaleLowerCase()));
+      const candidates = [
+        ...(selectedIdea?.keywordAudit ?? []).filter(item => item.decision === "accepted").map(item => item.keyword),
+        ...(article.seoResearch?.keywords ?? []).map(item => item.keyword),
+      ].map(keyword => keyword.trim()).filter(Boolean)
+        .filter(keyword => !existing.has(keyword.toLocaleLowerCase()))
+        .filter((keyword, index, all) => all.findIndex(candidate => candidate.toLocaleLowerCase() === keyword.toLocaleLowerCase()) === index)
+        .slice(0, 10);
+      if (!candidates.length) throw new Error("Step 2 chưa có keyword đã kiểm chứng chưa được sử dụng.");
+      const saved = await onUpdate({ step3SuggestedKeywords: candidates });
       if (!saved) throw new Error('Keyword gợi ý chưa được lưu vào Supabase.');
     } catch (error) {
       setError(`Không gợi ý được keyword: ${error instanceof Error ? error.message : String(error)}`);
@@ -469,7 +492,7 @@ export default function Step3Outline({
                   disabled={suggestingKeywords || (!contextBrief.angle && !contextBrief.topic)}
                   className="text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 border border-slate-200 rounded-md px-2.5 py-1 transition-all"
                 >
-                  {suggestingKeywords ? tr('Đang gợi ý...', 'Suggesting...') : tr('Gợi ý keyword theo angle', 'Suggest keywords by angle')}
+                  {suggestingKeywords ? tr('Đang lấy...', 'Loading...') : tr('Lấy keyword đã kiểm chứng', 'Use verified keywords')}
                 </button>
               </div>
 
