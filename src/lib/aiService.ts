@@ -12,6 +12,7 @@ export interface AIRequest {
   bypassCache?: boolean;
   jsonMode?: boolean;
   contextQuery?: string;
+  skipDocumentContext?: boolean;
   articleId: string;
 }
 
@@ -115,7 +116,7 @@ function getDemoKey(prompt: string): string {
 }
 
 export async function callAI(req: AIRequest): Promise<AIResponse> {
-  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber, splitByWave, bypassCache, jsonMode, contextQuery, articleId } = req;
+  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber, splitByWave, bypassCache, jsonMode, contextQuery, skipDocumentContext, articleId } = req;
 
   // Resolve railway URL — prop → localStorage → hardcoded production URL
   const railwayUrl = req.railwayUrl
@@ -139,6 +140,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
           bypassCache,
           jsonMode,
           contextQuery,
+          skipDocumentContext,
           pricing: model.pricing,
           articleId,
         }),

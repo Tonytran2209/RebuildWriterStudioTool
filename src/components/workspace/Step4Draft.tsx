@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import type { Article, AIModel, AppConfig, DocumentFile } from '../../types';
+import type { Article, AIModel, AppConfig, DocumentFile, EvidenceRef } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
 import {
@@ -23,6 +23,49 @@ function calcReadability(text: string) {
   if (avgWordsPerSentence < 20) return { label: 'Dễ đọc', score: 80, color: 'text-emerald-500' };
   if (avgWordsPerSentence < 25) return { label: 'Trung bình', score: 65, color: 'text-amber-500' };
   return { label: 'Khó đọc', score: 40, color: 'text-red-500' };
+}
+
+function buildVerifiedOutlineContext(outline: NonNullable<Article['outline']>) {
+  const evidenceRegistry: Record<string, EvidenceRef> = {};
+  const evidenceIds = new Map<string, string>();
+  const sections = outline.map(section => {
+    const refs = (section.evidence ?? []).map(evidence => {
+      const key = [evidence.role, evidence.source, evidence.quote].join('|');
+      let id = evidenceIds.get(key);
+      if (!id) {
+        id = `ev-${evidenceIds.size + 1}`;
+        evidenceIds.set(key, id);
+        evidenceRegistry[id] = evidence;
+      }
+      return id;
+    });
+    return {
+      heading: section.heading,
+      level: section.level,
+      notes: section.notes,
+      rationale: section.rationale ?? '',
+      keywords: section.keywords ?? [],
+      searchIntent: section.searchIntent ?? '',
+      evidenceRefs: refs,
+      ruleRefs: section.ruleRefs ?? [],
+    };
+  });
+  return { evidenceRegistry, sections };
+}
+
+function assessDraft(text: string, article: Article, targetWords: number): string[] {
+  if (!text.trim()) return [];
+  const normalized = text.toLocaleLowerCase();
+  const words = countWords(text);
+  const warnings: string[] = [];
+  if (words < targetWords * 0.7) warnings.push(`Draft mới đạt ${words}/${targetWords} từ mục tiêu.`);
+  const primaryKeyword = (article.keywords || '').split(',')[0]?.trim();
+  if (primaryKeyword && !normalized.includes(primaryKeyword.toLocaleLowerCase())) warnings.push(`Chưa tìm thấy primary keyword “${primaryKeyword}”.`);
+  const missingHeadings = (article.outline ?? []).filter(section =>
+    section.heading.trim() && !normalized.includes(section.heading.trim().toLocaleLowerCase()),
+  );
+  if (missingHeadings.length) warnings.push(`Thiếu ${missingHeadings.length} heading từ outline Step 3.`);
+  return warnings;
 }
 
 interface Props {
@@ -54,16 +97,18 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const draft = article.draft || '';
   const draftSourceFingerprint = useMemo(
     () => [
-      buildActionPlanFingerprint(bundle), model.provider, model.id, 'step4-draft-v1',
+      buildActionPlanFingerprint(bundle), model.provider, model.id, 'step4-draft-v2',
       article.selectedCoreIdeaId, article.topic, article.angle,
-      JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount,
+      JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount, documentPromptRules,
     ].join(':'),
-    [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, article.wordCount, bundle, model.id, model.provider],
+    [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, article.wordCount, bundle, documentPromptRules, model.id, model.provider],
   );
   const wordCount = countWords(draft);
   const targetWords = article.wordCount || 1500;
   const readability = calcReadability(draft);
   const progress = Math.min(Math.round((wordCount / targetWords) * 100), 100);
+  const draftIsStale = Boolean(draft) && article.draftSourceFingerprint !== draftSourceFingerprint;
+  const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
 
   // Keyword density check
   const keywordList = (article.keywords || '').split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
@@ -75,12 +120,21 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   }));
 
   const handleGenerate = async (manual = false) => {
+    if (!(article.outline && article.outline.length)) {
+      setError('Step 4 cần outline đã lưu từ Step 3. Vui lòng quay lại Step 3 và tạo hoặc lưu ít nhất một section.');
+      return;
+    }
     setGenerating(true);
     setError('');
     try {
-      const outlineText = (article.outline || [])
-        .map(s => `${s.level === 'h2' ? '## ' : '### '}${s.heading}${s.notes ? ` (${s.notes})` : ''}`)
-        .join('\n');
+      const verifiedOutline = buildVerifiedOutlineContext(article.outline || []);
+      const contextQuery = [
+        article.topic,
+        article.angle,
+        article.keywords,
+        ...(article.outline ?? []).map(section => section.heading),
+      ].filter(Boolean).join(' ');
+      const maxTokens = Math.min(12_000, Math.max(2_500, Math.ceil(targetWords * 2.4)));
 
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -91,26 +145,46 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           '- Rules & Guidelines quyết định tone of voice, từ ngữ cấm, cấu trúc câu, quy tắc SEO. PHẢI tuân thủ tuyệt đối.',
           '- Khi dùng thông tin từ KB, nêu tự nhiên trong văn bản (không cần footnote).',
           '- Nếu KB không có dữ liệu cho một mục, viết mục đó ở dạng khung và ghi chú "[Cần bổ sung dữ liệu]".',
+          '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
+          '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
+          '- Chỉ trả về nội dung bài viết hoàn chỉnh bằng Markdown, không thêm lời dẫn, nhật ký hoặc giải thích về quá trình viết.',
         ].join('\n'),
         documentPromptRules,
       );
       const userPrompt = [
         `TÀI LIỆU STEP 4 (${describeBundle(bundle)}):`,
-        'Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 4 từ Supabase.',
+        bundle.totalCount
+          ? 'Railway sẽ nạp các đoạn tài liệu liên quan nhất trong tài liệu được cấp quyền cho Step 4 từ Supabase.'
+          : 'Step 4 không có tài liệu riêng; dùng evidence đã kiểm chứng trong OUTLINE_STEP_3 làm nguồn.',
         '',
         'THÔNG TIN BÀI VIẾT:',
         `- Chủ đề: "${article.topic}"`,
+        `- Angle: ${article.angle || ''}`,
+        `- Độc giả: ${article.targetAudience || ''}`,
         `- Giọng văn: ${article.tone || ''}`,
         `- Từ khóa: ${article.keywords || ''}`,
         `- Số từ mục tiêu: ~${targetWords}`,
         '',
-        'DÀN BÀI:',
-        outlineText,
+        'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
+        JSON.stringify(verifiedOutline),
         '',
         'Yêu cầu: Viết bài hoàn chỉnh theo dàn bài trên, tuân thủ toàn bộ Rules & Guidelines.',
       ].join('\n');
 
-      const res = await callAI({ articleId: article.id, model, railwayUrl, prompt: userPrompt, systemPrompt, stepNumber: 4, bypassCache: manual });
+      const res = await callAI({
+        articleId: article.id,
+        model,
+        railwayUrl,
+        prompt: userPrompt,
+        systemPrompt,
+        stepNumber: 4,
+        bypassCache: manual,
+        maxTokens,
+        temperature: 0.2,
+        contextQuery,
+        skipDocumentContext: !bundle.totalCount,
+      });
+      if (!res.content.trim()) throw new Error('AI trả về draft rỗng. Kết quả cũ vẫn được giữ nguyên.');
       const saved = await onUpdate({
         draft: res.content,
         draftSourceFingerprint,
@@ -198,6 +272,21 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             {error && (
               <div className="mx-3 sm:mx-4 mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                 {error}
+              </div>
+            )}
+
+            {draftIsStale && !generating && (
+              <div className="mx-3 sm:mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Outline, tài liệu, prompting rules hoặc model đã thay đổi. Draft đã lưu vẫn được giữ nguyên; chỉ cập nhật khi bạn nhấn “Viết lại”.
+              </div>
+            )}
+
+            {draftWarnings.length > 0 && !generating && (
+              <div className="mx-3 sm:mx-4 mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                <div className="font-semibold mb-1">Kiểm tra nhanh — draft vẫn đã được lưu:</div>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  {draftWarnings.map(warning => <li key={warning}>{warning}</li>)}
+                </ul>
               </div>
             )}
 
