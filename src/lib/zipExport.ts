@@ -9,7 +9,7 @@ function safeName(value: string, fallback: string) { return value.normalize('NFK
 
 export function buildBatchZip(articles: Article[]): Blob {
   const completed = articles.filter(article => article.draft?.trim());
-  const manifest = articles.map(article => ({ id: article.id, title: article.topic || article.title, status: article.batchStatus ?? article.status, step: article.currentStep, keywords: article.keywords ?? '', models: Object.values(article.aiUsageByStep ?? {}).flat().map(call => call.model), totalTokens: Object.values(article.aiUsageByStep ?? {}).flat().reduce((sum, call) => sum + call.totalTokens, 0), error: article.batchError ?? null }));
+  const manifest = articles.map(article => { const usage = Object.values(article.aiUsageByStep ?? {}).flat(); return ({ id: article.id, title: article.topic || article.title, status: article.batchStatus ?? article.status, step: article.currentStep, keywords: article.keywords ?? '', models: usage.map(call => call.model), totalTokens: usage.reduce((sum, call) => sum + call.totalTokens, 0), knownCostUsd: usage.reduce((sum, call) => sum + Number(call.costUsd ?? 0), 0), costComplete: usage.every(call => call.costUsd != null), error: article.batchError ?? null }); });
   const entries = [
     ...completed.map((article, index) => ({ name: `${String(index + 1).padStart(2, '0')}-${safeName(article.topic || article.title, `article-${index + 1}`)}.md`, data: encoder.encode(article.draft!) })),
     { name: 'manifest.json', data: encoder.encode(JSON.stringify(manifest, null, 2)) },
