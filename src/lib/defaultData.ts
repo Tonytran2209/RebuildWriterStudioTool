@@ -41,6 +41,11 @@ export function mergeWithLatestModelCatalog(config: AppConfig): AppConfig {
       {
         ...stepConfig,
         modelId: modelIds.has(stepConfig.modelId) ? stepConfig.modelId : '',
+        fileAccess: {
+          kb: stepConfig.fileAccess?.kb ?? [],
+          action: [],
+          rules: stepConfig.fileAccess?.rules ?? [],
+        },
       },
     ]),
   );
@@ -58,7 +63,7 @@ export function mergeWithLatestModelCatalog(config: AppConfig): AppConfig {
 
 export const DEFAULT_CONFIG: AppConfig = {
   railwayUrl: 'https://rebuildwriterstudiotool-production.up.railway.app',
-  actionSources: [],
+  actionSources: [], // legacy only; new Content Plans are stored per activity/article
   stepConfigs: {
     1: { modelId: '', fileAccess: { kb: [], action: [], rules: [] } },
     2: { modelId: '', fileAccess: { kb: [], action: [], rules: [] } },

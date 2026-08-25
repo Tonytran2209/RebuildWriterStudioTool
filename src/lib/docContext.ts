@@ -65,29 +65,21 @@ function formatActionSource(src: ActionDataSource): DocRef {
 }
 
 export function collectStepDocs(
-  stepNumber: number,
+  _stepNumber: number,
   config: AppConfig,
   files: DocumentFile[],
 ): DocBundle {
-  const access = config.stepConfigs[stepNumber]?.fileAccess ?? { kb: [], action: [], rules: [] };
   const actionSources = config.actionSources ?? [];
 
-  const knowledgeBase: DocRef[] = (access.kb ?? [])
-    .map(id => files.find(f => f.id === id))
-    .filter((f): f is DocumentFile => Boolean(f))
+  const knowledgeBase: DocRef[] = files
+    .filter(f => f.category === 'kb')
     .filter(isDocumentReady)
     .map(formatFile);
 
-  const actionPlan: DocRef[] = (access.action ?? []).flatMap(id => {
-    const src = actionSources.find(s => s.id === id);
-    if (src && isActionSourceReady(src)) return [formatActionSource(src)];
-    const file = files.find(f => f.id === id);
-    return file && isDocumentReady(file) ? [formatFile(file)] : [];
-  });
+  const actionPlan: DocRef[] = actionSources.filter(isActionSourceReady).map(formatActionSource);
 
-  const rules: DocRef[] = (access.rules ?? [])
-    .map(id => files.find(f => f.id === id))
-    .filter((f): f is DocumentFile => Boolean(f))
+  const rules: DocRef[] = files
+    .filter(f => f.category === 'rules')
     .filter(isDocumentReady)
     .map(formatFile);
 

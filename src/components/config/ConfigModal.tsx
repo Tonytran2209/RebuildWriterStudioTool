@@ -1,15 +1,15 @@
-import { useState, useRef } from 'react';
-import type { AppConfig, ActionDataSource, DocumentFile, ActiveTab } from '../../types';
+import { useState } from 'react';
+import type { AppConfig, Article, DocumentFile, ActiveTab } from '../../types';
 import TabStepSetup from './TabStepSetup';
 import TabModels from './TabModels';
 import TabKnowledgeBase from './TabKnowledgeBase';
-import { saveConfig } from '../../lib/db';
 import { sanitizeConfigFileAccess } from '../../lib/documentStatus';
 import { useI18n } from '../../lib/i18n';
 
 interface Props {
   config: AppConfig;
   files: DocumentFile[];
+  articles: Article[];
   onSave: (config: AppConfig, files: DocumentFile[]) => void;
   onClose: () => void;
 }
@@ -17,46 +17,20 @@ interface Props {
 const TABS: { id: ActiveTab; label: string; icon: string }[] = [
   { id: 'step-setup',      label: 'Phân quyền AI theo Step',       icon: '⬡' },
   { id: 'models',          label: 'Quản lý AI Models',             icon: '◆' },
-  { id: 'knowledge-base',  label: 'Kho dữ liệu (KB / AP / Rules)', icon: '▤' },
+  { id: 'knowledge-base',  label: 'Knowledge Base & Skills', icon: '▤' },
 ];
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error';
-
-export default function ConfigModal({ config, files, onSave, onClose }: Props) {
+export default function ConfigModal({ config, files, articles, onSave, onClose }: Props) {
   const { language, tr } = useI18n();
   const [activeTab, setActiveTab] = useState<ActiveTab>('step-setup');
   const [localConfig, setLocalConfig] = useState<AppConfig>({ ...config });
   const [localFiles, setLocalFiles] = useState<DocumentFile[]>([...files]);
-  const [autoSaveState, setAutoSaveState] = useState<SaveState>('idle');
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSave = () => {
     const sanitized = sanitizeConfigFileAccess(localConfig, localFiles);
     setLocalConfig(sanitized);
     onSave(sanitized, localFiles);
     onClose();
-  };
-
-  // Auto-save actionSources immediately to Supabase whenever they change
-  const handleActionSourcesChange = async (sources: ActionDataSource[]) => {
-    const updated = sanitizeConfigFileAccess({ ...localConfig, actionSources: sources }, localFiles);
-    setLocalConfig(updated);
-
-    // Debounce slightly to batch rapid changes
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(async () => {
-      setAutoSaveState('saving');
-      try {
-        await saveConfig(updated);
-        setAutoSaveState('saved');
-        // Sync parent state so modal close doesn't lose the change
-        onSave(updated, localFiles);
-        setTimeout(() => setAutoSaveState('idle'), 2000);
-      } catch {
-        setAutoSaveState('error');
-        setTimeout(() => setAutoSaveState('idle'), 3000);
-      }
-    }, 400);
   };
 
   return (
@@ -97,7 +71,7 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
                   <span>{language === 'vi' ? tab.label : ({
                     'step-setup': 'AI access by Step',
                     models: 'AI Model management',
-                    'knowledge-base': 'Data store (KB / AP / Rules)',
+                    'knowledge-base': 'Knowledge Base & Skills',
                   } as Record<ActiveTab, string>)[tab.id]}</span>
                 </button>
               ))}
@@ -107,7 +81,7 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
           {/* Tab content */}
           <div className="flex-1 min-h-0 overflow-y-auto px-2.5 sm:px-6 py-3 sm:py-5">
             {activeTab === 'step-setup' && (
-              <TabStepSetup config={localConfig} files={localFiles} onChange={setLocalConfig} />
+              <TabStepSetup config={localConfig} files={localFiles} articles={articles} onChange={setLocalConfig} />
             )}
             {activeTab === 'models' && (
               <TabModels config={localConfig} onChange={setLocalConfig} />
@@ -116,8 +90,6 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
               <TabKnowledgeBase
                 files={localFiles}
                 onChange={setLocalFiles}
-                actionSources={localConfig.actionSources ?? []}
-                onActionSourcesChange={handleActionSourcesChange}
                 railwayUrl={localConfig.railwayUrl}
               />
             )}
@@ -126,24 +98,6 @@ export default function ConfigModal({ config, files, onSave, onClose }: Props) {
           {/* Footer */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 sm:px-6 py-2.5 sm:py-4 border-t border-slate-100 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              {/* Auto-save indicator for Action Plan */}
-              {activeTab === 'knowledge-base' && autoSaveState !== 'idle' && (
-                <div className={`flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg ${
-                  autoSaveState === 'saving' ? 'bg-blue-50 text-blue-600' :
-                  autoSaveState === 'saved'  ? 'bg-emerald-50 text-emerald-600' :
-                                               'bg-red-50 text-red-600'
-                }`}>
-                  {autoSaveState === 'saving' && (
-                    <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                    </svg>
-                  )}
-                  {autoSaveState === 'saved'  && <span>✓</span>}
-                  {autoSaveState === 'error'  && <span>✗</span>}
-                  {autoSaveState === 'saving' ? tr('Đang lưu...', 'Saving...') : autoSaveState === 'saved' ? tr('Đã lưu vào Supabase', 'Saved to Supabase') : tr('Lỗi lưu dữ liệu', 'Save failed')}
-                </div>
-              )}
               <div className="hidden sm:block text-[11px] text-slate-400">
                 Railway: <code className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{localConfig.railwayUrl ? '✓ kết nối' : 'Chưa cấu hình'}</code>
               </div>

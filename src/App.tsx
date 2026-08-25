@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { AICallUsage, Article, AppConfig, DocumentFile } from './types';
+import type { AICallUsage, Article, AppConfig, ContentPlanItem, DocumentFile } from './types';
 import { DEFAULT_CONFIG, mergeWithLatestModelCatalog } from './lib/defaultData';
 import * as db from './lib/db';
 import Sidebar from './components/Sidebar';
@@ -10,6 +10,8 @@ import Step2CoreIdea from './components/workspace/Step2CoreIdea';
 import Step3Outline from './components/workspace/Step3Outline';
 import Step4Draft from './components/workspace/Step4Draft';
 import { useI18n } from './lib/i18n';
+import ActivityLauncher from './components/ActivityLauncher';
+import BatchActivity from './components/BatchActivity';
 
 function generateId() {
   return `art-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -35,6 +37,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [files, setFiles] = useState<DocumentFile[]>([]);
   const [showConfig, setShowConfig] = useState(false);
+  const [showBatchOverview, setShowBatchOverview] = useState(true);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading');
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [articleActionError, setArticleActionError] = useState<string | null>(null);
@@ -108,6 +111,11 @@ export default function App() {
       const articleId = activeIdRef.current;
       const current = articlesRef.current.find(item => item.id === articleId);
       if (!articleId || !current || !usage) return;
+      try {
+        const summary = JSON.parse(localStorage.getItem('writer:usage-summary') ?? '{}') as Record<string, AICallUsage[]>;
+        summary[String(usage.step)] = [...(summary[String(usage.step)] ?? []), usage].slice(-500);
+        localStorage.setItem('writer:usage-summary', JSON.stringify(summary));
+      } catch { /* usage persistence in the article remains authoritative */ }
       const previous = current.aiUsageByStep?.[usage.step] ?? [];
       const aiUsageByStep = {
         ...current.aiUsageByStep,
@@ -128,17 +136,45 @@ export default function App() {
     return () => window.removeEventListener('writer:ai-usage', recordUsage);
   }, [enqueueArticleMutation]);
 
-  const handleNewArticle = async () => {
-    const newArt = createNewArticle();
+  const handleCreateActivity = async (type: ContentPlanItem['type'], plan: string, items: ContentPlanItem[], batchSize?: 5 | 10 | 15 | 20) => {
+    const activityId = `activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setArticleActionError(null);
     setSyncStatus('saving');
     try {
-      const savedArticle = await enqueueArticleMutation(() => db.saveArticle(newArt));
-      setArticles(prev => [savedArticle, ...prev.filter(item => item.id !== savedArticle.id)]);
-      setActiveId(savedArticle.id);
+      const records = items.map((item, index): Article => {
+        const snapshot = {
+          id: item.id, label: item.title, description: item.sourceLine, keywords: item.keywords,
+          typeGroup: (type === 'comparison-seo' ? 'A' : 'C') as const, wave: 'Current activity', timeframe: new Date().toISOString().slice(0, 10),
+          actionPlanEvidence: item.sourceLine, scheduleEvidence: item.sourceLine,
+        };
+        return ({
+        ...createNewArticle(),
+        id: `art-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`,
+        title: item.title,
+        topic: item.title,
+        keywords: item.keywords.join(', '),
+        activityType: type,
+        activityKind: type === 'comparison-seo' ? 'batch' : 'single',
+        activityId,
+        contentPlanInput: plan,
+        contentPlanItemId: item.id,
+        batchSize,
+        batchStatus: type === 'comparison-seo' ? 'queued' : undefined,
+        contentType: type === 'comparison-seo' ? 'Comparison / SEO' : 'Editorial / Originality',
+        selectedContentTypeSuggestionId: item.id,
+        selectedContentTypeSnapshot: snapshot,
+        contentTypeSuggestions: [snapshot],
+        currentStep: type === 'comparison-seo' ? 2 : 1,
+      }); });
+      const saved: Article[] = [];
+      for (const record of records) saved.push(await enqueueArticleMutation(() => db.saveArticle(record)));
+      setArticles(current => [...saved, ...current]);
+      setActiveId(saved[0]?.id ?? null);
+      setShowBatchOverview(type === 'comparison-seo');
+      if (type === 'comparison-seo') await db.startBatch(activityId);
       setSyncStatus('idle');
     } catch (error: unknown) {
-      setArticleActionError(`Không tạo được bài viết trong Supabase: ${error instanceof Error ? error.message : String(error)}`);
+      setArticleActionError(`Không tạo được activity trong Supabase: ${error instanceof Error ? error.message : String(error)}`);
       setSyncStatus('error');
     }
   };
@@ -167,7 +203,12 @@ export default function App() {
 
   const handleDeleteArticle = useCallback(async (target: Article) => {
     if (deletingArticleId) return;
-    const confirmed = window.confirm(`Xoá vĩnh viễn bài viết “${target.title}” khỏi Supabase? Thao tác này không thể hoàn tác.`);
+    const targets = target.activityType === 'comparison-seo' && target.activityId
+      ? articles.filter(item => item.activityId === target.activityId)
+      : [target];
+    const confirmed = window.confirm(targets.length > 1
+      ? `Xoá vĩnh viễn batch gồm ${targets.length} bài khỏi Supabase? Thao tác này không thể hoàn tác.`
+      : `Xoá vĩnh viễn bài viết “${target.title}” khỏi Supabase? Thao tác này không thể hoàn tác.`);
     if (!confirmed) return;
 
     setArticleActionError(null);
@@ -176,10 +217,11 @@ export default function App() {
     try {
       // Finish any content save already queued before deleting the database record.
       await articleMutationQueue.current;
-      await db.deleteArticle(target.id);
-      const remaining = articles.filter(item => item.id !== target.id);
+      for (const item of targets) await db.deleteArticle(item.id);
+      const targetIds = new Set(targets.map(item => item.id));
+      const remaining = articles.filter(item => !targetIds.has(item.id));
       setArticles(remaining);
-      if (activeId === target.id) setActiveId(remaining[0]?.id ?? null);
+      if (activeId && targetIds.has(activeId)) setActiveId(remaining[0]?.id ?? null);
       setSyncStatus('idle');
     } catch (error: unknown) {
       setArticleActionError(`Không xoá được bài viết khỏi Supabase: ${error instanceof Error ? error.message : String(error)}`);
@@ -203,6 +245,25 @@ export default function App() {
   };
 
   const article = activeId ? articles.find(a => a.id === activeId) ?? null : null;
+
+  useEffect(() => {
+    const activityId = article?.activityType === 'comparison-seo' ? article.activityId : null;
+    if (!activityId) return;
+    let stopped = false;
+    const refresh = async () => {
+      try {
+        const result = await db.fetchBatch(activityId);
+        if (stopped) return;
+        setArticles(current => {
+          const remoteIds = new Set(result.articles.map(item => item.id));
+          return [...result.articles, ...current.filter(item => !remoteIds.has(item.id))];
+        });
+      } catch { /* retain the last durable snapshot while Railway reconnects */ }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 4000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [article?.activityId, article?.activityType]);
 
   const handleStepChange = (step: number) => {
     if (!article) return;
@@ -269,66 +330,13 @@ export default function App() {
     );
   }
 
-  // ── Empty state — no articles yet ──
-  if (articles.length === 0) {
-    return (
-      <div className="h-dvh flex flex-col md:flex-row overflow-hidden bg-[#f4f5f8]">
-        <Sidebar
-          articles={[]}
-          activeArticleId={null}
-          onSelectArticle={() => {}}
-          onNewArticle={handleNewArticle}
-          onOpenConfig={() => setShowConfig(true)}
-          onToggleComplete={handleToggleComplete}
-          completionSavingId={completionSavingId}
-          onDeleteArticle={handleDeleteArticle}
-          deletingArticleId={deletingArticleId}
-        />
-        <div className="flex-1 min-h-0 overflow-y-auto flex items-center justify-center p-4">
-          <div className="text-center space-y-5 max-w-sm w-full">
-            <div className="w-14 h-14 rounded-3xl bg-slate-900 text-white flex items-center justify-center font-bold text-2xl mx-auto shadow-lg">W</div>
-            <div className="space-y-1.5">
-              <h1 className="text-lg font-bold text-slate-800">{tr('Chào mừng đến Writer Studio', 'Welcome to Writer Studio')}</h1>
-              <p className="text-sm text-slate-500 leading-relaxed">
-                {tr('Workspace AI cho quy trình sản xuất nội dung 4 bước.', 'AI workspace for a four-step content workflow.')}<br />
-                {tr('Bắt đầu bằng cách tạo bài viết đầu tiên.', 'Start by creating your first article.')}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              {articleActionError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                  {articleActionError}
-                </div>
-              )}
-              <button
-                onClick={handleNewArticle}
-                className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm py-3 px-6 rounded-2xl shadow-sm transition-all"
-              >
-                {tr('+ Tạo bài viết đầu tiên', '+ Create first article')}
-              </button>
-              <button
-                onClick={() => setShowConfig(true)}
-                className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 font-semibold text-xs py-2.5 px-5 rounded-2xl transition-all"
-              >
-                {tr('Cấu hình AI Model & Knowledge Base', 'Configure AI Model & Knowledge Base')}
-              </button>
-            </div>
-          </div>
-        </div>
-        {showConfig && (
-          <ConfigModal config={config} files={files} onSave={handleSaveConfig} onClose={() => setShowConfig(false)} />
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="h-dvh flex flex-col md:flex-row overflow-hidden bg-[#f4f5f8]">
       <Sidebar
         articles={articles}
         activeArticleId={activeId}
-        onSelectArticle={id => setActiveId(id)}
-        onNewArticle={handleNewArticle}
+        onSelectArticle={id => { setActiveId(id); setShowBatchOverview(true); }}
+        onNewArticle={() => { setActiveId(null); setShowBatchOverview(true); }}
         onOpenConfig={() => setShowConfig(true)}
         onToggleComplete={handleToggleComplete}
         completionSavingId={completionSavingId}
@@ -343,7 +351,15 @@ export default function App() {
             <button type="button" onClick={() => setArticleActionError(null)} className="font-bold text-red-500 hover:text-red-700" aria-label="Đóng thông báo">×</button>
           </div>
         )}
-        {article ? (
+        {article?.activityType === 'comparison-seo' && showBatchOverview ? (
+          <BatchActivity
+            articles={articles.filter(item => item.activityId === article.activityId)}
+            onOpen={id => { setActiveId(id); setShowBatchOverview(false); }}
+            onStart={() => article.activityId ? db.startBatch(article.activityId) : Promise.resolve()}
+            onPause={() => article.activityId ? db.pauseBatch(article.activityId) : Promise.resolve()}
+            onRetry={id => article.activityId ? db.retryBatchArticle(article.activityId, id) : Promise.resolve()}
+          />
+        ) : article ? (
           <>
             <StepNav
               currentStep={article.currentStep}
@@ -405,9 +421,7 @@ export default function App() {
           </>
         ) : (
           // Article selected from sidebar but not found (shouldn't happen)
-          <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-            Chọn bài viết từ danh sách bên trái
-          </div>
+          <ActivityLauncher onCreate={handleCreateActivity} onOpenConfig={() => setShowConfig(true)} />
         )}
       </div>
 
@@ -415,6 +429,7 @@ export default function App() {
         <ConfigModal
           config={config}
           files={files}
+          articles={articles}
           onSave={handleSaveConfig}
           onClose={() => setShowConfig(false)}
         />

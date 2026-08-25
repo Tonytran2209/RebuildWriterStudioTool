@@ -41,6 +41,7 @@ const upload = multer({
 const ARTICLE_PREFIX = 'writer:article:';
 const articleMutationQueues = new Map<string, Promise<unknown>>();
 const aiBudgetQueues = new Map<string, Promise<unknown>>();
+const batchControllers = new Map<string, { paused: boolean; running: boolean }>();
 const DAILY_AI_LIMITS: Record<number, number> = { 1: 12, 2: 12, 3: 10, 4: 6 };
 
 const PROVIDER_NAMES: Record<string, string> = {
@@ -152,6 +153,137 @@ function contentMetadata(content: string) {
 function aiCacheKey(input: unknown): string {
   const digest = crypto.createHash('sha256').update(JSON.stringify(input), 'utf8').digest('hex');
   return `writer:ai-cache:${digest}`;
+}
+
+function parseJsonObject(raw: string): Record<string, any> {
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try { const parsed = JSON.parse(cleaned); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed; } catch { /* scan below */ }
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1));
+  throw new Error('AI did not return a valid JSON object.');
+}
+
+function batchUsage(step: 1 | 2 | 3 | 4, provider: string, response: any) {
+  const inputTokens = response.cacheHit ? 0 : Number(response.usage?.inputTokens ?? 0);
+  const outputTokens = response.cacheHit ? 0 : Number(response.usage?.outputTokens ?? 0);
+  return {
+    id: `usage-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+    step, provider, model: response.model, inputTokens,
+    cachedInputTokens: response.cacheHit ? 0 : Number(response.usage?.cachedInputTokens ?? 0),
+    outputTokens, totalTokens: inputTokens + outputTokens, costUsd: response.cacheHit ? 0 : response.costUsd ?? null,
+    cacheHit: Boolean(response.cacheHit), calledAt: new Date().toISOString(),
+  };
+}
+
+async function saveArticleCheckpoint(article: any, updates: Record<string, any>) {
+  const next = { ...article, ...updates, updatedAt: new Date().toISOString() };
+  await kvSet(`${ARTICLE_PREFIX}${article.id}`, next);
+  return next;
+}
+
+async function runBatchModel(article: any, step: 2 | 3 | 4, prompt: string, jsonMode: boolean, maxTokens: number) {
+  const config = await kvGet<any>('writer:config');
+  const stepConfig = config?.stepConfigs?.[step];
+  const model = config?.models?.find((item: any) => item.id === stepConfig?.modelId && item.enabled);
+  if (!model) throw new Error(`Step ${step}: no enabled AI model is configured.`);
+  if (!getAvailableProviders()[model.provider]) throw new Error(`${model.provider} API is not configured.`);
+  const context = await resolveStepContext(step, `${article.topic ?? ''} ${article.keywords ?? ''}`, article.id);
+  const key = aiCacheKey({ kind: 'batch-pipeline-v1', articleId: article.id, step, model: model.id, prompt, fingerprint: context.summary.sourceFingerprint });
+  const cached = await kvGet<any>(key);
+  if (cached?.content) return { ...cached, provider: model.provider, cacheHit: true };
+  await reserveAIBudget(article.id, step);
+  const response = await generate({ modelId: model.id, provider: model.provider, prompt, contextDocs: context.contextDocs, jsonMode, maxTokens, temperature: step === 4 ? 0.65 : 0.35 });
+  const input = Number(response.usage?.inputTokens ?? 0);
+  const cachedTokens = Number(response.usage?.cachedInputTokens ?? 0);
+  const output = Number(response.usage?.outputTokens ?? 0);
+  const pricing = model.pricing;
+  const costUsd = pricing ? (((input - cachedTokens) * Number(pricing.inputUsdPerMillion ?? 0)) + (cachedTokens * Number(pricing.cachedInputUsdPerMillion ?? pricing.inputUsdPerMillion ?? 0)) + (output * Number(pricing.outputUsdPerMillion ?? 0))) / 1_000_000 : null;
+  await kvSet(key, { ...response, costUsd, generatedAt: new Date().toISOString() });
+  return { ...response, provider: model.provider, costUsd, cacheHit: false };
+}
+
+async function runBatchArticle(initial: any, controller: { paused: boolean; running: boolean }) {
+  let article = initial;
+  const appendUsage = (step: 2 | 3 | 4, response: any) => ({
+    ...article.aiUsageByStep,
+    [step]: [...(article.aiUsageByStep?.[step] ?? []), batchUsage(step, response.provider ?? 'unknown', response)].slice(-50),
+  });
+  try {
+    if (controller.paused) return;
+    article = await saveArticleCheckpoint(article, { batchStatus: 'running', batchError: null, batchStartedAt: article.batchStartedAt ?? new Date().toISOString(), status: 'in_progress' });
+    if (!article.coreIdeaSuggestions?.length) {
+      let seoResearch = article.seoResearch;
+      let seoUsage: any = null;
+      if (!seoResearch) {
+        const seeds = [article.topic, ...String(article.keywords ?? '').split(',')].map(String).map(value => value.trim()).filter(Boolean).slice(0, 10);
+        const seoKey = aiCacheKey({ kind: 'batch-seo-v1', seeds: seeds.map(value => value.toLowerCase()).sort() });
+        seoResearch = await kvGet<any>(seoKey);
+        if (seoResearch?.researchedAt && Date.now() - new Date(seoResearch.researchedAt).getTime() > 24 * 60 * 60 * 1000) seoResearch = null;
+        if (!seoResearch) {
+          await reserveAIBudget(article.id, 2);
+          seoResearch = await researchSeoKeywords(seeds);
+          seoUsage = batchUsage(2, 'openai', { model: 'gpt-5.4-mini-web-search', usage: seoResearch.usage, costUsd: null, cacheHit: false });
+          await kvSet(seoKey, seoResearch);
+          article = await saveArticleCheckpoint(article, { seoResearch, aiUsageByStep: { ...article.aiUsageByStep, 2: [...(article.aiUsageByStep?.[2] ?? []), seoUsage].slice(-50) } });
+          seoUsage = null;
+        }
+      }
+      const response = await runBatchModel(article, 2, [
+        `Create the strongest evidence-grounded Comparison/SEO core idea for: ${article.topic}.`,
+        `SEO research: ${JSON.stringify(seoResearch.keywords)}`,
+        'Use the supplied Knowledge Base and Skills. Return only JSON:',
+        '{"title":string,"angleLabel":string,"angleDescription":string,"mainArgument":string,"primaryKeyword":string,"secondaryKeywords":string[],"targetAudience":string,"recommendedTone":string,"recommendedWordCount":number,"rating":{"overall":number,"seoPotential":number,"audienceFit":number,"docSupport":number,"uniqueness":number},"ratingRationale":string}',
+      ].join('\n'), true, 3500);
+      const idea = parseJsonObject(response.content);
+      const normalized = { id: `batch-idea-${article.id}`, matchedDocs: [], ruleRefs: [], evidence: [], ...idea };
+      const step2Usage = appendUsage(2, response);
+      if (seoUsage) step2Usage[2] = [seoUsage, ...(step2Usage[2] ?? [])].slice(-50);
+      article = await saveArticleCheckpoint(article, { seoResearch, coreIdeaSuggestions: [normalized], selectedCoreIdeaId: normalized.id, coreIdeaScannedAt: new Date().toISOString(), currentStep: 3, aiUsageByStep: step2Usage });
+    }
+    if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
+    if (!article.outline?.length) {
+      const idea = article.coreIdeaSuggestions.find((item: any) => item.id === article.selectedCoreIdeaId) ?? article.coreIdeaSuggestions[0];
+      const response = await runBatchModel(article, 3, [
+        `Create a detailed SEO outline for ${article.topic}.`, `Core idea: ${JSON.stringify(idea)}`,
+        'Use KB facts and Skills rules. Return only JSON: {"sections":[{"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational"}]}. Include at least 6 sections.',
+      ].join('\n'), true, 5000);
+      const parsed = parseJsonObject(response.content);
+      const sections = (Array.isArray(parsed.sections) ? parsed.sections : []).map((section: any, index: number) => ({ id: `batch-section-${index + 1}`, evidence: [], ruleRefs: [], ...section }));
+      if (sections.length < 4) throw new Error(`Step 3 returned only ${sections.length}/4 usable sections.`);
+      article = await saveArticleCheckpoint(article, { outline: sections, outlineScannedAt: new Date().toISOString(), currentStep: 4, aiUsageByStep: appendUsage(3, response) });
+    }
+    if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
+    if (!article.draft?.trim()) {
+      const response = await runBatchModel(article, 4, [
+        `Write the complete publication-ready Comparison/SEO article: ${article.topic}.`,
+        `Primary keyword: ${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
+        `Outline: ${JSON.stringify(article.outline)}`,
+        'Follow every supplied Skill rule, use only supported KB claims, preserve the outline headings, and return Markdown only.',
+      ].join('\n'), false, Math.min(12000, Math.max(3500, Math.ceil(Number(article.coreIdeaSuggestions?.[0]?.recommendedWordCount ?? 1600) * 2.4))));
+      if (!response.content.trim()) throw new Error('Step 4 returned an empty draft.');
+      article = await saveArticleCheckpoint(article, { draft: response.content.trim(), draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: appendUsage(4, response) });
+    } else if (article.batchStatus !== 'completed') {
+      article = await saveArticleCheckpoint(article, { status: 'done', batchStatus: 'completed', completedAt: article.completedAt ?? new Date().toISOString() });
+    }
+  } catch (error: any) {
+    await saveArticleCheckpoint(article, { batchStatus: 'failed', batchError: error?.message ?? String(error), status: 'review' });
+  }
+}
+
+async function runBatch(activityId: string) {
+  const controller = batchControllers.get(activityId) ?? { paused: false, running: false };
+  if (controller.running) return;
+  controller.running = true; controller.paused = false; batchControllers.set(activityId, controller);
+  await kvSet(`writer:batch:${activityId}`, { activityId, status: 'running', updatedAt: new Date().toISOString() });
+  try {
+    const articles = (await loadArticles()).filter(article => article.activityId === activityId && article.activityType === 'comparison-seo' && !['completed', 'failed'].includes(article.batchStatus));
+    await runWithConcurrency(articles, 2, article => runBatchArticle(article, controller));
+    const latest = (await loadArticles()).filter(article => article.activityId === activityId);
+    const status = controller.paused ? 'paused' : latest.every(article => article.batchStatus === 'completed') ? 'completed' : latest.some(article => article.batchStatus === 'failed') ? 'failed' : 'queued';
+    const usage = latest.flatMap(article => Object.values(article.aiUsageByStep ?? {}).flat() as any[]);
+    await kvSet(`writer:batch:${activityId}`, { activityId, status, total: latest.length, completed: latest.filter(article => article.batchStatus === 'completed').length, failed: latest.filter(article => article.batchStatus === 'failed').length, totalTokens: usage.reduce((sum, call) => sum + Number(call.totalTokens ?? 0), 0), totalCostUsd: usage.every(call => call.costUsd != null) ? usage.reduce((sum, call) => sum + Number(call.costUsd), 0) : null, updatedAt: new Date().toISOString() });
+  } finally { controller.running = false; }
 }
 
 function extractJsonArray(content: string): unknown[] {
@@ -402,8 +534,8 @@ app.post('/api/generate', async (req, res) => {
     const contexts = skipDocumentContext && (stepNumber === 2 || stepNumber === 4)
       ? [{ contextDocs: [], actionText: '', summary: { stepNumber, kb: [], action: [], rules: [], totalChars: 0, sourceFingerprint: `empty-step-${stepNumber}` } }]
       : stepNumber === 1 && splitByWave
-      ? await resolveStep1WaveContexts()
-      : [await resolveStepContext(stepNumber, normalizedContextQuery)];
+      ? await resolveStep1WaveContexts(String(articleId))
+      : [await resolveStepContext(stepNumber, normalizedContextQuery, String(articleId))];
     const contextMs = Date.now() - contextsStartedAt;
     const sourceFingerprint = contexts.map(context => context.summary.sourceFingerprint).sort().join('|');
     const cacheKey = aiCacheKey({ modelId, provider, prompt, systemPrompt, stepNumber, maxTokens, temperature, splitByWave: Boolean(splitByWave), jsonMode: Boolean(jsonMode), contextQuery: normalizedContextQuery, skipDocumentContext: Boolean(skipDocumentContext), sourceFingerprint, promptVersion: 12 });
@@ -593,6 +725,49 @@ app.get('/api/kv-prefix/:prefix', async (req, res) => {
 
 // ─── Articles (via Supabase) ──────────────────────────────────────────────────
 
+app.get('/api/batches/:activityId', async (req, res) => {
+  try {
+    const articles = (await loadArticles()).filter(article => article.activityId === req.params.activityId);
+    const batch = await kvGet(`writer:batch:${req.params.activityId}`);
+    const controller = batchControllers.get(req.params.activityId);
+    if ((batch as any)?.status === 'running' && !controller?.running) {
+      void runBatch(req.params.activityId).catch(error => console.error(`[batch-resume] ${req.params.activityId}`, error));
+    }
+    res.json({ batch: batch ?? null, articles });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/batches/:activityId/start', async (req, res) => {
+  try {
+    const activityId = req.params.activityId;
+    const articles = (await loadArticles()).filter(article => article.activityId === activityId && article.activityType === 'comparison-seo');
+    if (!articles.length) return res.status(404).json({ error: 'Batch activity không tồn tại.' });
+    void runBatch(activityId).catch(error => console.error(`[batch] ${activityId}`, error));
+    res.status(202).json({ ok: true, activityId, queued: articles.length });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/batches/:activityId/pause', async (req, res) => {
+  try {
+    const activityId = req.params.activityId;
+    const controller = batchControllers.get(activityId) ?? { paused: false, running: false };
+    controller.paused = true; batchControllers.set(activityId, controller);
+    await kvSet(`writer:batch:${activityId}`, { activityId, status: 'paused', updatedAt: new Date().toISOString() });
+    res.json({ ok: true, activityId });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/batches/:activityId/retry/:articleId', async (req, res) => {
+  try {
+    const key = `${ARTICLE_PREFIX}${req.params.articleId}`;
+    const article = await kvGet<any>(key);
+    if (!article || article.activityId !== req.params.activityId) return res.status(404).json({ error: 'Article không thuộc batch này.' });
+    await kvSet(key, { ...article, batchStatus: 'queued', batchError: null, updatedAt: new Date().toISOString() });
+    void runBatch(req.params.activityId).catch(error => console.error(`[batch-retry] ${req.params.activityId}`, error));
+    res.status(202).json({ ok: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/articles', async (_req, res) => {
   try {
     res.json(await loadArticles());
@@ -634,7 +809,7 @@ app.put('/api/articles/:id', async (req, res) => {
 app.delete('/api/articles/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const existing = await kvGet(`${ARTICLE_PREFIX}${id}`);
+    const existing = await kvGet<any>(`${ARTICLE_PREFIX}${id}`);
     if (!existing && !(await loadArticles()).some(article => article.id === id)) {
       res.status(404).json({ error: 'Bài viết không tồn tại trong Supabase.' });
       return;
@@ -643,6 +818,13 @@ app.delete('/api/articles/:id', async (req, res) => {
     const legacy = (await kvGet<any[]>('writer:articles')) ?? [];
     if (legacy.some(article => article?.id === id)) {
       await kvSet('writer:articles', legacy.filter(article => article?.id !== id));
+    }
+    if (existing?.activityId) {
+      const siblings = (await loadArticles()).filter(article => article.activityId === existing.activityId);
+      if (!siblings.length) {
+        await kvDelete(`writer:batch:${existing.activityId}`);
+        batchControllers.delete(existing.activityId);
+      }
     }
     res.json({ ok: true, deletedId: id });
   } catch (err: any) {

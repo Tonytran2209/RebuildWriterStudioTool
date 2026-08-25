@@ -60,6 +60,22 @@ export async function deleteArticle(id: string): Promise<void> {
   await railwayRequest(`/api/articles/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
+export async function startBatch(activityId: string): Promise<void> {
+  await railwayRequest(`/api/batches/${encodeURIComponent(activityId)}/start`, { method: 'POST' });
+}
+
+export async function pauseBatch(activityId: string): Promise<void> {
+  await railwayRequest(`/api/batches/${encodeURIComponent(activityId)}/pause`, { method: 'POST' });
+}
+
+export async function retryBatchArticle(activityId: string, articleId: string): Promise<void> {
+  await railwayRequest(`/api/batches/${encodeURIComponent(activityId)}/retry/${encodeURIComponent(articleId)}`, { method: 'POST' });
+}
+
+export async function fetchBatch(activityId: string): Promise<{ batch: Record<string, unknown> | null; articles: Article[] }> {
+  return railwayRequest(`/api/batches/${encodeURIComponent(activityId)}`);
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
 export async function fetchConfig(): Promise<AppConfig | null> {

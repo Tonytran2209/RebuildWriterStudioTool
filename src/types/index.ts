@@ -255,6 +255,25 @@ export interface Article {
   draftSourceFingerprint?: string | null;
   draftScannedAt?: string | null;
   aiUsageByStep?: Partial<Record<1 | 2 | 3 | 4, AICallUsage[]>>;
+  // Activity workspace / per-run content plan
+  activityType?: 'comparison-seo' | 'editorial-originality';
+  activityKind?: 'single' | 'batch';
+  activityId?: string;
+  contentPlanInput?: string;
+  contentPlanItemId?: string;
+  batchSize?: 5 | 10 | 15 | 20;
+  batchArticleIds?: string[];
+  batchStatus?: 'queued' | 'running' | 'paused' | 'completed' | 'failed';
+  batchError?: string | null;
+  batchStartedAt?: string | null;
+}
+
+export interface ContentPlanItem {
+  id: string;
+  title: string;
+  keywords: string[];
+  type: 'comparison-seo' | 'editorial-originality';
+  sourceLine: string;
 }
 
 export interface ContentType {
@@ -266,7 +285,7 @@ export interface ContentType {
 }
 
 export type ActiveTab = 'step-setup' | 'models' | 'knowledge-base';
-export type KbSubTab = 'kb' | 'action' | 'rules';
+export type KbSubTab = 'kb' | 'rules';
 
 // ── Action Plan — multi-source data input ────────────────────────────────────
 

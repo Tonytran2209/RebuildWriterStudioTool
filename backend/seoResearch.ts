@@ -40,6 +40,7 @@ export async function researchSeoKeywords(seeds: string[]): Promise<{
   location: string;
   language: string;
   researchedAt: string;
+  usage?: { inputTokens: number; outputTokens: number; cachedInputTokens?: number };
 }> {
   if (!process.env.OPENAI_API_KEY) throw new Error('OpenAI Web Search chưa sẵn sàng vì Railway chưa có OPENAI_API_KEY.');
   const cleanSeeds = [...new Set(seeds.map(seed => String(seed).trim()).filter(Boolean))].slice(0, 20);
@@ -74,5 +75,5 @@ export async function researchSeoKeywords(seeds: string[]): Promise<{
   });
   const unique = [...new Map(items.map(item => [item.keyword.toLocaleLowerCase(), item])).values()].slice(0, 10);
   if (unique.length !== 10) throw new Error(`OpenAI Web Search chỉ trả về ${unique.length}/10 keyword có nguồn hợp lệ; pipeline dừng để tránh kết quả thiếu căn cứ.`);
-  return { keywords: unique, seedKeywords: cleanSeeds, location, language, researchedAt };
+  return { keywords: unique, seedKeywords: cleanSeeds, location, language, researchedAt, usage: { inputTokens: response.usage?.input_tokens ?? 0, outputTokens: response.usage?.output_tokens ?? 0, cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0 } };
 }

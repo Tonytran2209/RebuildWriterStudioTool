@@ -256,7 +256,16 @@ export default function Step1ContentType({
   const autoRequestedRef = useRef<string | null>(null);
   const { tr, canonicalAIOutputInstruction } = useI18n();
 
-  const bundle = useMemo(() => collectStepDocs(1, config, files), [config, files]);
+  const bundle = useMemo(() => {
+    const shared = collectStepDocs(1, config, files);
+    const content = article.contentPlanInput?.trim();
+    if (!content) return shared;
+    return {
+      ...shared,
+      actionPlan: [{ id: `content-plan-${article.activityId ?? article.id}`, name: 'Current activity Content Plan', meta: 'per-activity input', content }],
+      totalCount: shared.totalCount + 1,
+    };
+  }, [article.activityId, article.contentPlanInput, article.id, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(1, config, files), [config, files]);
   const sourceFingerprint = useMemo(
     () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:${STEP1_PROMPT_VERSION}:${documentPromptRules}`,

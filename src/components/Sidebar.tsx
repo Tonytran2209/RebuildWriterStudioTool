@@ -32,6 +32,7 @@ interface Props {
 export default function Sidebar({ articles, activeArticleId, onSelectArticle, onNewArticle, onOpenConfig, onToggleComplete, completionSavingId, onDeleteArticle, deletingArticleId }: Props) {
   const [search, setSearch] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [activityFilter, setActivityFilter] = useState<'comparison-seo' | 'editorial-originality'>('comparison-seo');
   const { language, toggleLanguage, tr } = useI18n();
   const statusLabels = language === 'vi' ? STATUS_LABELS : {
     planning: 'Planning', in_progress: 'Writing', review: 'Review', done: 'Completed',
@@ -42,8 +43,12 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
 
   const filtered = articles.filter(article => {
     const displayTitle = article.topic?.trim() || article.title;
-    return displayTitle.toLowerCase().includes(search.toLowerCase());
+    const legacyType = article.activityType ?? 'editorial-originality';
+    return legacyType === activityFilter && displayTitle.toLowerCase().includes(search.toLowerCase());
   });
+  const visibleActivities = filtered.filter((article, index, list) =>
+    article.activityType !== 'comparison-seo' || list.findIndex(item => item.activityId === article.activityId) === index
+  );
 
   return (
     <aside className="w-full md:w-72 bg-[#ebedf3] border-b md:border-b-0 md:border-r border-slate-200/80 p-3 flex flex-col shrink-0 h-auto md:h-full max-h-[52dvh] md:max-h-none">
@@ -91,7 +96,7 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
           </svg>
-          <span>{tr('Tạo bài viết mới', 'New article')}</span>
+          <span>{tr('Tạo activity mới', 'New activity')}</span>
         </button>
 
         <div className={`${mobileOpen ? 'block' : 'hidden'} md:block relative`}>
@@ -102,7 +107,7 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder={tr('Tìm kiếm bài viết...', 'Search articles...')}
+            placeholder={tr('Tìm trong lịch sử...', 'Search history...')}
             className="w-full bg-white border border-slate-200/80 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 transition-all placeholder:text-slate-400"
           />
         </div>
@@ -111,18 +116,23 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
       {/* Article list */}
       <div className={`${mobileOpen ? 'block' : 'hidden'} md:block flex-1 overflow-y-auto space-y-1.5 pr-0.5 min-h-0`}>
         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-2">
-          {tr('Bài viết', 'Articles')} ({filtered.length})
+          {tr('Lịch sử hoạt động', 'Activity history')} ({visibleActivities.length})
+        </div>
+        <div className="grid grid-cols-2 gap-1 mb-2 rounded-xl bg-slate-200/70 p-1">
+          <button onClick={() => setActivityFilter('comparison-seo')} className={`rounded-lg px-1 py-1.5 text-[9px] font-bold ${activityFilter === 'comparison-seo' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}>Comparison / SEO</button>
+          <button onClick={() => setActivityFilter('editorial-originality')} className={`rounded-lg px-1 py-1.5 text-[9px] font-bold ${activityFilter === 'editorial-originality' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500'}`}>Editorial / Originality</button>
         </div>
 
-        {filtered.length === 0 && (
+        {visibleActivities.length === 0 && (
           <div className="text-center py-8 text-xs text-slate-400">
             {tr('Không tìm thấy bài viết', 'No articles found')}
           </div>
         )}
 
-        {filtered.map(article => {
+        {visibleActivities.map(article => {
           const displayTitle = article.topic?.trim() || article.title;
-          const isActive = activeArticleId === article.id;
+          const activityArticles = article.activityType === 'comparison-seo' ? articles.filter(item => item.activityId === article.activityId) : [article];
+          const isActive = activityArticles.some(item => activeArticleId === item.id);
           const isSavingCompletion = completionSavingId === article.id;
           const isDeleting = deletingArticleId === article.id;
 
@@ -144,13 +154,13 @@ export default function Sidebar({ articles, activeArticleId, onSelectArticle, on
               >
                 <div className="flex justify-between items-start gap-2">
                   <h4 className={`text-xs font-bold line-clamp-2 leading-snug ${isActive ? 'text-white' : 'text-slate-800'}`}>
-                    {displayTitle}
+                    {article.activityType === 'comparison-seo' ? `${activityArticles.length} articles · ${new Date(article.createdAt).toLocaleDateString()}` : displayTitle}
                   </h4>
                   <span className={`w-2 h-2 rounded-full shrink-0 mt-0.5 ${STATUS_COLORS[article.status]}`} />
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-slate-400">
                   <span className={`font-medium ${isActive ? 'text-slate-300' : 'text-slate-500'}`}>
-                    {tr('Bước', 'Step')} {article.currentStep}/4 — {stepLabels[article.currentStep]}
+                    {article.activityType === 'comparison-seo' ? `${tr('Batch', 'Batch')} · ${activityArticles.filter(item => item.draft?.trim()).length}/${activityArticles.length} ${tr('hoàn tất', 'complete')}` : `${tr('Bước', 'Step')} ${article.currentStep}/4 — ${stepLabels[article.currentStep]}`}
                   </span>
                   <span>{statusLabels[article.status]}</span>
                 </div>

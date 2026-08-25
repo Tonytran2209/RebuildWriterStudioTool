@@ -146,29 +146,23 @@ function buildResult(stepNumber: number, resolved: Array<{ role: Role; document:
   };
 }
 
-async function resolveDocuments(stepNumber: number) {
-  const [config, filesValue] = await Promise.all([
+async function resolveDocuments(stepNumber: number, articleId?: string) {
+  const [config, filesValue, article] = await Promise.all([
     kvGet<Record<string, any>>('writer:config'),
     kvGet<StoredDocument[]>('writer:files'),
+    articleId ? kvGet<Record<string, any>>(`writer:article:${articleId}`) : Promise.resolve(null),
   ]);
   if (!config) throw new Error('Không tìm thấy writer:config trong Supabase.');
   const stepConfig = config.stepConfigs?.[stepNumber];
   if (!stepConfig) throw new Error(`Chưa cấu hình quyền tài liệu cho Step ${stepNumber}.`);
-  const access = stepConfig.fileAccess ?? { kb: [], action: [], rules: [] };
   const files = Array.isArray(filesValue) ? filesValue : [];
-  const actionSources: StoredDocument[] = Array.isArray(config.actionSources) ? config.actionSources : [];
-  const fileById = new Map(files.map(file => [file.id, file]));
-  const actionById = new Map(actionSources.map(source => [source.id, source]));
-  const resolveMany = (ids: string[], role: Role, source: Map<string, StoredDocument>) => ids.map(id => {
-    const document = source.get(id);
-    if (!document) throw new Error(`Step ${stepNumber}: không tìm thấy tài liệu được cấp quyền ID ${id}.`);
-    if (!isReady(document)) throw new Error(`Step ${stepNumber}: tài liệu "${document.name}" chưa có nội dung scan hợp lệ.`);
-    return { role, document };
-  });
-  const resolved = [
-    ...resolveMany(access.kb ?? [], 'KNOWLEDGE_BASE', fileById),
-    ...resolveMany(access.action ?? [], 'ACTION_PLAN', actionById),
-    ...resolveMany(access.rules ?? [], 'RULES', fileById),
+  const readyFiles = files.filter(isReady);
+  const legacyActionSources = (Array.isArray(config.actionSources) ? config.actionSources : []).filter(isReady);
+  const resolved: Array<{ role: Role; document: StoredDocument & { content: string } }> = [
+    ...readyFiles.filter(file => file.category === 'kb').map(document => ({ role: 'KNOWLEDGE_BASE' as Role, document })),
+    ...(article?.contentPlanInput ? [{ role: 'ACTION_PLAN' as Role, document: { id: `content-plan-${articleId}`, name: 'Current activity Content Plan', content: String(article.contentPlanInput), contentHash: `article-${article.updatedAt ?? 'current'}` } }] : []),
+    ...(!article?.contentPlanInput ? legacyActionSources.map((document: StoredDocument & { content: string }) => ({ role: 'ACTION_PLAN' as Role, document })) : []),
+    ...readyFiles.filter(file => file.category === 'rules').map(document => ({ role: 'RULES' as Role, document })),
   ];
   if (!resolved.length) throw new Error(`Step ${stepNumber} chưa được cấp quyền đọc tài liệu nào.`);
   return resolved;
@@ -220,8 +214,8 @@ function selectRelevantContent(document: StoredDocument & { content: string }, q
     .join('\n\n');
 }
 
-export async function resolveStepContext(stepNumber: number, query = ''): Promise<StepContextResult> {
-  const resolved = await resolveDocuments(stepNumber);
+export async function resolveStepContext(stepNumber: number, query = '', articleId?: string): Promise<StepContextResult> {
+  const resolved = await resolveDocuments(stepNumber, articleId);
   if (!query.trim()) return buildResult(stepNumber, resolved);
   return buildResult(stepNumber, resolved.map(item => ({
     ...item,
@@ -229,8 +223,8 @@ export async function resolveStepContext(stepNumber: number, query = ''): Promis
   })));
 }
 
-export async function resolveStep1WaveContexts(): Promise<StepWaveContext[]> {
-  const resolved = await resolveDocuments(1);
+export async function resolveStep1WaveContexts(articleId?: string): Promise<StepWaveContext[]> {
+  const resolved = await resolveDocuments(1, articleId);
   const shared = resolved.filter(item => item.role !== 'ACTION_PLAN');
   const action = resolved.filter(item => item.role === 'ACTION_PLAN');
   const supportingAction: Array<{ role: Role; document: StoredDocument & { content: string } }> = [];
