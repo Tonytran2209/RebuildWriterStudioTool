@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { AICallUsage, Article, AppConfig, ContentPlanItem, DocumentFile } from './types';
+import type { AICallUsage, Article, AppConfig, ContentPlan, ContentPlanItem, DocumentFile } from './types';
 import { DEFAULT_CONFIG, mergeWithLatestModelCatalog } from './lib/defaultData';
 import * as db from './lib/db';
 import Sidebar from './components/Sidebar';
@@ -136,7 +136,7 @@ export default function App() {
     return () => window.removeEventListener('writer:ai-usage', recordUsage);
   }, [enqueueArticleMutation]);
 
-  const handleCreateActivity = async (type: ContentPlanItem['type'], plan: string, items: ContentPlanItem[], batchSize?: 5 | 10 | 15 | 20) => {
+  const handleCreateActivity = async (type: 'comparison-seo' | 'editorial-originality', plan: ContentPlan, items: ContentPlanItem[], batchSize?: 5 | 10 | 15 | 20) => {
     const activityId = `activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setArticleActionError(null);
     setSyncStatus('saving');
@@ -156,7 +156,10 @@ export default function App() {
         activityType: type,
         activityKind: type === 'comparison-seo' ? 'batch' : 'single',
         activityId,
-        contentPlanInput: plan,
+        contentPlanId: plan.id,
+        contentPlanVersion: plan.version,
+        contentPlanInput: (plan.sources ?? []).map(source => source.extractedContent).join('\n\n---\n\n'),
+        contentPlanSourceItemId: item.id,
         contentPlanItemId: item.id,
         batchSize,
         batchStatus: type === 'comparison-seo' ? 'queued' : undefined,
@@ -421,7 +424,7 @@ export default function App() {
           </>
         ) : (
           // Article selected from sidebar but not found (shouldn't happen)
-          <ActivityLauncher onCreate={handleCreateActivity} onOpenConfig={() => setShowConfig(true)} />
+          <ActivityLauncher railwayUrl={config.railwayUrl} onCreate={handleCreateActivity} onOpenConfig={() => setShowConfig(true)} />
         )}
       </div>
 

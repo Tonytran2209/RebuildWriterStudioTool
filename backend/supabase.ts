@@ -112,6 +112,12 @@ export async function downloadDocumentBinary(storagePath: string): Promise<Blob>
   return data;
 }
 
+export async function deleteDocumentBinaries(storagePaths: string[]): Promise<void> {
+  if (!storagePaths.length) return;
+  const { error } = await getClient().storage.from(DOCUMENT_BUCKET).remove(storagePaths);
+  if (error) throw new Error(`Không thể xóa file gốc khỏi Supabase Storage: ${error.message}`);
+}
+
 export async function runReadOnlySelect(query: string): Promise<unknown[]> {
   const normalized = query.trim().replace(/;$/, '');
   const match = normalized.match(
@@ -132,4 +138,39 @@ export async function runReadOnlySelect(query: string): Promise<unknown[]> {
     .limit(limit);
   if (error) throw new Error(`Supabase SELECT: ${error.message}`);
   return data ?? [];
+}
+
+export async function tableAvailable(table: string): Promise<boolean> {
+  const { error } = await getClient().from(table).select('*').limit(1);
+  return !error;
+}
+
+export async function tableSelect<T = any>(table: string, configure?: (query: any) => any): Promise<T[]> {
+  let query: any = getClient().from(table).select('*');
+  if (configure) query = configure(query);
+  const { data, error } = await query;
+  if (error) throw new Error(`${table}: ${error.message}`);
+  return (data ?? []) as T[];
+}
+
+export async function tableInsert<T = any>(table: string, row: Record<string, unknown>): Promise<T> {
+  const { data, error } = await getClient().from(table).insert(row).select('*').single();
+  if (error) throw new Error(`${table}: ${error.message}`);
+  return data as T;
+}
+
+export async function tableUpsert(table: string, row: Record<string, unknown>, onConflict: string): Promise<void> {
+  const { error } = await getClient().from(table).upsert(row, { onConflict });
+  if (error) throw new Error(`${table}: ${error.message}`);
+}
+
+export async function tableUpdate<T = any>(table: string, id: string, updates: Record<string, unknown>): Promise<T> {
+  const { data, error } = await getClient().from(table).update(updates).eq('id', id).select('*').single();
+  if (error) throw new Error(`${table}: ${error.message}`);
+  return data as T;
+}
+
+export async function tableDeleteWhere(table: string, column: string, value: string): Promise<void> {
+  const { error } = await getClient().from(table).delete().eq(column, value);
+  if (error) throw new Error(`${table}: ${error.message}`);
 }

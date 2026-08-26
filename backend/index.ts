@@ -14,7 +14,14 @@ import {
   checkConnection,
   uploadDocumentBinary,
   downloadDocumentBinary,
+  deleteDocumentBinaries,
   runReadOnlySelect,
+  tableAvailable,
+  tableSelect,
+  tableInsert,
+  tableUpsert,
+  tableUpdate,
+  tableDeleteWhere,
 } from './supabase.ts';
 import { extractDocumentText } from './documentParser.ts';
 import { extractStructuredSections } from './documentStructure.ts';
@@ -179,7 +186,40 @@ function batchUsage(step: 1 | 2 | 3 | 4, provider: string, response: any) {
 async function saveArticleCheckpoint(article: any, updates: Record<string, any>) {
   const next = { ...article, ...updates, updatedAt: new Date().toISOString() };
   await kvSet(`${ARTICLE_PREFIX}${article.id}`, next);
+  await projectArticle(next);
   return next;
+}
+
+async function projectArticle(article: any) {
+  if (!await tableAvailable('writer_articles')) {
+    if (article.contentPlanId) {
+      const plan = await kvGet<any>(`${CONTENT_PLAN_PREFIX}${article.contentPlanId}`);
+      if (plan) {
+        const articleRecords = await kvGetByPrefix(ARTICLE_PREFIX);
+        plan.totalArticles = articleRecords.filter(record => record.value?.contentPlanId === article.contentPlanId).length;
+        plan.updatedAt = new Date().toISOString(); await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, plan);
+      }
+    }
+    return;
+  }
+  await tableUpsert('writer_articles', {
+    id: article.id, content_plan_id: article.contentPlanId ?? null, content_plan_item_id: article.contentPlanSourceItemId ?? null,
+    activity_id: article.activityId ?? null, content_group: article.activityType === 'comparison-seo' ? 'comparison_seo' : article.activityType === 'editorial-originality' ? 'editorial_originality' : null,
+    title: article.topic?.trim() || article.title, status: article.status, current_step: article.currentStep,
+    payload: article, draft: article.draft ?? null, batch_status: article.batchStatus ?? null, error_message: article.batchError ?? null,
+    created_at: article.createdAt, updated_at: article.updatedAt, completed_at: article.completedAt ?? null,
+  }, 'id');
+  const usage = Object.values(article.aiUsageByStep ?? {}).flat() as any[];
+  for (const call of usage) await tableUpsert('writer_ai_usage', {
+    id: call.id, content_plan_id: article.contentPlanId ?? null, activity_id: article.activityId ?? null, article_id: article.id,
+    step: call.step, provider: call.provider, model: call.model, input_tokens: call.inputTokens ?? 0,
+    cached_input_tokens: call.cachedInputTokens ?? 0, output_tokens: call.outputTokens ?? 0, total_tokens: call.totalTokens ?? 0,
+    cost_usd: call.costUsd ?? null, cache_hit: Boolean(call.cacheHit), called_at: call.calledAt,
+  }, 'id');
+  if (article.contentPlanId) {
+    const projected = await tableSelect<any>('writer_articles', query => query.select('id').eq('content_plan_id', article.contentPlanId));
+    await tableUpdate('content_plans', article.contentPlanId, { total_articles: projected.length, updated_at: new Date().toISOString() });
+  }
 }
 
 async function runBatchModel(article: any, step: 2 | 3 | 4, prompt: string, jsonMode: boolean, maxTokens: number) {
@@ -457,6 +497,97 @@ async function fetchAirtableSource(key: string, base: string, table: string): Pr
   return JSON.stringify(payload.records ?? [], null, 2);
 }
 
+const CONTENT_PLAN_PREFIX = 'writer:content-plan:';
+const CONTENT_PLAN_CLASSIFIER_VERSION = 'content-plan-classifier-v1';
+
+function planFromRow(row: any, sources: any[] = [], items: any[] = []) {
+  return {
+    id: row.id, name: row.name, description: row.description, status: row.status,
+    version: row.version, previousVersionId: row.previous_version_id ?? null,
+    sourceFingerprint: row.source_fingerprint ?? '', totalArticles: row.total_articles ?? 0,
+    comparisonCount: row.comparison_count ?? 0, editorialCount: row.editorial_count ?? 0,
+    reviewCount: row.review_count ?? 0, createdAt: row.created_at, updatedAt: row.updated_at,
+    classifiedAt: row.classified_at,
+    changeSummary: row.change_summary ?? undefined,
+    sources: sources.map(source => ({ id: source.id, contentPlanId: source.content_plan_id, sourceType: source.source_type, name: source.name, originalUrl: source.original_url, storagePath: source.storage_path, mimeType: source.mime_type, extractedContent: source.extracted_content, contentHash: source.content_hash, contentLength: source.content_length, scanStatus: source.scan_status, scanError: source.scan_error, createdAt: source.created_at })),
+    items: items.map(item => ({ id: item.id, title: item.title, keywords: item.keywords ?? [], type: String(item.content_group).replaceAll('_', '-'), sourceLine: item.source_text ?? item.title, confidence: Number(item.confidence ?? 0), classificationReason: item.classification_reason, sourceId: item.source_id, sourceSectionId: item.source_section_id, sourceQuote: item.source_quote })),
+  };
+}
+
+async function relationalPlansAvailable() { return tableAvailable('content_plans'); }
+
+async function getContentPlan(id: string): Promise<any | null> {
+  if (await relationalPlansAvailable()) {
+    const [plans, sources, items] = await Promise.all([
+      tableSelect<any>('content_plans', query => query.eq('id', id)),
+      tableSelect<any>('content_plan_sources', query => query.eq('content_plan_id', id).order('created_at')),
+      tableSelect<any>('content_plan_items', query => query.eq('content_plan_id', id).order('position')),
+    ]);
+    return plans[0] ? planFromRow(plans[0], sources, items) : null;
+  }
+  return kvGet(`${CONTENT_PLAN_PREFIX}${id}`);
+}
+
+async function listContentPlans(): Promise<any[]> {
+  if (await relationalPlansAvailable()) {
+    const plans = await tableSelect<any>('content_plans', query => query.order('created_at', { ascending: false }));
+    return Promise.all(plans.map(plan => getContentPlan(plan.id)));
+  }
+  return (await kvGetByPrefix(CONTENT_PLAN_PREFIX)).map(record => record.value).filter(Boolean).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
+async function createContentPlanRecord(input: { name: string; previousVersionId?: string | null; source: any }): Promise<any> {
+  const previous = input.previousVersionId ? await getContentPlan(input.previousVersionId) : null;
+  const id = crypto.randomUUID(); const now = new Date().toISOString(); const sourceId = crypto.randomUUID();
+  const source = { id: sourceId, contentPlanId: id, ...input.source, scanStatus: 'ready', createdAt: now };
+  const plan = { id, name: input.name, status: 'draft', version: previous ? Number(previous.version) + 1 : 1, previousVersionId: previous?.id ?? null, sourceFingerprint: source.contentHash, totalArticles: 0, comparisonCount: 0, editorialCount: 0, reviewCount: 0, createdAt: now, updatedAt: now, sources: [source], items: [] };
+  if (await relationalPlansAvailable()) {
+    await tableInsert('content_plans', { id, name: plan.name, status: plan.status, version: plan.version, previous_version_id: plan.previousVersionId, source_fingerprint: plan.sourceFingerprint });
+    await tableInsert('content_plan_sources', { id: sourceId, content_plan_id: id, source_type: source.sourceType, name: source.name, original_url: source.originalUrl ?? null, storage_path: source.storagePath ?? null, mime_type: source.mimeType ?? null, extracted_content: source.extractedContent, content_hash: source.contentHash, content_length: source.contentLength, scan_status: 'ready' });
+    return getContentPlan(id);
+  }
+  await kvSet(`${CONTENT_PLAN_PREFIX}${id}`, plan); return plan;
+}
+
+async function saveClassifiedPlan(plan: any, items: any[], model: string) {
+  const now = new Date().toISOString();
+  const counts = { comparisonCount: items.filter(item => item.type === 'comparison-seo').length, editorialCount: items.filter(item => item.type === 'editorial-originality').length, reviewCount: items.filter(item => item.type === 'needs-review').length };
+  const previous = plan.previousVersionId ? await getContentPlan(plan.previousVersionId) : null;
+  const previousTitles = new Map<string, string>((previous?.items ?? []).map((item: any) => [String(item.title).toLocaleLowerCase(), String(item.title)]));
+  const currentTitles = new Map<string, string>(items.map((item: any) => [String(item.title).toLocaleLowerCase(), String(item.title)]));
+  const changeSummary = previous ? { added: [...currentTitles.entries()].filter(([key]) => !previousTitles.has(key)).map(([, title]) => title), removed: [...previousTitles.entries()].filter(([key]) => !currentTitles.has(key)).map(([, title]) => title), unchanged: [...currentTitles.entries()].filter(([key]) => previousTitles.has(key)).map(([, title]) => title) } : undefined;
+  if (await relationalPlansAvailable()) {
+    await tableDeleteWhere('content_plan_items', 'content_plan_id', plan.id);
+    for (const [position, item] of items.entries()) await tableInsert('content_plan_items', { id: item.id, content_plan_id: plan.id, source_id: item.sourceId, source_section_id: item.sourceSectionId, title: item.title, keywords: item.keywords, source_text: item.sourceLine, source_quote: item.sourceQuote, content_group: item.type.replaceAll('-', '_'), confidence: item.confidence, classification_reason: item.classificationReason, position });
+    await tableUpdate('content_plans', plan.id, { status: 'ready', classification_model: model, classification_prompt_version: CONTENT_PLAN_CLASSIFIER_VERSION, comparison_count: counts.comparisonCount, editorial_count: counts.editorialCount, review_count: counts.reviewCount, change_summary: changeSummary ?? null, classified_at: now, updated_at: now });
+    return getContentPlan(plan.id);
+  }
+  const next = { ...plan, ...counts, status: 'ready', items, changeSummary, classifiedAt: now, updatedAt: now, classificationModel: model, classificationPromptVersion: CONTENT_PLAN_CLASSIFIER_VERSION };
+  await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, next); return next;
+}
+
+function googleExportUrl(value: string, sourceType: string): string {
+  const url = new URL(value); const match = url.pathname.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (!match) throw new Error('Google Docs/Sheets URL không hợp lệ.');
+  return sourceType === 'google_sheet'
+    ? `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`
+    : `https://docs.google.com/document/d/${match[1]}/export?format=txt`;
+}
+
+function verifiedClassificationItems(parsed: any, plan: any) {
+  const rawItems = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : [];
+  const sources = new Map((plan.sources ?? []).map((source: any) => [source.id, source])); const seen = new Set<string>();
+  return rawItems.flatMap((raw: any, index: number) => {
+    const source = (sources.get(String(raw.sourceId ?? '')) ?? (sources.size === 1 ? [...sources.values()][0] : null)) as any; const title = String(raw.title ?? '').trim(); let quote = String(raw.sourceQuote ?? '').trim();
+    const group = String(raw.contentGroup ?? raw.type ?? '').replaceAll('_', '-'); const confidence = Math.max(0, Math.min(1, Number(raw.confidence ?? 0)));
+    if (source && title && (!quote || !String(source.extractedContent).includes(quote)) && String(source.extractedContent).includes(title)) quote = title;
+    if (!source || !title || !quote || !String(source.extractedContent).includes(quote)) return [];
+    const key = title.toLocaleLowerCase(); if (seen.has(key)) return []; seen.add(key);
+    const type = ['comparison-seo', 'editorial-originality'].includes(group) && confidence >= 0.65 ? group : 'needs-review';
+    return [{ id: crypto.randomUUID(), title, keywords: Array.isArray(raw.keywords) ? raw.keywords.map(String).filter(Boolean) : [], type, sourceLine: String(raw.sourceLine ?? quote), confidence, classificationReason: String(raw.classificationReason ?? '').trim(), sourceId: source.id, sourceSectionId: String(raw.sourceSectionId ?? `item-${index + 1}`), sourceQuote: quote }];
+  });
+}
+
 // ─── Serve Vite frontend static files ────────────────────────────────────────
 
 app.use(express.static(DIST));
@@ -479,9 +610,11 @@ app.get('/health', (_req, res) => {
 // Dependency diagnostics are kept separate from Railway's liveness probe.
 app.get('/health/dependencies', async (_req, res) => {
   const supabaseOk = await checkConnection();
+  const relationalContentPlans = supabaseOk ? await tableAvailable('content_plans') : false;
   res.status(supabaseOk ? 200 : 503).json({
     status: supabaseOk ? 'ok' : 'degraded',
     supabase: supabaseOk,
+    relationalContentPlans,
     supabaseUrl: process.env.SUPABASE_URL ?? null,
   });
 });
@@ -725,6 +858,128 @@ app.get('/api/kv-prefix/:prefix', async (req, res) => {
 
 // ─── Articles (via Supabase) ──────────────────────────────────────────────────
 
+app.get('/api/content-plans', async (_req, res) => {
+  try { res.json(await listContentPlans()); } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/content-plans/:id', async (req, res) => {
+  try { const plan = await getContentPlan(req.params.id); if (!plan) return res.status(404).json({ error: 'Content Plan không tồn tại.' }); res.json({ plan }); } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/content-plans/import', upload.single('file'), async (req, res) => {
+  try {
+    const body = req.file ? req.body : req.body ?? {};
+    const sourceType = String(req.file ? 'file' : body.sourceType ?? 'paste');
+    if (!['file', 'paste', 'google_doc', 'google_sheet'].includes(sourceType)) return res.status(400).json({ error: 'Content Plan source type không hợp lệ.' });
+    const name = String(body.name ?? req.file?.originalname ?? 'Content Plan').trim();
+    const previousVersionId = String(body.previousVersionId ?? '').trim() || null;
+    let content = '';
+    let originalUrl: string | undefined; let storagePath: string | undefined; let mimeType: string | undefined;
+    if (req.file) {
+      content = (await extractDocumentText(req.file.buffer, req.file.originalname)).trim();
+      mimeType = req.file.mimetype;
+    } else if (sourceType === 'google_doc' || sourceType === 'google_sheet') {
+      originalUrl = String(body.url ?? '').trim();
+      try { content = await fetchTextSource(googleExportUrl(originalUrl, sourceType)); }
+      catch (error: any) { throw new Error(`Không đọc được Google ${sourceType === 'google_sheet' ? 'Sheet' : 'Doc'}. Hãy bật quyền "Anyone with the link can view". ${error.message}`); }
+    } else content = String(body.content ?? '').trim();
+    if (!content) return res.status(422).json({ error: 'Content Plan không có nội dung có thể trích xuất.' });
+    if (content.length > 2_000_000) return res.status(413).json({ error: 'Content Plan vượt giới hạn 2 triệu ký tự.' });
+    const contentHash = crypto.createHash('sha256').update(content, 'utf8').digest('hex');
+    const previous = previousVersionId ? await getContentPlan(previousVersionId) : null;
+    if (previous?.sourceFingerprint === contentHash) return res.json({ plan: previous, reused: true });
+    if (req.file) {
+      const provisionalPlanId = crypto.randomUUID();
+      storagePath = `content-plans/${provisionalPlanId}/${crypto.randomUUID()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      await uploadDocumentBinary(storagePath, req.file.buffer, req.file.mimetype || 'application/octet-stream');
+    }
+    const plan = await createContentPlanRecord({ name, previousVersionId, source: { sourceType, name: req.file?.originalname ?? name, originalUrl, storagePath, mimeType, extractedContent: content, contentHash, contentLength: content.length } });
+    res.status(201).json({ plan, reused: false });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+async function classifyPlanRequest(req: any, res: any, force: boolean) {
+  try {
+    const plan = await getContentPlan(req.params.id); if (!plan) return res.status(404).json({ error: 'Content Plan không tồn tại.' });
+    if (!force && plan.status === 'ready' && plan.items?.length) return res.json({ plan, cacheHit: true });
+    const config = await kvGet<any>('writer:config'); const step = config?.stepConfigs?.[1];
+    const model = config?.models?.find((item: any) => item.id === step?.modelId && item.enabled);
+    if (!model) return res.status(422).json({ error: 'Hãy chọn một AI model đang bật cho Step 1 trước khi phân loại Content Plan.' });
+    const cacheKey = aiCacheKey({ kind: CONTENT_PLAN_CLASSIFIER_VERSION, fingerprint: plan.sourceFingerprint, model: model.id });
+    const cached = force ? null : await kvGet<any>(cacheKey);
+    let parsed: any; let response: any;
+    if (cached?.content) { response = cached; parsed = parseJsonObject(cached.content); }
+    else {
+      await reserveAIBudget(`content-plan-${plan.id}`, 1);
+      const sourceBlock = (plan.sources ?? []).map((source: any) => `SOURCE id=${source.id} name=${JSON.stringify(source.name)}\n${String(source.extractedContent).slice(0, 500_000)}`).join('\n\n---\n\n');
+      response = await generate({ modelId: model.id, provider: model.provider, jsonMode: true, maxTokens: 10000, temperature: 0.2, systemPrompt: 'Classify only topics explicitly present in the supplied Content Plan sources. Never invent topics. Every item must include a verbatim sourceQuote copied from its source.', prompt: [
+        'Extract every planned article and classify it.',
+        'comparison-seo: comparisons, versus, alternatives, reviews, best/top lists, pricing, buyer guides, commercial or transactional SEO intent.',
+        'editorial-originality: thought leadership, analysis, opinion, original research, storytelling, brand editorial, or expert insight.',
+        'Use needs-review when confidence is below 0.65 or the source is ambiguous.',
+        'Return JSON only: {"items":[{"title":string,"keywords":string[],"contentGroup":"comparison-seo"|"editorial-originality"|"needs-review","confidence":number,"classificationReason":string,"sourceId":string,"sourceSectionId":string,"sourceLine":string,"sourceQuote":string}]}',
+        sourceBlock,
+      ].join('\n\n') });
+      await kvSet(cacheKey, { ...response, generatedAt: new Date().toISOString() }); parsed = parseJsonObject(response.content);
+    }
+    const items = verifiedClassificationItems(parsed, plan);
+    if (!items.length) throw new Error('AI không trả về topic nào có source evidence hợp lệ.');
+    let saved = await saveClassifiedPlan(plan, items, response.model ?? model.id);
+    if (!cached && response.usage) {
+      const usage = batchUsage(1, model.provider, { ...response, provider: model.provider, cacheHit: false });
+      if (await tableAvailable('writer_ai_usage')) await tableUpsert('writer_ai_usage', { id: usage.id, content_plan_id: plan.id, activity_id: null, article_id: null, step: 1, provider: usage.provider, model: usage.model, input_tokens: usage.inputTokens, cached_input_tokens: usage.cachedInputTokens, output_tokens: usage.outputTokens, total_tokens: usage.totalTokens, cost_usd: usage.costUsd, cache_hit: false, called_at: usage.calledAt }, 'id');
+      else { saved = { ...saved, classificationUsage: [...(saved.classificationUsage ?? []), usage] }; await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, saved); }
+    }
+    res.json({ plan: saved, cacheHit: Boolean(cached) });
+  } catch (err: any) { const classified = classifyAIError(err, 'openai', 'content-plan-classifier'); res.status(classified.status).json(classified.body); }
+}
+
+app.post('/api/content-plans/:id/classify', (req, res) => void classifyPlanRequest(req, res, false));
+app.post('/api/content-plans/:id/reclassify', (req, res) => void classifyPlanRequest(req, res, true));
+
+app.patch('/api/content-plans/:id/items/:itemId', async (req, res) => {
+  try {
+    const type = String(req.body?.type ?? '');
+    if (!['comparison-seo', 'editorial-originality', 'needs-review'].includes(type)) return res.status(400).json({ error: 'Nhóm nội dung không hợp lệ.' });
+    const plan = await getContentPlan(req.params.id); if (!plan) return res.status(404).json({ error: 'Content Plan không tồn tại.' });
+    if (await relationalPlansAvailable()) {
+      await tableUpdate('content_plan_items', req.params.itemId, { content_group: type.replaceAll('-', '_') });
+      const items = (await getContentPlan(plan.id)).items ?? [];
+      await tableUpdate('content_plans', plan.id, { comparison_count: items.filter((item: any) => item.type === 'comparison-seo').length, editorial_count: items.filter((item: any) => item.type === 'editorial-originality').length, review_count: items.filter((item: any) => item.type === 'needs-review').length, updated_at: new Date().toISOString() });
+    } else {
+      plan.items = (plan.items ?? []).map((item: any) => item.id === req.params.itemId ? { ...item, type } : item);
+      plan.comparisonCount = plan.items.filter((item: any) => item.type === 'comparison-seo').length;
+      plan.editorialCount = plan.items.filter((item: any) => item.type === 'editorial-originality').length;
+      plan.reviewCount = plan.items.filter((item: any) => item.type === 'needs-review').length;
+      plan.updatedAt = new Date().toISOString(); await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, plan);
+    }
+    res.json({ plan: await getContentPlan(plan.id) });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/content-plans/:id/status', async (req, res) => {
+  try {
+    const status = String(req.body?.status ?? '');
+    if (!['draft', 'ready', 'active', 'archived'].includes(status)) return res.status(400).json({ error: 'Content Plan status không hợp lệ.' });
+    const plan = await getContentPlan(req.params.id); if (!plan) return res.status(404).json({ error: 'Content Plan không tồn tại.' });
+    if (await relationalPlansAvailable()) await tableUpdate('content_plans', plan.id, { status, updated_at: new Date().toISOString() });
+    else { plan.status = status; plan.updatedAt = new Date().toISOString(); await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, plan); }
+    res.json({ plan: await getContentPlan(plan.id) });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/content-plans/:id', async (req, res) => {
+  try {
+    const plan = await getContentPlan(req.params.id); if (!plan) return res.status(404).json({ error: 'Content Plan không tồn tại.' });
+    const linked = (await loadArticles()).filter(article => article.contentPlanId === plan.id);
+    if (linked.length) return res.status(409).json({ error: `Content Plan đang có ${linked.length} article. Hãy archive thay vì xóa để bảo toàn lịch sử.` });
+    await deleteDocumentBinaries((plan.sources ?? []).map((source: any) => source.storagePath).filter(Boolean));
+    if (await relationalPlansAvailable()) await tableDeleteWhere('content_plans', 'id', plan.id);
+    else await kvDelete(`${CONTENT_PLAN_PREFIX}${plan.id}`);
+    res.json({ ok: true, deletedId: plan.id });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/batches/:activityId', async (req, res) => {
   try {
     const articles = (await loadArticles()).filter(article => article.activityId === req.params.activityId);
@@ -782,6 +1037,7 @@ app.post('/api/articles', async (req, res) => {
     const article = { ...req.body, updatedAt: now };
     if (!article.id) return res.status(400).json({ error: 'Article id là bắt buộc.' });
     await kvSet(`${ARTICLE_PREFIX}${article.id}`, article);
+    await projectArticle(article);
     res.json({ ok: true, article });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -798,6 +1054,7 @@ app.put('/api/articles/:id', async (req, res) => {
       if (!existing) throw new Error('Bài viết không tồn tại trong Supabase.');
       const next = { ...existing, ...updates, id, updatedAt: new Date().toISOString() };
       await kvSet(`${ARTICLE_PREFIX}${id}`, next);
+      await projectArticle(next);
       return next;
     });
     res.json({ ok: true, article });
@@ -815,6 +1072,7 @@ app.delete('/api/articles/:id', async (req, res) => {
       return;
     }
     await kvDelete(`${ARTICLE_PREFIX}${id}`);
+    if (await tableAvailable('writer_articles')) await tableDeleteWhere('writer_articles', 'id', id);
     const legacy = (await kvGet<any[]>('writer:articles')) ?? [];
     if (legacy.some(article => article?.id === id)) {
       await kvSet('writer:articles', legacy.filter(article => article?.id !== id));
@@ -824,6 +1082,15 @@ app.delete('/api/articles/:id', async (req, res) => {
       if (!siblings.length) {
         await kvDelete(`writer:batch:${existing.activityId}`);
         batchControllers.delete(existing.activityId);
+      }
+    }
+    if (existing?.contentPlanId) {
+      if (await relationalPlansAvailable()) {
+        const projected = await tableSelect<any>('writer_articles', query => query.select('id').eq('content_plan_id', existing.contentPlanId));
+        await tableUpdate('content_plans', existing.contentPlanId, { total_articles: projected.length, updated_at: new Date().toISOString() });
+      } else {
+        const plan = await kvGet<any>(`${CONTENT_PLAN_PREFIX}${existing.contentPlanId}`);
+        if (plan) { plan.totalArticles = (await kvGetByPrefix(ARTICLE_PREFIX)).filter(record => record.value?.contentPlanId === existing.contentPlanId).length; plan.updatedAt = new Date().toISOString(); await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, plan); }
       }
     }
     res.json({ ok: true, deletedId: id });
@@ -1085,4 +1352,10 @@ app.listen(PORT, () => {
   console.log(`\n🚀 Writer Studio Backend running on port ${PORT}`);
   console.log(`   Providers: ${JSON.stringify(getAvailableProviders())}`);
   console.log(`   Supabase:  ${!!(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY)) ? '✓ Connected' : '✗ Not configured'}\n`);
+  void (async () => {
+    if (!await tableAvailable('writer_articles')) return;
+    const articles = await loadArticles();
+    for (const article of articles) await projectArticle(article);
+    console.log(`[migration] projected ${articles.length} KV articles into relational tables`);
+  })().catch(error => console.error('[migration] relational projection failed:', error));
 });

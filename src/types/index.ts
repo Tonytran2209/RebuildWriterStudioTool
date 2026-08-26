@@ -266,14 +266,60 @@ export interface Article {
   batchStatus?: 'queued' | 'running' | 'paused' | 'completed' | 'failed';
   batchError?: string | null;
   batchStartedAt?: string | null;
+  contentPlanId?: string;
+  contentPlanVersion?: number;
+  contentPlanSourceItemId?: string;
 }
 
 export interface ContentPlanItem {
   id: string;
   title: string;
   keywords: string[];
-  type: 'comparison-seo' | 'editorial-originality';
+  type: 'comparison-seo' | 'editorial-originality' | 'needs-review';
   sourceLine: string;
+  confidence?: number;
+  classificationReason?: string;
+  sourceId?: string;
+  sourceSectionId?: string;
+  sourceQuote?: string;
+}
+
+export type ContentPlanSourceType = 'file' | 'google_doc' | 'google_sheet' | 'paste';
+
+export interface ContentPlanSource {
+  id: string;
+  contentPlanId: string;
+  sourceType: ContentPlanSourceType;
+  name: string;
+  originalUrl?: string;
+  storagePath?: string;
+  mimeType?: string;
+  extractedContent: string;
+  contentHash: string;
+  contentLength: number;
+  scanStatus: 'processing' | 'ready' | 'failed';
+  scanError?: string;
+  createdAt: string;
+}
+
+export interface ContentPlan {
+  id: string;
+  name: string;
+  description?: string;
+  status: 'draft' | 'processing' | 'ready' | 'active' | 'archived' | 'failed';
+  version: number;
+  previousVersionId?: string | null;
+  sourceFingerprint: string;
+  totalArticles: number;
+  comparisonCount: number;
+  editorialCount: number;
+  reviewCount: number;
+  createdAt: string;
+  updatedAt: string;
+  classifiedAt?: string;
+  sources?: ContentPlanSource[];
+  items?: ContentPlanItem[];
+  changeSummary?: { added: string[]; removed: string[]; unchanged: string[] };
 }
 
 export interface ContentType {
