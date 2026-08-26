@@ -21,6 +21,13 @@ html, body, #root { min-height: 100%; background: #f7f7f5; }
 .workspace-tab span { margin-left: .3rem; border-radius: 999px; background: #292929; padding: .1rem .35rem; font-size: 9px; }
 .workspace-tab.active { border-color: #d7d7d7; color: #dedede; }
 
+/* Icons track the surrounding label size instead of using unrelated fixed sizes. */
+.ui-icon { width: 1.25rem; height: 1.25rem; flex: 0 0 1.25rem; font-size: 1rem; line-height: 1; }
+.writer-light button svg { width: 1em !important; height: 1em !important; min-width: 1em; flex-shrink: 0; stroke-width: 1.9; }
+.writer-light button[class*="min-h-28"] > div:first-child { font-size: 1rem !important; line-height: 1.25rem; }
+.writer-light .sidebar-nav { font-size: 0.8125rem; line-height: 1.25rem; }
+.writer-light .sidebar-nav > span:not(.ml-auto) { font-size: 1rem; line-height: 1; }
+
 .writer-light .writer-sidebar { background: #f1f1ef !important; border-color: #dededb !important; color: #555 !important; }
 .writer-light .writer-sidebar .text-white { color: #1f1f1f !important; }
 .writer-light .sidebar-nav { color: #555; }

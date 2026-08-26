@@ -4,7 +4,7 @@ import type { Article } from '../types';
 import { useI18n } from '../lib/i18n';
 
 interface Props { articles: Article[]; activeArticleId: string | null; onSelectArticle: (id: string) => void; onNewArticle: () => void; onOpenContentPlans?: () => void; onOpenConfig: () => void; onToggleComplete: (article: Article) => void; completionSavingId: string | null; onDeleteArticle: (article: Article) => void; deletingArticleId: string | null }
-const Icon = ({ children }: { children: ReactNode }) => <span className="flex h-5 w-5 items-center justify-center text-sm text-[#9a9a9a]">{children}</span>;
+const Icon = ({ children }: { children: ReactNode }) => <span className="ui-icon flex items-center justify-center text-[#9a9a9a]">{children}</span>;
 
 export default function Sidebar({ articles, activeArticleId, onSelectArticle, onNewArticle, onOpenContentPlans, onOpenConfig, onDeleteArticle, deletingArticleId }: Props) {
   const { language, toggleLanguage, tr } = useI18n(); const [open, setOpen] = useState(false); const [search, setSearch] = useState('');
