@@ -1415,6 +1415,86 @@ app.post('/api/upload/document', upload.single('file'), async (req, res) => {
   }
 });
 
+function canonicalHeading(value: string) {
+  return value.replace(/^#{1,6}\s+/, '').replace(/[*_`]/g, '').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function assignDocumentHeadings(draft: string, title: string, outline: Array<{ heading?: string; level?: string }>) {
+  const headingLevels = new Map(outline
+    .filter(section => section?.heading)
+    .map(section => [canonicalHeading(String(section.heading)), section.level === 'h3' ? 3 : 2] as const));
+  const canonicalTitle = canonicalHeading(title);
+  const lines = draft.replace(/\r\n?/g, '\n').split('\n');
+  let hasH1 = false;
+  const formatted = lines.map(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return '';
+    const existing = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    const text = existing?.[2]?.trim() ?? trimmed;
+    const canonical = canonicalHeading(text);
+    if (canonicalTitle && canonical === canonicalTitle) {
+      hasH1 = true;
+      return `# ${text}`;
+    }
+    const outlineLevel = headingLevels.get(canonical);
+    if (outlineLevel) return `${'#'.repeat(outlineLevel)} ${text}`;
+    if (existing) {
+      const level = Math.min(3, Math.max(1, existing[1].length));
+      if (level === 1) hasH1 = true;
+      return `${'#'.repeat(level)} ${text}`;
+    }
+    return line.trimEnd();
+  });
+  if (!hasH1 && title.trim()) formatted.unshift(`# ${title.trim()}`, '');
+  return formatted.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function inlineMarkdown(value: string) {
+  return escapeHtml(value)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2">$1</a>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+}
+
+function markdownForGoogleDocs(markdown: string) {
+  const html: string[] = ['<div>'];
+  let listType: 'ul' | 'ol' | null = null;
+  const closeList = () => { if (listType) html.push(`</${listType}>`); listType = null; };
+  for (const rawLine of markdown.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) { closeList(); continue; }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) { closeList(); const level = heading[1].length; html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`); continue; }
+    const unordered = line.match(/^[-*]\s+(.+)$/);
+    const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      const nextType = unordered ? 'ul' : 'ol';
+      if (listType !== nextType) { closeList(); listType = nextType; html.push(`<${nextType}>`); }
+      html.push(`<li>${inlineMarkdown((unordered ?? ordered)![1])}</li>`);
+      continue;
+    }
+    closeList();
+    html.push(`<p>${inlineMarkdown(line)}</p>`);
+  }
+  closeList();
+  html.push('</div>');
+  return html.join('');
+}
+
+app.post('/api/format/google-docs', (req, res) => {
+  const draft = String(req.body?.draft ?? '').trim();
+  const title = String(req.body?.title ?? '').trim();
+  const outline = Array.isArray(req.body?.outline) ? req.body.outline : [];
+  if (!draft) return res.status(400).json({ error: 'Draft không được để trống.' });
+  const markdown = assignDocumentHeadings(draft, title, outline);
+  return res.json({ markdown, html: markdownForGoogleDocs(markdown), formatter: 'deterministic-v1', aiCalls: 0 });
+});
+
 app.get('/api/documents/:id/download', async (req, res) => {
   try {
     const id = req.params.id;
