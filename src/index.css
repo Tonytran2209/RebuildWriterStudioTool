@@ -11,7 +11,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-html, body, #root { min-height: 100%; background: #171717; }
+html, body, #root { min-height: 100%; background: #f7f7f5; }
 
 .sidebar-nav { display: flex; width: 100%; align-items: center; gap: .55rem; border-radius: .5rem; padding: .5rem .6rem; text-align: left; color: #bdbdbd; transition: background .15s, color .15s; }
 .sidebar-nav:hover { background: #2b2b2b; color: #eee; }
@@ -20,6 +20,24 @@ html, body, #root { min-height: 100%; background: #171717; }
 .workspace-tab { border-bottom: 2px solid transparent; padding: .65rem .8rem; font-size: 11px; color: #707070; }
 .workspace-tab span { margin-left: .3rem; border-radius: 999px; background: #292929; padding: .1rem .35rem; font-size: 9px; }
 .workspace-tab.active { border-color: #d7d7d7; color: #dedede; }
+
+.writer-light .writer-sidebar { background: #f1f1ef !important; border-color: #dededb !important; color: #555 !important; }
+.writer-light .writer-sidebar .text-white { color: #1f1f1f !important; }
+.writer-light .sidebar-nav { color: #555; }
+.writer-light .sidebar-nav:hover { background: #e5e5e2; color: #171717; }
+.writer-light .bg-\[\#171717\] { background-color: #f7f7f5 !important; }
+.writer-light .bg-\[\#191919\], .writer-light .bg-\[\#1a1a1a\], .writer-light .bg-\[\#1b1b1b\], .writer-light .bg-\[\#202020\] { background-color: #fff !important; }
+.writer-light .bg-\[\#222\], .writer-light .bg-\[\#252525\], .writer-light .bg-\[\#292929\], .writer-light .bg-\[\#303030\], .writer-light .bg-\[\#353535\] { background-color: #f4f4f2 !important; }
+.writer-light .border-\[\#292929\], .writer-light .border-\[\#2b2b2b\], .writer-light .border-\[\#303030\], .writer-light .border-\[\#333\], .writer-light .border-\[\#343434\], .writer-light .border-\[\#353535\], .writer-light .border-\[\#383838\], .writer-light .border-\[\#3a3a3a\] { border-color: #dededb !important; }
+.writer-light .text-\[\#e8e8e8\], .writer-light .text-\[\#e7e7e7\], .writer-light .text-\[\#e5e5e5\], .writer-light .text-\[\#e0e0e0\], .writer-light .text-\[\#ddd\], .writer-light .text-\[\#d8d8d8\], .writer-light .text-\[\#d0d0d0\] { color: #1f1f1f !important; }
+.writer-light .text-\[\#c8c8c8\], .writer-light .text-\[\#bbb\], .writer-light .text-\[\#b7b7b7\], .writer-light .text-\[\#aaa\], .writer-light .text-\[\#9a9a9a\] { color: #555 !important; }
+.writer-light .text-\[\#777\], .writer-light .text-\[\#737373\], .writer-light .text-\[\#707070\], .writer-light .text-\[\#6f6f6f\], .writer-light .text-\[\#686868\], .writer-light .text-\[\#666\], .writer-light .text-\[\#626262\] { color: #81817d !important; }
+.writer-light .composer-menu { color: #555; }
+.writer-light .composer-menu:hover { background: #e7e7e4; color: #171717; }
+.writer-light .workspace-tab { color: #777; }
+.writer-light .workspace-tab.active { border-color: #222; color: #222; }
+.writer-light .workspace-tab span { background: #e9e9e6; }
+.writer-light input, .writer-light textarea, .writer-light select { color-scheme: light; }
 
 .writer-dark ::-webkit-scrollbar-thumb { background: #454545; }
 .writer-dark .bg-\[\#f4f5f8\], .writer-dark .bg-\[\#ebedf3\], .writer-dark .bg-\[\#eaedf3\] { background: #171717 !important; }
