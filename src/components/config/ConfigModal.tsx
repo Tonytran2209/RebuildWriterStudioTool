@@ -37,11 +37,11 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
 
   return (
     <div className="minimal-settings fixed inset-0 bg-slate-900/30 z-50 flex items-center justify-center p-0 sm:p-5">
-      <div className="bg-[#ebedf3] w-full max-w-5xl h-dvh sm:h-auto sm:max-h-[93dvh] rounded-none sm:rounded-3xl p-1 sm:p-1.5 shadow-2xl border border-slate-200/80 flex flex-col">
-        <div className="bg-white rounded-2xl flex-1 flex flex-col overflow-hidden">
+      <div className="settings-shell bg-[#ebedf3] w-full max-w-5xl h-dvh sm:h-auto sm:max-h-[93dvh] rounded-none sm:rounded-3xl p-1 sm:p-1.5 shadow-2xl border border-slate-200/80 flex flex-col">
+        <div className="settings-panel bg-white rounded-2xl flex-1 flex flex-col overflow-hidden">
 
           {/* Modal Header */}
-          <div className="flex justify-between items-center gap-3 border-b border-slate-100 px-3 sm:px-6 py-3 sm:py-4 shrink-0">
+          <div className="settings-header flex justify-between items-center gap-3 border-b border-slate-100 px-3 sm:px-6 py-3 sm:py-4 shrink-0">
             <div className="min-w-0">
               <h2 className="text-sm font-bold text-slate-800">{tr('Cấu hình Rules DB & Phân quyền AI Model', 'Rules DB & AI Model Access Settings')}</h2>
               <p className="hidden sm:block text-xs text-slate-400 mt-0.5">{tr('Quản lý kho tài liệu, tích hợp Model AI và thiết lập luật truy xuất cho từng Step', 'Manage documents, AI models, and retrieval permissions for each step')}</p>
@@ -55,8 +55,8 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
           </div>
 
           {/* Tab nav */}
-          <div className="px-2 sm:px-6 pt-2 sm:pt-4 shrink-0 overflow-x-auto">
-            <div className="bg-[#eaedf3] p-1 sm:p-1.5 rounded-xl sm:rounded-2xl flex items-center gap-1 min-w-max sm:min-w-0">
+          <div className="settings-tabs-wrap px-2 sm:px-6 pt-2 sm:pt-4 shrink-0 overflow-x-auto">
+            <div className="settings-tabs bg-[#eaedf3] p-1 sm:p-1.5 rounded-xl sm:rounded-2xl flex items-center gap-1 min-w-max sm:min-w-0">
               {TABS.map(tab => {
                 const TabIcon = tab.icon;
                 return (
@@ -82,7 +82,7 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
           </div>
 
           {/* Tab content */}
-          <div className="flex-1 min-h-0 overflow-y-auto px-2.5 sm:px-6 py-3 sm:py-5">
+          <div className="settings-content flex-1 min-h-0 overflow-y-auto px-2.5 sm:px-6 py-3 sm:py-5">
             {activeTab === 'step-setup' && (
               <TabStepSetup config={localConfig} files={localFiles} articles={articles} onChange={setLocalConfig} />
             )}
@@ -99,7 +99,7 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
           </div>
 
           {/* Footer */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 sm:px-6 py-2.5 sm:py-4 border-t border-slate-100 shrink-0">
+          <div className="settings-footer flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 sm:px-6 py-2.5 sm:py-4 border-t border-slate-100 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <div className="hidden sm:block text-[11px] text-slate-400">
                 Railway: <code className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{localConfig.railwayUrl ? '✓ kết nối' : 'Chưa cấu hình'}</code>

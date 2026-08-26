@@ -621,7 +621,7 @@ export default function Step2CoreIdea({
                     <div key={idea.id} className="relative">
                     <button
                       onClick={() => handleSelect(idea)}
-                      className={`w-full text-left rounded-xl border transition-all flex flex-col ${
+                      className={`step-result-card w-full text-left rounded-xl border transition-all flex flex-col ${
                         isSelected
                           ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900"
                           : "border-slate-200 bg-white hover:border-slate-400"

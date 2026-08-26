@@ -1,0 +1,295 @@
+/* Authoritative Codex UI layer. Keep this file loaded after index.css. */
+.codex-dark {
+  --cx-bg: #141414;
+  --cx-sidebar: #121212;
+  --cx-card: #1c1c1c;
+  --cx-card-hover: #222222;
+  --cx-control: #242424;
+  --cx-border: #2a2a2a;
+  --cx-border-hover: #3a3a3a;
+  --cx-text: #e5e5e5;
+  --cx-secondary: #a7abb4;
+  --cx-muted: #7f8590;
+  --cx-primary-button: #dedede;
+  --cx-primary-button-text: #171717;
+  background: var(--cx-bg) !important;
+  color: var(--cx-text);
+}
+
+.codex-dark h1 { font-size: 1.5rem !important; font-weight: 500 !important; line-height: 1.25; }
+.codex-dark h2 { font-size: 1rem !important; font-weight: 500 !important; line-height: 1.35; }
+.codex-dark h3 { font-size: .875rem !important; font-weight: 500 !important; line-height: 1.4; }
+.codex-dark h1.text-base { font-size: 1rem !important; }
+.codex-dark p { line-height: 1.55; }
+
+.codex-dark .writer-sidebar { background: var(--cx-sidebar) !important; border-color: #222 !important; }
+.codex-dark .sidebar-nav { padding: .375rem .5rem; border-radius: .375rem; font-size: .875rem; font-weight: 400; }
+.codex-dark .sidebar-nav:hover { background: #262626 !important; color: var(--cx-text) !important; }
+.codex-dark .sidebar-recent-card { min-height: 3rem; border-radius: .5rem !important; }
+.codex-dark .sidebar-recent-card:hover { background: #202020 !important; border-color: var(--cx-border) !important; }
+
+/* Four-step shell */
+.codex-dark .minimal-step-nav {
+  min-height: 3.5rem;
+  padding-top: .5rem !important;
+  padding-bottom: .5rem !important;
+  background: var(--cx-bg) !important;
+  border-color: #222 !important;
+}
+
+.codex-dark .minimal-step-nav > div:first-child {
+  padding: .25rem !important;
+  background: var(--cx-card) !important;
+  border: 1px solid var(--cx-border) !important;
+  border-radius: .75rem !important;
+}
+
+.codex-dark .minimal-step-nav > div:first-child button {
+  min-height: 2rem;
+  padding: .375rem .625rem !important;
+  border: 1px solid transparent !important;
+  border-radius: .5rem !important;
+  color: var(--cx-muted) !important;
+  font-size: .75rem;
+  font-weight: 400 !important;
+}
+
+.codex-dark .minimal-step-nav > div:first-child button.bg-white {
+  background: #292929 !important;
+  border-color: var(--cx-border-hover) !important;
+  color: var(--cx-text) !important;
+}
+
+.codex-dark .minimal-step-nav > div:first-child button span:first-child {
+  background: transparent !important;
+  color: inherit !important;
+  font-weight: 500 !important;
+}
+
+.codex-dark .minimal-step-nav > div:nth-child(2) { color: var(--cx-secondary); }
+.codex-dark .minimal-step-nav > div:nth-child(2) > button,
+.codex-dark .minimal-step-nav > div:nth-child(2) > span {
+  background: var(--cx-card) !important;
+  border-color: var(--cx-border) !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-step { gap: .75rem !important; }
+.codex-dark .minimal-step-shell {
+  background: var(--cx-card) !important;
+  border: 1px solid #242424 !important;
+  border-radius: .75rem !important;
+  box-shadow: none !important;
+  overflow: hidden;
+}
+
+.codex-dark .minimal-step-shell > div { background: transparent !important; }
+.codex-dark .minimal-step-shell > div > div[class*='max-w-'] { max-width: 42rem !important; }
+.codex-dark .minimal-step-shell h2 { color: var(--cx-text) !important; margin-bottom: .25rem; }
+.codex-dark .minimal-step-shell h2 + p { color: var(--cx-secondary) !important; font-size: .75rem; }
+
+.codex-dark .minimal-step-shell button.bg-slate-900,
+.codex-dark .minimal-step-shell button.bg-indigo-600,
+.codex-dark .minimal-step-shell button.bg-emerald-600 {
+  background: var(--cx-primary-button) !important;
+  border: 1px solid var(--cx-primary-button) !important;
+  border-radius: .75rem !important;
+  color: var(--cx-primary-button-text) !important;
+  font-weight: 500 !important;
+}
+
+.codex-dark .minimal-step-shell button.bg-slate-900:hover,
+.codex-dark .minimal-step-shell button.bg-indigo-600:hover,
+.codex-dark .minimal-step-shell button.bg-emerald-600:hover { background: #fff !important; }
+
+.codex-dark .minimal-step-shell button.bg-white,
+.codex-dark .minimal-step-shell button.bg-slate-100 {
+  background: var(--cx-card) !important;
+  border: 1px solid var(--cx-border) !important;
+  color: var(--cx-secondary) !important;
+}
+.codex-dark .minimal-step-shell button.bg-white:hover,
+.codex-dark .minimal-step-shell button.bg-slate-100:hover { background: var(--cx-card-hover) !important; color: #fff !important; }
+
+.codex-dark .minimal-step-shell input:not([type='checkbox']):not([type='radio']),
+.codex-dark .minimal-step-shell textarea,
+.codex-dark .minimal-step-shell select {
+  background: var(--cx-card) !important;
+  border: 1px solid #2d2d2d !important;
+  border-radius: .75rem !important;
+  color: var(--cx-text) !important;
+}
+.codex-dark .minimal-step-shell input:focus,
+.codex-dark .minimal-step-shell textarea:focus,
+.codex-dark .minimal-step-shell select:focus { border-color: var(--cx-border-hover) !important; }
+
+.codex-dark .step-group {
+  background: #181818 !important;
+  border: 1px solid var(--cx-border) !important;
+  border-radius: .75rem !important;
+  padding: .75rem !important;
+}
+
+.codex-dark .step-choice-card,
+.codex-dark .step-result-card,
+.codex-dark .outline-card {
+  background: var(--cx-card) !important;
+  border: 1px solid var(--cx-border) !important;
+  border-radius: .75rem !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .step-choice-card:hover,
+.codex-dark .step-result-card:hover,
+.codex-dark .outline-card:hover { background: var(--cx-card-hover) !important; border-color: var(--cx-border-hover) !important; }
+
+.codex-dark .step-choice-card[class*='ring-'],
+.codex-dark .step-result-card[class*='ring-'] {
+  background: #222 !important;
+  border-color: #6b7280 !important;
+  --tw-ring-color: #6b7280 !important;
+  --tw-ring-offset-color: var(--cx-card) !important;
+}
+
+.codex-dark .minimal-step-shell .bg-slate-50,
+.codex-dark .minimal-step-shell .bg-slate-50\/60,
+.codex-dark .minimal-step-shell .bg-slate-50\/50,
+.codex-dark .minimal-step-shell .bg-blue-50,
+.codex-dark .minimal-step-shell .bg-indigo-50,
+.codex-dark .minimal-step-shell .bg-violet-50,
+.codex-dark .minimal-step-shell .bg-cyan-50\/50 { background: #202020 !important; }
+
+.codex-dark .minimal-step-shell .bg-indigo-100,
+.codex-dark .minimal-step-shell .bg-violet-100,
+.codex-dark .minimal-step-shell .bg-blue-100,
+.codex-dark .minimal-step-shell .bg-slate-100 { background: #292929 !important; }
+
+.codex-dark .minimal-step-shell .text-slate-300,
+.codex-dark .minimal-step-shell .text-slate-400 { color: var(--cx-muted) !important; }
+.codex-dark .minimal-step-shell .text-slate-500,
+.codex-dark .minimal-step-shell .text-slate-600 { color: var(--cx-secondary) !important; }
+.codex-dark .minimal-step-shell .text-slate-700,
+.codex-dark .minimal-step-shell .text-slate-800,
+.codex-dark .minimal-step-shell .text-slate-900 { color: var(--cx-text) !important; }
+
+.codex-dark .minimal-step-shell .text-indigo-600,
+.codex-dark .minimal-step-shell .text-indigo-700,
+.codex-dark .minimal-step-shell .text-indigo-800,
+.codex-dark .minimal-step-shell .text-violet-600,
+.codex-dark .minimal-step-shell .text-violet-700,
+.codex-dark .minimal-step-shell .text-blue-600,
+.codex-dark .minimal-step-shell .text-blue-700,
+.codex-dark .minimal-step-shell .text-blue-800 { color: #b8bdc7 !important; }
+
+.codex-dark .minimal-step-shell .bg-indigo-600 { background: #303030 !important; color: var(--cx-text) !important; }
+.codex-dark .minimal-step-shell .text-emerald-600,
+.codex-dark .minimal-step-shell .text-emerald-700 { color: #34d399 !important; }
+.codex-dark .minimal-step-shell .text-amber-600,
+.codex-dark .minimal-step-shell .text-amber-700 { color: #f59e0b !important; }
+.codex-dark .minimal-step-shell .text-red-600,
+.codex-dark .minimal-step-shell .text-red-700,
+.codex-dark .minimal-step-shell .text-rose-600,
+.codex-dark .minimal-step-shell .text-rose-700 { color: #fb7185 !important; }
+
+.codex-dark .minimal-step-shell [class*='tracking-wider'],
+.codex-dark .minimal-step-shell .uppercase { color: #8f949e; font-size: .625rem; font-weight: 500 !important; letter-spacing: .08em; }
+.codex-dark .minimal-step-shell .rounded-full { box-shadow: none !important; }
+.codex-dark .minimal-step-shell .border-2 { border-width: 1px !important; }
+
+.codex-dark .draft-editor { background: var(--cx-card) !important; border: 1px solid var(--cx-border); border-radius: .75rem !important; }
+.codex-dark .draft-editor .prose-editor { color: var(--cx-text) !important; font-size: .875rem; line-height: 1.75; }
+.codex-dark .draft-editor + div { background: #181818 !important; border: 1px solid var(--cx-border); border-radius: .75rem !important; }
+
+/* Settings */
+.codex-dark .minimal-settings { background: rgb(0 0 0 / 72%) !important; padding: 1.25rem !important; }
+.codex-dark .settings-shell {
+  max-width: 64rem;
+  padding: 0 !important;
+  background: var(--cx-bg) !important;
+  border: 1px solid #222 !important;
+  border-radius: 1rem !important;
+  box-shadow: none !important;
+}
+.codex-dark .settings-panel { background: var(--cx-bg) !important; border-radius: 1rem !important; }
+.codex-dark .settings-header { min-height: 4.5rem; padding: 1rem 1.25rem !important; border-color: #222 !important; }
+.codex-dark .settings-header h2 { font-size: 1rem !important; color: var(--cx-text) !important; }
+.codex-dark .settings-header p { color: var(--cx-muted) !important; }
+.codex-dark .settings-header button { background: var(--cx-card) !important; color: var(--cx-secondary) !important; }
+.codex-dark .settings-header button:hover { background: var(--cx-card-hover) !important; color: #fff !important; }
+
+.codex-dark .settings-tabs-wrap { padding: 1rem 1.25rem 0 !important; }
+.codex-dark .settings-tabs { padding: .25rem !important; background: var(--cx-card) !important; border: 1px solid var(--cx-border) !important; border-radius: .75rem !important; }
+.codex-dark .settings-tabs button { min-height: 2.75rem; border: 1px solid transparent !important; border-radius: .625rem !important; color: var(--cx-muted) !important; font-size: .75rem; font-weight: 400 !important; }
+.codex-dark .settings-tabs button.bg-white { background: #292929 !important; border-color: var(--cx-border-hover) !important; color: var(--cx-text) !important; }
+.codex-dark .settings-tabs button:hover { color: #fff !important; }
+
+.codex-dark .settings-content { padding: 1.25rem !important; }
+.codex-dark .settings-stack { gap: .75rem; }
+.codex-dark .settings-status,
+.codex-dark .settings-section,
+.codex-dark .settings-row,
+.codex-dark .settings-content .bg-slate-50,
+.codex-dark .settings-content .bg-white {
+  background: var(--cx-card) !important;
+  border: 1px solid var(--cx-border) !important;
+  border-radius: .75rem !important;
+  box-shadow: none !important;
+}
+.codex-dark .settings-status { padding: .875rem 1rem !important; }
+.codex-dark .settings-section { padding: 1rem !important; }
+.codex-dark .settings-row { min-height: 4.75rem; padding: 1rem !important; }
+.codex-dark .settings-row > div:nth-last-child(2) { background: #181818 !important; }
+
+.codex-dark .settings-content .bg-blue-50\/60,
+.codex-dark .settings-content .bg-emerald-50\/30 { background: var(--cx-card) !important; }
+.codex-dark .settings-content .text-slate-300,
+.codex-dark .settings-content .text-slate-400 { color: var(--cx-muted) !important; }
+.codex-dark .settings-content .text-slate-500,
+.codex-dark .settings-content .text-slate-600 { color: var(--cx-secondary) !important; }
+.codex-dark .settings-content .text-slate-700,
+.codex-dark .settings-content .text-slate-800,
+.codex-dark .settings-content .text-slate-900 { color: var(--cx-text) !important; }
+.codex-dark .settings-content .text-indigo-600,
+.codex-dark .settings-content .text-indigo-700,
+.codex-dark .settings-content .text-indigo-800,
+.codex-dark .settings-content .text-indigo-900,
+.codex-dark .settings-content .text-blue-600,
+.codex-dark .settings-content .text-blue-700,
+.codex-dark .settings-content .text-blue-800 { color: #b8bdc7 !important; }
+
+.codex-dark .settings-content input,
+.codex-dark .settings-content textarea,
+.codex-dark .settings-content select {
+  background: #181818 !important;
+  border: 1px solid #2d2d2d !important;
+  border-radius: .75rem !important;
+  color: var(--cx-text) !important;
+  box-shadow: none !important;
+}
+.codex-dark .settings-content input:focus,
+.codex-dark .settings-content textarea:focus,
+.codex-dark .settings-content select:focus { border-color: var(--cx-border-hover) !important; }
+
+.codex-dark .settings-content button.bg-slate-900 {
+  background: #292929 !important;
+  border: 1px solid var(--cx-border-hover) !important;
+  color: var(--cx-text) !important;
+}
+.codex-dark .settings-content button.bg-slate-900:hover { background: #333 !important; }
+.codex-dark .settings-content button:not(.bg-slate-900):hover { border-color: var(--cx-border-hover) !important; }
+
+.codex-dark .settings-footer { min-height: 4.5rem; padding: .75rem 1.25rem !important; background: var(--cx-bg) !important; border-color: #222 !important; }
+.codex-dark .settings-footer button { min-height: 2.25rem; border-radius: .75rem !important; font-size: .75rem; font-weight: 500 !important; }
+.codex-dark .settings-footer button:first-child { background: var(--cx-card) !important; border: 1px solid var(--cx-border) !important; color: var(--cx-secondary) !important; }
+.codex-dark .settings-footer button:last-child { background: var(--cx-primary-button) !important; border: 1px solid var(--cx-primary-button) !important; color: var(--cx-primary-button-text) !important; }
+
+.codex-dark .settings-content .border-dashed { background: #181818 !important; border-color: var(--cx-border-hover) !important; }
+.codex-dark .settings-content .border-dashed:hover { background: var(--cx-card-hover) !important; border-color: #6b7280 !important; }
+
+@media (max-width: 767px) {
+  .codex-dark .minimal-settings { padding: 0 !important; }
+  .codex-dark .settings-shell,
+  .codex-dark .settings-panel { border-radius: 0 !important; }
+  .codex-dark .settings-content { padding: .875rem !important; }
+  .codex-dark .minimal-step-shell > div { padding: .875rem !important; }
+}

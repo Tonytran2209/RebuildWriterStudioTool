@@ -633,7 +633,7 @@ function SectionRow({
   const isH3 = section.level === "h3";
 
   return (
-    <div className={`group rounded-xl border transition-colors ${
+    <div className={`outline-card group rounded-xl border transition-colors ${
       isH3 ? "ml-2 sm:ml-6 border-slate-200 bg-slate-50/60" : "border-slate-200 bg-white"
     }`}>
       <div className="flex flex-wrap sm:flex-nowrap items-start gap-2 sm:gap-3 p-3 sm:p-4">

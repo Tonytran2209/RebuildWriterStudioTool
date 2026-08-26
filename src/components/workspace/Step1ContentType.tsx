@@ -552,7 +552,7 @@ export default function Step1ContentType({
                       {waves.map(([waveKey, waveItems]) => {
                         const [wave, timeframe] = waveKey.split("|||");
                         return (
-                          <div key={waveKey} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2.5">
+                          <div key={waveKey} className="step-group rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2.5">
                             <div className="flex flex-wrap items-center gap-2 px-0.5">
                               <span className={`text-[10px] font-bold border rounded-full px-2 py-0.5 ${meta.badge}`}>{wave}</span>
                               <span className="text-[10px] font-semibold text-slate-600">{timeframe}</span>
@@ -656,7 +656,7 @@ function SuggestionCard({
   return (
     <button
       onClick={() => onSelect(s)}
-      className={`text-left p-4 rounded-2xl border-2 transition-all space-y-2.5 ${
+      className={`step-choice-card text-left p-4 rounded-2xl border-2 transition-all space-y-2.5 ${
         isSelected
           ? "border-slate-900 bg-slate-900/[0.02] ring-2 ring-slate-900 ring-offset-1 shadow-md"
           : "border-slate-200 bg-white hover:border-slate-400 hover:shadow-sm"

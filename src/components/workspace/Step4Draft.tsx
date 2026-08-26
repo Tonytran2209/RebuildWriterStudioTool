@@ -240,7 +240,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         <div className="flex-1 flex flex-col lg:flex-row gap-3 p-2 sm:p-3 min-h-0 overflow-y-auto lg:overflow-hidden">
 
           {/* Editor panel */}
-          <div className="flex-1 bg-white rounded-2xl flex flex-col shadow-sm min-w-0 min-h-[55dvh] lg:min-h-0">
+          <div className="draft-editor flex-1 bg-white rounded-2xl flex flex-col shadow-sm min-w-0 min-h-[55dvh] lg:min-h-0">
             {/* Editor toolbar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 sm:px-4 py-2.5 border-b border-slate-100">
               <div className="min-w-0">
