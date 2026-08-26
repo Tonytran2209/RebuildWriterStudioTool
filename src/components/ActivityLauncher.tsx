@@ -61,6 +61,10 @@ export default function ActivityLauncher({
   const [category, setCategory] =
     useState<"comparison-seo" | "editorial-originality">("comparison-seo")
   const [busy, setBusy] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [analysisProgress, setAnalysisProgress] = useState(0)
+  const [analysisPhase, setAnalysisPhase] = useState<"upload" | "extract" | "classify" | "save">("upload")
+  const [analysisName, setAnalysisName] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   useEffect(() => {
@@ -87,12 +91,25 @@ export default function ActivityLauncher({
   }
   const submit = async () => {
     setBusy(true)
+    setIsAnalyzing(true)
+    setAnalysisProgress(6)
+    setAnalysisPhase("upload")
     setError(null)
+    let progressTimer: number | undefined
+    let extractionTimer: number | undefined
     try {
       const name =
         file?.name?.replace(/\.[^.]+$/, "") ||
         versionBase?.name ||
         `Content Plan ${new Date().toLocaleDateString()}`
+      setAnalysisName(file?.name || name)
+      extractionTimer = window.setTimeout(() => {
+        setAnalysisPhase("extract")
+        setAnalysisProgress((value) => Math.max(value, 24))
+      }, 900)
+      progressTimer = window.setInterval(() => {
+        setAnalysisProgress((value) => Math.min(value + (value < 45 ? 3 : 1), 88))
+      }, 650)
       const imported = await importContentPlan(
         {
           name,
@@ -104,7 +121,15 @@ export default function ActivityLauncher({
         },
         railwayUrl,
       )
+      if (extractionTimer) window.clearTimeout(extractionTimer)
+      setAnalysisPhase("extract")
+      setAnalysisProgress((value) => Math.max(value, 38))
+      await new Promise((resolve) => window.setTimeout(resolve, 120))
+      setAnalysisPhase("classify")
+      setAnalysisProgress((value) => Math.max(value, 52))
       const classified = await classifyContentPlan(imported.id, railwayUrl)
+      setAnalysisPhase("save")
+      setAnalysisProgress(96)
       setPlan(classified)
       setPlans((current) => [
         classified,
@@ -112,10 +137,14 @@ export default function ActivityLauncher({
       ])
       setSelected([])
       setVersionBase(null)
+      setAnalysisProgress(100)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
+      if (progressTimer) window.clearInterval(progressTimer)
+      if (extractionTimer) window.clearTimeout(extractionTimer)
       setBusy(false)
+      setIsAnalyzing(false)
     }
   }
   const move = async (item: ContentPlanItem, type: ContentPlanItem["type"]) => {
@@ -162,7 +191,7 @@ export default function ActivityLauncher({
           plan ? "pb-44 pt-8" : "justify-center pb-52 pt-16"
         }`}
       >
-        {!plan && (
+        {!plan && !isAnalyzing && (
           <>
             <div className="text-center">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-[#2a2a2a] bg-[#1c1c1c]">
@@ -203,6 +232,69 @@ export default function ActivityLauncher({
               ))}
             </div>
           </>
+        )}
+        {!plan && isAnalyzing && (
+          <div className="mx-auto w-full max-w-[620px]">
+            <div className="text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-[#343434] bg-[#202020]">
+                <BrandMark className="h-7 w-7 animate-pulse" />
+              </div>
+              <h1 className="mt-5 text-xl font-medium text-[#e5e5e5]">
+                {tr("Đang phân tích Content Plan", "Analyzing Content Plan")}
+              </h1>
+              <p className="mt-1 truncate text-xs text-[#777]">{analysisName}</p>
+            </div>
+            <div className="mt-7 rounded-2xl border border-[#303030] bg-[#1b1b1b] p-5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-[#b8b8b8]">
+                  {{
+                    upload: tr("Đang tải và kiểm tra tài liệu…", "Uploading and validating document…"),
+                    extract: tr("Đã trích xuất nội dung, đang chuẩn hóa…", "Content extracted, normalizing…"),
+                    classify: tr("AI đang phân loại các chủ đề…", "AI is classifying topics…"),
+                    save: tr("Đang lưu kết quả vào Supabase…", "Saving results to Supabase…"),
+                  }[analysisPhase]}
+                </span>
+                <span className="font-mono text-[#888]">{analysisProgress}%</span>
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#292929]">
+                <div
+                  className="h-full rounded-full bg-[#d8d8d8] transition-[width] duration-500 ease-out"
+                  style={{ width: `${analysisProgress}%` }}
+                />
+              </div>
+              <div className="mt-5 grid grid-cols-4 gap-2">
+                {[
+                  ["upload", tr("Tải file", "Upload")],
+                  ["extract", tr("Trích xuất", "Extract")],
+                  ["classify", tr("Phân loại", "Classify")],
+                  ["save", tr("Lưu dữ liệu", "Save")],
+                ].map(([phase, label], index) => {
+                  const phases = ["upload", "extract", "classify", "save"]
+                  const activeIndex = phases.indexOf(analysisPhase)
+                  const complete = index < activeIndex
+                  const active = phase === analysisPhase
+                  return (
+                    <div key={phase} className="min-w-0 text-center">
+                      <div className={`mx-auto flex h-6 w-6 items-center justify-center rounded-full border text-[10px] ${complete ? "border-[#777] bg-[#dedede] text-[#171717]" : active ? "border-[#888] bg-[#292929] text-white animate-pulse" : "border-[#333] text-[#555]"}`}>
+                        {complete ? "✓" : index + 1}
+                      </div>
+                      <div className={`mt-1 truncate text-[9px] ${active || complete ? "text-[#aaa]" : "text-[#555]"}`}>{label}</div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="mt-5 space-y-2" aria-hidden="true">
+                {["82%", "68%", "91%"].map((width) => (
+                  <div key={width} className="h-9 animate-pulse rounded-lg border border-[#292929] bg-[#202020] p-3">
+                    <div className="h-2 rounded bg-[#303030]" style={{ width }} />
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 text-center text-[10px] text-[#666]">
+                {tr("Kết quả sẽ xuất hiện tự động ngay khi từng chủ đề được tổng hợp xong.", "Results will appear automatically as soon as the plan is ready.")}
+              </p>
+            </div>
+          </div>
         )}
         {plan && (
           <>
@@ -366,7 +458,7 @@ export default function ActivityLauncher({
           </>
         )}
       </div>
-      {!plan && (
+      {!plan && !isAnalyzing && (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-20 md:left-64">
           <div className="pointer-events-auto mx-auto w-[calc(100%-24px)] max-w-[680px]">
             {versionBase && (
