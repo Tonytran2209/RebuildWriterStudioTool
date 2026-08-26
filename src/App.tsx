@@ -490,7 +490,7 @@ export default function App() {
   }
 
   return (
-    <div className="writer-light h-dvh flex flex-col md:flex-row overflow-hidden bg-[#f7f7f5]">
+    <div className="codex-dark h-dvh flex flex-col md:flex-row overflow-hidden bg-[#141414]">
       <Sidebar
         articles={articles}
         activeArticleId={activeId}

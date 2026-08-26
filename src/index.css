@@ -1,13 +1,12 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import 'tailwindcss';
 
 @theme {
-  --font-sans: 'Inter', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -426,4 +425,293 @@ a .lucide {
   background: white;
   color: #1e293b;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Codex Dark specification — canonical app theme. */
+html, body, #root {
+  background: #141414;
+}
+
+.codex-dark {
+  background: #141414;
+  color: #e5e5e5;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  user-select: none;
+}
+
+.codex-dark input,
+.codex-dark textarea,
+.codex-dark [contenteditable='true'],
+.codex-dark .prose-editor {
+  user-select: text;
+}
+
+.codex-dark .writer-sidebar {
+  width: 16rem !important;
+  border-color: #222 !important;
+  background: #121212 !important;
+  color: #9ca3af !important;
+}
+
+.codex-dark .sidebar-nav {
+  border-radius: 0.5rem;
+  color: #9ca3af;
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.codex-dark .sidebar-nav:hover,
+.codex-dark .sidebar-icon-button:hover {
+  background: #1c1c1c;
+  color: #fff;
+}
+
+.codex-dark .sidebar-icon-button,
+.codex-dark .app-icon {
+  color: currentColor;
+}
+
+.codex-dark .sidebar-recent-card {
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+.codex-dark .sidebar-recent-card:hover {
+  border-color: #2d2d2d !important;
+  background: #1c1c1c !important;
+}
+
+.codex-dark .sidebar-recent-card:has(button:first-child:focus) {
+  border-color: #3a3a3a !important;
+  background: #1c1c1c !important;
+}
+
+.codex-dark .sidebar-recent-card.border-\[\#d3d3cf\] {
+  border-color: #3a3a3a !important;
+  background: #1c1c1c !important;
+}
+
+.codex-dark .sidebar-recent-card .text-\[\#242422\],
+.codex-dark .sidebar-recent-card .text-\[\#444440\] {
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .sidebar-recent-card .text-\[\#888882\] {
+  color: #6b7280 !important;
+}
+
+.codex-dark main,
+.codex-dark .bg-\[\#171717\] {
+  background: #141414 !important;
+}
+
+.codex-dark .bg-white,
+.codex-dark .bg-\[\#191919\],
+.codex-dark .bg-\[\#1a1a1a\],
+.codex-dark .bg-\[\#1b1b1b\],
+.codex-dark .bg-\[\#202020\],
+.codex-dark .bg-\[\#ebedf3\],
+.codex-dark .bg-\[\#eaedf3\],
+.codex-dark .bg-slate-50,
+.codex-dark .bg-slate-100 {
+  background: #1c1c1c !important;
+}
+
+.codex-dark .bg-\[\#222\],
+.codex-dark .bg-\[\#252525\],
+.codex-dark .bg-\[\#292929\],
+.codex-dark .bg-\[\#303030\],
+.codex-dark .bg-\[\#353535\] {
+  background: #1c1c1c !important;
+}
+
+.codex-dark .border-slate-100,
+.codex-dark .border-slate-200,
+.codex-dark .border-slate-200\/80,
+.codex-dark .border-\[\#292929\],
+.codex-dark .border-\[\#2b2b2b\],
+.codex-dark .border-\[\#303030\],
+.codex-dark .border-\[\#333\],
+.codex-dark .border-\[\#343434\],
+.codex-dark .border-\[\#353535\],
+.codex-dark .border-\[\#383838\],
+.codex-dark .border-\[\#3a3a3a\] {
+  border-color: #2a2a2a !important;
+}
+
+.codex-dark .text-slate-900,
+.codex-dark .text-slate-800,
+.codex-dark .text-slate-700,
+.codex-dark .text-\[\#e8e8e8\],
+.codex-dark .text-\[\#e7e7e7\],
+.codex-dark .text-\[\#e5e5e5\],
+.codex-dark .text-\[\#e0e0e0\],
+.codex-dark .text-\[\#ddd\],
+.codex-dark .text-\[\#d8d8d8\],
+.codex-dark .text-\[\#d0d0d0\] {
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .text-slate-600,
+.codex-dark .text-slate-500,
+.codex-dark .text-\[\#c8c8c8\],
+.codex-dark .text-\[\#bbb\],
+.codex-dark .text-\[\#aaa\],
+.codex-dark .text-\[\#9a9a9a\] {
+  color: #9ca3af !important;
+}
+
+.codex-dark .text-slate-400,
+.codex-dark .text-\[\#777\],
+.codex-dark .text-\[\#737373\],
+.codex-dark .text-\[\#707070\],
+.codex-dark .text-\[\#6f6f6f\],
+.codex-dark .text-\[\#686868\],
+.codex-dark .text-\[\#666\],
+.codex-dark .text-\[\#626262\] {
+  color: #6b7280 !important;
+}
+
+.codex-dark h1 {
+  color: #fff !important;
+  font-size: 1.5rem;
+  font-weight: 500 !important;
+  letter-spacing: -0.02em;
+}
+
+.codex-dark h2,
+.codex-dark h3 {
+  color: #e5e5e5 !important;
+  font-weight: 500 !important;
+}
+
+.codex-dark .minimal-step-nav {
+  border-color: #222 !important;
+  background: #141414 !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-step-nav > div:first-child {
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem !important;
+  background: #1c1c1c !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-step-nav button.bg-white {
+  border: 1px solid #3a3a3a;
+  background: #2a2a2a !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-step-shell {
+  border: 1px solid #222 !important;
+  border-radius: 0.75rem !important;
+  background: #1c1c1c !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-step .rounded-xl,
+.codex-dark .minimal-settings .rounded-xl {
+  border-radius: 0.75rem !important;
+}
+
+.codex-dark .minimal-step .rounded-2xl,
+.codex-dark .minimal-settings .rounded-2xl {
+  border-radius: 1rem !important;
+}
+
+.codex-dark .minimal-step .shadow-sm,
+.codex-dark .minimal-step .shadow-md,
+.codex-dark .minimal-step .shadow-lg,
+.codex-dark .minimal-step .shadow-xl,
+.codex-dark .minimal-step .shadow-2xl,
+.codex-dark .minimal-settings .shadow-sm,
+.codex-dark .minimal-settings .shadow-md,
+.codex-dark .minimal-settings .shadow-lg,
+.codex-dark .minimal-settings .shadow-xl,
+.codex-dark .minimal-settings .shadow-2xl {
+  box-shadow: none !important;
+}
+
+.codex-dark input,
+.codex-dark textarea,
+.codex-dark select {
+  border-color: #2d2d2d !important;
+  background-color: #1c1c1c !important;
+  color: #e5e5e5 !important;
+  color-scheme: dark;
+  outline: none;
+}
+
+.codex-dark input::placeholder,
+.codex-dark textarea::placeholder {
+  color: #6b7280 !important;
+  font-size: 0.875rem;
+}
+
+.codex-dark button {
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.codex-dark button.bg-slate-900,
+.codex-dark button.bg-indigo-600,
+.codex-dark button.bg-emerald-600 {
+  border: 1px solid #d4d4d4 !important;
+  background: #d4d4d4 !important;
+  color: #141414 !important;
+  box-shadow: none !important;
+}
+
+.codex-dark button.bg-slate-900:hover,
+.codex-dark button.bg-indigo-600:hover,
+.codex-dark button.bg-emerald-600:hover {
+  background: #fff !important;
+}
+
+.codex-dark .composer-menu {
+  color: #9ca3af;
+}
+
+.codex-dark .composer-menu:hover {
+  background: #2a2a2a;
+  color: #fff;
+}
+
+.codex-dark .workspace-tab {
+  color: #6b7280;
+}
+
+.codex-dark .workspace-tab.active {
+  border-color: #e5e5e5;
+  color: #e5e5e5;
+}
+
+.codex-dark .workspace-tab span {
+  background: #1c1c1c;
+}
+
+.codex-dark .prose-editor {
+  color: #e5e5e5;
+}
+
+.codex-dark .ai-loading {
+  background: linear-gradient(90deg, #1c1c1c 25%, #2a2a2a 50%, #1c1c1c 75%);
+  background-size: 200% 100%;
+}
+
+.codex-dark ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.codex-dark ::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: #333;
+}
+
+.codex-dark ::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
 }

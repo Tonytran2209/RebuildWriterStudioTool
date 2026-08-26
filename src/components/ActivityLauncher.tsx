@@ -331,7 +331,7 @@ export default function ActivityLauncher({
         )}
       </div>
       {!plan && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-20 md:left-[252px]">
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-20 md:left-64">
           <div className="pointer-events-auto mx-auto w-[calc(100%-24px)] max-w-[680px]">
             {error && (
               <div className="mb-2 rounded-xl border border-red-900/50 bg-red-950/80 px-3 py-2 text-xs text-red-300">
