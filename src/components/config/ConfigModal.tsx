@@ -34,7 +34,7 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-0 sm:p-5">
+    <div className="minimal-settings fixed inset-0 bg-slate-900/30 z-50 flex items-center justify-center p-0 sm:p-5">
       <div className="bg-[#ebedf3] w-full max-w-5xl h-dvh sm:h-auto sm:max-h-[93dvh] rounded-none sm:rounded-3xl p-1 sm:p-1.5 shadow-2xl border border-slate-200/80 flex flex-col">
         <div className="bg-white rounded-2xl flex-1 flex flex-col overflow-hidden">
 

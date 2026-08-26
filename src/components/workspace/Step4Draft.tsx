@@ -234,7 +234,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   };
 
   return (
-    <div className="h-full flex flex-col gap-4 animate-fade-in-up">
+    <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
         <div className="flex-1 flex flex-col lg:flex-row gap-3 p-2 sm:p-3 min-h-0 overflow-y-auto lg:overflow-hidden">
 

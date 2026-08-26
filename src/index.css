@@ -11,6 +11,104 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.brand-mark {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+/* Minimal product surface shared by Settings and every workflow step. */
+.writer-light .minimal-step,
+.writer-light .minimal-settings {
+  --minimal-border: #deded9;
+  --minimal-muted: #6f6f69;
+  --minimal-surface: #fff;
+  --minimal-subtle: #f4f4f1;
+}
+
+.writer-light .minimal-step .rounded-3xl,
+.writer-light .minimal-settings .rounded-3xl {
+  border-radius: 0.875rem !important;
+}
+
+.writer-light .minimal-step .rounded-2xl,
+.writer-light .minimal-settings .rounded-2xl {
+  border-radius: 0.75rem !important;
+}
+
+.writer-light .minimal-step .rounded-xl,
+.writer-light .minimal-settings .rounded-xl {
+  border-radius: 0.625rem !important;
+}
+
+.writer-light .minimal-step .shadow-sm,
+.writer-light .minimal-step .shadow-md,
+.writer-light .minimal-step .shadow-lg,
+.writer-light .minimal-step .shadow-xl,
+.writer-light .minimal-step .shadow-2xl,
+.writer-light .minimal-settings .shadow-sm,
+.writer-light .minimal-settings .shadow-md,
+.writer-light .minimal-settings .shadow-lg,
+.writer-light .minimal-settings .shadow-xl,
+.writer-light .minimal-settings .shadow-2xl {
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-step .bg-\[\#ebedf3\],
+.writer-light .minimal-settings .bg-\[\#ebedf3\],
+.writer-light .minimal-settings .bg-\[\#eaedf3\] {
+  background: var(--minimal-subtle) !important;
+}
+
+.writer-light .minimal-step .border-slate-100,
+.writer-light .minimal-step .border-slate-200,
+.writer-light .minimal-settings .border-slate-100,
+.writer-light .minimal-settings .border-slate-200 {
+  border-color: var(--minimal-border) !important;
+}
+
+.writer-light .minimal-step .bg-indigo-50,
+.writer-light .minimal-step .bg-violet-50,
+.writer-light .minimal-step .bg-blue-50,
+.writer-light .minimal-settings .bg-indigo-50,
+.writer-light .minimal-settings .bg-violet-50,
+.writer-light .minimal-settings .bg-blue-50 {
+  background: var(--minimal-subtle) !important;
+}
+
+.writer-light .minimal-step .text-indigo-700,
+.writer-light .minimal-step .text-violet-700,
+.writer-light .minimal-step .text-blue-700,
+.writer-light .minimal-settings .text-indigo-700,
+.writer-light .minimal-settings .text-violet-700,
+.writer-light .minimal-settings .text-blue-700 {
+  color: #4f4f4a !important;
+}
+
+.writer-light .minimal-step .bg-indigo-600,
+.writer-light .minimal-step .bg-violet-600,
+.writer-light .minimal-step .bg-blue-600,
+.writer-light .minimal-settings .bg-indigo-600,
+.writer-light .minimal-settings .bg-violet-600,
+.writer-light .minimal-settings .bg-blue-600 {
+  background: #252523 !important;
+}
+
+.writer-light .minimal-step h1,
+.writer-light .minimal-step h2,
+.writer-light .minimal-step h3,
+.writer-light .minimal-settings h1,
+.writer-light .minimal-settings h2,
+.writer-light .minimal-settings h3 {
+  letter-spacing: -0.015em;
+}
+
+.writer-light .minimal-settings > div {
+  border-color: var(--minimal-border) !important;
+  background: #f7f7f5 !important;
+  padding: 0 !important;
+}
+
 html, body, #root { min-height: 100%; background: #f7f7f5; }
 
 .sidebar-nav { display: flex; width: 100%; align-items: center; gap: .55rem; border-radius: .5rem; padding: .5rem .6rem; text-align: left; color: #bdbdbd; transition: background .15s, color .15s; }

@@ -556,7 +556,7 @@ export default function Step2CoreIdea({
   };
 
   return (
-    <div className="h-full flex flex-col gap-4 animate-fade-in-up">
+    <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="bg-white rounded-2xl border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden">
         <div className="p-3.5 sm:p-5 md:p-6 flex-1 overflow-y-auto">
           <div className="max-w-4xl mx-auto space-y-6">
