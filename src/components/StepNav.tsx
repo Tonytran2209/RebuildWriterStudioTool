@@ -14,8 +14,6 @@ interface Props {
   usage?: AICallUsage[];
 }
 
-const STEP_ICONS = ['◐', '◑', '◒', '◓'];
-
 const SYNC_INDICATOR: Record<string, { dot: string; label: string }> = {
   idle: { dot: 'bg-emerald-500', label: 'Đã lưu' },
   saving: { dot: 'bg-amber-400 animate-pulse', label: 'Đang lưu...' },
@@ -32,7 +30,7 @@ export default function StepNav({ currentStep, onStepChange, currentModel, syncS
     1: 'Content Type', 2: 'Core Idea & Angle', 3: 'Draft Outline', 4: 'First Draft & Audit',
   };
   return (
-    <header className="relative bg-white border-b border-slate-200/80 px-2.5 md:px-5 py-2 md:py-3 flex items-center justify-between gap-2 shrink-0 shadow-sm z-10">
+    <header className="minimal-step-nav relative bg-white border-b border-slate-200/80 px-2.5 md:px-5 py-2 md:py-3 flex items-center justify-between gap-2 shrink-0 z-10">
       {/* Step tabs */}
       <div className="bg-[#eaedf3] p-1 rounded-xl md:rounded-2xl flex items-center gap-0.5 md:space-x-1 shadow-sm min-w-0">
         {[1, 2, 3, 4].map(step => {

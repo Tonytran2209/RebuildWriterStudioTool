@@ -474,7 +474,7 @@ export default function Step1ContentType({
 
   return (
     <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
-      <div className="bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
+      <div className="minimal-step-shell bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
         <div className="bg-white rounded-2xl p-3.5 sm:p-6 flex-1 overflow-y-auto shadow-sm">
           <div className="max-w-3xl mx-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">

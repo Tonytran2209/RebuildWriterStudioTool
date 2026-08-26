@@ -118,6 +118,123 @@ body {
   padding: 0 !important;
 }
 
+/* The four-step workflow uses the same quiet visual language as the new workspace. */
+.writer-light .minimal-step-nav {
+  min-height: 3.5rem;
+  border-color: #deded9 !important;
+  background: #f7f7f5 !important;
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-step-nav > div:first-child {
+  border: 1px solid #deded9;
+  border-radius: 0.625rem !important;
+  background: #efefec !important;
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-step-nav > div:first-child button {
+  border-radius: 0.5rem !important;
+  font-weight: 500 !important;
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-step-nav > div:first-child button.bg-white {
+  border: 1px solid #d8d8d3;
+  color: #222220 !important;
+}
+
+.writer-light .minimal-step-shell {
+  border: 1px solid #deded9 !important;
+  border-radius: 0.75rem !important;
+  background: #fff !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-step-shell > .bg-white {
+  border-radius: 0.75rem !important;
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-step {
+  gap: 0.75rem !important;
+}
+
+.writer-light .minimal-step h2 {
+  margin-bottom: 0.375rem;
+  color: #242422 !important;
+  font-size: 1rem;
+  font-weight: 600 !important;
+  line-height: 1.35;
+}
+
+.writer-light .minimal-step h3 {
+  color: #363633 !important;
+  font-weight: 500 !important;
+}
+
+.writer-light .minimal-step p {
+  color: #6f6f69;
+}
+
+.writer-light .minimal-step button {
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-step button.bg-slate-900,
+.writer-light .minimal-step button.bg-indigo-600,
+.writer-light .minimal-step button.bg-emerald-600 {
+  border: 1px solid #242422 !important;
+  border-radius: 0.5rem !important;
+  background: #242422 !important;
+  color: #fff !important;
+  font-weight: 500 !important;
+}
+
+.writer-light .minimal-step button.bg-slate-100,
+.writer-light .minimal-step button.bg-white {
+  border-color: #deded9 !important;
+  border-radius: 0.5rem !important;
+  background: #f5f5f2 !important;
+  color: #444440 !important;
+  font-weight: 500 !important;
+}
+
+.writer-light .minimal-step input:not([type='checkbox']):not([type='radio']),
+.writer-light .minimal-step textarea,
+.writer-light .minimal-step select {
+  border-color: #deded9 !important;
+  border-radius: 0.5rem !important;
+  background-color: #fff !important;
+  color: #30302d !important;
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-step .ring-1,
+.writer-light .minimal-step .ring-2 {
+  --tw-ring-color: #4a4a46 !important;
+}
+
+.writer-light .minimal-step .border-2.border-dashed {
+  border-width: 1px !important;
+  border-color: #cecec8 !important;
+  background: #fafaf8;
+}
+
+.writer-light .minimal-step .font-bold:not(h1):not(h2) {
+  font-weight: 600 !important;
+}
+
+.writer-light .minimal-step .uppercase {
+  letter-spacing: 0.07em !important;
+}
+
+.writer-light .minimal-step .ai-loading {
+  background: linear-gradient(90deg, #eeeeeb 25%, #f7f7f5 50%, #eeeeeb 75%);
+  background-size: 200% 100%;
+}
+
 html, body, #root { min-height: 100%; background: #f7f7f5; }
 
 .sidebar-nav { display: flex; width: 100%; align-items: center; gap: .55rem; border-radius: .5rem; padding: .5rem .6rem; text-align: left; color: #bdbdbd; transition: background .15s, color .15s; }
