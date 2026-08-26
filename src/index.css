@@ -382,6 +382,175 @@ a .lucide {
   .writer-sidebar { z-index: 50; }
 }
 
+/* Contrast corrections from production screenshots. */
+.codex-dark .bg-slate-50\/60,
+.codex-dark .bg-slate-50\/50,
+.codex-dark .bg-blue-50\/60,
+.codex-dark .bg-blue-50\/50,
+.codex-dark .bg-cyan-50\/50,
+.codex-dark .bg-emerald-50\/30 {
+  background: #1c1c1c !important;
+}
+
+.codex-dark .minimal-step .bg-slate-900\/\[0\.02\] {
+  background: #222 !important;
+}
+
+.codex-dark .minimal-step .ring-offset-1 {
+  --tw-ring-offset-color: #1c1c1c !important;
+}
+
+.codex-dark .minimal-step .text-indigo-600,
+.codex-dark .minimal-step .text-indigo-700,
+.codex-dark .minimal-step .text-indigo-800,
+.codex-dark .minimal-step .text-violet-600,
+.codex-dark .minimal-step .text-violet-700,
+.codex-dark .minimal-step .text-violet-800,
+.codex-dark .minimal-step .text-blue-600,
+.codex-dark .minimal-step .text-blue-700,
+.codex-dark .minimal-step .text-blue-800 {
+  color: #b7bbc3 !important;
+}
+
+.codex-dark .minimal-step .bg-indigo-50,
+.codex-dark .minimal-step .bg-indigo-100,
+.codex-dark .minimal-step .bg-indigo-600,
+.codex-dark .minimal-step .bg-violet-50,
+.codex-dark .minimal-step .bg-violet-100,
+.codex-dark .minimal-step .bg-blue-50,
+.codex-dark .minimal-step .bg-blue-100 {
+  border-color: #3a3a3a !important;
+  background: #242424 !important;
+}
+
+.codex-dark .minimal-step .text-slate-300 {
+  color: #9ca3af !important;
+}
+
+.codex-dark .minimal-step .text-slate-400 {
+  color: #858b96 !important;
+}
+
+.codex-dark .minimal-step .text-slate-500,
+.codex-dark .minimal-step .text-slate-600 {
+  color: #a7abb4 !important;
+}
+
+.codex-dark .minimal-step .text-slate-700,
+.codex-dark .minimal-step .text-slate-800 {
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-step [class*='tracking-wider'],
+.codex-dark .minimal-step .uppercase {
+  color: #8f949e;
+}
+
+.codex-dark .minimal-settings button.bg-slate-900 {
+  border-color: #3a3a3a !important;
+  background: #2a2a2a !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings > div > div > div:last-child button.bg-slate-900 {
+  border-color: #d4d4d4 !important;
+  background: #d4d4d4 !important;
+  color: #141414 !important;
+}
+
+.codex-dark .minimal-settings .bg-emerald-50\/30,
+.codex-dark .minimal-settings .bg-blue-50\/60 {
+  background: #1c1c1c !important;
+}
+
+.codex-dark .minimal-settings .border-emerald-200,
+.codex-dark .minimal-settings .border-emerald-500,
+.codex-dark .minimal-settings .border-blue-100,
+.codex-dark .minimal-settings .border-indigo-100,
+.codex-dark .minimal-settings .border-indigo-200,
+.codex-dark .minimal-settings .border-violet-100,
+.codex-dark .minimal-settings .border-violet-200 {
+  border-color: #2d2d2d !important;
+}
+
+.codex-dark .minimal-step .text-amber-600,
+.codex-dark .minimal-step .text-amber-700,
+.codex-dark .minimal-step .text-amber-800 {
+  color: #f59e0b !important;
+}
+
+.codex-dark .minimal-step .text-emerald-600,
+.codex-dark .minimal-step .text-emerald-700,
+.codex-dark .minimal-step .text-emerald-800 {
+  color: #34d399 !important;
+}
+
+.codex-dark .minimal-step .text-red-600,
+.codex-dark .minimal-step .text-red-700,
+.codex-dark .minimal-step .text-rose-600,
+.codex-dark .minimal-step .text-rose-700,
+.codex-dark .minimal-step .text-rose-800 {
+  color: #fb7185 !important;
+}
+
+.codex-dark .minimal-settings .text-amber-600,
+.codex-dark .minimal-settings .text-amber-700,
+.codex-dark .minimal-settings .text-amber-800 {
+  color: #d1d5db !important;
+}
+
+.codex-dark .minimal-settings .text-emerald-600,
+.codex-dark .minimal-settings .text-emerald-700,
+.codex-dark .minimal-settings .text-emerald-800 {
+  color: #34d399 !important;
+}
+
+.codex-dark .minimal-settings .text-indigo-600,
+.codex-dark .minimal-settings .text-indigo-700,
+.codex-dark .minimal-settings .text-indigo-800,
+.codex-dark .minimal-settings .text-indigo-900,
+.codex-dark .minimal-settings .text-violet-600,
+.codex-dark .minimal-settings .text-violet-700,
+.codex-dark .minimal-settings .text-blue-600,
+.codex-dark .minimal-settings .text-blue-700,
+.codex-dark .minimal-settings .text-blue-800 {
+  color: #b7bbc3 !important;
+}
+
+.codex-dark .minimal-settings .text-slate-300 {
+  color: #858b96 !important;
+}
+
+.codex-dark .minimal-settings .text-slate-400 {
+  color: #8f949e !important;
+}
+
+.codex-dark .minimal-settings .text-slate-500,
+.codex-dark .minimal-settings .text-slate-600 {
+  color: #a7abb4 !important;
+}
+
+.codex-dark .minimal-settings .text-slate-700,
+.codex-dark .minimal-settings .text-slate-800,
+.codex-dark .minimal-settings .text-slate-900 {
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .bg-indigo-50,
+.codex-dark .minimal-settings .bg-indigo-100,
+.codex-dark .minimal-settings .bg-blue-50,
+.codex-dark .minimal-settings .bg-blue-100,
+.codex-dark .minimal-settings .bg-violet-50,
+.codex-dark .minimal-settings .bg-violet-100,
+.codex-dark .minimal-settings .bg-emerald-100,
+.codex-dark .minimal-settings .bg-amber-100 {
+  background: #242424 !important;
+}
+
+.codex-dark .minimal-settings .bg-slate-200 {
+  background: #333 !important;
+}
+
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
@@ -889,4 +1058,115 @@ html, body, #root {
   .codex-dark .minimal-settings > div > div {
     border-radius: 0 !important;
   }
+}
+
+/* Final contrast layer: must remain last so component utilities cannot override it. */
+.codex-dark .bg-slate-50\/60,
+.codex-dark .bg-slate-50\/50,
+.codex-dark .bg-blue-50\/60,
+.codex-dark .bg-cyan-50\/50,
+.codex-dark .bg-emerald-50\/30 {
+  background: #1c1c1c !important;
+}
+
+.codex-dark .minimal-step .bg-slate-900\/\[0\.02\] {
+  background: #222 !important;
+}
+
+.codex-dark .minimal-step .text-slate-300,
+.codex-dark .minimal-step .text-slate-400 {
+  color: #8f949e !important;
+}
+
+.codex-dark .minimal-step .text-slate-500,
+.codex-dark .minimal-step .text-slate-600 {
+  color: #a7abb4 !important;
+}
+
+.codex-dark .minimal-step .text-slate-700,
+.codex-dark .minimal-step .text-slate-800 {
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-step .text-indigo-600,
+.codex-dark .minimal-step .text-indigo-700,
+.codex-dark .minimal-step .text-indigo-800,
+.codex-dark .minimal-step .text-violet-600,
+.codex-dark .minimal-step .text-violet-700,
+.codex-dark .minimal-step .text-blue-600,
+.codex-dark .minimal-step .text-blue-700,
+.codex-dark .minimal-step .text-blue-800 {
+  color: #b7bbc3 !important;
+}
+
+.codex-dark .minimal-step .bg-indigo-50,
+.codex-dark .minimal-step .bg-indigo-100,
+.codex-dark .minimal-step .bg-indigo-600,
+.codex-dark .minimal-step .bg-violet-50,
+.codex-dark .minimal-step .bg-violet-100,
+.codex-dark .minimal-step .bg-blue-50,
+.codex-dark .minimal-step .bg-blue-100 {
+  border-color: #3a3a3a !important;
+  background: #242424 !important;
+}
+
+.codex-dark .minimal-settings button.bg-slate-900 {
+  border-color: #3a3a3a !important;
+  background: #2a2a2a !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings > div > div > div:last-child button.bg-slate-900 {
+  border-color: #d4d4d4 !important;
+  background: #d4d4d4 !important;
+  color: #141414 !important;
+}
+
+.codex-dark .minimal-settings .text-slate-300,
+.codex-dark .minimal-settings .text-slate-400 {
+  color: #8f949e !important;
+}
+
+.codex-dark .minimal-settings .text-slate-500,
+.codex-dark .minimal-settings .text-slate-600 {
+  color: #a7abb4 !important;
+}
+
+.codex-dark .minimal-settings .text-slate-700,
+.codex-dark .minimal-settings .text-slate-800,
+.codex-dark .minimal-settings .text-slate-900 {
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .text-indigo-600,
+.codex-dark .minimal-settings .text-indigo-700,
+.codex-dark .minimal-settings .text-indigo-800,
+.codex-dark .minimal-settings .text-indigo-900,
+.codex-dark .minimal-settings .text-violet-600,
+.codex-dark .minimal-settings .text-violet-700,
+.codex-dark .minimal-settings .text-blue-600,
+.codex-dark .minimal-settings .text-blue-700,
+.codex-dark .minimal-settings .text-blue-800 {
+  color: #b7bbc3 !important;
+}
+
+.codex-dark .minimal-settings .bg-indigo-50,
+.codex-dark .minimal-settings .bg-indigo-100,
+.codex-dark .minimal-settings .bg-blue-50,
+.codex-dark .minimal-settings .bg-blue-100,
+.codex-dark .minimal-settings .bg-violet-50,
+.codex-dark .minimal-settings .bg-violet-100,
+.codex-dark .minimal-settings .bg-emerald-100,
+.codex-dark .minimal-settings .bg-amber-100 {
+  background: #242424 !important;
+}
+
+.codex-dark .minimal-settings .border-emerald-200,
+.codex-dark .minimal-settings .border-emerald-500,
+.codex-dark .minimal-settings .border-blue-100,
+.codex-dark .minimal-settings .border-indigo-100,
+.codex-dark .minimal-settings .border-indigo-200,
+.codex-dark .minimal-settings .border-violet-100,
+.codex-dark .minimal-settings .border-violet-200 {
+  border-color: #2d2d2d !important;
 }
