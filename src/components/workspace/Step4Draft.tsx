@@ -100,18 +100,14 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     () => [
       buildActionPlanFingerprint(bundle), model.provider, model.id, 'step4-draft-v3-en',
       article.selectedCoreIdeaId, article.topic, article.angle,
-      JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount, config.stepConfigs[4]?.maxDraftCharacters ?? 12000, documentPromptRules,
+      JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, documentPromptRules,
     ].join(':'),
     [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, article.wordCount, bundle, config.stepConfigs, documentPromptRules, model.id, model.provider],
   );
   const wordCount = countWords(draft);
-  const maxDraftCharacters = Math.min(100000, Math.max(1000, config.stepConfigs[4]?.maxDraftCharacters ?? 12000));
-  const requestedTargetWords = article.wordCount || 1500;
-  const estimatedWordCapacity = Math.max(1, Math.floor(maxDraftCharacters / 7));
-  const targetWords = Math.min(requestedTargetWords, estimatedWordCapacity);
-  const characterLimitConstrainsWords = targetWords < requestedTargetWords;
+  const targetWords = Math.min(10000, Math.max(200, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500));
   const readability = calcReadability(draft);
-  const progress = Math.min(Math.round((draft.length / maxDraftCharacters) * 100), 100);
+  const progress = Math.min(Math.round((wordCount / targetWords) * 100), 100);
   const draftIsStale = Boolean(draft) && article.draftSourceFingerprint !== draftSourceFingerprint;
   const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
 
@@ -139,7 +135,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         article.keywords,
         ...(article.outline ?? []).map(section => section.heading),
       ].filter(Boolean).join(' ');
-      const maxTokens = Math.min(12_000, Math.max(500, Math.ceil(maxDraftCharacters / 3.2)));
+      const maxTokens = Math.min(12_000, Math.max(800, Math.ceil(targetWords * 2.4)));
 
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -153,7 +149,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Chỉ trả về nội dung bài viết hoàn chỉnh bằng Markdown, không thêm lời dẫn, nhật ký hoặc giải thích về quá trình viết.',
-          `- HARD LIMIT: Toàn bộ Markdown trả về không được vượt quá ${maxDraftCharacters} ký tự, bao gồm heading và khoảng trắng.`,
+          `- HARD LIMIT: Toàn bộ bài viết không được vượt quá ${targetWords} từ tiếng Anh. Mục tiêu là 90–100% giới hạn này để bài được hoàn thiện đầy đủ.`,
         ].join('\n'),
         documentPromptRules,
       );
@@ -169,8 +165,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         `- Độc giả: ${article.targetAudience || ''}`,
         `- Giọng văn: ${article.tone || ''}`,
         `- Từ khóa: ${article.keywords || ''}`,
-        `- Số từ mục tiêu hiệu dụng: ~${targetWords}${characterLimitConstrainsWords ? ` (đã giảm từ ${requestedTargetWords} để không vượt giới hạn ký tự)` : ''}`,
-        `- Giới hạn bắt buộc: tối đa ${maxDraftCharacters} ký tự cho toàn bộ bài viết`,
+        `- Mục tiêu và giới hạn bắt buộc: 90–100% của ${targetWords} từ tiếng Anh`,
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
         JSON.stringify(verifiedOutline),
@@ -192,7 +187,8 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         skipDocumentContext: !bundle.totalCount,
       });
       if (!res.content.trim()) throw new Error('AI trả về draft rỗng. Kết quả cũ vẫn được giữ nguyên.');
-      if (res.content.length > maxDraftCharacters) throw new Error(`AI trả về ${res.content.length.toLocaleString()} ký tự, vượt giới hạn ${maxDraftCharacters.toLocaleString()}. Draft cũ vẫn được giữ nguyên; hãy thử tạo lại hoặc tăng giới hạn.`);
+      const generatedWords = countWords(res.content);
+      if (generatedWords > targetWords) throw new Error(`AI trả về ${generatedWords.toLocaleString()} từ, vượt giới hạn ${targetWords.toLocaleString()} từ tiếng Anh. Draft cũ vẫn được giữ nguyên; hãy thử tạo lại hoặc tăng giới hạn.`);
       const saved = await onUpdate({
         draft: res.content,
         draftSourceFingerprint,
@@ -323,10 +319,9 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             {/* Word count bar */}
             <div className="px-5 py-2.5 border-t border-slate-100">
               <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
-                <span className="font-mono font-semibold">{wordCount.toLocaleString()} / ~{targetWords.toLocaleString()} từ · {draft.length.toLocaleString()} / {maxDraftCharacters.toLocaleString()} ký tự</span>
-                <span>{progress}% {tr('ngân sách ký tự', 'character budget')}</span>
+                <span className="font-mono font-semibold">{wordCount.toLocaleString()} / {targetWords.toLocaleString()} {tr('từ tiếng Anh', 'English words')} · {draft.length.toLocaleString()} {tr('ký tự', 'characters')}</span>
+                <span>{progress}% {tr('hoàn thành', 'complete')}</span>
               </div>
-              {characterLimitConstrainsWords && <p className="mt-2 text-[9px] text-amber-500">{tr(`Giới hạn ${maxDraftCharacters.toLocaleString()} ký tự chỉ phù hợp khoảng ${targetWords.toLocaleString()} từ; mục tiêu gốc ${requestedTargetWords.toLocaleString()} từ đã được điều chỉnh tự động.`, `The ${maxDraftCharacters.toLocaleString()}-character limit supports roughly ${targetWords.toLocaleString()} words; the original ${requestedTargetWords.toLocaleString()}-word target was adjusted automatically.`)}</p>}
               <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${progress >= 100 ? 'bg-emerald-500' : progress >= 70 ? 'bg-blue-500' : 'bg-amber-400'}`}
@@ -364,7 +359,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                 </div>
                 <div className="flex justify-between text-[11px]">
                   <span className="text-slate-500">{tr('Số ký tự', 'Characters')}</span>
-                  <span className={`font-mono font-bold ${draft.length > maxDraftCharacters ? 'text-red-500' : 'text-slate-700'}`}>{draft.length.toLocaleString()} / {maxDraftCharacters.toLocaleString()}</span>
+                  <span className="font-mono font-bold text-slate-700">{draft.length.toLocaleString()}</span>
                 </div>
               </div>
             </div>
