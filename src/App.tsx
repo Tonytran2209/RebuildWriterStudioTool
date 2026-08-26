@@ -90,7 +90,6 @@ export default function App() {
 
         if (remoteArticles?.length) {
           setArticles(remoteArticles.map((item) => ({ ...item, currentStep: Math.max(2, item.currentStep || 2) })))
-          setActiveId(remoteArticles[0].id)
         }
         if (remoteConfig) {
           setConfig(mergeWithLatestModelCatalog(remoteConfig))
