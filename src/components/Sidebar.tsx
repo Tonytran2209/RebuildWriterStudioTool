@@ -1,5 +1,5 @@
 import { useState } from "react"
-import type { ReactNode } from "react"
+import { ChevronDown, Clock3, FileText, Globe2, Menu, PenLine, PlusCircle, Search, Settings } from "lucide-react"
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
@@ -16,12 +16,6 @@ interface Props {
   onDeleteArticle: (article: Article) => void
   deletingArticleId: string | null
 }
-const Icon = ({ children }: { children: ReactNode }) => (
-  <span className="sidebar-line-icon" aria-hidden="true">
-    {children}
-  </span>
-)
-
 export default function Sidebar({
   articles,
   activeArticleId,
@@ -59,31 +53,31 @@ export default function Sidebar({
             className="sidebar-icon-button"
             aria-label={tr("Tìm kiếm", "Search")}
           >
-            <Icon>⌕</Icon>
+            <Search className="app-icon" aria-hidden="true" />
           </button>
           <button
             onClick={() => setOpen((value) => !value)}
             className="sidebar-icon-button md:hidden"
             aria-label={tr("Mở menu", "Open menu")}
           >
-            <Icon>☰</Icon>
+            <Menu className="app-icon" aria-hidden="true" />
           </button>
         </div>
       </div>
       <nav className="space-y-1 px-2 py-2 text-[13px]">
         <button onClick={onNewArticle} className="sidebar-nav">
-          <Icon>✎</Icon>
+          <PenLine className="app-icon" aria-hidden="true" />
           {tr("Activity mới", "New activity")}
-          <span className="ml-auto text-[#777]">⊕</span>
+          <PlusCircle className="app-icon ml-auto text-[#777]" aria-hidden="true" />
         </button>
         <button
           onClick={onOpenContentPlans ?? onNewArticle}
           className="sidebar-nav"
         >
-          <Icon>▦</Icon>Content Plan history
+          <FileText className="app-icon" aria-hidden="true" />Content Plan history
         </button>
         <button onClick={() => setOpen(true)} className="sidebar-nav">
-          <Icon>◷</Icon>
+          <Clock3 className="app-icon" aria-hidden="true" />
           {tr("Bài đã tạo", "Recents")}
         </button>
       </nav>
@@ -145,14 +139,12 @@ export default function Sidebar({
       </div>
       <div className="shrink-0 border-t border-[#2c2c2c] p-2">
         <button onClick={toggleLanguage} className="sidebar-nav">
-          <span className="ui-globe" aria-hidden="true" />
+          <Globe2 className="app-icon" aria-hidden="true" />
           {language === "vi" ? "Tiếng Việt" : "English"}
-          <span className="ml-auto text-[#777]">⌄</span>
+          <ChevronDown className="app-icon ml-auto text-[#777]" aria-hidden="true" />
         </button>
         <button onClick={onOpenConfig} className="sidebar-nav">
-          <Icon>
-            <span className="settings-icon-glyph">⚙</span>
-          </Icon>
+          <Settings className="app-icon" aria-hidden="true" />
           {tr("Cài đặt", "Settings")}
         </button>
       </div>

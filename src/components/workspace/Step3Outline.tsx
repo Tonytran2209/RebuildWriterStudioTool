@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -682,13 +683,13 @@ function SectionRow({
 
         <div className="flex items-center justify-end gap-0.5 shrink-0 w-full sm:w-auto">
           <button onClick={() => setShowAudit(true)} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-violet-700 hover:bg-violet-50 rounded-md" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${section.heading}`}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" strokeWidth="2"/><path d="m20 20-3.5-3.5" strokeWidth="2" strokeLinecap="round"/></svg>
+            <Search className="app-icon" aria-hidden="true" />
           </button>
           <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title={tr('Lên', 'Move up')}>
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 15l7-7 7 7" /></svg>
+            <ChevronUp className="app-icon" aria-hidden="true" />
           </button>
           <button onClick={() => onMove(1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title={tr('Xuống', 'Move down')}>
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+            <ChevronDown className="app-icon" aria-hidden="true" />
           </button>
           <button
             onClick={() => setExpanded(!expanded)}
@@ -697,9 +698,7 @@ function SectionRow({
             {expanded ? tr('Thu gọn', 'Collapse') : tr('Chi tiết', 'Details')}
           </button>
           <button onClick={onRemove} className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-500 rounded" title={tr('Xoá', 'Delete')}>
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="app-icon" aria-hidden="true" />
           </button>
         </div>
       </div>

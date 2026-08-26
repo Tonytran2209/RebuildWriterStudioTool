@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { Check, LoaderCircle, Sparkles, X } from 'lucide-react';
 import type { Article, AIModel, AppConfig, DocumentFile, EvidenceRef } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
@@ -254,10 +255,10 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                 >
                   {generating ? (
                     <>
-                      <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                      <LoaderCircle className="app-icon animate-spin" aria-hidden="true" />
                       <span>{tr('Đang viết...', 'Writing...')}</span>
                     </>
-                    ) : <><span>✨</span><span>{draft ? tr('Viết lại', 'Rewrite') : tr('AI Viết Draft', 'AI Draft')}</span></>}
+                    ) : <><Sparkles className="app-icon" aria-hidden="true" /><span>{draft ? tr('Viết lại', 'Rewrite') : tr('AI Viết Draft', 'AI Draft')}</span></>}
                 </button>
                 <button
                   onClick={handleCopy}
@@ -373,9 +374,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                 ].map(item => (
                   <div key={item.label} className="flex items-center gap-2">
                     <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${item.pass ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                      <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d={item.pass ? 'M5 13l4 4L19 7' : 'M6 18L18 6M6 6l12 12'} />
-                      </svg>
+                      {item.pass ? <Check className="app-icon" aria-hidden="true" /> : <X className="app-icon" aria-hidden="true" />}
                     </div>
                     <span className={`text-[11px] ${item.pass ? 'text-slate-700' : 'text-slate-400'}`}>{item.label}</span>
                   </div>

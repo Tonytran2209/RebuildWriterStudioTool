@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Bot, Cpu, Library, X } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { AppConfig, Article, DocumentFile, ActiveTab } from '../../types';
 import TabStepSetup from './TabStepSetup';
 import TabModels from './TabModels';
@@ -14,10 +16,10 @@ interface Props {
   onClose: () => void;
 }
 
-const TABS: { id: ActiveTab; label: string; icon: string }[] = [
-  { id: 'step-setup',      label: 'Phân quyền AI theo Step',       icon: '⬡' },
-  { id: 'models',          label: 'Quản lý AI Models',             icon: '◆' },
-  { id: 'knowledge-base',  label: 'Knowledge Base & Skills', icon: '▤' },
+const TABS: { id: ActiveTab; label: string; icon: LucideIcon }[] = [
+  { id: 'step-setup', label: 'Phân quyền AI theo Step', icon: Bot },
+  { id: 'models', label: 'Quản lý AI Models', icon: Cpu },
+  { id: 'knowledge-base', label: 'Knowledge Base & Skills', icon: Library },
 ];
 
 export default function ConfigModal({ config, files, articles, onSave, onClose }: Props) {
@@ -48,16 +50,16 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
               onClick={onClose}
               className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-all"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <X className="app-icon" aria-hidden="true" />
             </button>
           </div>
 
           {/* Tab nav */}
           <div className="px-2 sm:px-6 pt-2 sm:pt-4 shrink-0 overflow-x-auto">
             <div className="bg-[#eaedf3] p-1 sm:p-1.5 rounded-xl sm:rounded-2xl flex items-center gap-1 min-w-max sm:min-w-0">
-              {TABS.map(tab => (
+              {TABS.map(tab => {
+                const TabIcon = tab.icon;
+                return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
@@ -67,14 +69,15 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
                       : 'text-slate-400 hover:text-slate-700'
                   }`}
                 >
-                  <span className="app-icon" aria-hidden="true">{tab.icon}</span>
+                  <TabIcon className="app-icon" aria-hidden="true" />
                   <span>{language === 'vi' ? tab.label : ({
                     'step-setup': 'AI access by Step',
                     models: 'AI Model management',
                     'knowledge-base': 'Knowledge Base & Skills',
                   } as Record<ActiveTab, string>)[tab.id]}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 

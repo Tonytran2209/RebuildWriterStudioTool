@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { ArrowLeft, ArrowRight, FileText, Plus, Sheet, Upload, X } from "lucide-react"
 import type {
   AIModel,
   Article,
@@ -179,9 +180,7 @@ export default function ActivityLauncher({
                     <span className="text-[10px] font-medium">
                       Quick access
                     </span>
-                    <span className="text-[16px]" aria-hidden="true">
-                      →
-                    </span>
+                    <ArrowRight className="app-icon" aria-hidden="true" />
                   </div>
                   <div className="mt-5 text-[12px] font-medium text-[#d0d0d0]">
                     {item.title}
@@ -202,7 +201,7 @@ export default function ActivityLauncher({
                   onClick={() => setPlan(null)}
                   className="mb-3 text-[11px] text-[#777] hover:text-white"
                 >
-                  ← New activity
+                  <ArrowLeft className="app-icon mr-1 inline-flex" aria-hidden="true" /> New activity
                 </button>
                 <h1 className="text-xl font-medium text-[#e5e5e5]">
                   {plan.name}{" "}
@@ -375,9 +374,9 @@ export default function ActivityLauncher({
             >
               {file && (
                 <div className="mb-2 inline-flex items-center gap-2 rounded-lg bg-[#353535] px-2.5 py-1.5 text-[10px] text-[#bbb]">
-                  ▤ {file.name}
+                  <FileText className="app-icon" aria-hidden="true" /> {file.name}
                   <button onClick={() => setFile(null)} className="text-[#777]">
-                    ×
+                    <X className="app-icon" aria-hidden="true" />
                   </button>
                 </div>
               )}
@@ -400,7 +399,7 @@ export default function ActivityLauncher({
                     onClick={() => setMenu((value) => !value)}
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-lg text-[#aaa] hover:bg-[#3a3a3a]"
                   >
-                    ＋
+                    <Plus className="app-icon" aria-hidden="true" />
                   </button>
                   {menu && (
                     <div className="absolute bottom-9 left-0 w-52 rounded-xl border border-[#3a3a3a] bg-[#252525] p-1.5 shadow-2xl">
@@ -408,25 +407,25 @@ export default function ActivityLauncher({
                         onClick={() => chooseSource("file")}
                         className="composer-menu"
                       >
-                        ▤ Upload file
+                        <Upload className="app-icon" aria-hidden="true" /> Upload file
                       </button>
                       <button
                         onClick={() => chooseSource("google_doc")}
                         className="composer-menu"
                       >
-                        ◫ Google Doc link
+                        <FileText className="app-icon" aria-hidden="true" /> Google Doc link
                       </button>
                       <button
                         onClick={() => chooseSource("google_sheet")}
                         className="composer-menu"
                       >
-                        ▦ Google Sheet link
+                        <Sheet className="app-icon" aria-hidden="true" /> Google Sheet link
                       </button>
                       <button
                         onClick={() => chooseSource("paste")}
                         className="composer-menu"
                       >
-                        ✎ Direct input
+                        <FileText className="app-icon" aria-hidden="true" /> Direct input
                       </button>
                     </div>
                   )}

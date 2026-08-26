@@ -1,4 +1,6 @@
 import { useState, useRef } from 'react';
+import { ClipboardPaste, Database, Download, FilePenLine, FolderUp, Link2, Plug, Sheet, Trash2 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { ActionDataSource, ActionSourceType, FileCategory, ManualRow } from '../../types';
 import { isActionSourceReady } from '../../lib/documentStatus';
 import { uploadDocumentToRailway } from '../../lib/railwayUpload';
@@ -27,18 +29,18 @@ function extractSheetId(url: string): string | null {
 
 // ── mode definitions ──────────────────────────────────────────────────────────
 
-const MODES: { id: ActionSourceType; icon: string; label: string; hint: string }[] = [
-  { id: 'file',      icon: '📁', label: 'File Upload',    hint: 'CSV, XLSX, JSON, PDF' },
-  { id: 'paste',     icon: '📋', label: 'Paste Data',     hint: 'CSV, JSON, văn bản thuần' },
-  { id: 'url',       icon: '🔗', label: 'URL / API',      hint: 'REST API, RSS feed' },
-  { id: 'gsheet',    icon: '📊', label: 'Google Sheets',  hint: 'Link public spreadsheet' },
-  { id: 'manual',    icon: '✏️', label: 'Nhập thủ công',  hint: 'Bảng dữ liệu tự tạo' },
-  { id: 'supabase',  icon: '🗄️', label: 'Supabase Query', hint: 'SQL SELECT từ DB' },
-  { id: 'airtable',  icon: '🔌', label: 'Airtable',       hint: 'API Key + Base ID' },
+const MODES: { id: ActionSourceType; icon: LucideIcon; label: string; hint: string }[] = [
+  { id: 'file', icon: FolderUp, label: 'File Upload', hint: 'CSV, XLSX, JSON, PDF' },
+  { id: 'paste', icon: ClipboardPaste, label: 'Paste Data', hint: 'CSV, JSON, văn bản thuần' },
+  { id: 'url', icon: Link2, label: 'URL / API', hint: 'REST API, RSS feed' },
+  { id: 'gsheet', icon: Sheet, label: 'Google Sheets', hint: 'Link public spreadsheet' },
+  { id: 'manual', icon: FilePenLine, label: 'Nhập thủ công', hint: 'Bảng dữ liệu tự tạo' },
+  { id: 'supabase', icon: Database, label: 'Supabase Query', hint: 'SQL SELECT từ DB' },
+  { id: 'airtable', icon: Plug, label: 'Airtable', hint: 'API Key + Base ID' },
 ];
 
-const SOURCE_ICONS: Record<ActionSourceType, string> = {
-  file: '📁', paste: '📋', url: '🔗', gsheet: '📊', manual: '✏️', supabase: '🗄️', airtable: '🔌',
+const SOURCE_ICONS: Record<ActionSourceType, LucideIcon> = {
+  file: FolderUp, paste: ClipboardPaste, url: Link2, gsheet: Sheet, manual: FilePenLine, supabase: Database, airtable: Plug,
 };
 
 // ── sub-forms ─────────────────────────────────────────────────────────────────
@@ -84,7 +86,7 @@ function FileForm({ onAdd, railwayUrl, category }: { onAdd: (sources: ActionData
       className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all
         bg-emerald-50/30 border-emerald-200 hover:border-emerald-500 ${dragging ? 'scale-[0.99] opacity-75' : ''}`}
     >
-      <div className="text-3xl mb-2">📁</div>
+      <FolderUp className="mx-auto mb-2 h-8 w-8" aria-hidden="true" />
       <p className="text-xs font-bold text-slate-700">{reading ? tr('Railway đang scan và lưu Supabase...', 'Railway is scanning and saving to Supabase...') : tr('Kéo thả hoặc nhấp để chọn file', 'Drop files here or click to browse')}</p>
       <p className="text-[11px] text-slate-400 mt-1">CSV · XLSX · JSON · PDF · TXT · XML</p>
       <input ref={ref} type="file" multiple accept=".csv,.xlsx,.json,.pdf,.txt,.xml,.tsv" className="hidden" onChange={e => handle(e.target.files)} />
@@ -439,7 +441,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
       <div>
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">{tr('Chọn cách nhập dữ liệu', 'Choose an import method')}</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {MODES.map(m => (
+          {MODES.map(m => { const ModeIcon = m.icon; return (
             <button
               key={m.id}
               onClick={() => setMode(m.id)}
@@ -449,11 +451,11 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
                   : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400 hover:shadow-sm'
               }`}
             >
-              <span className="text-base leading-none">{m.icon}</span>
+              <ModeIcon className="app-icon" aria-hidden="true" />
               <span className={`text-[10px] font-bold leading-tight ${mode === m.id ? 'text-white' : 'text-slate-700'}`}>{language === 'vi' ? m.label : ({ paste: 'Paste Data', manual: 'Manual Entry', file: 'File Upload', url: 'URL / API', gsheet: 'Google Sheets', supabase: 'Supabase Query', airtable: 'Airtable' } as Record<ActionSourceType, string>)[m.id]}</span>
               <span className={`text-[9px] leading-tight text-slate-400`}>{language === 'vi' ? m.hint : ({ paste: 'CSV, JSON, plain text', manual: 'Create a data table', file: 'CSV, XLSX, JSON, PDF', url: 'REST API, RSS feed', gsheet: 'Public spreadsheet link', supabase: 'SQL SELECT from DB', airtable: 'API Key + Base ID' } as Record<ActionSourceType, string>)[m.id]}</span>
             </button>
-          ))}
+          ); })}
         </div>
       </div>
 
@@ -504,9 +506,10 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
           <div className="space-y-1.5">
             {sources.map(s => {
               const ready = isActionSourceReady(s);
+              const SourceIcon = SOURCE_ICONS[s.sourceType];
               return (
               <div key={s.id} className={`group flex items-start gap-3 bg-white border rounded-xl p-3 hover:shadow-sm transition-all ${ready ? 'border-slate-200' : 'border-red-200'}`}>
-                <span className="text-base mt-0.5 shrink-0">{SOURCE_ICONS[s.sourceType]}</span>
+                <SourceIcon className="app-icon mt-0.5" aria-hidden="true" />
                 <div className="flex-1 min-w-0 space-y-0.5">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-slate-800 truncate">{s.name}</span>
@@ -543,9 +546,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
                     title={s.storagePath ? 'Tải file gốc từ Supabase' : 'Tải dữ liệu đã lưu'}
                     className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l-4-4m4 4l4-4M5 19h14" />
-                    </svg>
+                    <Download className="app-icon" aria-hidden="true" />
                     {downloadingId === s.id ? tr('Đang tải', 'Downloading') : tr('Tải về', 'Download')}
                   </button>
                   <button
@@ -553,9 +554,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
                     title="Xóa nguồn dữ liệu"
                     className="text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"
                   >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
+                    <Trash2 className="app-icon" aria-hidden="true" />
                   </button>
                 </div>
               </div>

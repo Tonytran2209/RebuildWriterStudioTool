@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { STEP_LABELS } from '../lib/defaultData';
 import type { AICallUsage, AIModel } from '../types';
+import { Monitor } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 
 type SyncStatus = 'idle' | 'loading' | 'saving' | 'error';
@@ -72,9 +73,7 @@ export default function StepNav({ currentStep, onStepChange, currentModel, syncS
         )}
         {currentModel && (
           <span className="hidden sm:flex bg-indigo-50 border border-indigo-100 text-indigo-700 font-medium px-2.5 py-1.5 rounded-xl items-center space-x-1.5 max-w-40">
-            <svg className="w-3 h-3 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
-            </svg>
+            <Monitor className="app-icon text-indigo-500" aria-hidden="true" />
             <span className="truncate">{currentModel.name}</span>
           </span>
         )}

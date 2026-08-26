@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { Search } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -717,7 +718,7 @@ export default function Step2CoreIdea({
                       )}
                     </button>
                     <button type="button" onClick={() => setAuditIdeaId(idea.id)} className="absolute top-3 right-16 w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-violet-50 hover:border-violet-300 text-slate-500 hover:text-violet-700 flex items-center justify-center shadow-sm" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${idea.title}`}>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" strokeWidth="2"/><path d="m20 20-3.5-3.5" strokeWidth="2" strokeLinecap="round"/></svg>
+                      <Search className="app-icon" aria-hidden="true" />
                     </button>
                     </div>
                   );

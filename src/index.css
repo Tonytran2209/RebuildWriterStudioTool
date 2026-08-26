@@ -133,6 +133,15 @@ html, body, #root { min-height: 100%; background: #f7f7f5; }
   line-height: 1;
 }
 
+.lucide.app-icon,
+button .lucide,
+a .lucide {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  stroke-width: 1.75;
+}
+
 .ui-globe {
   position: relative;
   display: inline-block;
