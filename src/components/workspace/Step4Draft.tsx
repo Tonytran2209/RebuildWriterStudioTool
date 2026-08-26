@@ -534,7 +534,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                   ? tr('Đang chuẩn hóa heading…', 'Formatting headings…')
                   : formatCopied
                     ? tr('✓ Đã copy chuẩn Google Docs', '✓ Copied for Google Docs')
-                    : tr('Copy chuẩn format Google Docs', 'Copy formatted for Google Docs')}
+                    : 'Copy formated content'}
               </button>
               <button
                 disabled={!draft}
