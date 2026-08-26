@@ -15,6 +15,29 @@ function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+function compactDraftLocally(text: string, targetWords: number) {
+  const blocks = text.trim().split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const uniqueBlocks = blocks.filter(block => {
+    if (/^#{1,6}\s/.test(block)) return true;
+    const key = block.toLocaleLowerCase().replace(/\s+/g, ' ');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  while (countWords(uniqueBlocks.join('\n\n')) > targetWords) {
+    const candidates = uniqueBlocks
+      .map((block, index) => ({ block, index, sentences: block.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map(sentence => sentence.trim()).filter(Boolean) ?? [] }))
+      .filter(item => !/^#{1,6}\s/.test(item.block) && item.sentences.length >= 3)
+      .sort((a, b) => countWords(b.block) - countWords(a.block));
+    const candidate = candidates[0];
+    if (!candidate) break;
+    candidate.sentences.splice(candidate.sentences.length - 2, 1);
+    uniqueBlocks[candidate.index] = candidate.sentences.join(' ');
+  }
+  return uniqueBlocks.join('\n\n');
+}
+
 function getPrimaryKeyword(article: Article) {
   const selectedIdea = article.coreIdeaSuggestions?.find(idea => idea.id === article.selectedCoreIdeaId)
     ?? article.coreIdeaSuggestions?.[0];
@@ -159,7 +182,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         article.keywords,
         ...(article.outline ?? []).map(section => section.heading),
       ].filter(Boolean).join(' ');
-      const maxTokens = Math.min(12_000, Math.max(800, Math.ceil(targetWords * 1.45)));
+      const maxTokens = Math.min(12_000, Math.max(800, Math.ceil(targetWords * 1.38)));
 
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -173,7 +196,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Chỉ trả về nội dung bài viết hoàn chỉnh bằng Markdown, không thêm lời dẫn, nhật ký hoặc giải thích về quá trình viết.',
-          `- HARD LIMIT: Toàn bộ bài viết phải nằm trong khoảng 92–96% (${Math.ceil(targetWords * 0.92)}–${Math.floor(targetWords * 0.96)} từ tiếng Anh) và tuyệt đối không vượt ${targetWords} từ.`,
+          `- HARD LIMIT: Toàn bộ bài viết phải nằm trong khoảng 90–92% (${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.92)} từ tiếng Anh) và tuyệt đối không vượt ${targetWords} từ.`,
           `- SEO GATE: Dòng đầu tiên phải là H1 Markdown chứa chính xác primary keyword “${getPrimaryKeyword(article)}”; bài phải có H2/H3 và primary keyword phải xuất hiện tự nhiên trong nội dung.`,
         ].join('\n'),
         documentPromptRules,
@@ -190,7 +213,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         `- Độc giả: ${article.targetAudience || ''}`,
         `- Giọng văn: ${article.tone || ''}`,
         `- Từ khóa: ${article.keywords || ''}`,
-        `- Khoảng mục tiêu bắt buộc: ${Math.ceil(targetWords * 0.92)}–${Math.floor(targetWords * 0.96)} từ tiếng Anh; tuyệt đối không vượt ${targetWords} từ`,
+        `- Khoảng mục tiêu bắt buộc: ${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.92)} từ tiếng Anh; tuyệt đối không vượt ${targetWords} từ`,
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
         JSON.stringify(verifiedOutline),
@@ -213,39 +236,29 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
       });
       if (!res.content.trim()) throw new Error('AI trả về draft rỗng. Kết quả cũ vẫn được giữ nguyên.');
       let generatedWords = countWords(res.content);
-      for (let correctionAttempt = 1; generatedWords > targetWords && correctionAttempt <= 2; correctionAttempt += 1) {
-        const exactOverage = generatedWords - targetWords;
+      if (generatedWords > targetWords && generatedWords <= targetWords * 1.05) {
+        res = { ...res, content: compactDraftLocally(res.content, targetWords) };
+      }
+      let validation = evaluateSeoChecklist(res.content, article, targetWords);
+      if (validation.failed.length) {
+        const exactOverage = Math.max(0, validation.wordCount - targetWords);
         res = await callAI({
           articleId: article.id,
           model,
           railwayUrl,
-          systemPrompt: `You are a precision editor. Return only the complete revised Markdown article. The source is ${generatedWords} words and exceeds its hard limit by ${exactOverage} words. Preserve every key claim, evidence, link, conclusion, and the complete section structure while removing repetition. The result must contain ${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.94)} English words, never exceed ${targetWords} words, start with an H1 containing the exact primary keyword “${getPrimaryKeyword(article)}”, and include H2/H3 headings. Count the words before responding and revise again internally if the count is outside that range.`,
-          prompt: `Compression attempt ${correctionAttempt}/2. Fit this draft within the required word budget without making it incomplete:\n\n${res.content}`,
+          systemPrompt: `You are a strict SEO quality editor. Perform one consolidated revision and return only the complete Markdown article. Repair every failed requirement without inventing claims or removing supported evidence, links, conclusions, or section coverage. Use ${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.92)} English words and never exceed ${targetWords}. The first line must be an H1 containing the exact primary keyword “${validation.primaryKeyword}”, and the body must use H2/H3 headings and contain that keyword naturally. Count the words before responding and revise internally until every gate passes.`,
+          prompt: `Current count: ${validation.wordCount} words${exactOverage ? ` (${exactOverage} over the hard limit)` : ''}.\nFailed SEO requirements:\n${validation.failed.map(item => `- ${item.label}`).join('\n')}\n\nFix length and SEO together in this single revision:\n\n${res.content}`,
           stepNumber: 4,
           bypassCache: true,
-          maxTokens: Math.min(12_000, Math.max(800, Math.ceil(targetWords * (correctionAttempt === 1 ? 1.38 : 1.32)))),
+          maxTokens: Math.min(maxTokens, Math.ceil(targetWords * 1.32)),
           temperature: 0,
           skipDocumentContext: true,
         });
-        if (!res.content.trim()) throw new Error('AI không trả về bản rút gọn hợp lệ. Draft cũ vẫn được giữ nguyên.');
-        generatedWords = countWords(res.content);
-      }
-      if (generatedWords > targetWords) throw new Error(`AI trả về ${generatedWords.toLocaleString()} từ, vượt giới hạn ${targetWords.toLocaleString()} từ tiếng Anh. Draft cũ vẫn được giữ nguyên; hãy thử tạo lại hoặc tăng giới hạn.`);
-      let validation = evaluateSeoChecklist(res.content, article, targetWords);
-      if (validation.failed.length) {
-        res = await callAI({
-          articleId: article.id,
-          model,
-          railwayUrl,
-          systemPrompt: `You are a strict SEO quality editor. Return only the complete revised Markdown article. Repair every failed requirement without inventing claims or removing supported evidence. Use ${Math.ceil(targetWords * 0.92)}–${Math.floor(targetWords * 0.96)} English words and never exceed ${targetWords}. The first line must be an H1 containing the exact primary keyword “${validation.primaryKeyword}”, and the body must use H2/H3 headings and contain that keyword naturally.`,
-          prompt: `Failed SEO requirements:\n${validation.failed.map(item => `- ${item.label}`).join('\n')}\n\nRevise this draft so every requirement passes:\n\n${res.content}`,
-          stepNumber: 4,
-          bypassCache: true,
-          maxTokens: Math.min(maxTokens, Math.ceil(targetWords * 1.38)),
-          temperature: 0.1,
-          skipDocumentContext: true,
-        });
         if (!res.content.trim()) throw new Error('AI không trả về bản sửa SEO hợp lệ. Draft cũ vẫn được giữ nguyên.');
+        generatedWords = countWords(res.content);
+        if (generatedWords > targetWords && generatedWords <= targetWords * 1.05) {
+          res = { ...res, content: compactDraftLocally(res.content, targetWords) };
+        }
         validation = evaluateSeoChecklist(res.content, article, targetWords);
       }
       if (validation.failed.length) throw new Error(`Draft chưa được lưu vì chưa đạt 100% SEO checklist: ${validation.failed.map(item => item.label).join(', ')}.`);

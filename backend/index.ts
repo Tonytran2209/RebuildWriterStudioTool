@@ -324,6 +324,30 @@ function batchSeoFailures(text: string, article: any, targetWords: number) {
   return { failures, primaryKeyword, words };
 }
 
+function compactBatchDraftLocally(text: string, targetWords: number) {
+  const count = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
+  const blocks = text.trim().split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const uniqueBlocks = blocks.filter(block => {
+    if (/^#{1,6}\s/.test(block)) return true;
+    const key = block.toLocaleLowerCase().replace(/\s+/g, ' ');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  while (count(uniqueBlocks.join('\n\n')) > targetWords) {
+    const candidates = uniqueBlocks
+      .map((block, index) => ({ block, index, sentences: block.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map(sentence => sentence.trim()).filter(Boolean) ?? [] }))
+      .filter(item => !/^#{1,6}\s/.test(item.block) && item.sentences.length >= 3)
+      .sort((a, b) => count(b.block) - count(a.block));
+    const candidate = candidates[0];
+    if (!candidate) break;
+    candidate.sentences.splice(candidate.sentences.length - 2, 1);
+    uniqueBlocks[candidate.index] = candidate.sentences.join(' ');
+  }
+  return uniqueBlocks.join('\n\n');
+}
+
 async function runBatchArticle(initial: any, controller: { paused: boolean; running: boolean }) {
   let article = initial;
   const contentMode = article.activityType === 'editorial-originality' ? 'Editorial/Originality' : 'Comparison/SEO';
@@ -383,35 +407,30 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
         `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
         `Primary keyword: ${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
         `Outline: ${JSON.stringify(article.outline)}`,
-        `HARD LIMIT: Write ${Math.ceil(maxDraftWords * 0.92)}–${Math.floor(maxDraftWords * 0.96)} English words and never exceed ${maxDraftWords} words.`,
+        `HARD LIMIT: Write ${Math.ceil(maxDraftWords * 0.9)}–${Math.floor(maxDraftWords * 0.92)} English words and never exceed ${maxDraftWords} words.`,
         'SEO GATE: Start with an H1 containing the exact primary keyword, include H2/H3 headings, and use the primary keyword naturally in the body.',
         'Follow every supplied Skill rule, use only supported KB claims, preserve the outline headings, and return Markdown only.',
-      ].join('\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.45))));
+      ].join('\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.38))));
       if (!response.content.trim()) throw new Error('Step 4 returned an empty draft.');
       const draftResponses = [response];
       let generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
-      for (let correctionAttempt = 1; generatedWords > maxDraftWords && correctionAttempt <= 2; correctionAttempt += 1) {
-        const exactOverage = generatedWords - maxDraftWords;
-        response = await runBatchModel(article, 4, [
-          `Compression attempt ${correctionAttempt}/2. The draft is ${generatedWords} words and exceeds the hard limit by ${exactOverage} words. Rewrite it to ${Math.ceil(maxDraftWords * 0.9)}–${Math.floor(maxDraftWords * 0.94)} English words and never exceed ${maxDraftWords} words. Count the words before responding and revise again internally if needed.`,
-          `Preserve every key claim, evidence, link, conclusion, and complete section structure. Start with an H1 containing the exact primary keyword “${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}” and retain H2/H3 headings. Remove repetition and compress sentences. Return only the complete revised Markdown article.`,
-          response.content,
-        ].join('\n\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * (correctionAttempt === 1 ? 1.38 : 1.32)))));
-        draftResponses.push(response);
-        if (!response.content.trim()) throw new Error('The word-limit correction returned an empty draft.');
-        generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
+      if (generatedWords > maxDraftWords && generatedWords <= maxDraftWords * 1.05) {
+        response = { ...response, content: compactBatchDraftLocally(response.content, maxDraftWords) };
       }
-      if (generatedWords > maxDraftWords) throw new Error(`Final draft returned ${generatedWords} words and exceeded the configured ${maxDraftWords}-word limit.`);
       let validation = batchSeoFailures(response.content, article, maxDraftWords);
       if (validation.failures.length) {
         response = await runBatchModel(article, 4, [
-          `Revise this article so it passes every SEO gate: ${validation.failures.join('; ')}.`,
-          `Use ${Math.ceil(maxDraftWords * 0.92)}–${Math.floor(maxDraftWords * 0.96)} English words and never exceed ${maxDraftWords}. Start with an H1 containing the exact primary keyword “${validation.primaryKeyword}”, include H2/H3 headings, and use that keyword naturally in the body.`,
-          'Preserve supported claims, evidence, links, conclusions, and outline order. Return only the complete Markdown article.',
+          `Perform one consolidated revision. Current count: ${validation.words} words. Fix every failed SEO gate together: ${validation.failures.join('; ')}.`,
+          `Use ${Math.ceil(maxDraftWords * 0.9)}–${Math.floor(maxDraftWords * 0.92)} English words and never exceed ${maxDraftWords}. Start with an H1 containing the exact primary keyword “${validation.primaryKeyword}”, include H2/H3 headings, and use that keyword naturally in the body. Count words and revise internally before responding.`,
+          'Preserve supported claims, evidence, links, conclusions, section coverage, and outline order. Return only the complete Markdown article.',
           response.content,
-        ].join('\n\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.38))));
+        ].join('\n\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.32))));
         draftResponses.push(response);
         if (!response.content.trim()) throw new Error('The SEO correction returned an empty draft.');
+        generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
+        if (generatedWords > maxDraftWords && generatedWords <= maxDraftWords * 1.05) {
+          response = { ...response, content: compactBatchDraftLocally(response.content, maxDraftWords) };
+        }
         validation = batchSeoFailures(response.content, article, maxDraftWords);
       }
       if (validation.failures.length) throw new Error(`Draft was not saved because the SEO checklist is not 100%: ${validation.failures.join('; ')}.`);
