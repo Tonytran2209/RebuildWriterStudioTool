@@ -295,7 +295,7 @@ export default function App() {
     async (target: Article) => {
       if (deletingArticleId) return
       const targets =
-        target.activityType === "comparison-seo" && target.activityId
+        target.activityKind === "batch" && target.activityId
           ? articles.filter((item) => item.activityId === target.activityId)
           : [target]
       const confirmed = window.confirm(
@@ -376,20 +376,25 @@ export default function App() {
   const article = activeId
     ? (articles.find((a) => a.id === activeId) ?? null)
     : null
+  const activeBatchIds = Array.from(new Set(
+    articles
+      .filter((item) => item.activityKind === "batch" && item.activityId && !["completed", "failed"].includes(item.batchStatus ?? "queued"))
+      .map((item) => item.activityId as string),
+  )).sort().join(",")
 
   useEffect(() => {
-    const activityId =
-      article?.activityType === "comparison-seo" ? article.activityId : null
-    if (!activityId) return
+    const activityIds = activeBatchIds.split(",").filter(Boolean)
+    if (!activityIds.length) return
     let stopped = false
     const refresh = async () => {
       try {
-        const result = await db.fetchBatch(activityId)
+        const results = await Promise.all(activityIds.map((activityId) => db.fetchBatch(activityId)))
         if (stopped) return
         setArticles((current) => {
-          const remoteIds = new Set(result.articles.map((item) => item.id))
+          const remoteArticles = results.flatMap((result) => result.articles)
+          const remoteIds = new Set(remoteArticles.map((item) => item.id))
           return [
-            ...result.articles,
+            ...remoteArticles,
             ...current.filter((item) => !remoteIds.has(item.id)),
           ]
         })
@@ -398,12 +403,12 @@ export default function App() {
       }
     }
     refresh()
-    const timer = window.setInterval(refresh, 4000)
+    const timer = window.setInterval(refresh, 2500)
     return () => {
       stopped = true
       window.clearInterval(timer)
     }
-  }, [article?.activityId, article?.activityType])
+  }, [activeBatchIds])
 
   const handleStepChange = (step: number) => {
     if (!article) return

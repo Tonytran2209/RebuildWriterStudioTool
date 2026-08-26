@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ChevronDown, Clock3, FileText, Globe2, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
+import { ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
@@ -30,12 +30,19 @@ export default function Sidebar({
   const [open, setOpen] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState("")
-  const recent = articles
-    .filter((article) =>
-      (article.topic || article.title)
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-    )
+  const recent = Array.from(
+    articles.reduce((groups, article) => {
+      const key = article.activityKind === "batch" && article.activityId
+        ? `batch:${article.activityId}`
+        : `article:${article.id}`
+      const group = groups.get(key)
+      if (group) group.push(article)
+      else groups.set(key, [article])
+      return groups
+    }, new Map<string, Article[]>()),
+  )
+    .map(([key, group]) => ({ key, articles: group, article: group[0] }))
+    .filter(({ articles: group }) => group.some((article) => (article.topic || article.title).toLowerCase().includes(search.toLowerCase())))
     .slice(0, 12)
   return (
     <aside
@@ -98,11 +105,17 @@ export default function Sidebar({
         )}
       </div>
       <div className="sidebar-recent-list flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
-        {recent.map((article) => {
-          const active = article.id === activeArticleId
+        {recent.map(({ key, article, articles: groupArticles }) => {
+          const isBatch = groupArticles.length > 1 || article.activityKind === "batch"
+          const active = groupArticles.some((item) => item.id === activeArticleId)
+          const batchComplete = isBatch && groupArticles.every((item) => item.batchStatus === "completed" || Boolean(item.draft?.trim()))
+          const batchWorking = isBatch && !batchComplete && groupArticles.some((item) => !["failed", "paused"].includes(item.batchStatus ?? "queued"))
+          const label = isBatch
+            ? `${article.activityType === "editorial-originality" ? "Editorial / Originality" : "Comparison / SEO"} · ${groupArticles.length} ${tr("bài", "articles")}`
+            : article.topic || article.title
           return (
             <div
-              key={article.id}
+              key={key}
               className={`sidebar-recent-card group relative rounded-lg border ${
                 active
                   ? "border-[#d3d3cf] bg-[#e4e4e1]"
@@ -118,9 +131,11 @@ export default function Sidebar({
                     active ? "font-semibold text-[#242422]" : "font-medium text-[#444440]"
                   }`}
                 >
-                  {article.topic || article.title}
+                  {label}
                 </div>
               </button>
+              {batchWorking && <LoaderCircle className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-[#aaa] transition-opacity group-hover:opacity-0" aria-label={tr("Đang tạo bài", "Generating articles")} />}
+              {batchComplete && <CircleCheck className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-400 transition-opacity group-hover:opacity-0" aria-label={tr("Đã hoàn tất", "Completed")} />}
               <button
                 disabled={deletingArticleId === article.id}
                 onClick={() => onDeleteArticle(article)}
