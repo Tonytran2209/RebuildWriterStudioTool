@@ -46,7 +46,7 @@ export default function ActivityLauncher({
   onModelChange,
   onCreate,
 }: Props) {
-  const { tr } = useI18n()
+  const { language, tr } = useI18n()
   const fileInput = useRef<HTMLInputElement>(null)
   const [plans, setPlans] = useState<ContentPlan[]>([])
   const [plan, setPlan] = useState<ContentPlan | null>(null)
@@ -186,6 +186,20 @@ export default function ActivityLauncher({
       : sourceType === "paste"
         ? Boolean(content.trim())
         : Boolean(url.trim())
+  const historyPlans = [...plans].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  )
+  const formatHistoryDate = (value: string) => {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return tr("Không rõ thời gian", "Unknown date")
+    return new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-US", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date)
+  }
 
   return (
     <main className="relative flex-1 overflow-y-auto bg-[#171717] text-[#d8d8d8]">
@@ -618,9 +632,7 @@ export default function ActivityLauncher({
             className="mx-auto mt-16 max-h-[75dvh] max-w-xl overflow-y-auto rounded-2xl border border-[#353535] bg-[#202020] p-4 shadow-2xl"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-white">
-                Content Plan history
-              </h2>
+              <div><h2 className="text-sm font-medium text-white">Content Plan history</h2><p className="mt-1 text-[10px] text-[#707070]">{plans.length} {tr("kế hoạch và phiên bản", "plans and versions")}</p></div>
               <button
                 onClick={() => setShowHistory(false)}
                 className="text-[#777]"
@@ -629,7 +641,11 @@ export default function ActivityLauncher({
               </button>
             </div>
             <div className="mt-4 space-y-2">
-              {plans.map((item) => (
+              {historyPlans.map((item, index) => {
+                const source = item.sources?.[0]
+                const order = historyPlans.length - index
+                const updated = item.updatedAt && item.updatedAt !== item.createdAt
+                return (
                 <button
                   key={item.id}
                   onClick={() => {
@@ -637,20 +653,34 @@ export default function ActivityLauncher({
                     setShowHistory(false)
                     setSelected([])
                   }}
-                  className="w-full rounded-xl border border-[#303030] bg-[#1b1b1b] p-3 text-left hover:bg-[#252525]"
+                  className="group w-full rounded-xl border border-[#303030] bg-[#1b1b1b] p-3 text-left hover:border-[#3b3b3b] hover:bg-[#252525]"
                 >
-                  <div className="flex justify-between">
-                    <span className="text-xs text-[#ddd]">{item.name}</span>
-                    <span className="text-[10px] text-[#777]">
-                      v{item.version}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-[10px] text-[#666]">
-                    {item.totalArticles} articles · {item.comparisonCount} SEO ·{" "}
-                    {item.editorialCount} Editorial
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-7 min-w-9 items-center justify-center rounded-md border border-[#343434] bg-[#222] px-1.5 font-mono text-[9px] text-[#858585]">#{String(order).padStart(3, "0")}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <span className="truncate text-xs font-medium text-[#ddd]">{item.name}</span>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <span className="rounded-md border border-[#383838] px-1.5 py-0.5 text-[9px] text-[#aaa]">v{item.version}</span>
+                          <span className="rounded-md bg-[#292929] px-1.5 py-0.5 text-[9px] capitalize text-[#858585]">{item.status}</span>
+                        </div>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] text-[#737373]">
+                        <span>{tr("Tạo", "Created")} {formatHistoryDate(item.createdAt)}</span>
+                        {updated && <span>{tr("Cập nhật", "Updated")} {formatHistoryDate(item.updatedAt)}</span>}
+                        <span className="font-mono">Ref {item.id.slice(0, 8)}</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#292929] pt-2 text-[9px] text-[#686868]">
+                        <span>{item.totalArticles} {tr("bài đã tạo", "generated")}</span>
+                        <span>{item.comparisonCount} Comparison/SEO</span>
+                        <span>{item.editorialCount} Editorial</span>
+                        {source && <span className="ml-auto max-w-40 truncate text-[#7d7d7d]">{source.name} · {source.sourceType.replaceAll("_", " ")}</span>}
+                      </div>
+                    </div>
                   </div>
                 </button>
-              ))}
+              )})}
+              {!historyPlans.length && <div className="rounded-xl border border-dashed border-[#333] px-4 py-8 text-center text-[11px] text-[#666]">{tr("Chưa có Content Plan nào", "No Content Plans yet")}</div>}
             </div>
           </div>
         </div>
