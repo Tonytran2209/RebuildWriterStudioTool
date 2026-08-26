@@ -67,7 +67,7 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
                       : 'text-slate-400 hover:text-slate-700'
                   }`}
                 >
-                  <span>{tab.icon}</span>
+                  <span className="app-icon" aria-hidden="true">{tab.icon}</span>
                   <span>{language === 'vi' ? tab.label : ({
                     'step-setup': 'AI access by Step',
                     models: 'AI Model management',
