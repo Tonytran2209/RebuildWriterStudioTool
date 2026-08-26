@@ -386,16 +386,17 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
         `HARD LIMIT: Write ${Math.ceil(maxDraftWords * 0.92)}–${Math.floor(maxDraftWords * 0.96)} English words and never exceed ${maxDraftWords} words.`,
         'SEO GATE: Start with an H1 containing the exact primary keyword, include H2/H3 headings, and use the primary keyword naturally in the body.',
         'Follow every supplied Skill rule, use only supported KB claims, preserve the outline headings, and return Markdown only.',
-      ].join('\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.7))));
+      ].join('\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.45))));
       if (!response.content.trim()) throw new Error('Step 4 returned an empty draft.');
       const draftResponses = [response];
       let generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
-      if (generatedWords > maxDraftWords) {
+      for (let correctionAttempt = 1; generatedWords > maxDraftWords && correctionAttempt <= 2; correctionAttempt += 1) {
+        const exactOverage = generatedWords - maxDraftWords;
         response = await runBatchModel(article, 4, [
-          `Rewrite the following ${generatedWords}-word Markdown article to ${Math.ceil(maxDraftWords * 0.9)}–${Math.floor(maxDraftWords * 0.94)} English words and never exceed ${maxDraftWords} words.`,
-          `Preserve every key claim, evidence, link, and conclusion. Start with an H1 containing the exact primary keyword “${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}” and retain H2/H3 headings. Remove repetition and compress sentences. Return only the complete revised Markdown article.`,
+          `Compression attempt ${correctionAttempt}/2. The draft is ${generatedWords} words and exceeds the hard limit by ${exactOverage} words. Rewrite it to ${Math.ceil(maxDraftWords * 0.9)}–${Math.floor(maxDraftWords * 0.94)} English words and never exceed ${maxDraftWords} words. Count the words before responding and revise again internally if needed.`,
+          `Preserve every key claim, evidence, link, conclusion, and complete section structure. Start with an H1 containing the exact primary keyword “${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}” and retain H2/H3 headings. Remove repetition and compress sentences. Return only the complete revised Markdown article.`,
           response.content,
-        ].join('\n\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.6))));
+        ].join('\n\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * (correctionAttempt === 1 ? 1.38 : 1.32)))));
         draftResponses.push(response);
         if (!response.content.trim()) throw new Error('The word-limit correction returned an empty draft.');
         generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
@@ -408,7 +409,7 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
           `Use ${Math.ceil(maxDraftWords * 0.92)}–${Math.floor(maxDraftWords * 0.96)} English words and never exceed ${maxDraftWords}. Start with an H1 containing the exact primary keyword “${validation.primaryKeyword}”, include H2/H3 headings, and use that keyword naturally in the body.`,
           'Preserve supported claims, evidence, links, conclusions, and outline order. Return only the complete Markdown article.',
           response.content,
-        ].join('\n\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.7))));
+        ].join('\n\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.38))));
         draftResponses.push(response);
         if (!response.content.trim()) throw new Error('The SEO correction returned an empty draft.');
         validation = batchSeoFailures(response.content, article, maxDraftWords);

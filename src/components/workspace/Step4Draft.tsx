@@ -159,7 +159,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         article.keywords,
         ...(article.outline ?? []).map(section => section.heading),
       ].filter(Boolean).join(' ');
-      const maxTokens = Math.min(12_000, Math.max(800, Math.ceil(targetWords * 1.7)));
+      const maxTokens = Math.min(12_000, Math.max(800, Math.ceil(targetWords * 1.45)));
 
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -213,17 +213,18 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
       });
       if (!res.content.trim()) throw new Error('AI trả về draft rỗng. Kết quả cũ vẫn được giữ nguyên.');
       let generatedWords = countWords(res.content);
-      if (generatedWords > targetWords) {
+      for (let correctionAttempt = 1; generatedWords > targetWords && correctionAttempt <= 2; correctionAttempt += 1) {
+        const exactOverage = generatedWords - targetWords;
         res = await callAI({
           articleId: article.id,
           model,
           railwayUrl,
-          systemPrompt: `You are a precision editor. Return only the complete revised Markdown article. Preserve every key claim, evidence, link, and conclusion. Remove repetition and compress sentences. The result must contain ${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.94)} English words, never exceed ${targetWords} words, start with an H1 containing the exact primary keyword “${getPrimaryKeyword(article)}”, and include H2/H3 headings.`,
-          prompt: `Fit this ${generatedWords}-word draft within the required word budget without making it incomplete:\n\n${res.content}`,
+          systemPrompt: `You are a precision editor. Return only the complete revised Markdown article. The source is ${generatedWords} words and exceeds its hard limit by ${exactOverage} words. Preserve every key claim, evidence, link, conclusion, and the complete section structure while removing repetition. The result must contain ${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.94)} English words, never exceed ${targetWords} words, start with an H1 containing the exact primary keyword “${getPrimaryKeyword(article)}”, and include H2/H3 headings. Count the words before responding and revise again internally if the count is outside that range.`,
+          prompt: `Compression attempt ${correctionAttempt}/2. Fit this draft within the required word budget without making it incomplete:\n\n${res.content}`,
           stepNumber: 4,
           bypassCache: true,
-          maxTokens: Math.min(12_000, Math.max(800, Math.ceil(targetWords * 1.6))),
-          temperature: 0.1,
+          maxTokens: Math.min(12_000, Math.max(800, Math.ceil(targetWords * (correctionAttempt === 1 ? 1.38 : 1.32)))),
+          temperature: 0,
           skipDocumentContext: true,
         });
         if (!res.content.trim()) throw new Error('AI không trả về bản rút gọn hợp lệ. Draft cũ vẫn được giữ nguyên.');
@@ -240,7 +241,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           prompt: `Failed SEO requirements:\n${validation.failed.map(item => `- ${item.label}`).join('\n')}\n\nRevise this draft so every requirement passes:\n\n${res.content}`,
           stepNumber: 4,
           bypassCache: true,
-          maxTokens,
+          maxTokens: Math.min(maxTokens, Math.ceil(targetWords * 1.38)),
           temperature: 0.1,
           skipDocumentContext: true,
         });
