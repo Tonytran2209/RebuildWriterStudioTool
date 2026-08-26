@@ -156,7 +156,9 @@ export default function ActivityLauncher({
         {!plan && (
           <>
             <div className="text-center">
-              <BrandMark className="mx-auto h-12 w-12" />
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-[#2a2a2a] bg-[#1c1c1c]">
+                <BrandMark className="h-7 w-7" />
+              </div>
               <h1 className="mt-6 text-[27px] font-medium tracking-[-.02em] text-[#e8e8e8]">
                 {tr("Bạn muốn tạo nội dung gì?", "What should we create?")}
               </h1>
@@ -174,7 +176,7 @@ export default function ActivityLauncher({
                   onClick={() =>
                     index === 0 ? setShowHistory(true) : setMenu(true)
                   }
-                  className="min-h-28 rounded-2xl border border-[#303030] bg-[#1a1a1a] p-4 text-left hover:border-[#454545] hover:bg-[#1e1e1e]"
+                  className="card-prompt flex h-28 flex-col justify-between rounded-xl border border-[#2a2a2a] bg-[#1a1a1a] p-3 text-left transition-all hover:border-[#3a3a3a] hover:bg-[#222]"
                 >
                   <div className="flex items-center justify-between text-[#777]">
                     <span className="text-[10px] font-medium">

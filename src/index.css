@@ -585,6 +585,11 @@ html, body, #root {
   font-weight: 500 !important;
 }
 
+.codex-dark h1.text-base {
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+}
+
 .codex-dark .minimal-step-nav {
   border-color: #222 !important;
   background: #141414 !important;
@@ -714,4 +719,174 @@ html, body, #root {
 
 .codex-dark ::-webkit-scrollbar-thumb:hover {
   background: #3a3a3a;
+}
+
+/* Fine-grained component parity with the supplied HTML demo. */
+.codex-dark .card-prompt {
+  height: 7rem;
+  border: 1px solid #2a2a2a !important;
+  border-radius: 0.75rem !important;
+  background: #1a1a1a !important;
+  padding: 0.75rem !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .card-prompt:hover {
+  border-color: #3a3a3a !important;
+  background: #222 !important;
+}
+
+.codex-dark .card-prompt > div:last-child,
+.codex-dark .card-prompt > div:nth-last-child(2) {
+  color: #d1d5db !important;
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.codex-dark .fixed.bottom-4 > div > div:last-child {
+  border: 1px solid #2d2d2d !important;
+  border-radius: 1rem !important;
+  background: #1c1c1c !important;
+  padding: 0.75rem !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .fixed.bottom-4 textarea {
+  border: 0 !important;
+  background: transparent !important;
+  font-size: 0.875rem;
+}
+
+.codex-dark .fixed.bottom-4 button.rounded-full {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0 !important;
+  background: #e5e5e5 !important;
+  color: #141414 !important;
+}
+
+.codex-dark .fixed.bottom-4 button.rounded-full:disabled {
+  background: #444 !important;
+  color: #777 !important;
+}
+
+.codex-dark .minimal-settings {
+  background: rgb(0 0 0 / 62%) !important;
+  backdrop-filter: none !important;
+}
+
+.codex-dark .minimal-settings > div {
+  border: 1px solid #222 !important;
+  border-radius: 1rem !important;
+  background: #141414 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-settings > div > div {
+  border-radius: 1rem !important;
+  background: #141414 !important;
+}
+
+.codex-dark .minimal-settings > div > div > div:first-child,
+.codex-dark .minimal-settings > div > div > div:last-child {
+  border-color: #222 !important;
+}
+
+.codex-dark .minimal-settings > div > div > div:nth-child(2) > div {
+  border: 1px solid #2a2a2a;
+  border-radius: 0.75rem !important;
+  background: #1c1c1c !important;
+  padding: 0.25rem !important;
+}
+
+.codex-dark .minimal-settings > div > div > div:nth-child(2) button {
+  border-radius: 0.5rem !important;
+  color: #9ca3af !important;
+  font-weight: 400 !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-settings > div > div > div:nth-child(2) button.bg-white {
+  border: 1px solid #3a3a3a;
+  background: #2a2a2a !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .bg-indigo-50,
+.codex-dark .minimal-settings .bg-blue-50,
+.codex-dark .minimal-settings .bg-violet-50,
+.codex-dark .minimal-settings .bg-emerald-50,
+.codex-dark .minimal-settings .bg-amber-50,
+.codex-dark .minimal-settings .bg-red-50,
+.codex-dark .minimal-settings .bg-rose-50 {
+  background: #1c1c1c !important;
+}
+
+.codex-dark .minimal-settings .border-indigo-100,
+.codex-dark .minimal-settings .border-blue-100,
+.codex-dark .minimal-settings .border-violet-100,
+.codex-dark .minimal-settings .border-emerald-100,
+.codex-dark .minimal-settings .border-amber-100,
+.codex-dark .minimal-settings .border-red-100,
+.codex-dark .minimal-settings .border-rose-100 {
+  border-color: #2a2a2a !important;
+}
+
+.codex-dark .minimal-step-shell > div > div[class*='max-w-3xl'],
+.codex-dark .minimal-step-shell > div > div[class*='max-w-4xl'] {
+  max-width: 42rem !important;
+}
+
+.codex-dark .minimal-step-shell > div {
+  padding: 1.25rem !important;
+}
+
+.codex-dark .minimal-step-shell .border,
+.codex-dark .minimal-step-shell [class*='border-'] {
+  border-color: #2a2a2a;
+}
+
+.codex-dark .minimal-step-shell button[class*='border']:hover,
+.codex-dark .minimal-step-shell [role='button']:hover {
+  border-color: #3a3a3a !important;
+  background-color: #222 !important;
+}
+
+.codex-dark .minimal-step-shell .bg-indigo-50,
+.codex-dark .minimal-step-shell .bg-blue-50,
+.codex-dark .minimal-step-shell .bg-violet-50,
+.codex-dark .minimal-step-shell .bg-emerald-50,
+.codex-dark .minimal-step-shell .bg-amber-50,
+.codex-dark .minimal-step-shell .bg-red-50,
+.codex-dark .minimal-step-shell .bg-rose-50,
+.codex-dark .minimal-step-shell .bg-sky-50 {
+  background: #1c1c1c !important;
+}
+
+.codex-dark .minimal-step-shell input:focus,
+.codex-dark .minimal-step-shell textarea:focus,
+.codex-dark .minimal-step-shell select:focus {
+  border-color: #3a3a3a !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-step-shell input[type='checkbox'] {
+  accent-color: #e5e5e5;
+}
+
+@media (max-width: 767px) {
+  .codex-dark .writer-sidebar {
+    width: 100% !important;
+  }
+
+  .codex-dark .minimal-step-shell > div {
+    padding: 0.875rem !important;
+  }
+
+  .codex-dark .minimal-settings > div,
+  .codex-dark .minimal-settings > div > div {
+    border-radius: 0 !important;
+  }
 }

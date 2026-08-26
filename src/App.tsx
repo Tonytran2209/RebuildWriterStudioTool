@@ -440,14 +440,14 @@ export default function App() {
   // ── Loading screen ──
   if (syncStatus === "loading") {
     return (
-      <div className="h-dvh flex items-center justify-center bg-[#f4f5f8]">
+      <div className="codex-dark h-dvh flex items-center justify-center bg-[#141414]">
         <div className="text-center space-y-3">
           <BrandMark className="mx-auto h-10 w-10" />
-          <div className="text-sm font-semibold text-slate-700">
+          <div className="text-sm font-medium text-[#e5e5e5]">
             {tr("Đang tải Writer Studio...", "Loading Writer Studio...")}
           </div>
-          <div className="w-40 h-1 bg-slate-200 rounded-full overflow-hidden mx-auto">
-            <div className="h-full bg-slate-800 rounded-full w-3/5 animate-pulse" />
+          <div className="w-40 h-1 bg-[#222] rounded-full overflow-hidden mx-auto">
+            <div className="h-full bg-[#9ca3af] rounded-full w-3/5 animate-pulse" />
           </div>
         </div>
       </div>
@@ -456,31 +456,31 @@ export default function App() {
 
   if (initialLoadError) {
     return (
-      <div className="h-dvh flex items-center justify-center bg-[#f4f5f8] p-4 sm:p-6">
-        <div className="max-w-md w-full bg-white border border-red-200 rounded-3xl p-6 text-center shadow-sm space-y-4">
-          <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center text-xl mx-auto">
+      <div className="codex-dark h-dvh flex items-center justify-center bg-[#141414] p-4 sm:p-6">
+        <div className="max-w-md w-full bg-[#1c1c1c] border border-[#2d2d2d] rounded-2xl p-6 text-center space-y-4">
+          <div className="w-12 h-12 rounded-xl border border-red-900/50 bg-red-950/30 text-red-400 flex items-center justify-center text-xl mx-auto">
             !
           </div>
           <div>
-            <h1 className="text-base font-bold text-slate-800">
+            <h1 className="text-base font-medium text-[#e5e5e5]">
               {tr(
                 "Không tải được dữ liệu từ Railway / Supabase",
                 "Could not load data from Railway / Supabase",
               )}
             </h1>
-            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+            <p className="text-xs text-[#9ca3af] mt-2 leading-relaxed">
               {tr(
                 "Ứng dụng đã khóa thao tác lưu để tránh ghi đè database bằng dữ liệu rỗng.",
                 "Saving is locked to prevent overwriting the database with empty data.",
               )}
             </p>
           </div>
-          <div className="bg-red-50 border border-red-100 rounded-xl px-3 py-2 text-[11px] text-red-700 font-mono break-words">
+          <div className="bg-red-950/25 border border-red-900/50 rounded-xl px-3 py-2 text-[11px] text-red-300 font-mono break-words">
             {initialLoadError}
           </div>
           <button
             onClick={() => window.location.reload()}
-            className="bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm py-2.5 px-5 rounded-xl transition-all"
+            className="bg-neutral-200 hover:bg-white text-[#141414] font-medium text-sm py-2.5 px-5 rounded-xl transition-all"
           >
             {tr("Thử tải lại", "Try again")}
           </button>
