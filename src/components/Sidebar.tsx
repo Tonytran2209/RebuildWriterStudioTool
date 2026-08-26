@@ -110,6 +110,7 @@ export default function Sidebar({
           const active = groupArticles.some((item) => item.id === activeArticleId)
           const batchComplete = isBatch && groupArticles.every((item) => item.batchStatus === "completed" || Boolean(item.draft?.trim()))
           const batchWorking = isBatch && !batchComplete && groupArticles.some((item) => !["failed", "paused"].includes(item.batchStatus ?? "queued"))
+          const singleComplete = !isBatch && (article.status === "done" || Boolean(article.completedAt))
           const label = isBatch
             ? `${article.activityType === "editorial-originality" ? "Editorial / Originality" : "Comparison / SEO"} · ${groupArticles.length} ${tr("bài", "articles")}`
             : article.topic || article.title
@@ -135,7 +136,7 @@ export default function Sidebar({
                 </div>
               </button>
               {batchWorking && <LoaderCircle className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-[#aaa] transition-opacity group-hover:opacity-0" aria-label={tr("Đang tạo bài", "Generating articles")} />}
-              {batchComplete && <CircleCheck className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-400 transition-opacity group-hover:opacity-0" aria-label={tr("Đã hoàn tất", "Completed")} />}
+              {(batchComplete || singleComplete) && <CircleCheck className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-400 transition-opacity group-hover:opacity-0" aria-label={tr("Đã hoàn tất", "Completed")} />}
               <button
                 disabled={deletingArticleId === article.id}
                 onClick={() => onDeleteArticle(article)}
