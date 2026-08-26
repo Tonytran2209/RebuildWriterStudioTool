@@ -38,6 +38,7 @@ export default function App() {
   const [files, setFiles] = useState<DocumentFile[]>([]);
   const [showConfig, setShowConfig] = useState(false);
   const [showBatchOverview, setShowBatchOverview] = useState(true);
+  const [launcherHistoryOpen, setLauncherHistoryOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading');
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [articleActionError, setArticleActionError] = useState<string | null>(null);
@@ -138,6 +139,7 @@ export default function App() {
 
   const handleCreateActivity = async (type: 'comparison-seo' | 'editorial-originality', plan: ContentPlan, items: ContentPlanItem[], batchSize?: 5 | 10 | 15 | 20) => {
     const activityId = `activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const isBatch = items.length > 1;
     setArticleActionError(null);
     setSyncStatus('saving');
     try {
@@ -154,7 +156,7 @@ export default function App() {
         topic: item.title,
         keywords: item.keywords.join(', '),
         activityType: type,
-        activityKind: type === 'comparison-seo' ? 'batch' : 'single',
+        activityKind: isBatch ? 'batch' : 'single',
         activityId,
         contentPlanId: plan.id,
         contentPlanVersion: plan.version,
@@ -162,19 +164,19 @@ export default function App() {
         contentPlanSourceItemId: item.id,
         contentPlanItemId: item.id,
         batchSize,
-        batchStatus: type === 'comparison-seo' ? 'queued' : undefined,
+        batchStatus: isBatch ? 'queued' : undefined,
         contentType: type === 'comparison-seo' ? 'Comparison / SEO' : 'Editorial / Originality',
         selectedContentTypeSuggestionId: item.id,
         selectedContentTypeSnapshot: snapshot,
         contentTypeSuggestions: [snapshot],
-        currentStep: type === 'comparison-seo' ? 2 : 1,
+        currentStep: 2,
       }); });
       const saved: Article[] = [];
       for (const record of records) saved.push(await enqueueArticleMutation(() => db.saveArticle(record)));
       setArticles(current => [...saved, ...current]);
       setActiveId(saved[0]?.id ?? null);
-      setShowBatchOverview(type === 'comparison-seo');
-      if (type === 'comparison-seo') await db.startBatch(activityId);
+      setShowBatchOverview(isBatch);
+      if (isBatch) await db.startBatch(activityId);
       setSyncStatus('idle');
     } catch (error: unknown) {
       setArticleActionError(`Không tạo được activity trong Supabase: ${error instanceof Error ? error.message : String(error)}`);
@@ -245,6 +247,12 @@ export default function App() {
     } catch {
       setSyncStatus('error');
     }
+  };
+
+  const handleComposerModelChange = (modelId: string) => {
+    const next = { ...config, stepConfigs: Object.fromEntries(Object.entries(config.stepConfigs).map(([step, value]) => [step, { ...value, modelId }])) };
+    setConfig(next);
+    void db.saveConfig(next).catch(error => setArticleActionError(`Không lưu được model: ${error instanceof Error ? error.message : String(error)}`));
   };
 
   const article = activeId ? articles.find(a => a.id === activeId) ?? null : null;
@@ -334,12 +342,13 @@ export default function App() {
   }
 
   return (
-    <div className="h-dvh flex flex-col md:flex-row overflow-hidden bg-[#f4f5f8]">
+    <div className="writer-dark h-dvh flex flex-col md:flex-row overflow-hidden bg-[#171717]">
       <Sidebar
         articles={articles}
         activeArticleId={activeId}
         onSelectArticle={id => { setActiveId(id); setShowBatchOverview(true); }}
-        onNewArticle={() => { setActiveId(null); setShowBatchOverview(true); }}
+        onNewArticle={() => { setActiveId(null); setShowBatchOverview(true); setLauncherHistoryOpen(false); }}
+        onOpenContentPlans={() => { setActiveId(null); setShowBatchOverview(true); setLauncherHistoryOpen(true); }}
         onOpenConfig={() => setShowConfig(true)}
         onToggleComplete={handleToggleComplete}
         completionSavingId={completionSavingId}
@@ -354,7 +363,7 @@ export default function App() {
             <button type="button" onClick={() => setArticleActionError(null)} className="font-bold text-red-500 hover:text-red-700" aria-label="Đóng thông báo">×</button>
           </div>
         )}
-        {article?.activityType === 'comparison-seo' && showBatchOverview ? (
+        {article?.activityKind === 'batch' && showBatchOverview ? (
           <BatchActivity
             articles={articles.filter(item => item.activityId === article.activityId)}
             onOpen={id => { setActiveId(id); setShowBatchOverview(false); }}
@@ -424,7 +433,7 @@ export default function App() {
           </>
         ) : (
           // Article selected from sidebar but not found (shouldn't happen)
-          <ActivityLauncher railwayUrl={config.railwayUrl} onCreate={handleCreateActivity} onOpenConfig={() => setShowConfig(true)} />
+          <ActivityLauncher railwayUrl={config.railwayUrl} models={config.models} modelId={config.stepConfigs[1]?.modelId ?? ''} recentArticles={articles} initialHistoryOpen={launcherHistoryOpen} onOpenArticle={id => { setActiveId(id); setShowBatchOverview(true); }} onModelChange={handleComposerModelChange} onCreate={handleCreateActivity} />
         )}
       </div>
 

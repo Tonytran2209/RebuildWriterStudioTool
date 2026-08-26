@@ -11,6 +11,33 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+html, body, #root { min-height: 100%; background: #171717; }
+
+.sidebar-nav { display: flex; width: 100%; align-items: center; gap: .55rem; border-radius: .5rem; padding: .5rem .6rem; text-align: left; color: #bdbdbd; transition: background .15s, color .15s; }
+.sidebar-nav:hover { background: #2b2b2b; color: #eee; }
+.composer-menu { display: flex; width: 100%; align-items: center; gap: .6rem; border-radius: .5rem; padding: .55rem .65rem; text-align: left; font-size: 11px; color: #bbb; }
+.composer-menu:hover { background: #333; color: white; }
+.workspace-tab { border-bottom: 2px solid transparent; padding: .65rem .8rem; font-size: 11px; color: #707070; }
+.workspace-tab span { margin-left: .3rem; border-radius: 999px; background: #292929; padding: .1rem .35rem; font-size: 9px; }
+.workspace-tab.active { border-color: #d7d7d7; color: #dedede; }
+
+.writer-dark ::-webkit-scrollbar-thumb { background: #454545; }
+.writer-dark .bg-\[\#f4f5f8\], .writer-dark .bg-\[\#ebedf3\], .writer-dark .bg-\[\#eaedf3\] { background: #171717 !important; }
+.writer-dark .bg-white { background-color: #202020 !important; }
+.writer-dark .bg-slate-50, .writer-dark .bg-slate-100 { background-color: #252525 !important; }
+.writer-dark .bg-indigo-50, .writer-dark .bg-blue-50, .writer-dark .bg-emerald-50, .writer-dark .bg-amber-50, .writer-dark .bg-red-50 { background-color: #252525 !important; }
+.writer-dark .border-slate-100, .writer-dark .border-slate-200, .writer-dark .border-slate-200\/80 { border-color: #353535 !important; }
+.writer-dark .text-slate-800, .writer-dark .text-slate-900, .writer-dark .text-slate-700 { color: #e0e0e0 !important; }
+.writer-dark .text-slate-600, .writer-dark .text-slate-500 { color: #aaa !important; }
+.writer-dark .text-slate-400 { color: #737373 !important; }
+.writer-dark input, .writer-dark textarea, .writer-dark select { color-scheme: dark; }
+.writer-dark .prose-editor { color: #ddd; }
+.writer-dark .step-btn-active { background: #303030; color: #fff; box-shadow: none; }
+
+@media (max-width: 767px) {
+  .writer-sidebar { z-index: 50; }
+}
+
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }

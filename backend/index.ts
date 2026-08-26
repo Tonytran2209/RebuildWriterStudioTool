@@ -245,6 +245,7 @@ async function runBatchModel(article: any, step: 2 | 3 | 4, prompt: string, json
 
 async function runBatchArticle(initial: any, controller: { paused: boolean; running: boolean }) {
   let article = initial;
+  const contentMode = article.activityType === 'editorial-originality' ? 'Editorial/Originality' : 'Comparison/SEO';
   const appendUsage = (step: 2 | 3 | 4, response: any) => ({
     ...article.aiUsageByStep,
     [step]: [...(article.aiUsageByStep?.[step] ?? []), batchUsage(step, response.provider ?? 'unknown', response)].slice(-50),
@@ -270,7 +271,7 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
         }
       }
       const response = await runBatchModel(article, 2, [
-        `Create the strongest evidence-grounded Comparison/SEO core idea for: ${article.topic}.`,
+        `Create the strongest evidence-grounded ${contentMode} core idea for: ${article.topic}.`,
         `SEO research: ${JSON.stringify(seoResearch.keywords)}`,
         'Use the supplied Knowledge Base and Skills. Return only JSON:',
         '{"title":string,"angleLabel":string,"angleDescription":string,"mainArgument":string,"primaryKeyword":string,"secondaryKeywords":string[],"targetAudience":string,"recommendedTone":string,"recommendedWordCount":number,"rating":{"overall":number,"seoPotential":number,"audienceFit":number,"docSupport":number,"uniqueness":number},"ratingRationale":string}',
@@ -296,7 +297,7 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
     if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
     if (!article.draft?.trim()) {
       const response = await runBatchModel(article, 4, [
-        `Write the complete publication-ready Comparison/SEO article: ${article.topic}.`,
+        `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
         `Primary keyword: ${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
         `Outline: ${JSON.stringify(article.outline)}`,
         'Follow every supplied Skill rule, use only supported KB claims, preserve the outline headings, and return Markdown only.',
@@ -317,7 +318,7 @@ async function runBatch(activityId: string) {
   controller.running = true; controller.paused = false; batchControllers.set(activityId, controller);
   await kvSet(`writer:batch:${activityId}`, { activityId, status: 'running', updatedAt: new Date().toISOString() });
   try {
-    const articles = (await loadArticles()).filter(article => article.activityId === activityId && article.activityType === 'comparison-seo' && !['completed', 'failed'].includes(article.batchStatus));
+    const articles = (await loadArticles()).filter(article => article.activityId === activityId && article.activityKind === 'batch' && !['completed', 'failed'].includes(article.batchStatus));
     await runWithConcurrency(articles, 2, article => runBatchArticle(article, controller));
     const latest = (await loadArticles()).filter(article => article.activityId === activityId);
     const status = controller.paused ? 'paused' : latest.every(article => article.batchStatus === 'completed') ? 'completed' : latest.some(article => article.batchStatus === 'failed') ? 'failed' : 'queued';
@@ -995,7 +996,7 @@ app.get('/api/batches/:activityId', async (req, res) => {
 app.post('/api/batches/:activityId/start', async (req, res) => {
   try {
     const activityId = req.params.activityId;
-    const articles = (await loadArticles()).filter(article => article.activityId === activityId && article.activityType === 'comparison-seo');
+    const articles = (await loadArticles()).filter(article => article.activityId === activityId && article.activityKind === 'batch');
     if (!articles.length) return res.status(404).json({ error: 'Batch activity không tồn tại.' });
     void runBatch(activityId).catch(error => console.error(`[batch] ${activityId}`, error));
     res.status(202).json({ ok: true, activityId, queued: articles.length });
