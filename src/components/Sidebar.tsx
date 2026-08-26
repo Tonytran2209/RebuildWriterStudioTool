@@ -28,6 +28,7 @@ export default function Sidebar({
 }: Props) {
   const { language, toggleLanguage, tr } = useI18n()
   const [open, setOpen] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState("")
   const recent = articles
     .filter((article) =>
@@ -49,7 +50,10 @@ export default function Sidebar({
         </button>
         <div className="flex gap-1">
           <button
-            onClick={() => setSearch((value) => (value ? "" : value))}
+            onClick={() => {
+              setShowSearch((value) => !value)
+              if (showSearch) setSearch("")
+            }}
             className="sidebar-icon-button"
             aria-label={tr("Tìm kiếm", "Search")}
           >
@@ -82,16 +86,19 @@ export default function Sidebar({
         </button>
       </nav>
       <div className="mx-3 my-2 h-px bg-[#2c2c2c]" />
-      <div className="px-3">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#777]">Recents</div>
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder={tr("Tìm bài viết…", "Search articles…")}
-          className="mt-2 w-full rounded-lg border border-[#333] bg-[#191919] px-2.5 py-2 text-[11px] text-[#ddd] outline-none placeholder:text-[#666]"
-        />
+      <div className="px-3 pb-1">
+        <div className="text-[11px] font-medium text-[#777]">Recents</div>
+        {showSearch && (
+          <input
+            autoFocus
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={tr("Tìm bài viết…", "Search articles…")}
+            className="mt-2 w-full rounded-lg border border-[#333] bg-[#191919] px-2.5 py-1.5 text-[11px] text-[#ddd] outline-none placeholder:text-[#666]"
+          />
+        )}
       </div>
-      <div className="sidebar-recent-list mt-2 flex-1 space-y-1.5 overflow-y-auto px-2 pb-3">
+      <div className="sidebar-recent-list flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
         {recent.map((article) => {
           const active = article.id === activeArticleId
           return (
@@ -105,26 +112,20 @@ export default function Sidebar({
             >
               <button
                 onClick={() => onSelectArticle(article.id)}
-                className="w-full px-2.5 py-2.5 pr-9 text-left"
+                className="flex h-9 w-full items-center px-2.5 pr-9 text-left"
               >
                 <div
-                  className={`truncate text-[12.5px] leading-4 ${
+                  className={`truncate text-[13px] leading-5 ${
                     active ? "font-semibold text-[#242422]" : "font-medium text-[#444440]"
                   }`}
                 >
                   {article.topic || article.title}
                 </div>
-                <div className="mt-1 text-[10px] font-normal leading-3.5 text-[#888882]">
-                  {article.contentPlanVersion
-                    ? `Content Plan v${article.contentPlanVersion} · `
-                    : ""}
-                  {article.batchStatus ?? `Step ${article.currentStep}/4`}
-                </div>
               </button>
               <button
                 disabled={deletingArticleId === article.id}
                 onClick={() => onDeleteArticle(article)}
-                className="absolute bottom-2 right-2 flex h-6 w-6 items-center justify-center rounded-md text-[#8b8b85] opacity-0 transition-opacity hover:bg-white/70 hover:text-red-600 group-hover:opacity-100 focus:opacity-100"
+                className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-[#8b8b85] opacity-0 transition-opacity hover:bg-white/10 hover:text-red-400 group-hover:opacity-100 focus:opacity-100"
                 aria-label={tr("Xóa bài viết", "Delete article")}
               >
                 <Trash2 className="app-icon" aria-hidden="true" />
