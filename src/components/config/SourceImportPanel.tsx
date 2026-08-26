@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { ClipboardPaste, Database, Download, FilePenLine, FolderUp, Link2, Plug, Sheet, Trash2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ActionDataSource, ActionSourceType, FileCategory, ManualRow } from '../../types';
-import { isActionSourceReady } from '../../lib/documentStatus';
+import { isImportSourceReady } from '../../lib/documentStatus';
 import { uploadDocumentToRailway } from '../../lib/railwayUpload';
 import { downloadDocumentFromRailway } from '../../lib/railwayDownload';
 import { importSourceThroughRailway } from '../../lib/railwayImport';
@@ -396,11 +396,10 @@ interface Props {
 
 const CATEGORY_LABEL: Record<FileCategory, string> = {
   kb: 'Knowledge Base',
-  action: 'Action Plan',
-  rules: 'Rules & Guidelines',
+  rules: 'Skills & Rules',
 };
 
-export default function ActionPlanTab({ sources = [], onChange, railwayUrl, category = 'action' }: Props) {
+export default function SourceImportPanel({ sources = [], onChange, railwayUrl, category = 'kb' }: Props) {
   const { language, tr } = useI18n();
   const [mode, setMode] = useState<ActionSourceType>('file');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -422,7 +421,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
   };
   const addSources = (newSources: ActionDataSource[]) => onChange([...newSources, ...sources]);
   const removeSource = (id: string) => onChange(sources.filter(s => s.id !== id));
-  const readySourceCount = sources.filter(isActionSourceReady).length;
+  const readySourceCount = sources.filter(isImportSourceReady).length;
   const downloadSource = async (source: ActionDataSource) => {
     setDownloadingId(source.id);
     setDownloadError('');
@@ -505,7 +504,7 @@ export default function ActionPlanTab({ sources = [], onChange, railwayUrl, cate
         ) : (
           <div className="space-y-1.5">
             {sources.map(s => {
-              const ready = isActionSourceReady(s);
+              const ready = isImportSourceReady(s);
               const SourceIcon = SOURCE_ICONS[s.sourceType];
               return (
               <div key={s.id} className={`group flex items-start gap-3 bg-white border rounded-xl p-3 hover:shadow-sm transition-all ${ready ? 'border-slate-200' : 'border-red-200'}`}>

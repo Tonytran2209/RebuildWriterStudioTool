@@ -5,7 +5,7 @@ import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
 import {
   collectStepDocs,
-  buildActionPlanFingerprint,
+  buildWorkflowSourceFingerprint,
   buildRoleSystemPrompt,
   buildStepDocumentPromptRules,
   describeBundle,
@@ -128,7 +128,7 @@ interface Props {
 
 export default function Step4Draft({ article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
-  const bundle = useMemo(() => collectStepDocs(4, config, files), [config, files]);
+  const bundle = useMemo(() => collectStepDocs(4, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(4, config, files), [config, files]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
@@ -143,7 +143,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const draft = article.draft || '';
   const draftSourceFingerprint = useMemo(
     () => [
-      buildActionPlanFingerprint(bundle), model.provider, model.id, 'step4-draft-v3-en',
+      buildWorkflowSourceFingerprint(bundle), model.provider, model.id, 'step4-draft-v4-content-plan',
       article.selectedCoreIdeaId, article.topic, article.angle,
       JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, documentPromptRules,
     ].join(':'),
@@ -168,6 +168,10 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   }));
 
   const handleGenerate = async (manual = false) => {
+    if (!article.contentPlanInput?.trim() || !article.topic?.trim()) {
+      setError('Bài viết chưa có topic được tổng hợp từ Content Plan hiện tại.');
+      return;
+    }
     if (!(article.outline && article.outline.length)) {
       setError('Bước 3 cần outline đã lưu từ Bước 2. Vui lòng quay lại Bước 2 và tạo hoặc lưu ít nhất một section.');
       return;
@@ -189,7 +193,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           canonicalAIOutputInstruction,
           'Viết bài hoàn chỉnh theo dàn bài và tài liệu được cấp.',
           '- Knowledge Base là nguồn dữ liệu duy nhất cho số liệu, dẫn chứng, thông tin sản phẩm. KHÔNG bịa dữ liệu.',
-          '- Action Plan xác định định hướng nội dung và các mục bắt buộc.',
+          '- Content Plan hiện tại cung cấp topic, nhóm nội dung và keyword đã được tổng hợp cho article; không đọc kế hoạch legacy.',
           '- Rules & Guidelines quyết định tone of voice, từ ngữ cấm, cấu trúc câu, quy tắc SEO. PHẢI tuân thủ tuyệt đối.',
           '- Khi dùng thông tin từ KB, nêu tự nhiên trong văn bản (không cần footnote).',
           '- Nếu KB không có dữ liệu cho một mục, viết mục đó ở dạng khung và ghi chú "[Cần bổ sung dữ liệu]".',

@@ -32,7 +32,7 @@ function docIndex(bundle: DocBundle): Map<string, { role: EvidenceRef["role"]; d
   type IndexedDocument = readonly [string, { role: EvidenceRef["role"]; doc: DocRef }];
   const documents: IndexedDocument[] = [
     ...bundle.knowledgeBase.map(doc => [canonical(doc.name), { role: "kb" as const, doc }] as const),
-    ...bundle.actionPlan.map(doc => [canonical(doc.name), { role: "action" as const, doc }] as const),
+    ...bundle.contentPlan.map(doc => [canonical(doc.name), { role: "content_plan" as const, doc }] as const),
     ...bundle.rules.map(doc => [canonical(doc.name), { role: "rules" as const, doc }] as const),
   ];
   const index = new Map<string, { role: EvidenceRef["role"]; doc: DocRef }>(documents);
@@ -72,7 +72,7 @@ export function verifiedRuleRefs(value: unknown, bundle: DocBundle): string[] {
 }
 
 export function hasResearchEvidence(evidence: EvidenceRef[]): boolean {
-  return evidence.some(item => item.role === "kb" || item.role === "action");
+  return evidence.some(item => item.role === "kb" || item.role === "content_plan");
 }
 
 export function hasRulesEvidence(evidence: EvidenceRef[]): boolean {
@@ -81,9 +81,9 @@ export function hasRulesEvidence(evidence: EvidenceRef[]): boolean {
 
 /** Require only the evidence groups that are actually available to the step. */
 export function hasEvidenceForAuthorizedCategories(evidence: EvidenceRef[], bundle: DocBundle): boolean {
-  const hasResearchDocs = Boolean(bundle.knowledgeBase.length || bundle.actionPlan.length);
+  const hasResearchDocs = Boolean(bundle.knowledgeBase.length || bundle.contentPlan.length);
   return (
-    (!hasResearchDocs || evidence.some(item => item.role === "kb" || item.role === "action"))
+    (!hasResearchDocs || evidence.some(item => item.role === "kb" || item.role === "content_plan"))
     && (!bundle.rules.length || evidence.some(item => item.role === "rules"))
   );
 }

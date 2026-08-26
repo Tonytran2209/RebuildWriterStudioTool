@@ -1,7 +1,7 @@
 import type { ActionDataSource, DocumentFile, FileCategory } from '../types';
 
 interface UploadResponse {
-  target: 'writer:files' | 'writer:config.actionSources';
+  target: 'writer:files';
   record: DocumentFile | ActionDataSource;
 }
 

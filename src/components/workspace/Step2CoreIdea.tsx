@@ -18,7 +18,7 @@ import {
   collectStepDocs,
   buildRoleSystemPrompt,
   buildStepDocumentPromptRules,
-  buildActionPlanFingerprint,
+  buildWorkflowSourceFingerprint,
   describeBundle,
 } from "../../lib/docContext";
 import { hasEvidenceForAuthorizedCategories, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
@@ -84,8 +84,8 @@ function snapshotEvidence(
   const researchSource = snapshot.matchedDocs?.[0];
   const kbSource = snapshot.kbRefs?.[0];
   const ruleSource = snapshot.ruleRefs?.[0];
-  if (researchSource && snapshot.actionPlanEvidence) {
-    candidates.push({ source: researchSource, role: "action", quote: snapshot.actionPlanEvidence, note: "Snapshot Step 1 đã kiểm chứng" });
+  if (researchSource && snapshot.contentPlanEvidence) {
+    candidates.push({ source: researchSource, role: "content_plan", quote: snapshot.contentPlanEvidence, note: "Content Plan classification evidence" });
   }
   if (kbSource && snapshot.kbEvidence) {
     candidates.push({ source: kbSource, role: "kb", quote: snapshot.kbEvidence, note: "Snapshot Step 1 đã kiểm chứng" });
@@ -115,7 +115,7 @@ function deterministicBundleEvidence(
     const best = ranked[0];
     return best ? { source: best.source, role, quote: best.quote, note: "Deterministically selected and verified source excerpt." } : null;
   };
-  const research = bestExcerpt([...bundle.knowledgeBase, ...bundle.actionPlan], "kb");
+  const research = bestExcerpt([...bundle.knowledgeBase, ...bundle.contentPlan], "kb");
   const rules = bestExcerpt(bundle.rules, "rules");
   return verifyEvidence([research, rules].filter((item): item is EvidenceRef => Boolean(item)), bundle);
 }
@@ -161,7 +161,7 @@ function normalizeIdeas(
     const decision = item.decision === "accepted" ? "accepted" : item.decision === "rejected" ? "rejected" : null;
     if (!keyword || !decision) return [];
     const normalized = { keyword, decision, reason: String(item.reason ?? "").trim(), ruleReason: String(item.ruleReason ?? "").trim(), kbReason: String(item.kbReason ?? "").trim() };
-    const hasResearchDocs = Boolean(bundle.knowledgeBase.length || bundle.actionPlan.length);
+    const hasResearchDocs = Boolean(bundle.knowledgeBase.length || bundle.contentPlan.length);
     return normalized.reason
       && (!bundle.rules.length || normalized.ruleReason)
       && (!hasResearchDocs || normalized.kbReason)
@@ -228,7 +228,7 @@ function normalizeIdeas(
             .filter(([, value]) => Boolean(value)),
         ),
         keywordAudit,
-        matchedDocs: [...new Set(evidence.filter(item => item.role === "kb" || item.role === "action").map(item => item.source))],
+        matchedDocs: [...new Set(evidence.filter(item => item.role === "kb" || item.role === "content_plan").map(item => item.source))],
         ruleRefs,
         evidence,
       } as CoreIdeaSuggestion;
@@ -277,7 +277,7 @@ export default function Step2CoreIdea({
   const autoRequestedRef = useRef<string | null>(null);
   const { tr, canonicalAIOutputInstruction } = useI18n();
 
-  const bundle = useMemo(() => collectStepDocs(2, config, files), [config, files]);
+  const bundle = useMemo(() => collectStepDocs(2, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(2, config, files), [config, files]);
   const selectedSnapshot = useMemo(
     () => article.selectedContentTypeSnapshot
@@ -311,14 +311,14 @@ export default function Step2CoreIdea({
       matchedDocs: selectedSnapshot.matchedDocs,
       kbRefs: selectedSnapshot.kbRefs,
       ruleRefs: selectedSnapshot.ruleRefs,
-      actionPlanEvidence: selectedSnapshot.actionPlanEvidence,
+      contentPlanEvidence: selectedSnapshot.contentPlanEvidence,
       kbEvidence: selectedSnapshot.kbEvidence,
       ruleEvidence: selectedSnapshot.ruleEvidence,
     }) : article.contentType ?? "",
     [article.contentType, selectedSnapshot],
   );
   const sourceFingerprint = useMemo(
-    () => `${buildActionPlanFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v10-en-deterministic-evidence:${selectedSnapshotSignature}:${documentPromptRules}`,
+    () => `${buildWorkflowSourceFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v11-content-plan:${selectedSnapshotSignature}:${documentPromptRules}`,
     [bundle, documentPromptRules, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
@@ -327,6 +327,10 @@ export default function Step2CoreIdea({
   const ideas = storedIdeas;
 
   const fetchIdeas = async (manual = false) => {
+    if (!article.contentPlanInput?.trim() || !article.topic?.trim()) {
+      setError("Bài viết chưa có topic được tổng hợp từ Content Plan. Vui lòng mở bài từ danh sách phân loại của Content Plan hiện tại.");
+      return;
+    }
     if (!article.contentType) {
       setError("Chưa chọn loại nội dung ở Step 1. Vui lòng quay lại Step 1 trước.");
       return;
@@ -481,7 +485,7 @@ export default function Step2CoreIdea({
       }
       if (!result.ideas.length) {
         throw new Error(
-          `Không có core idea nào vượt qua kiểm chứng sau một lần bổ sung có mục tiêu. Đã đối chiếu ${bundle.knowledgeBase.length} KB, ${bundle.actionPlan.length} Action và ${bundle.rules.length} Rules.`,
+          `Không có core idea nào vượt qua kiểm chứng sau một lần bổ sung có mục tiêu. Đã đối chiếu ${bundle.knowledgeBase.length} KB, ${bundle.contentPlan.length} Content Plan và ${bundle.rules.length} Skills.`,
         );
       }
       const partialResult = result.ideas.length < 3;
@@ -491,7 +495,7 @@ export default function Step2CoreIdea({
       const trace: AIProcessTraceEvent[] = [
         { id: 'step2-seeds', stage: 'input', status: 'completed', title: '1. Thu thập seed keyword', detail: 'Lấy seed từ Content Type và snapshot Step 1 đã chọn.', facts: { seeds: seeds.length, contentType: article.contentType } },
         { id: 'step2-web-search', stage: 'tool', status: 'completed', title: '2. OpenAI Web Search thị trường USA', detail: 'Tìm tín hiệu SERP, related-query patterns và search intent. Hệ thống chỉ giữ keyword có URL nguồn hợp lệ.', facts: { keywords: seoResearch.keywords.length, cacheHit: Boolean(seoResearch.cacheHit), market: seoResearch.location }, sources: [...new Set(seoResearch.keywords.flatMap(keyword => keyword.sources ?? []))] },
-        { id: 'step2-docs', stage: 'retrieval', status: 'completed', title: '3. Nạp tài liệu được phân quyền', detail: `Railway chọn các đoạn liên quan nhất từ Content Plan, Knowledge Base và Skills được cấp cho Bước 1; quote vẫn được kiểm chứng với nội dung đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
+        { id: 'step2-docs', stage: 'retrieval', status: 'completed', title: '3. Nạp nguồn của activity', detail: `Railway dùng topic đã phân loại cùng Content Plan hiện tại, Knowledge Base và Skills; quote vẫn được kiểm chứng với nội dung đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, contentPlan: bundle.contentPlan.length, rules: bundle.rules.length } },
         { id: 'step2-model', stage: 'generation', status: 'completed', title: '4. Model tạo và chấm Core Idea', detail: `Model ${result.res.model} audit Top 10 và tạo đúng ba Core Idea. Evidence không được model sinh lại; ứng dụng gắn excerpt đã kiểm chứng để giảm token và lỗi quote.`, facts: { modelCalls, inputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.inputTokens ?? 0), 0), outputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.outputTokens ?? 0), 0), cacheHits: aiResponses.filter(response => response.cacheHit).length, durationMs: aiResponses.reduce((sum, response) => sum + (response.timing?.totalMs ?? 0), 0) } },
         { id: 'step2-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls || partialResult ? 'warning' : 'completed', title: '5. Đối chứng tài liệu và kiểm tra output', detail: 'Cả bộ Core Idea phải audit đủ Top 10 và chỉ dùng keyword accepted. Evidence KB/Action/Rules được chọn và xác minh xác định ở ứng dụng; lượt bổ sung idea không nạp lại tài liệu.', facts: { acceptedKeywords, rejectedKeywords, ideasAccepted: result.ideas.length, verifiedEvidence: trustedEvidence.length, jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step2-persist', stage: 'persistence', status: 'completed', title: '6. Lưu kết quả có thể audit', detail: 'Lưu Top 10, quyết định chọn/loại, evidence, điểm số, lý do và nhật ký này cùng bài viết trong Supabase.' },

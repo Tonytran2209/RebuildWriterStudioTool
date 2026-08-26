@@ -34,7 +34,7 @@ export interface AICallUsage {
   calledAt: string;
 }
 
-export type FileCategory = 'kb' | 'action' | 'rules';
+export type FileCategory = 'kb' | 'rules';
 export type FileType = 'pdf' | 'docx' | 'csv' | 'xlsx' | 'txt' | 'md' | 'json';
 
 export interface StructuredDocumentSection {
@@ -76,7 +76,6 @@ export interface DocumentFile {
 
 export interface StepFileAccess {
   kb: string[];
-  action: string[];
   rules: string[];
 }
 
@@ -100,7 +99,6 @@ export interface AppConfig {
   railwayUrl: string;
   stepConfigs: Record<number, StepConfig>;
   models: AIModel[];
-  actionSources: ActionDataSource[];
 }
 
 export type SearchIntent = 'informational' | 'commercial' | 'transactional' | 'navigational';
@@ -109,7 +107,7 @@ export interface EvidenceRef {
   source: string;
   note?: string;
   quote?: string;
-  role?: 'kb' | 'action' | 'rules';
+  role?: 'kb' | 'content_plan' | 'rules';
 }
 
 export interface OutlineSection {
@@ -133,7 +131,7 @@ export interface ContentTypeSuggestion {
   label: string;
   description: string;
   keywords?: string[];
-  // Phân loại theo Action Plan: Type A/B/C — mỗi wave gắn với mốc thời gian
+  // Classification snapshot created from the current Content Plan input.
   typeGroup?: ContentTypeGroup;
   wave?: string;
   timeframe?: string;
@@ -144,7 +142,7 @@ export interface ContentTypeSuggestion {
   ruleRefs?: string[];
   kbEvidence?: string;
   ruleEvidence?: string;
-  actionPlanEvidence?: string;
+  contentPlanEvidence?: string;
   scheduleEvidence?: string;
   sourceYear?: number;
   icon?: string;
@@ -339,7 +337,7 @@ export interface ContentType {
 export type ActiveTab = 'step-setup' | 'models' | 'knowledge-base';
 export type KbSubTab = 'kb' | 'rules';
 
-// ── Action Plan — multi-source data input ────────────────────────────────────
+// ── Knowledge/Skill source import ────────────────────────────────────────────
 
 export type ActionSourceType =
   | 'file'       // upload CSV/XLSX/JSON/PDF
@@ -368,7 +366,7 @@ export interface ActionDataSource {
   size?: string;
   // Paste / Manual
   content?: string;       // raw text hoặc CSV string
-  contentUpdatedAt?: string; // dùng để phát hiện Action Plan quý mới
+  contentUpdatedAt?: string;
   contentLength?: number;
   contentHash?: string;
   scanStatus?: 'ready' | 'error';

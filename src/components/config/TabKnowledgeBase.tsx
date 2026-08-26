@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ActionDataSource, DocumentFile, FileCategory, KbSubTab } from '../../types';
-import ActionPlanTab from './ActionPlanTab';
+import SourceImportPanel from './SourceImportPanel';
 import { useI18n } from '../../lib/i18n';
 
 const SUBTAB_META: Record<KbSubTab, { label: string; category: FileCategory; hint: string }> = {
@@ -79,7 +79,7 @@ export default function TabKnowledgeBase({
         <strong>{meta.label}:</strong> {language === 'vi' ? meta.hint : tr(meta.hint, activeSubTab === 'kb' ? 'Core knowledge, products, research, and references' : 'Reusable skills, taxonomy, tone of voice, structure, and mandatory rules')}. {tr('Mọi phương thức đều được Railway xử lý và chỉ được đánh dấu sẵn sàng sau khi Supabase đã lưu nội dung thật.', 'Every import method is processed by Railway and marked ready only after Supabase stores the actual content.')}
       </div>
 
-      <ActionPlanTab
+      <SourceImportPanel
         key={activeSubTab}
         category={meta.category}
         sources={sources}

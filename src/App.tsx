@@ -205,7 +205,7 @@ export default function App() {
           typeGroup: (type === "comparison-seo" ? "A" : "C") as const,
           wave: "Current activity",
           timeframe: new Date().toISOString().slice(0, 10),
-          actionPlanEvidence: item.sourceLine,
+          contentPlanEvidence: item.sourceLine,
           scheduleEvidence: item.sourceLine,
         }
         return {

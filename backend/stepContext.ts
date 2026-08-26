@@ -1,7 +1,7 @@
 import { kvGet } from './supabase.ts';
 import { extractStructuredSections, type StructuredSection } from './documentStructure.ts';
 
-type Role = 'KNOWLEDGE_BASE' | 'ACTION_PLAN' | 'RULES';
+type Role = 'KNOWLEDGE_BASE' | 'CONTENT_PLAN' | 'RULES';
 
 interface StoredDocument {
   id: string;
@@ -34,8 +34,8 @@ function wrapDocument(role: Role, document: StoredDocument & { content: string }
 
 export interface StepContextResult {
   contextDocs: string[];
-  actionText: string;
-  summary: { stepNumber: number; kb: string[]; action: string[]; rules: string[]; totalChars: number; sourceFingerprint: string };
+  contentPlanText: string;
+  summary: { stepNumber: number; kb: string[]; contentPlan: string[]; rules: string[]; totalChars: number; sourceFingerprint: string };
 }
 
 export interface StepWaveContext extends StepContextResult {
@@ -53,7 +53,7 @@ function extractExpectedRows(content: string): string[] {
     .replace(/\r\n?/g, '\n')
     .split('\n')
     .map(line => line.replace(/\s+/g, ' ').trim())
-    // Topic rows in the Action Plan use an explicit [Type X] marker. Plain
+    // Topic rows in the imported Content Plan may use an explicit [Type X] marker. Plain
     // mentions such as "feeds Type B" or "use the Type A template" are
     // references, not additional deliverables.
     .filter(line => /\[\s*(?:content\s*)?type\s*[ABC]\b/i.test(line))
@@ -134,11 +134,11 @@ function buildResult(stepNumber: number, resolved: Array<{ role: Role; document:
       ].join('\n'),
       ...resolved.map(item => wrapDocument(item.role, item.document)),
     ],
-    actionText: resolved.filter(item => item.role === 'ACTION_PLAN').map(item => item.document.content).join('\n'),
+    contentPlanText: resolved.filter(item => item.role === 'CONTENT_PLAN').map(item => item.document.content).join('\n'),
     summary: {
       stepNumber,
       kb: resolved.filter(item => item.role === 'KNOWLEDGE_BASE').map(item => item.document.name),
-      action: resolved.filter(item => item.role === 'ACTION_PLAN').map(item => item.document.name),
+      contentPlan: resolved.filter(item => item.role === 'CONTENT_PLAN').map(item => item.document.name),
       rules: resolved.filter(item => item.role === 'RULES').map(item => item.document.name),
       totalChars,
       sourceFingerprint: sourceFingerprint(resolved),
@@ -157,11 +157,12 @@ async function resolveDocuments(stepNumber: number, articleId?: string) {
   if (!stepConfig) throw new Error(`Chưa cấu hình quyền tài liệu cho Step ${stepNumber}.`);
   const files = Array.isArray(filesValue) ? filesValue : [];
   const readyFiles = files.filter(isReady);
-  const legacyActionSources = (Array.isArray(config.actionSources) ? config.actionSources : []).filter(isReady);
+  if (!article?.contentPlanInput || !String(article.contentPlanInput).trim()) {
+    throw new Error(`Article ${articleId ?? ''} chưa có Content Plan của activity. Hãy mở bài từ kết quả phân loại Content Plan.`);
+  }
   const resolved: Array<{ role: Role; document: StoredDocument & { content: string } }> = [
     ...readyFiles.filter(file => file.category === 'kb').map(document => ({ role: 'KNOWLEDGE_BASE' as Role, document })),
-    ...(article?.contentPlanInput ? [{ role: 'ACTION_PLAN' as Role, document: { id: `content-plan-${articleId}`, name: 'Current activity Content Plan', content: String(article.contentPlanInput), contentHash: `article-${article.updatedAt ?? 'current'}` } }] : []),
-    ...(!article?.contentPlanInput ? legacyActionSources.map((document: StoredDocument & { content: string }) => ({ role: 'ACTION_PLAN' as Role, document })) : []),
+    { role: 'CONTENT_PLAN' as Role, document: { id: `content-plan-${articleId}`, name: 'Current activity Content Plan', content: String(article.contentPlanInput), contentHash: `article-${article.updatedAt ?? 'current'}` } },
     ...readyFiles.filter(file => file.category === 'rules').map(document => ({ role: 'RULES' as Role, document })),
   ];
   if (!resolved.length) throw new Error(`Step ${stepNumber} chưa được cấp quyền đọc tài liệu nào.`);
@@ -225,10 +226,10 @@ export async function resolveStepContext(stepNumber: number, query = '', article
 
 export async function resolveStep1WaveContexts(articleId?: string): Promise<StepWaveContext[]> {
   const resolved = await resolveDocuments(1, articleId);
-  const shared = resolved.filter(item => item.role !== 'ACTION_PLAN');
-  const action = resolved.filter(item => item.role === 'ACTION_PLAN');
+  const shared = resolved.filter(item => item.role !== 'CONTENT_PLAN');
+  const action = resolved.filter(item => item.role === 'CONTENT_PLAN');
   const supportingAction: Array<{ role: Role; document: StoredDocument & { content: string } }> = [];
-  if (!action.length) throw new Error('Step 1 chưa được cấp quyền đọc Action Plan.');
+  if (!action.length) throw new Error('Activity chưa có Content Plan đã được trích xuất.');
   const groups = new Map<string, {
     wave: string;
     timeframe?: string;
@@ -263,14 +264,14 @@ export async function resolveStep1WaveContexts(articleId?: string): Promise<Step
       group.expectedRows.push(...scopeRows);
       group.expectedRows = [...new Set(group.expectedRows)];
       group.documents.push({
-        role: 'ACTION_PLAN',
+        role: 'CONTENT_PLAN',
         document: { ...item.document, content: scope.content },
       });
       groups.set(key, group);
     }
   }
 
-  if (!groups.size) throw new Error('Không thể tạo phạm vi Action Plan cho Step 1.');
+  if (!groups.size) throw new Error('Không thể tạo phạm vi phân loại từ Content Plan hiện tại.');
 
   return [...groups.values()].map(group => ({
     ...buildResult(1, [...shared, ...supportingAction, ...group.documents]),

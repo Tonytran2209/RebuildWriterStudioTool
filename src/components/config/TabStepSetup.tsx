@@ -20,7 +20,7 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
 
   const updateStepModel = (step: number, modelId: string) => onChange({
     ...config,
-    stepConfigs: { ...config.stepConfigs, [step]: { ...config.stepConfigs[step], modelId, fileAccess: { kb: readyKb.map(f => f.id), action: [], rules: readySkills.map(f => f.id) } } },
+    stepConfigs: { ...config.stepConfigs, [step]: { ...config.stepConfigs[step], modelId, fileAccess: { kb: readyKb.map(f => f.id), rules: readySkills.map(f => f.id) } } },
   });
   const updateDraftWordLimit = (value: number) => onChange({
     ...config,

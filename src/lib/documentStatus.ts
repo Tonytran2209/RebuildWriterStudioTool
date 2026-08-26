@@ -8,34 +8,30 @@ export function isDocumentReady(file: DocumentFile): boolean {
   return hasStoredContent(file.content);
 }
 
-export function isActionSourceReady(source: ActionDataSource): boolean {
+export function isImportSourceReady(source: ActionDataSource): boolean {
   return hasStoredContent(source.content);
 }
 
 export function sanitizeStepFileAccess(
   access: StepFileAccess,
   files: DocumentFile[],
-  sources: ActionDataSource[],
 ): StepFileAccess {
   const validKb = new Set(files.filter(file => file.category === "kb" && isDocumentReady(file)).map(file => file.id));
   const validRules = new Set(files.filter(file => file.category === "rules" && isDocumentReady(file)).map(file => file.id));
-  const validActions = new Set(sources.filter(isActionSourceReady).map(source => source.id));
   return {
     kb: (access.kb ?? []).filter(id => validKb.has(id)),
-    action: (access.action ?? []).filter(id => validActions.has(id)),
     rules: (access.rules ?? []).filter(id => validRules.has(id)),
   };
 }
 
 export function sanitizeConfigFileAccess(config: AppConfig, files: DocumentFile[]): AppConfig {
-  const sources = config.actionSources ?? [];
   return {
     ...config,
     stepConfigs: Object.fromEntries(
       Object.entries(config.stepConfigs).map(([step, stepConfig]) => {
-        const fileAccess = sanitizeStepFileAccess(stepConfig.fileAccess, files, sources);
+        const fileAccess = sanitizeStepFileAccess(stepConfig.fileAccess, files);
         const categoryPromptRules = Object.fromEntries(
-          (['kb', 'action', 'rules'] as const).map(category => {
+          (['kb', 'rules'] as const).map(category => {
             const current = stepConfig.categoryPromptRules?.[category]?.trim();
             if (current) return [category, current];
             const migrated = Object.values(stepConfig.documentPromptRules?.[category] ?? {})

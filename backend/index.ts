@@ -802,7 +802,7 @@ app.post('/api/generate', async (req, res) => {
     const contextsStartedAt = Date.now();
     const normalizedContextQuery = String(contextQuery ?? '').trim().slice(0, 4_000);
     const contexts = skipDocumentContext && (stepNumber === 2 || stepNumber === 4)
-      ? [{ contextDocs: [], actionText: '', summary: { stepNumber, kb: [], action: [], rules: [], totalChars: 0, sourceFingerprint: `empty-step-${stepNumber}` } }]
+      ? [{ contextDocs: [], contentPlanText: '', summary: { stepNumber, kb: [], contentPlan: [], rules: [], totalChars: 0, sourceFingerprint: `empty-step-${stepNumber}` } }]
       : stepNumber === 1 && splitByWave
       ? await resolveStep1WaveContexts(String(articleId))
       : [await resolveStepContext(stepNumber, normalizedContextQuery, String(articleId))];
@@ -1270,22 +1270,7 @@ app.get('/api/config', async (_req, res) => {
 
 app.post('/api/config', async (req, res) => {
   try {
-    const invalidSources = (req.body?.actionSources ?? []).filter((source: any) =>
-      typeof source?.content !== 'string' || !source.content.trim(),
-    );
-    if (invalidSources.length) {
-      return res.status(422).json({
-        error: `Có ${invalidSources.length} Action Plan source chưa có nội dung scan. Hãy xóa và tải/nhập lại.`,
-      });
-    }
-    const config = {
-      ...req.body,
-      actionSources: (req.body?.actionSources ?? []).map((source: any) => ({
-        ...source,
-        contentUpdatedAt: source.contentUpdatedAt ?? new Date().toISOString(),
-        ...contentMetadata(source.content),
-      })),
-    };
+    const { actionSources: _removedLegacySources, ...config } = req.body ?? {};
     await kvSet('writer:config', config);
     res.json({ ok: true });
   } catch (err: any) {
@@ -1331,8 +1316,8 @@ app.post('/api/import/source', async (req, res) => {
   try {
     const category = String(req.body?.category ?? '');
     const sourceType = String(req.body?.sourceType ?? '');
-    if (!['kb', 'action', 'rules'].includes(category)) {
-      return res.status(400).json({ error: 'category phải là kb, action hoặc rules.' });
+    if (!['kb', 'rules'].includes(category)) {
+      return res.status(400).json({ error: 'category phải là kb hoặc rules.' });
     }
     if (!['paste', 'url', 'gsheet', 'manual', 'supabase', 'airtable'].includes(sourceType)) {
       return res.status(400).json({ error: 'Loại nguồn dữ liệu không được hỗ trợ.' });
@@ -1378,13 +1363,6 @@ app.post('/api/import/source', async (req, res) => {
       ...contentMetadata(content),
     };
 
-    if (category === 'action') {
-      const config = (await kvGet<Record<string, any>>('writer:config')) ?? {};
-      config.actionSources = [common, ...(config.actionSources ?? []).filter((item: any) => item.id !== id)];
-      await kvSet('writer:config', config);
-      return res.status(201).json({ target: 'writer:config.actionSources', record: common });
-    }
-
     const record = { ...common, category };
     const files = (await kvGet<any[]>('writer:files')) ?? [];
     await kvSet('writer:files', [record, ...files.filter(item => item.id !== id)]);
@@ -1401,8 +1379,8 @@ app.post('/api/upload/document', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Thiếu file upload.' });
     const category = String(req.body.category ?? '');
-    if (!['kb', 'rules', 'action'].includes(category)) {
-      return res.status(400).json({ error: 'category phải là kb, rules hoặc action.' });
+    if (!['kb', 'rules'].includes(category)) {
+      return res.status(400).json({ error: 'category phải là kb hoặc rules.' });
     }
 
     const content = (await extractDocumentText(req.file.buffer, req.file.originalname)).trim();
@@ -1414,28 +1392,6 @@ app.post('/api/upload/document', upload.single('file'), async (req, res) => {
     const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]+/g, '_');
     const storagePath = `${category}/${id}/${safeName}`;
     await uploadDocumentBinary(storagePath, req.file.buffer, req.file.mimetype || 'application/octet-stream');
-
-    if (category === 'action') {
-      const config = (await kvGet<Record<string, any>>('writer:config')) ?? {};
-      const source = {
-        id,
-        name: req.file.originalname,
-        sourceType: 'file',
-        addedAt: timestamp,
-        contentUpdatedAt: timestamp,
-        fileType,
-        size: formatBytes(req.file.size),
-        storagePath,
-        originalMimeType: req.file.mimetype || 'application/octet-stream',
-        content,
-        preview: content.split('\n').slice(0, 4).join('\n'),
-        rowCount: content.split('\n').filter(Boolean).length,
-        ...contentMetadata(content),
-      };
-      config.actionSources = [source, ...(config.actionSources ?? []).filter((item: any) => item.id !== id)];
-      await kvSet('writer:config', config);
-      return res.status(201).json({ target: 'writer:config.actionSources', record: source });
-    }
 
     const record = {
       id,
@@ -1462,14 +1418,8 @@ app.post('/api/upload/document', upload.single('file'), async (req, res) => {
 app.get('/api/documents/:id/download', async (req, res) => {
   try {
     const id = req.params.id;
-    const [files, config] = await Promise.all([
-      kvGet<any[]>('writer:files'),
-      kvGet<Record<string, any>>('writer:config'),
-    ]);
-    const document = [
-      ...(Array.isArray(files) ? files : []),
-      ...(Array.isArray(config?.actionSources) ? config.actionSources : []),
-    ].find(item => item?.id === id);
+    const files = await kvGet<any[]>('writer:files');
+    const document = (Array.isArray(files) ? files : []).find(item => item?.id === id);
 
     if (!document) return res.status(404).json({ error: 'Không tìm thấy tài liệu trong Supabase.' });
 
