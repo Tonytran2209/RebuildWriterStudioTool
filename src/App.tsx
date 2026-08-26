@@ -504,6 +504,10 @@ export default function App() {
           setActiveId(null)
           setShowBatchOverview(true)
           setLauncherHistoryOpen(true)
+          window.setTimeout(
+            () => window.dispatchEvent(new Event("writer:open-plan-history")),
+            0,
+          )
         }}
         onOpenConfig={() => setShowConfig(true)}
         onToggleComplete={handleToggleComplete}

@@ -77,6 +77,9 @@ export default function ActivityLauncher({
     window.addEventListener("writer:open-plan-history", open)
     return () => window.removeEventListener("writer:open-plan-history", open)
   }, [])
+  useEffect(() => {
+    if (initialHistoryOpen) setShowHistory(true)
+  }, [initialHistoryOpen])
   const visible = (plan?.items ?? []).filter((item) => item.type === category)
   const chosen = visible.filter((item) => selected.includes(item.id))
   const articleByPlanItem = new Map(

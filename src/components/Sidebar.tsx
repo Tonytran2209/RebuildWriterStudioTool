@@ -80,14 +80,13 @@ export default function Sidebar({
         >
           <FileText className="app-icon" aria-hidden="true" />Content Plan history
         </button>
-        <button onClick={() => setOpen(true)} className="sidebar-nav">
-          <Clock3 className="app-icon" aria-hidden="true" />
-          {tr("Bài đã tạo", "Recents")}
-        </button>
       </nav>
       <div className="mx-3 my-2 h-px bg-[#2c2c2c]" />
       <div className="px-3 pb-1">
-        <div className="text-[11px] font-medium text-[#777]">Recents</div>
+        <div className="flex items-center gap-2 px-1 text-[12px] font-medium text-[#8b8b8b]">
+          <Clock3 className="app-icon" aria-hidden="true" />
+          <span>{tr("Bài đã tạo", "Recents")}</span>
+        </div>
         {showSearch && (
           <input
             autoFocus
