@@ -23,6 +23,47 @@ html, body, #root { min-height: 100%; background: #f7f7f5; }
 
 /* Icons track the surrounding label size instead of using unrelated fixed sizes. */
 .ui-icon { width: 1.25rem; height: 1.25rem; flex: 0 0 1.25rem; font-size: 1rem; line-height: 1; }
+
+.ui-globe {
+  position: relative;
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  border: 1.4px solid currentColor;
+  border-radius: 999px;
+  color: #666;
+}
+
+.ui-globe::before {
+  position: absolute;
+  inset: -1.4px 3px;
+  border-right: 1px solid currentColor;
+  border-left: 1px solid currentColor;
+  border-radius: 50%;
+  content: '';
+}
+
+.ui-globe::after {
+  position: absolute;
+  right: 1px;
+  top: 50%;
+  left: 1px;
+  border-top: 1px solid currentColor;
+  content: '';
+}
+
+.writer-light .fixed.bottom-4 button.rounded-full {
+  background: #1f1f1f !important;
+  color: #fff !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 16%);
+}
+
+.writer-light .fixed.bottom-4 button.rounded-full:disabled {
+  background: #dededb !important;
+  color: #8b8b85 !important;
+  box-shadow: none;
+}
 .writer-light button svg { width: 1em !important; height: 1em !important; min-width: 1em; flex-shrink: 0; stroke-width: 1.9; }
 .writer-light button[class*="min-h-28"] > div:first-child { font-size: 1rem !important; line-height: 1.25rem; }
 .writer-light .sidebar-nav { font-size: 0.8125rem; line-height: 1.25rem; }
