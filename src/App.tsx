@@ -13,7 +13,6 @@ import Sidebar from "./components/Sidebar"
 import BrandMark from "./components/BrandMark"
 import StepNav from "./components/StepNav"
 import ConfigModal from "./components/config/ConfigModal"
-import Step1ContentType from "./components/workspace/Step1ContentType"
 import Step2CoreIdea from "./components/workspace/Step2CoreIdea"
 import Step3Outline from "./components/workspace/Step3Outline"
 import Step4Draft from "./components/workspace/Step4Draft"
@@ -90,7 +89,7 @@ export default function App() {
         ])
 
         if (remoteArticles?.length) {
-          setArticles(remoteArticles)
+          setArticles(remoteArticles.map((item) => ({ ...item, currentStep: Math.max(2, item.currentStep || 2) })))
           setActiveId(remoteArticles[0].id)
         }
         if (remoteConfig) {
@@ -357,12 +356,11 @@ export default function App() {
   const handleComposerModelChange = (modelId: string) => {
     const next = {
       ...config,
-      stepConfigs: Object.fromEntries(
-        Object.entries(config.stepConfigs).map(([step, value]) => [
-          step,
-          { ...value, modelId },
-        ]),
-      ),
+      // Storage step 1 is now the Content Plan classifier, not an article step.
+      stepConfigs: {
+        ...config.stepConfigs,
+        1: { ...config.stepConfigs[1], modelId },
+      },
     }
     setConfig(next)
     void db
@@ -415,7 +413,7 @@ export default function App() {
 
   const handleNext = () => {
     if (!article) return
-    const next = Math.min(article.currentStep + 1, 4)
+    const next = Math.min(Math.max(article.currentStep, 2) + 1, 4)
     handleUpdateArticle(article.id, {
       currentStep: next,
       status: next === 4 ? "review" : "in_progress",
@@ -425,7 +423,7 @@ export default function App() {
   const handlePrev = () => {
     if (!article) return
     handleUpdateArticle(article.id, {
-      currentStep: Math.max(article.currentStep - 1, 1),
+      currentStep: Math.max(article.currentStep - 1, 2),
     })
   }
 
@@ -568,17 +566,6 @@ export default function App() {
               }
             />
             <main className="flex-1 min-h-0 overflow-hidden p-2.5 md:p-5">
-              {article.currentStep === 1 && (
-                <Step1ContentType
-                  article={article}
-                  config={config}
-                  files={files}
-                  model={currentModel || config.models[0]}
-                  railwayUrl={config.railwayUrl}
-                  onUpdate={(u) => handleUpdateArticle(article.id, u)}
-                  onNext={handleNext}
-                />
-              )}
               {article.currentStep === 2 && (
                 <Step2CoreIdea
                   article={article}
@@ -588,7 +575,10 @@ export default function App() {
                   railwayUrl={config.railwayUrl}
                   onUpdate={(u) => handleUpdateArticle(article.id, u)}
                   onNext={handleNext}
-                  onPrev={handlePrev}
+                  onPrev={() => {
+                    setActiveId(null)
+                    setLauncherHistoryOpen(true)
+                  }}
                 />
               )}
               {article.currentStep === 3 && (

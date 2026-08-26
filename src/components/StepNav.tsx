@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { STEP_LABELS } from '../lib/defaultData';
 import type { AICallUsage, AIModel } from '../types';
 import { Monitor } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
@@ -26,19 +25,21 @@ export default function StepNav({ currentStep, onStepChange, currentModel, syncS
   const latestUsage = usage.at(-1);
   const { language, tr } = useI18n();
   const [showUsage, setShowUsage] = useState(false);
-  const stepLabels = language === 'vi' ? STEP_LABELS : {
-    1: 'Content Type', 2: 'Core Idea & Angle', 3: 'Draft Outline', 4: 'First Draft & Audit',
-  };
+  const workflowSteps = [
+    { storageStep: 2, label: tr('Ý tưởng cốt lõi & Góc tiếp cận', 'Core Idea & Angle') },
+    { storageStep: 3, label: tr('Dàn bài nháp', 'Draft Outline') },
+    { storageStep: 4, label: tr('Bản nháp & Kiểm tra', 'First Draft & Audit') },
+  ];
   return (
     <header className="minimal-step-nav relative bg-white border-b border-slate-200/80 px-2.5 md:px-5 py-2 md:py-3 flex items-center justify-between gap-2 shrink-0 z-10">
       {/* Step tabs */}
       <div className="bg-[#eaedf3] p-1 rounded-xl md:rounded-2xl flex items-center gap-0.5 md:space-x-1 shadow-sm min-w-0">
-        {[1, 2, 3, 4].map(step => {
-          const active = currentStep === step;
+        {workflowSteps.map(({ storageStep, label }, index) => {
+          const active = currentStep === storageStep;
           return (
             <button
-              key={step}
-              onClick={() => onStepChange(step)}
+              key={storageStep}
+              onClick={() => onStepChange(storageStep)}
               className={`px-1.5 sm:px-2 md:px-3.5 py-1.5 md:py-2 text-xs font-semibold rounded-lg md:rounded-xl transition-all flex items-center space-x-2 ${
                 active
                   ? 'bg-white text-slate-900 shadow-sm'
@@ -48,9 +49,9 @@ export default function StepNav({ currentStep, onStepChange, currentModel, syncS
               <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold transition-all ${
                 active ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-500'
               }`}>
-                {step}
+                {index + 1}
               </span>
-              <span className="hidden sm:block">{stepLabels[step]}</span>
+              <span className="hidden sm:block">{label}</span>
             </button>
           );
         })}
@@ -83,7 +84,7 @@ export default function StepNav({ currentStep, onStepChange, currentModel, syncS
       {showUsage && usage.length > 0 && (
         <div className="absolute right-2 top-full mt-1 w-[min(22rem,calc(100vw-1rem))] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl z-30">
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-800">{tr(`Chi phí API — Bước ${currentStep}`, `API usage — Step ${currentStep}`)}</span>
+            <span className="text-[11px] font-bold text-slate-800">{tr(`Chi phí API — Bước ${Math.max(1, currentStep - 1)}`, `API usage — Step ${Math.max(1, currentStep - 1)}`)}</span>
             <span className="text-[9px] text-slate-400">{usage.length} calls</span>
           </div>
           <div className="max-h-56 space-y-1.5 overflow-y-auto">

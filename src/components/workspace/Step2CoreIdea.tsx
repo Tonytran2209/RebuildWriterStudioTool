@@ -332,7 +332,7 @@ export default function Step2CoreIdea({
       return;
     }
     if (!bundle.totalCount) {
-      setError("Chưa có tài liệu nào được phân quyền cho Step 2. Vui lòng mở Cấu hình → Step Setup.");
+      setError("Chưa có tài liệu nào được phân quyền cho Bước 1. Vui lòng mở Cấu hình → AI access by Step.");
       return;
     }
     setLoading(true);
@@ -397,7 +397,7 @@ export default function Step2CoreIdea({
 
       const userPrompt = [
         `TÀI LIỆU STEP 2 (${describeBundle(bundle)}):`,
-        "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 2 từ Supabase.",
+        "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Bước 1 từ Supabase.",
         "",
         "LOẠI NỘI DUNG ĐÃ CHỌN Ở STEP 1:",
         `- ${article.contentType}`,
@@ -491,7 +491,7 @@ export default function Step2CoreIdea({
       const trace: AIProcessTraceEvent[] = [
         { id: 'step2-seeds', stage: 'input', status: 'completed', title: '1. Thu thập seed keyword', detail: 'Lấy seed từ Content Type và snapshot Step 1 đã chọn.', facts: { seeds: seeds.length, contentType: article.contentType } },
         { id: 'step2-web-search', stage: 'tool', status: 'completed', title: '2. OpenAI Web Search thị trường USA', detail: 'Tìm tín hiệu SERP, related-query patterns và search intent. Hệ thống chỉ giữ keyword có URL nguồn hợp lệ.', facts: { keywords: seoResearch.keywords.length, cacheHit: Boolean(seoResearch.cacheHit), market: seoResearch.location }, sources: [...new Set(seoResearch.keywords.flatMap(keyword => keyword.sources ?? []))] },
-        { id: 'step2-docs', stage: 'retrieval', status: 'completed', title: '3. Nạp tài liệu được phân quyền', detail: `Railway chọn các đoạn liên quan nhất từ KB, Action Plan và Rules được cấp cho Step 2; quote vẫn được kiểm chứng với nội dung đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
+        { id: 'step2-docs', stage: 'retrieval', status: 'completed', title: '3. Nạp tài liệu được phân quyền', detail: `Railway chọn các đoạn liên quan nhất từ Content Plan, Knowledge Base và Skills được cấp cho Bước 1; quote vẫn được kiểm chứng với nội dung đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
         { id: 'step2-model', stage: 'generation', status: 'completed', title: '4. Model tạo và chấm Core Idea', detail: `Model ${result.res.model} audit Top 10 và tạo đúng ba Core Idea. Evidence không được model sinh lại; ứng dụng gắn excerpt đã kiểm chứng để giảm token và lỗi quote.`, facts: { modelCalls, inputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.inputTokens ?? 0), 0), outputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.outputTokens ?? 0), 0), cacheHits: aiResponses.filter(response => response.cacheHit).length, durationMs: aiResponses.reduce((sum, response) => sum + (response.timing?.totalMs ?? 0), 0) } },
         { id: 'step2-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls || partialResult ? 'warning' : 'completed', title: '5. Đối chứng tài liệu và kiểm tra output', detail: 'Cả bộ Core Idea phải audit đủ Top 10 và chỉ dùng keyword accepted. Evidence KB/Action/Rules được chọn và xác minh xác định ở ứng dụng; lượt bổ sung idea không nạp lại tài liệu.', facts: { acceptedKeywords, rejectedKeywords, ideasAccepted: result.ideas.length, verifiedEvidence: trustedEvidence.length, jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step2-persist', stage: 'persistence', status: 'completed', title: '6. Lưu kết quả có thể audit', detail: 'Lưu Top 10, quyết định chọn/loại, evidence, điểm số, lý do và nhật ký này cùng bài viết trong Supabase.' },
@@ -504,7 +504,7 @@ export default function Step2CoreIdea({
         seoResearch,
         step2ProcessTrace: trace,
       });
-      if (!saved) throw new Error('Kết quả Step 2 chưa được lưu vào Supabase.');
+      if (!saved) throw new Error('Kết quả Bước 1 chưa được lưu vào Supabase.');
       if (partialResult) {
         setWarning(`Đã lưu ${result.ideas.length}/3 core idea vượt qua đầy đủ kiểm chứng. Bạn có thể tiếp tục với kết quả hợp lệ hoặc nhấn “Đề xuất lại” để thử bổ sung.`);
       }
@@ -563,9 +563,9 @@ export default function Step2CoreIdea({
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 2 — Ý tưởng cốt lõi & Góc tiếp cận', 'Step 2 — Core Idea & Angle')}</h2>
+                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 1 — Ý tưởng cốt lõi & Góc tiếp cận', 'Step 1 — Core Idea & Angle')}</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  {tr('AI đề xuất ≥3 ý tưởng cho loại nội dung ', 'AI proposes ≥3 core ideas for ')}<b>"{article.contentType || tr('(chưa chọn)', '(not selected)')}"</b>. {tr('Chọn một để sang Bước 3.', 'Select one to continue to Step 3.')}
+                  {tr('AI đề xuất ≥3 ý tưởng cho loại nội dung ', 'AI proposes ≥3 core ideas for ')}<b>"{article.contentType || tr('(chưa chọn)', '(not selected)')}"</b>. {tr('Chọn một để sang Bước 2.', 'Select one to continue to Step 2.')}
                 </p>
               </div>
               <button
@@ -579,7 +579,7 @@ export default function Step2CoreIdea({
 
             {scanIsStale && ideas.length > 0 && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                {tr('Nguồn hoặc model đã thay đổi — vẫn dùng kết quả Step 2 đã lưu trong Supabase. Chỉ tạo lại khi bạn nhấn “Đề xuất lại”.', 'Sources or model changed — the Step 2 result saved in Supabase remains active. It only changes when you click “Regenerate”.')}
+                {tr('Nguồn hoặc model đã thay đổi — vẫn dùng kết quả Bước 1 đã lưu trong Supabase. Chỉ tạo lại khi bạn nhấn “Đề xuất lại”.', 'Sources or model changed — the Step 1 result saved in Supabase remains active. It only changes when you click “Regenerate”.')}
               </div>
             )}
 

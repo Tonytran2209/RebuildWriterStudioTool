@@ -50,6 +50,7 @@ export default function ActivityLauncher({
   const fileInput = useRef<HTMLInputElement>(null)
   const [plans, setPlans] = useState<ContentPlan[]>([])
   const [plan, setPlan] = useState<ContentPlan | null>(null)
+  const [versionBase, setVersionBase] = useState<ContentPlan | null>(null)
   const [showHistory, setShowHistory] = useState(Boolean(initialHistoryOpen))
   const [sourceType, setSourceType] = useState<ContentPlanSourceType>("paste")
   const [content, setContent] = useState("")
@@ -74,6 +75,11 @@ export default function ActivityLauncher({
   }, [])
   const visible = (plan?.items ?? []).filter((item) => item.type === category)
   const chosen = visible.filter((item) => selected.includes(item.id))
+  const articleByPlanItem = new Map(
+    recentArticles
+      .filter((article) => article.contentPlanItemId || article.contentPlanSourceItemId)
+      .map((article) => [article.contentPlanItemId ?? article.contentPlanSourceItemId, article]),
+  )
   const chooseSource = (type: ContentPlanSourceType) => {
     setSourceType(type)
     setMenu(false)
@@ -85,6 +91,7 @@ export default function ActivityLauncher({
     try {
       const name =
         file?.name?.replace(/\.[^.]+$/, "") ||
+        versionBase?.name ||
         `Content Plan ${new Date().toLocaleDateString()}`
       const imported = await importContentPlan(
         {
@@ -93,6 +100,7 @@ export default function ActivityLauncher({
           content: sourceType === "paste" ? content : undefined,
           url: sourceType.startsWith("google_") ? url : undefined,
           file: sourceType === "file" ? (file ?? undefined) : undefined,
+          previousVersionId: versionBase?.id,
         },
         railwayUrl,
       )
@@ -103,6 +111,7 @@ export default function ActivityLauncher({
         ...current.filter((item) => item.id !== classified.id),
       ])
       setSelected([])
+      setVersionBase(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -214,12 +223,26 @@ export default function ActivityLauncher({
                   · {plan.reviewCount} need review
                 </p>
               </div>
-              <button
-                onClick={() => setShowHistory(true)}
-                className="rounded-lg border border-[#343434] px-3 py-2 text-[11px] text-[#aaa]"
-              >
-                History
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setVersionBase(plan)
+                    setPlan(null)
+                    setContent("")
+                    setFile(null)
+                    setUrl("")
+                  }}
+                  className="rounded-lg border border-[#343434] px-3 py-2 text-[11px] text-[#aaa] hover:bg-[#252525]"
+                >
+                  {tr("Phiên bản mới", "New version")}
+                </button>
+                <button
+                  onClick={() => setShowHistory(true)}
+                  className="rounded-lg border border-[#343434] px-3 py-2 text-[11px] text-[#aaa]"
+                >
+                  History
+                </button>
+              </div>
             </div>
             <div className="mt-7 flex items-center gap-1 border-b border-[#2b2b2b]">
               <button
@@ -260,6 +283,7 @@ export default function ActivityLauncher({
                 >
                   <input
                     type="checkbox"
+                    disabled={articleByPlanItem.has(item.id)}
                     checked={selected.includes(item.id)}
                     onChange={() =>
                       setSelected((current) =>
@@ -273,7 +297,9 @@ export default function ActivityLauncher({
                     className="accent-white"
                   />
                   <button
-                    onClick={() =>
+                    onClick={() => {
+                      const existing = articleByPlanItem.get(item.id)
+                      if (existing) return onOpenArticle(existing.id)
                       setSelected((current) =>
                         current.includes(item.id)
                           ? current.filter((id) => id !== item.id)
@@ -281,7 +307,7 @@ export default function ActivityLauncher({
                             ? [...current, item.id]
                             : current,
                       )
-                    }
+                    }}
                     className="min-w-0 flex-1 text-left"
                   >
                     <div className="truncate text-[13px] text-[#d8d8d8]">
@@ -292,6 +318,14 @@ export default function ActivityLauncher({
                       {item.classificationReason}
                     </div>
                   </button>
+                  {articleByPlanItem.has(item.id) && (
+                    <button
+                      onClick={() => onOpenArticle(articleByPlanItem.get(item.id)!.id)}
+                      className="rounded-md border border-[#3a3a3a] px-2 py-1 text-[9px] text-[#aaa] hover:bg-[#2b2b2b] hover:text-white"
+                    >
+                      {articleByPlanItem.get(item.id)?.status === 'done' ? tr('Đã hoàn tất', 'Completed') : tr('Tiếp tục', 'Continue')}
+                    </button>
+                  )}
                   <select
                     value={item.type}
                     onChange={(event) =>
@@ -310,7 +344,7 @@ export default function ActivityLauncher({
               <div className="sticky bottom-2 mt-5 flex items-center justify-between rounded-xl border border-[#3a3a3a] bg-[#252525]/95 px-4 py-3 shadow-2xl backdrop-blur">
                 <div className="text-xs text-[#aaa]">
                   {selected.length === 1
-                    ? tr("Chạy thủ công Step 2–4", "Manual Step 2–4 workflow")
+                    ? tr("Chạy thủ công workflow 3 bước", "Manual 3-step workflow")
                     : tr(
                         `Tự động tạo ${selected.length} bài`,
                         `Auto-generate ${selected.length} articles`,
@@ -335,6 +369,12 @@ export default function ActivityLauncher({
       {!plan && (
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-20 md:left-64">
           <div className="pointer-events-auto mx-auto w-[calc(100%-24px)] max-w-[680px]">
+            {versionBase && (
+              <div className="mb-2 flex items-center justify-between rounded-xl border border-[#343434] bg-[#202020] px-3 py-2 text-[11px] text-[#aaa]">
+                <span>{tr("Tạo phiên bản mới từ", "Creating a new version from")} <b className="text-[#ddd]">{versionBase.name} · v{versionBase.version}</b></span>
+                <button onClick={() => setVersionBase(null)} className="text-[#777] hover:text-white">×</button>
+              </div>
+            )}
             {error && (
               <div className="mb-2 rounded-xl border border-red-900/50 bg-red-950/80 px-3 py-2 text-xs text-red-300">
                 {error}

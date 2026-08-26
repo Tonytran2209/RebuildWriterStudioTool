@@ -282,6 +282,7 @@ export interface ContentPlanItem {
   sourceId?: string;
   sourceSectionId?: string;
   sourceQuote?: string;
+  status?: 'not_started' | 'queued' | 'generating' | 'in_progress' | 'completed' | 'failed' | 'archived';
 }
 
 export type ContentPlanSourceType = 'file' | 'google_doc' | 'google_sheet' | 'paste';
@@ -304,6 +305,7 @@ export interface ContentPlanSource {
 
 export interface ContentPlan {
   id: string;
+  seriesId?: string;
   name: string;
   description?: string;
   status: 'draft' | 'processing' | 'ready' | 'active' | 'archived' | 'failed';

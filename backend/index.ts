@@ -216,10 +216,75 @@ async function projectArticle(article: any) {
     cached_input_tokens: call.cachedInputTokens ?? 0, output_tokens: call.outputTokens ?? 0, total_tokens: call.totalTokens ?? 0,
     cost_usd: call.costUsd ?? null, cache_hit: Boolean(call.cacheHit), called_at: call.calledAt,
   }, 'id');
+  await projectArticleStageRuns(article);
+  await projectBatchState(article);
+  if (article.contentPlanSourceItemId && await tableAvailable('article_stage_runs')) {
+    const itemStatus = article.batchStatus === 'failed' ? 'failed'
+      : article.status === 'done' || article.batchStatus === 'completed' ? 'completed'
+      : article.batchStatus === 'running' ? 'generating'
+      : article.currentStep > 2 ? 'in_progress'
+      : article.batchStatus === 'queued' ? 'queued'
+      : article.activityKind === 'single' ? 'in_progress' : 'not_started';
+    await tableUpdate('content_plan_items', article.contentPlanSourceItemId, { status: itemStatus, updated_at: article.updatedAt });
+  }
   if (article.contentPlanId) {
     const projected = await tableSelect<any>('writer_articles', query => query.select('id').eq('content_plan_id', article.contentPlanId));
-    await tableUpdate('content_plans', article.contentPlanId, { total_articles: projected.length, updated_at: new Date().toISOString() });
+    await tableUpdate('content_plans', article.contentPlanId, { total_articles: projected.length, status: 'active', updated_at: new Date().toISOString() });
   }
+}
+
+function snapshotFingerprint(value: unknown) {
+  return crypto.createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
+}
+
+async function projectArticleStageRuns(article: any) {
+  if (!await tableAvailable('article_stage_runs')) return;
+  const stages = [
+    { stage: 'core_idea', legacyStep: 2, output: article.coreIdeaSuggestions?.length ? { suggestions: article.coreIdeaSuggestions, selectedId: article.selectedCoreIdeaId, seoResearch: article.seoResearch } : null, input: { topic: article.topic, keywords: article.keywords, contentType: article.contentType, planVersion: article.contentPlanVersion } },
+    { stage: 'outline', legacyStep: 3, output: article.outline?.length ? { sections: article.outline } : null, input: { selectedCoreIdeaId: article.selectedCoreIdeaId, suggestions: article.coreIdeaSuggestions, planVersion: article.contentPlanVersion } },
+    { stage: 'draft', legacyStep: 4, output: article.draft?.trim() ? { markdown: article.draft } : null, input: { outline: article.outline, selectedCoreIdeaId: article.selectedCoreIdeaId, planVersion: article.contentPlanVersion } },
+  ];
+  for (const entry of stages) {
+    if (!entry.output) continue;
+    const fingerprint = snapshotFingerprint({ input: entry.input, output: entry.output });
+    const existing = await tableSelect<any>('article_stage_runs', query => query.select('id').eq('article_id', article.id).eq('stage', entry.stage).eq('input_fingerprint', fingerprint).limit(1));
+    if (existing.length) continue;
+    const revisions = await tableSelect<any>('article_stage_runs', query => query.select('revision_number').eq('article_id', article.id).eq('stage', entry.stage).order('revision_number', { ascending: false }).limit(1));
+    const calls = article.aiUsageByStep?.[entry.legacyStep] ?? [];
+    const latest = calls.at(-1);
+    await tableInsert('article_stage_runs', {
+      article_id: article.id, content_plan_id: article.contentPlanId ?? null,
+      content_plan_item_id: article.contentPlanSourceItemId ?? null, stage: entry.stage,
+      revision_number: Number(revisions[0]?.revision_number ?? 0) + 1, status: 'completed',
+      input_fingerprint: fingerprint, input_snapshot: entry.input, output_snapshot: entry.output,
+      model: latest?.model ?? null, prompt_version: null,
+      input_tokens: latest?.inputTokens ?? 0, output_tokens: latest?.outputTokens ?? 0,
+      cost_usd: latest?.costUsd ?? null, created_at: article.updatedAt,
+    });
+  }
+}
+
+async function projectBatchState(article: any) {
+  if (!article.activityId || article.activityKind !== 'batch' || !await tableAvailable('batch_jobs')) return;
+  const siblings = (await loadArticles()).filter(item => item.activityId === article.activityId);
+  const status = siblings.some(item => item.batchStatus === 'running') ? 'running'
+    : siblings.some(item => item.batchStatus === 'paused') ? 'paused'
+    : siblings.length && siblings.every(item => item.batchStatus === 'completed') ? 'completed'
+    : siblings.some(item => item.batchStatus === 'failed') ? 'failed' : 'queued';
+  const calls = siblings.flatMap(item => Object.values(item.aiUsageByStep ?? {}).flat() as any[]);
+  await tableUpsert('batch_jobs', {
+    id: article.activityId, content_plan_id: article.contentPlanId ?? null, status,
+    total_items: siblings.length, completed_items: siblings.filter(item => item.batchStatus === 'completed').length,
+    failed_items: siblings.filter(item => item.batchStatus === 'failed').length,
+    total_tokens: calls.reduce((sum, call) => sum + Number(call.totalTokens ?? 0), 0),
+    total_cost_usd: calls.every(call => call.costUsd != null) ? calls.reduce((sum, call) => sum + Number(call.costUsd), 0) : null,
+    updated_at: new Date().toISOString(),
+  }, 'id');
+  await tableUpsert('batch_job_items', {
+    batch_job_id: article.activityId, content_plan_item_id: article.contentPlanSourceItemId ?? null,
+    article_id: article.id, status: article.batchStatus ?? 'queued', error_message: article.batchError ?? null,
+    updated_at: article.updatedAt,
+  }, 'batch_job_id,article_id');
 }
 
 async function runBatchModel(article: any, step: 2 | 3 | 4, prompt: string, jsonMode: boolean, maxTokens: number) {
@@ -504,6 +569,7 @@ const CONTENT_PLAN_CLASSIFIER_VERSION = 'content-plan-classifier-v1';
 function planFromRow(row: any, sources: any[] = [], items: any[] = []) {
   return {
     id: row.id, name: row.name, description: row.description, status: row.status,
+    seriesId: row.series_id ?? row.id,
     version: row.version, previousVersionId: row.previous_version_id ?? null,
     sourceFingerprint: row.source_fingerprint ?? '', totalArticles: row.total_articles ?? 0,
     comparisonCount: row.comparison_count ?? 0, editorialCount: row.editorial_count ?? 0,
@@ -511,7 +577,7 @@ function planFromRow(row: any, sources: any[] = [], items: any[] = []) {
     classifiedAt: row.classified_at,
     changeSummary: row.change_summary ?? undefined,
     sources: sources.map(source => ({ id: source.id, contentPlanId: source.content_plan_id, sourceType: source.source_type, name: source.name, originalUrl: source.original_url, storagePath: source.storage_path, mimeType: source.mime_type, extractedContent: source.extracted_content, contentHash: source.content_hash, contentLength: source.content_length, scanStatus: source.scan_status, scanError: source.scan_error, createdAt: source.created_at })),
-    items: items.map(item => ({ id: item.id, title: item.title, keywords: item.keywords ?? [], type: String(item.content_group).replaceAll('_', '-'), sourceLine: item.source_text ?? item.title, confidence: Number(item.confidence ?? 0), classificationReason: item.classification_reason, sourceId: item.source_id, sourceSectionId: item.source_section_id, sourceQuote: item.source_quote })),
+    items: items.map(item => ({ id: item.id, title: item.title, keywords: item.keywords ?? [], type: String(item.content_group).replaceAll('_', '-'), sourceLine: item.source_text ?? item.title, confidence: Number(item.confidence ?? 0), classificationReason: item.classification_reason, sourceId: item.source_id, sourceSectionId: item.source_section_id, sourceQuote: item.source_quote, status: item.status ?? 'not_started' })),
   };
 }
 
@@ -541,9 +607,11 @@ async function createContentPlanRecord(input: { name: string; previousVersionId?
   const previous = input.previousVersionId ? await getContentPlan(input.previousVersionId) : null;
   const id = crypto.randomUUID(); const now = new Date().toISOString(); const sourceId = crypto.randomUUID();
   const source = { id: sourceId, contentPlanId: id, ...input.source, scanStatus: 'ready', createdAt: now };
-  const plan = { id, name: input.name, status: 'draft', version: previous ? Number(previous.version) + 1 : 1, previousVersionId: previous?.id ?? null, sourceFingerprint: source.contentHash, totalArticles: 0, comparisonCount: 0, editorialCount: 0, reviewCount: 0, createdAt: now, updatedAt: now, sources: [source], items: [] };
+  const plan = { id, seriesId: previous?.seriesId ?? id, name: input.name, status: 'draft', version: previous ? Number(previous.version) + 1 : 1, previousVersionId: previous?.id ?? null, sourceFingerprint: source.contentHash, totalArticles: 0, comparisonCount: 0, editorialCount: 0, reviewCount: 0, createdAt: now, updatedAt: now, sources: [source], items: [] };
   if (await relationalPlansAvailable()) {
-    await tableInsert('content_plans', { id, name: plan.name, status: plan.status, version: plan.version, previous_version_id: plan.previousVersionId, source_fingerprint: plan.sourceFingerprint });
+    const planRow: Record<string, unknown> = { id, name: plan.name, status: plan.status, version: plan.version, previous_version_id: plan.previousVersionId, source_fingerprint: plan.sourceFingerprint };
+    if (await tableAvailable('article_stage_runs')) planRow.series_id = plan.seriesId;
+    await tableInsert('content_plans', planRow);
     await tableInsert('content_plan_sources', { id: sourceId, content_plan_id: id, source_type: source.sourceType, name: source.name, original_url: source.originalUrl ?? null, storage_path: source.storagePath ?? null, mime_type: source.mimeType ?? null, extracted_content: source.extractedContent, content_hash: source.contentHash, content_length: source.contentLength, scan_status: 'ready' });
     return getContentPlan(id);
   }
@@ -612,10 +680,12 @@ app.get('/health', (_req, res) => {
 app.get('/health/dependencies', async (_req, res) => {
   const supabaseOk = await checkConnection();
   const relationalContentPlans = supabaseOk ? await tableAvailable('content_plans') : false;
+  const threeStageSessions = supabaseOk ? await tableAvailable('article_stage_runs') : false;
   res.status(supabaseOk ? 200 : 503).json({
     status: supabaseOk ? 'ok' : 'degraded',
     supabase: supabaseOk,
     relationalContentPlans,
+    threeStageSessions,
     supabaseUrl: process.env.SUPABASE_URL ?? null,
   });
 });
@@ -867,6 +937,15 @@ app.get('/api/content-plans/:id', async (req, res) => {
   try { const plan = await getContentPlan(req.params.id); if (!plan) return res.status(404).json({ error: 'Content Plan không tồn tại.' }); res.json({ plan }); } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/api/content-plans/:id/articles', async (req, res) => {
+  try {
+    const plan = await getContentPlan(req.params.id);
+    if (!plan) return res.status(404).json({ error: 'Content Plan không tồn tại.' });
+    const articles = (await loadArticles()).filter(article => article.contentPlanId === plan.id);
+    res.json({ planId: plan.id, version: plan.version, articles });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/content-plans/import', upload.single('file'), async (req, res) => {
   try {
     const body = req.file ? req.body : req.body ?? {};
@@ -1030,6 +1109,18 @@ app.get('/api/articles', async (_req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get('/api/articles/:id/stages', async (req, res) => {
+  try {
+    const article = (await loadArticles()).find(item => item.id === req.params.id);
+    if (!article) return res.status(404).json({ error: 'Bài viết không tồn tại trong Supabase.' });
+    if (await tableAvailable('article_stage_runs')) {
+      const stages = await tableSelect<any>('article_stage_runs', query => query.eq('article_id', article.id).order('created_at', { ascending: false }));
+      return res.json({ articleId: article.id, stages });
+    }
+    res.json({ articleId: article.id, stages: [] });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/articles', async (req, res) => {

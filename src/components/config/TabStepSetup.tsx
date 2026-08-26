@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import type { AppConfig, Article, DocumentFile } from '../../types';
-import { STEP_LABELS } from '../../lib/defaultData';
 import { pingRailway } from '../../lib/db';
 import { isDocumentReady } from '../../lib/documentStatus';
 import { useI18n } from '../../lib/i18n';
@@ -14,7 +13,8 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
   const enabledModels = config.models.filter(model => model.enabled);
   const readyKb = files.filter(file => file.category === 'kb' && isDocumentReady(file));
   const readySkills = files.filter(file => file.category === 'rules' && isDocumentReady(file));
-  const usageSummary = Object.fromEntries([1, 2, 3, 4].map(step => [String(step), articles.flatMap(article => article.aiUsageByStep?.[step as 1 | 2 | 3 | 4] ?? [])]));
+  const workflowSteps = [2, 3, 4] as const;
+  const usageSummary = Object.fromEntries(workflowSteps.map(step => [String(step), articles.flatMap(article => article.aiUsageByStep?.[step] ?? [])]));
 
   useEffect(() => { pingRailway(config.railwayUrl || RAILWAY_URL).then(result => setBackendOk(result.ok)); }, [config.railwayUrl]);
 
@@ -36,8 +36,8 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
         <div className="rounded-xl bg-white p-3 border border-amber-100"><div className="text-lg font-bold text-amber-700">{readySkills.length}</div><div className="text-[10px] font-semibold text-slate-500">Skills & Rules</div><div className="mt-1 text-[9px] text-slate-400 line-clamp-2">{readySkills.map(f => f.name).join(', ') || tr('Chưa có dữ liệu', 'No data loaded')}</div></div>
       </div>
     </div>
-    {[1, 2, 3, 4].map(step => { const calls = usageSummary[String(step)] ?? []; const totalTokens = calls.reduce((sum, call) => sum + Number(call.totalTokens ?? 0), 0); return <div key={step} className="settings-row rounded-2xl border border-slate-200 bg-slate-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-      <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><span className="w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">{step}</span><span className="text-xs font-bold text-slate-800">{language === 'vi' ? STEP_LABELS[step] : ({1:'Content Type',2:'Core Idea & Angle',3:'Draft Outline',4:'First Draft & Audit'} as Record<number,string>)[step]}</span></div></div>
+    {workflowSteps.map((step, index) => { const calls = usageSummary[String(step)] ?? []; const totalTokens = calls.reduce((sum, call) => sum + Number(call.totalTokens ?? 0), 0); return <div key={step} className="settings-row rounded-2xl border border-slate-200 bg-slate-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><span className="w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">{index + 1}</span><span className="text-xs font-bold text-slate-800">{language === 'vi' ? ({2:'Ý tưởng cốt lõi & Góc tiếp cận',3:'Dàn bài nháp',4:'Bản nháp & Kiểm tra'} as Record<number,string>)[step] : ({2:'Core Idea & Angle',3:'Draft Outline',4:'First Draft & Audit'} as Record<number,string>)[step]}</span></div></div>
       <div className="rounded-xl bg-white border border-slate-200 px-3 py-2 text-right"><div className="text-xs font-bold text-slate-800">{totalTokens.toLocaleString()} tokens</div><div className="text-[9px] text-slate-400">{calls.length} AI calls</div></div>
       <select value={config.stepConfigs[step]?.modelId ?? ''} onChange={event => updateStepModel(step, event.target.value)} className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 min-w-52"><option value="">— {tr('Chọn model', 'Select model')} —</option>{enabledModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</select>
     </div>; })}

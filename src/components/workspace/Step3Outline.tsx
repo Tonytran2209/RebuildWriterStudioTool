@@ -226,11 +226,11 @@ export default function Step3Outline({
 
   const handleGenerate = async (manual = false) => {
     if (!article.topic) {
-      setError("Chưa có Core Idea từ Step 2.");
+      setError("Chưa có Core Idea từ Bước 1.");
       return;
     }
     if (!bundle.totalCount) {
-      setError("Chưa có tài liệu nào được phân quyền cho Step 3. Chỉ cần chọn ít nhất một tài liệu từ KB, Action Plan hoặc Rules.");
+      setError("Chưa có tài liệu nào được phân quyền cho Bước 2. Chỉ cần ít nhất một tài liệu từ Knowledge Base hoặc Skills.");
       return;
     }
     setGenerating(true);
@@ -274,7 +274,7 @@ export default function Step3Outline({
 
       const userPrompt = [
         `TÀI LIỆU STEP 3 (${describeBundle(bundle)}):`,
-        "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Step 3 từ Supabase.",
+        "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Bước 2 từ Supabase.",
         "",
         "DỮ LIỆU TỪ 2 BƯỚC TRƯỚC:",
         `- Loại nội dung (Step 1): ${contextBrief.contentType}`,
@@ -357,8 +357,8 @@ export default function Step3Outline({
       );
       const partialResult = sections.length < minimumSections;
       const trace: AIProcessTraceEvent[] = [
-        { id: 'step3-handoff', stage: 'input', status: 'completed', title: '1. Nhận kết quả từ Step 1–2', detail: 'Khóa Content Type, Core Idea, angle, audience, tone, word count và bộ keyword đã chọn để làm đầu vào outline.', facts: { contentType: contextBrief.contentType, topic: contextBrief.topic, primaryKeyword: contextBrief.primaryKeyword, secondaryKeywords: contextBrief.secondaryKeywords.length } },
-        { id: 'step3-docs', stage: 'retrieval', status: 'completed', title: '2. Nạp tài liệu Step 3', detail: `Railway chọn các đoạn KB, Action Plan và Rules liên quan nhất theo topic, angle và keyword; quote vẫn được đối chiếu với bản đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
+        { id: 'step3-handoff', stage: 'input', status: 'completed', title: '1. Nhận Content Plan và kết quả Bước 1', detail: 'Khóa nhóm nội dung, Core Idea, angle, audience, tone, word count và bộ keyword đã chọn để làm đầu vào outline.', facts: { contentType: contextBrief.contentType, topic: contextBrief.topic, primaryKeyword: contextBrief.primaryKeyword, secondaryKeywords: contextBrief.secondaryKeywords.length } },
+        { id: 'step3-docs', stage: 'retrieval', status: 'completed', title: '2. Nạp tài liệu Bước 2', detail: `Railway chọn các đoạn Knowledge Base, Content Plan và Skills liên quan nhất theo topic, angle và keyword; quote vẫn được đối chiếu với bản đầy đủ.\nPrompting rules theo phân vùng:\n${documentPromptRules || '(không có rule tùy chỉnh)'}`, facts: { kb: bundle.knowledgeBase.length, action: bundle.actionPlan.length, rules: bundle.rules.length } },
         { id: 'step3-generation', stage: 'generation', status: 'completed', title: '3. Model dựng outline', detail: `Model ${lastResponse.model} tạo heading, notes, rationale, keyword mapping và search intent; evidence dùng registry chung để không lặp quote.`, facts: { modelCalls, inputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.inputTokens ?? 0), 0), outputTokens: aiResponses.reduce((sum, response) => sum + (response.usage?.outputTokens ?? 0), 0), cacheHits: aiResponses.filter(response => response.cacheHit).length, durationMs: aiResponses.reduce((sum, response) => sum + (response.timing?.totalMs ?? 0), 0) } },
         { id: 'step3-validation', stage: 'validation', status: evidenceCorrectionCalls ? 'warning' : 'completed', title: '4. Kiểm tra cấu trúc và dẫn chứng', detail: 'Loại section thiếu quote nguyên văn ở bất kỳ phân vùng nào đang được cấp quyền. Nếu dưới ngưỡng tối thiểu, chỉ yêu cầu bổ sung phần còn thiếu.', facts: { sectionsAccepted: sections.length, evidenceVerified: sections.reduce((sum, section) => sum + (section.evidence?.length ?? 0), 0), jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step3-persist', stage: 'persistence', status: 'completed', title: '5. Lưu outline và audit trail', detail: 'Lưu section, rationale, evidence, nguồn Rules và nhật ký hành động này cùng bài viết trong Supabase.' },
@@ -372,7 +372,7 @@ export default function Step3Outline({
         draftSourceFingerprint: null,
         draftScannedAt: null,
       });
-      if (!saved) throw new Error('Outline Step 3 chưa được lưu vào Supabase.');
+      if (!saved) throw new Error('Outline Bước 2 chưa được lưu vào Supabase.');
       if (partialResult) {
         setWarning(`Đã lưu ${sections.length}/${minimumSections} section tối thiểu vượt qua kiểm chứng. Bạn có thể chỉnh sửa thủ công hoặc nhấn “Tạo lại” để thử bổ sung.`);
       }
@@ -400,7 +400,7 @@ export default function Step3Outline({
         .filter(keyword => !existing.has(keyword.toLocaleLowerCase()))
         .filter((keyword, index, all) => all.findIndex(candidate => candidate.toLocaleLowerCase() === keyword.toLocaleLowerCase()) === index)
         .slice(0, 10);
-      if (!candidates.length) throw new Error("Step 2 chưa có keyword đã kiểm chứng chưa được sử dụng.");
+      if (!candidates.length) throw new Error("Bước 1 chưa có keyword đã kiểm chứng chưa được sử dụng.");
       const saved = await onUpdate({ step3SuggestedKeywords: candidates });
       if (!saved) throw new Error('Keyword gợi ý chưa được lưu vào Supabase.');
     } catch (error) {
@@ -461,7 +461,7 @@ export default function Step3Outline({
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 3 — Dàn bài nháp', 'Step 3 — Draft Outline')}</h2>
+                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 2 — Dàn bài nháp', 'Step 2 — Draft Outline')}</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   {tr('Đọc và chỉnh dàn ý theo đúng thứ tự bài viết. Mở chi tiết khi cần xem keyword, intent hoặc nguồn tham khảo.', 'Review and edit the outline in article order. Open details to inspect keywords, intent, or sources.')}
                 </p>

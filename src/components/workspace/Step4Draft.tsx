@@ -65,7 +65,7 @@ function assessDraft(text: string, article: Article, targetWords: number): strin
   const missingHeadings = (article.outline ?? []).filter(section =>
     section.heading.trim() && !normalized.includes(section.heading.trim().toLocaleLowerCase()),
   );
-  if (missingHeadings.length) warnings.push(`Thiếu ${missingHeadings.length} heading từ outline Step 3.`);
+  if (missingHeadings.length) warnings.push(`Thiếu ${missingHeadings.length} heading từ outline Bước 2.`);
   return warnings;
 }
 
@@ -122,7 +122,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
   const handleGenerate = async (manual = false) => {
     if (!(article.outline && article.outline.length)) {
-      setError('Step 4 cần outline đã lưu từ Step 3. Vui lòng quay lại Step 3 và tạo hoặc lưu ít nhất một section.');
+      setError('Bước 3 cần outline đã lưu từ Bước 2. Vui lòng quay lại Bước 2 và tạo hoặc lưu ít nhất một section.');
       return;
     }
     setGenerating(true);
@@ -155,8 +155,8 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
       const userPrompt = [
         `TÀI LIỆU STEP 4 (${describeBundle(bundle)}):`,
         bundle.totalCount
-          ? 'Railway sẽ nạp các đoạn tài liệu liên quan nhất trong tài liệu được cấp quyền cho Step 4 từ Supabase.'
-          : 'Step 4 không có tài liệu riêng; dùng evidence đã kiểm chứng trong OUTLINE_STEP_3 làm nguồn.',
+          ? 'Railway sẽ nạp các đoạn tài liệu liên quan nhất trong tài liệu được cấp quyền cho Bước 3 từ Supabase.'
+          : 'Bước 3 không có tài liệu riêng; dùng evidence đã kiểm chứng trong outline Bước 2 làm nguồn.',
         '',
         'THÔNG TIN BÀI VIẾT:',
         `- Chủ đề: "${article.topic}"`,
@@ -191,7 +191,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         draftSourceFingerprint,
         draftScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),
       });
-      if (!saved) throw new Error('Draft Step 4 chưa được lưu vào Supabase.');
+      if (!saved) throw new Error('Draft Bước 3 chưa được lưu vào Supabase.');
       if (editorRef.current) editorRef.current.innerText = res.content;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -244,7 +244,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             {/* Editor toolbar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 sm:px-4 py-2.5 border-b border-slate-100">
               <div className="min-w-0">
-                <h2 className="text-sm font-bold text-slate-800">{tr('Bước 4: Bản nháp & Kiểm tra', 'Step 4: First Draft & Audit')}</h2>
+                <h2 className="text-sm font-bold text-slate-800">{tr('Bước 3: Bản nháp & Kiểm tra', 'Step 3: First Draft & Audit')}</h2>
                 <p className="text-[10px] text-slate-400">{article.title || 'Bài viết mới'}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
