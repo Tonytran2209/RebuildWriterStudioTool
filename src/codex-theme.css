@@ -22,6 +22,14 @@
 .codex-dark h1.text-base { font-size: 1rem !important; }
 .codex-dark p { line-height: 1.55; }
 
+/* Keep keyboard focus visible without falling back to the browser's blue ring. */
+.codex-dark :where(button, a, input, textarea, select, [tabindex]):focus { outline: none !important; }
+.codex-dark :where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 1px solid #8b8b8b !important;
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+
 .codex-dark .writer-sidebar { background: var(--cx-sidebar) !important; border-color: #222 !important; }
 .codex-dark .sidebar-nav { padding: .375rem .5rem; border-radius: .375rem; font-size: .875rem; font-weight: 400; }
 .codex-dark .sidebar-nav:hover { background: #262626 !important; color: var(--cx-text) !important; }
@@ -58,6 +66,11 @@
   background: #292929 !important;
   border-color: var(--cx-border-hover) !important;
   color: var(--cx-text) !important;
+}
+
+.codex-dark .minimal-step-nav > div:first-child button:focus-visible {
+  outline-color: #737373 !important;
+  outline-offset: 1px;
 }
 
 .codex-dark .minimal-step-nav > div:first-child button span:first-child {
