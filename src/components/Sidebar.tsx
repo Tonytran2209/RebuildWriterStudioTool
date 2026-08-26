@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ChevronDown, Clock3, FileText, Globe2, Menu, PenLine, PlusCircle, Search, Settings } from "lucide-react"
+import { ChevronDown, Clock3, FileText, Globe2, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
@@ -64,7 +64,7 @@ export default function Sidebar({
           </button>
         </div>
       </div>
-      <nav className="space-y-1 px-2 py-2 text-[13px]">
+      <nav className="space-y-1 px-2 py-2 text-[13px] font-medium">
         <button onClick={onNewArticle} className="sidebar-nav">
           <PenLine className="app-icon" aria-hidden="true" />
           {tr("Activity mới", "New activity")}
@@ -83,7 +83,7 @@ export default function Sidebar({
       </nav>
       <div className="mx-3 my-2 h-px bg-[#2c2c2c]" />
       <div className="px-3">
-        <div className="text-[11px] font-semibold text-[#777]">Recents</div>
+        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[#777]">Recents</div>
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -91,30 +91,30 @@ export default function Sidebar({
           className="mt-2 w-full rounded-lg border border-[#333] bg-[#191919] px-2.5 py-2 text-[11px] text-[#ddd] outline-none placeholder:text-[#666]"
         />
       </div>
-      <div className="mt-2 flex-1 overflow-y-auto px-2 pb-3">
+      <div className="sidebar-recent-list mt-2 flex-1 space-y-1.5 overflow-y-auto px-2 pb-3">
         {recent.map((article) => {
           const active = article.id === activeArticleId
           return (
             <div
               key={article.id}
-              className={`group rounded-lg ${
+              className={`sidebar-recent-card group relative rounded-lg border ${
                 active
-                  ? "bg-[#e4e4e1] ring-1 ring-[#d3d3cf]"
-                  : "hover:bg-[#e8e8e5]"
+                  ? "border-[#d3d3cf] bg-[#e4e4e1]"
+                  : "border-transparent hover:border-[#deded9] hover:bg-[#e8e8e5]"
               }`}
             >
               <button
                 onClick={() => onSelectArticle(article.id)}
-                className="w-full px-2.5 py-2 text-left"
+                className="w-full px-2.5 py-2.5 pr-9 text-left"
               >
                 <div
-                  className={`truncate text-[12px] ${
-                    active ? "text-[#262626]" : "text-[#555]"
+                  className={`truncate text-[12.5px] leading-4 ${
+                    active ? "font-semibold text-[#242422]" : "font-medium text-[#444440]"
                   }`}
                 >
                   {article.topic || article.title}
                 </div>
-                <div className="mt-0.5 text-[9px] text-[#84847f]">
+                <div className="mt-1 text-[10px] font-normal leading-3.5 text-[#888882]">
                   {article.contentPlanVersion
                     ? `Content Plan v${article.contentPlanVersion} · `
                     : ""}
@@ -124,9 +124,10 @@ export default function Sidebar({
               <button
                 disabled={deletingArticleId === article.id}
                 onClick={() => onDeleteArticle(article)}
-                className="hidden group-hover:block px-2.5 pb-2 text-[9px] text-[#777] hover:text-red-600"
+                className="absolute bottom-2 right-2 flex h-6 w-6 items-center justify-center rounded-md text-[#8b8b85] opacity-0 transition-opacity hover:bg-white/70 hover:text-red-600 group-hover:opacity-100 focus:opacity-100"
+                aria-label={tr("Xóa bài viết", "Delete article")}
               >
-                {tr("Xóa", "Delete")}
+                <Trash2 className="app-icon" aria-hidden="true" />
               </button>
             </div>
           )
