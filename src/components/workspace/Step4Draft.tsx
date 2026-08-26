@@ -15,6 +15,28 @@ function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+function getPrimaryKeyword(article: Article) {
+  const selectedIdea = article.coreIdeaSuggestions?.find(idea => idea.id === article.selectedCoreIdeaId)
+    ?? article.coreIdeaSuggestions?.[0];
+  return selectedIdea?.primaryKeyword?.trim() || (article.keywords || '').split(',')[0]?.trim() || article.topic?.trim() || '';
+}
+
+function evaluateSeoChecklist(text: string, article: Article, targetWords: number) {
+  const wordCount = countWords(text);
+  const primaryKeyword = getPrimaryKeyword(article);
+  const normalizedKeyword = primaryKeyword.toLocaleLowerCase();
+  const normalizedDraft = text.toLocaleLowerCase();
+  const markdownTitle = text.split('\n').find(line => /^#\s+\S/.test(line.trim()))?.replace(/^#\s+/, '').trim() || '';
+  const items = [
+    { key: 'titleKeyword', label: 'Tiêu đề H1 có primary keyword', pass: Boolean(normalizedKeyword && markdownTitle.toLocaleLowerCase().includes(normalizedKeyword)) },
+    { key: 'minimumLength', label: 'Độ dài >= 800 từ', pass: wordCount >= 800 },
+    { key: 'targetLength', label: 'Đạt 90–100% mục tiêu từ', pass: wordCount >= targetWords * 0.9 && wordCount <= targetWords },
+    { key: 'headings', label: 'Có headings H2/H3', pass: /^#{2,3}\s+\S/m.test(text) },
+    { key: 'bodyKeyword', label: 'Primary keyword xuất hiện trong bài', pass: Boolean(normalizedKeyword && normalizedDraft.includes(normalizedKeyword)) },
+  ];
+  return { items, failed: items.filter(item => !item.pass), primaryKeyword, markdownTitle, wordCount };
+}
+
 function calcReadability(text: string) {
   const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 3);
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -105,11 +127,13 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, article.wordCount, bundle, config.stepConfigs, documentPromptRules, model.id, model.provider],
   );
   const wordCount = countWords(draft);
-  const targetWords = Math.min(10000, Math.max(200, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500));
+  const targetWords = Math.min(10000, Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500));
   const readability = calcReadability(draft);
   const progress = Math.min(Math.round((wordCount / targetWords) * 100), 100);
   const draftIsStale = Boolean(draft) && article.draftSourceFingerprint !== draftSourceFingerprint;
   const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
+  const seoChecklist = useMemo(() => evaluateSeoChecklist(draft, article, targetWords), [article, draft, targetWords]);
+  const seoChecklistPassed = seoChecklist.failed.length === 0;
 
   // Keyword density check
   const keywordList = (article.keywords || '').split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
@@ -149,7 +173,8 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Chỉ trả về nội dung bài viết hoàn chỉnh bằng Markdown, không thêm lời dẫn, nhật ký hoặc giải thích về quá trình viết.',
-          `- HARD LIMIT: Toàn bộ bài viết không được vượt quá ${targetWords} từ tiếng Anh. Chủ động viết trong khoảng 85–92% (${Math.floor(targetWords * 0.85)}–${Math.floor(targetWords * 0.92)} từ) để có buffer an toàn.`,
+          `- HARD LIMIT: Toàn bộ bài viết phải nằm trong khoảng 92–96% (${Math.ceil(targetWords * 0.92)}–${Math.floor(targetWords * 0.96)} từ tiếng Anh) và tuyệt đối không vượt ${targetWords} từ.`,
+          `- SEO GATE: Dòng đầu tiên phải là H1 Markdown chứa chính xác primary keyword “${getPrimaryKeyword(article)}”; bài phải có H2/H3 và primary keyword phải xuất hiện tự nhiên trong nội dung.`,
         ].join('\n'),
         documentPromptRules,
       );
@@ -165,7 +190,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         `- Độc giả: ${article.targetAudience || ''}`,
         `- Giọng văn: ${article.tone || ''}`,
         `- Từ khóa: ${article.keywords || ''}`,
-        `- Khoảng mục tiêu bắt buộc: ${Math.floor(targetWords * 0.85)}–${Math.floor(targetWords * 0.92)} từ tiếng Anh; tuyệt đối không vượt ${targetWords} từ`,
+        `- Khoảng mục tiêu bắt buộc: ${Math.ceil(targetWords * 0.92)}–${Math.floor(targetWords * 0.96)} từ tiếng Anh; tuyệt đối không vượt ${targetWords} từ`,
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
         JSON.stringify(verifiedOutline),
@@ -193,7 +218,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           articleId: article.id,
           model,
           railwayUrl,
-          systemPrompt: `You are a precision editor. Return only the complete revised Markdown article. Preserve every heading, key claim, evidence, link, and conclusion. Remove repetition and compress sentences. The final result must contain ${Math.floor(targetWords * 0.82)}–${Math.floor(targetWords * 0.9)} English words and must never exceed ${targetWords} words.`,
+          systemPrompt: `You are a precision editor. Return only the complete revised Markdown article. Preserve every key claim, evidence, link, and conclusion. Remove repetition and compress sentences. The result must contain ${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.94)} English words, never exceed ${targetWords} words, start with an H1 containing the exact primary keyword “${getPrimaryKeyword(article)}”, and include H2/H3 headings.`,
           prompt: `Fit this ${generatedWords}-word draft within the required word budget without making it incomplete:\n\n${res.content}`,
           stepNumber: 4,
           bypassCache: true,
@@ -205,6 +230,24 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         generatedWords = countWords(res.content);
       }
       if (generatedWords > targetWords) throw new Error(`AI trả về ${generatedWords.toLocaleString()} từ, vượt giới hạn ${targetWords.toLocaleString()} từ tiếng Anh. Draft cũ vẫn được giữ nguyên; hãy thử tạo lại hoặc tăng giới hạn.`);
+      let validation = evaluateSeoChecklist(res.content, article, targetWords);
+      if (validation.failed.length) {
+        res = await callAI({
+          articleId: article.id,
+          model,
+          railwayUrl,
+          systemPrompt: `You are a strict SEO quality editor. Return only the complete revised Markdown article. Repair every failed requirement without inventing claims or removing supported evidence. Use ${Math.ceil(targetWords * 0.92)}–${Math.floor(targetWords * 0.96)} English words and never exceed ${targetWords}. The first line must be an H1 containing the exact primary keyword “${validation.primaryKeyword}”, and the body must use H2/H3 headings and contain that keyword naturally.`,
+          prompt: `Failed SEO requirements:\n${validation.failed.map(item => `- ${item.label}`).join('\n')}\n\nRevise this draft so every requirement passes:\n\n${res.content}`,
+          stepNumber: 4,
+          bypassCache: true,
+          maxTokens,
+          temperature: 0.1,
+          skipDocumentContext: true,
+        });
+        if (!res.content.trim()) throw new Error('AI không trả về bản sửa SEO hợp lệ. Draft cũ vẫn được giữ nguyên.');
+        validation = evaluateSeoChecklist(res.content, article, targetWords);
+      }
+      if (validation.failed.length) throw new Error(`Draft chưa được lưu vì chưa đạt 100% SEO checklist: ${validation.failed.map(item => item.label).join(', ')}.`);
       const saved = await onUpdate({
         draft: res.content,
         draftSourceFingerprint,
@@ -384,13 +427,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
               <h3 className="text-xs font-bold text-slate-800">SEO Checklist</h3>
               <div className="space-y-2">
-                {[
-                  { label: 'Tiêu đề có từ khóa', pass: article.topic ? keywordList.some(k => article.topic!.toLowerCase().includes(k)) : false },
-                  { label: 'Độ dài >= 800 từ', pass: wordCount >= 800 },
-                  { label: 'Độ dài >= mục tiêu', pass: wordCount >= targetWords * 0.9 },
-                  { label: 'Có headings (H2/H3)', pass: draft.includes('##') || (article.outline || []).length > 0 },
-                  { label: 'Từ khóa xuất hiện trong bài', pass: keywordList.some(k => draftLower.includes(k)) },
-                ].map(item => (
+                {seoChecklist.items.map(item => (
                   <div key={item.label} className="flex items-center gap-2">
                     <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${item.pass ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
                       {item.pass ? <Check className="app-icon" aria-hidden="true" /> : <X className="app-icon" aria-hidden="true" />}
@@ -460,10 +497,11 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         </button>
         <button
           onClick={onToggleComplete}
-          disabled={!draft || completionSaving}
+          disabled={!draft || completionSaving || (article.status !== 'done' && !seoChecklistPassed)}
+          title={!seoChecklistPassed && article.status !== 'done' ? tr('Cần đạt 100% SEO checklist trước khi hoàn thành', 'The SEO checklist must reach 100% before completion') : undefined}
           className={`${article.status === 'done' ? 'bg-white hover:bg-slate-50 border border-emerald-300 text-emerald-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all`}
         >
-          {completionSaving ? 'Đang lưu...' : article.status === 'done' ? '↺ Mở lại bài viết' : '✓ Đánh dấu hoàn thành'}
+          {completionSaving ? tr('Đang lưu...', 'Saving...') : article.status === 'done' ? tr('↺ Mở lại bài viết', '↺ Reopen article') : !seoChecklistPassed ? `SEO ${seoChecklist.items.length - seoChecklist.failed.length}/${seoChecklist.items.length}` : tr('✓ Đánh dấu hoàn thành', '✓ Mark complete')}
         </button>
       </div>
     </div>

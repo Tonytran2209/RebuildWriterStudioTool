@@ -24,7 +24,7 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
   });
   const updateDraftWordLimit = (value: number) => onChange({
     ...config,
-    stepConfigs: { ...config.stepConfigs, 4: { ...config.stepConfigs[4], maxDraftWords: Math.min(10000, Math.max(200, value || 1500)) } },
+    stepConfigs: { ...config.stepConfigs, 4: { ...config.stepConfigs[4], maxDraftWords: Math.min(10000, Math.max(800, value || 1500)) } },
   });
 
   return <div className="settings-stack space-y-4">
@@ -44,7 +44,7 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
       <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><span className="w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">{index + 1}</span><span className="text-xs font-bold text-slate-800">{language === 'vi' ? ({2:'Ý tưởng cốt lõi & Góc tiếp cận',3:'Dàn bài nháp',4:'Bản nháp & Kiểm tra'} as Record<number,string>)[step] : ({2:'Core Idea & Angle',3:'Draft Outline',4:'First Draft & Audit'} as Record<number,string>)[step]}</span></div></div>
       <div className="rounded-xl bg-white border border-slate-200 px-3 py-2 text-right"><div className="text-xs font-bold text-slate-800">{totalTokens.toLocaleString()} tokens</div><div className="text-[9px] text-slate-400">{calls.length} AI calls</div></div>
       <select value={config.stepConfigs[step]?.modelId ?? ''} onChange={event => updateStepModel(step, event.target.value)} className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 min-w-52"><option value="">— {tr('Chọn model', 'Select model')} —</option>{enabledModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</select>
-      {step === 4 && <label className="min-w-44"><span className="mb-1 block text-[9px] font-medium text-slate-500">{tr('Giới hạn số từ tiếng Anh', 'English word limit')}</span><input type="number" min={200} max={10000} step={100} value={config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500} onChange={event => updateDraftWordLimit(Number(event.target.value))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700" /><span className="mt-1 block text-[9px] text-slate-400">{tr('Đồng bộ trực tiếp với bộ đếm từ ở Bước 3', 'Matches the Step 3 word counter')}</span></label>}
+      {step === 4 && <label className="min-w-44"><span className="mb-1 block text-[9px] font-medium text-slate-500">{tr('Giới hạn số từ tiếng Anh', 'English word limit')}</span><input type="number" min={800} max={10000} step={100} value={Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500)} onChange={event => updateDraftWordLimit(Number(event.target.value))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700" /><span className="mt-1 block text-[9px] text-slate-400">{tr('Tối thiểu 800 từ; draft chỉ lưu khi SEO checklist đạt 100%', 'Minimum 800 words; drafts save only when the SEO checklist reaches 100%')}</span></label>}
     </div>; })}
   </div>;
 }
