@@ -135,7 +135,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         article.keywords,
         ...(article.outline ?? []).map(section => section.heading),
       ].filter(Boolean).join(' ');
-      const maxTokens = Math.min(12_000, Math.max(800, Math.ceil(targetWords * 2.4)));
+      const maxTokens = Math.min(12_000, Math.max(800, Math.ceil(targetWords * 1.7)));
 
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -149,7 +149,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Chỉ trả về nội dung bài viết hoàn chỉnh bằng Markdown, không thêm lời dẫn, nhật ký hoặc giải thích về quá trình viết.',
-          `- HARD LIMIT: Toàn bộ bài viết không được vượt quá ${targetWords} từ tiếng Anh. Mục tiêu là 90–100% giới hạn này để bài được hoàn thiện đầy đủ.`,
+          `- HARD LIMIT: Toàn bộ bài viết không được vượt quá ${targetWords} từ tiếng Anh. Chủ động viết trong khoảng 85–92% (${Math.floor(targetWords * 0.85)}–${Math.floor(targetWords * 0.92)} từ) để có buffer an toàn.`,
         ].join('\n'),
         documentPromptRules,
       );
@@ -165,7 +165,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         `- Độc giả: ${article.targetAudience || ''}`,
         `- Giọng văn: ${article.tone || ''}`,
         `- Từ khóa: ${article.keywords || ''}`,
-        `- Mục tiêu và giới hạn bắt buộc: 90–100% của ${targetWords} từ tiếng Anh`,
+        `- Khoảng mục tiêu bắt buộc: ${Math.floor(targetWords * 0.85)}–${Math.floor(targetWords * 0.92)} từ tiếng Anh; tuyệt đối không vượt ${targetWords} từ`,
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
         JSON.stringify(verifiedOutline),
@@ -173,7 +173,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         'Yêu cầu: Viết bài hoàn chỉnh theo dàn bài trên, tuân thủ toàn bộ Rules & Guidelines.',
       ].join('\n');
 
-      const res = await callAI({
+      let res = await callAI({
         articleId: article.id,
         model,
         railwayUrl,
@@ -187,7 +187,23 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         skipDocumentContext: !bundle.totalCount,
       });
       if (!res.content.trim()) throw new Error('AI trả về draft rỗng. Kết quả cũ vẫn được giữ nguyên.');
-      const generatedWords = countWords(res.content);
+      let generatedWords = countWords(res.content);
+      if (generatedWords > targetWords) {
+        res = await callAI({
+          articleId: article.id,
+          model,
+          railwayUrl,
+          systemPrompt: `You are a precision editor. Return only the complete revised Markdown article. Preserve every heading, key claim, evidence, link, and conclusion. Remove repetition and compress sentences. The final result must contain ${Math.floor(targetWords * 0.82)}–${Math.floor(targetWords * 0.9)} English words and must never exceed ${targetWords} words.`,
+          prompt: `Fit this ${generatedWords}-word draft within the required word budget without making it incomplete:\n\n${res.content}`,
+          stepNumber: 4,
+          bypassCache: true,
+          maxTokens: Math.min(12_000, Math.max(800, Math.ceil(targetWords * 1.6))),
+          temperature: 0.1,
+          skipDocumentContext: true,
+        });
+        if (!res.content.trim()) throw new Error('AI không trả về bản rút gọn hợp lệ. Draft cũ vẫn được giữ nguyên.');
+        generatedWords = countWords(res.content);
+      }
       if (generatedWords > targetWords) throw new Error(`AI trả về ${generatedWords.toLocaleString()} từ, vượt giới hạn ${targetWords.toLocaleString()} từ tiếng Anh. Draft cũ vẫn được giữ nguyên; hãy thử tạo lại hoặc tăng giới hạn.`);
       const saved = await onUpdate({
         draft: res.content,

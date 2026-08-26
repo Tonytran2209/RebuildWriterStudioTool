@@ -363,17 +363,28 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
     }
     if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
     if (!article.draft?.trim()) {
-      const response = await runBatchModel(article, 4, [
+      let response = await runBatchModel(article, 4, [
         `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
         `Primary keyword: ${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
         `Outline: ${JSON.stringify(article.outline)}`,
-        `HARD LIMIT: Write 90–100% of ${maxDraftWords} English words, and never exceed ${maxDraftWords} words in the complete Markdown output.`,
+        `HARD LIMIT: Write ${Math.floor(maxDraftWords * 0.85)}–${Math.floor(maxDraftWords * 0.92)} English words to keep a safety buffer, and never exceed ${maxDraftWords} words.`,
         'Follow every supplied Skill rule, use only supported KB claims, preserve the outline headings, and return Markdown only.',
-      ].join('\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 2.4))));
+      ].join('\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.7))));
       if (!response.content.trim()) throw new Error('Step 4 returned an empty draft.');
-      const generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
+      const draftResponses = [response];
+      let generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
+      if (generatedWords > maxDraftWords) {
+        response = await runBatchModel(article, 4, [
+          `Rewrite the following ${generatedWords}-word Markdown article to ${Math.floor(maxDraftWords * 0.82)}–${Math.floor(maxDraftWords * 0.9)} English words and never exceed ${maxDraftWords} words.`,
+          'Preserve every heading, key claim, evidence, link, and conclusion. Remove repetition and compress sentences. Return only the complete revised Markdown article.',
+          response.content,
+        ].join('\n\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.6))));
+        draftResponses.push(response);
+        if (!response.content.trim()) throw new Error('The word-limit correction returned an empty draft.');
+        generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
+      }
       if (generatedWords > maxDraftWords) throw new Error(`Final draft returned ${generatedWords} words and exceeded the configured ${maxDraftWords}-word limit.`);
-      article = await saveArticleCheckpoint(article, { draft: response.content.trim(), draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: appendUsage(4, response) });
+      article = await saveArticleCheckpoint(article, { draft: response.content.trim(), draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? 'unknown', item))].slice(-50) } });
     } else if (article.batchStatus !== 'completed') {
       article = await saveArticleCheckpoint(article, { status: 'done', batchStatus: 'completed', completedAt: article.completedAt ?? new Date().toISOString() });
     }
