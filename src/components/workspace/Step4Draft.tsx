@@ -105,10 +105,13 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, article.wordCount, bundle, config.stepConfigs, documentPromptRules, model.id, model.provider],
   );
   const wordCount = countWords(draft);
-  const targetWords = article.wordCount || 1500;
   const maxDraftCharacters = Math.min(100000, Math.max(1000, config.stepConfigs[4]?.maxDraftCharacters ?? 12000));
+  const requestedTargetWords = article.wordCount || 1500;
+  const estimatedWordCapacity = Math.max(1, Math.floor(maxDraftCharacters / 7));
+  const targetWords = Math.min(requestedTargetWords, estimatedWordCapacity);
+  const characterLimitConstrainsWords = targetWords < requestedTargetWords;
   const readability = calcReadability(draft);
-  const progress = Math.min(Math.round((wordCount / targetWords) * 100), 100);
+  const progress = Math.min(Math.round((draft.length / maxDraftCharacters) * 100), 100);
   const draftIsStale = Boolean(draft) && article.draftSourceFingerprint !== draftSourceFingerprint;
   const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
 
@@ -166,7 +169,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         `- Độc giả: ${article.targetAudience || ''}`,
         `- Giọng văn: ${article.tone || ''}`,
         `- Từ khóa: ${article.keywords || ''}`,
-        `- Số từ mục tiêu: ~${targetWords}`,
+        `- Số từ mục tiêu hiệu dụng: ~${targetWords}${characterLimitConstrainsWords ? ` (đã giảm từ ${requestedTargetWords} để không vượt giới hạn ký tự)` : ''}`,
         `- Giới hạn bắt buộc: tối đa ${maxDraftCharacters} ký tự cho toàn bộ bài viết`,
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
@@ -320,9 +323,10 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             {/* Word count bar */}
             <div className="px-5 py-2.5 border-t border-slate-100">
               <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
-                <span className="font-mono font-semibold">{wordCount.toLocaleString()} / {targetWords.toLocaleString()} từ · {draft.length.toLocaleString()} / {maxDraftCharacters.toLocaleString()} ký tự</span>
-                <span>{progress}% {tr('hoàn thành', 'complete')}</span>
+                <span className="font-mono font-semibold">{wordCount.toLocaleString()} / ~{targetWords.toLocaleString()} từ · {draft.length.toLocaleString()} / {maxDraftCharacters.toLocaleString()} ký tự</span>
+                <span>{progress}% {tr('ngân sách ký tự', 'character budget')}</span>
               </div>
+              {characterLimitConstrainsWords && <p className="mt-2 text-[9px] text-amber-500">{tr(`Giới hạn ${maxDraftCharacters.toLocaleString()} ký tự chỉ phù hợp khoảng ${targetWords.toLocaleString()} từ; mục tiêu gốc ${requestedTargetWords.toLocaleString()} từ đã được điều chỉnh tự động.`, `The ${maxDraftCharacters.toLocaleString()}-character limit supports roughly ${targetWords.toLocaleString()} words; the original ${requestedTargetWords.toLocaleString()}-word target was adjusted automatically.`)}</p>}
               <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${progress >= 100 ? 'bg-emerald-500' : progress >= 70 ? 'bg-blue-500' : 'bg-amber-400'}`}
