@@ -393,7 +393,7 @@ export default function ActivityLauncher({
                   "Nhập Content Plan hoặc kéo thả tài liệu vào đây…",
                   "Add a Content Plan or drop a document here…",
                 )}
-                className="block w-full resize-none bg-transparent text-[13px] text-[#e0e0e0] outline-none placeholder:text-[#777]"
+                className="composer-textarea block w-full resize-none bg-transparent text-[13px] text-[#e0e0e0] outline-none placeholder:text-[#777]"
               />
               <div className="mt-2 flex items-center gap-2">
                 <div className="relative">

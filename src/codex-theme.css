@@ -36,6 +36,15 @@
 .codex-dark .sidebar-recent-card { min-height: 2.25rem; border-radius: .625rem !important; }
 .codex-dark .sidebar-recent-card:hover { background: #202020 !important; border-color: var(--cx-border) !important; }
 
+.codex-dark .composer-textarea,
+.codex-dark .composer-textarea:focus,
+.codex-dark .composer-textarea:focus-visible {
+  border: 0 !important;
+  outline: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 /* Four-step shell */
 .codex-dark .minimal-step-nav {
   min-height: 3.5rem;
