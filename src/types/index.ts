@@ -86,6 +86,8 @@ export type StepCategoryPromptRules = Partial<Record<FileCategory, string>>;
 export interface StepConfig {
   modelId: string;
   fileAccess: StepFileAccess;
+  /** Hard output budget for the final draft stage. */
+  maxDraftCharacters?: number;
   categoryPromptRules?: StepCategoryPromptRules;
   /** Legacy per-document rules, retained only for automatic migration. */
   documentPromptRules?: StepDocumentPromptRules;

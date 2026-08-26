@@ -22,6 +22,10 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
     ...config,
     stepConfigs: { ...config.stepConfigs, [step]: { ...config.stepConfigs[step], modelId, fileAccess: { kb: readyKb.map(f => f.id), action: [], rules: readySkills.map(f => f.id) } } },
   });
+  const updateDraftCharacterLimit = (value: number) => onChange({
+    ...config,
+    stepConfigs: { ...config.stepConfigs, 4: { ...config.stepConfigs[4], maxDraftCharacters: Math.min(100000, Math.max(1000, value || 12000)) } },
+  });
 
   return <div className="settings-stack space-y-4">
     <div className={`settings-status rounded-2xl border p-3.5 flex items-center gap-3 ${backendOk ? 'bg-emerald-50 border-emerald-200' : backendOk === false ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
@@ -40,6 +44,7 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
       <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><span className="w-7 h-7 rounded-full bg-slate-900 text-white text-xs font-bold flex items-center justify-center">{index + 1}</span><span className="text-xs font-bold text-slate-800">{language === 'vi' ? ({2:'Ý tưởng cốt lõi & Góc tiếp cận',3:'Dàn bài nháp',4:'Bản nháp & Kiểm tra'} as Record<number,string>)[step] : ({2:'Core Idea & Angle',3:'Draft Outline',4:'First Draft & Audit'} as Record<number,string>)[step]}</span></div></div>
       <div className="rounded-xl bg-white border border-slate-200 px-3 py-2 text-right"><div className="text-xs font-bold text-slate-800">{totalTokens.toLocaleString()} tokens</div><div className="text-[9px] text-slate-400">{calls.length} AI calls</div></div>
       <select value={config.stepConfigs[step]?.modelId ?? ''} onChange={event => updateStepModel(step, event.target.value)} className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 min-w-52"><option value="">— {tr('Chọn model', 'Select model')} —</option>{enabledModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</select>
+      {step === 4 && <label className="min-w-44"><span className="mb-1 block text-[9px] font-medium text-slate-500">{tr('Giới hạn ký tự Draft', 'Draft character limit')}</span><input type="number" min={1000} max={100000} step={500} value={config.stepConfigs[4]?.maxDraftCharacters ?? 12000} onChange={event => updateDraftCharacterLimit(Number(event.target.value))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700" /></label>}
     </div>; })}
   </div>;
 }

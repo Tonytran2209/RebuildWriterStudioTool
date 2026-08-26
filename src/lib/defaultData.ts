@@ -68,7 +68,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     1: { modelId: '', fileAccess: { kb: [], action: [], rules: [] } },
     2: { modelId: '', fileAccess: { kb: [], action: [], rules: [] } },
     3: { modelId: '', fileAccess: { kb: [], action: [], rules: [] } },
-    4: { modelId: '', fileAccess: { kb: [], action: [], rules: [] } },
+    4: { modelId: '', fileAccess: { kb: [], action: [], rules: [] }, maxDraftCharacters: 12000 },
   },
   models: DEFAULT_MODELS,
 };

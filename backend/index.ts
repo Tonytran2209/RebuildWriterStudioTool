@@ -311,6 +311,8 @@ async function runBatchModel(article: any, step: 2 | 3 | 4, prompt: string, json
 async function runBatchArticle(initial: any, controller: { paused: boolean; running: boolean }) {
   let article = initial;
   const contentMode = article.activityType === 'editorial-originality' ? 'Editorial/Originality' : 'Comparison/SEO';
+  const runtimeConfig = await kvGet<any>('writer:config');
+  const maxDraftCharacters = Math.min(100000, Math.max(1000, Number(runtimeConfig?.stepConfigs?.[4]?.maxDraftCharacters ?? 12000)));
   const appendUsage = (step: 2 | 3 | 4, response: any) => ({
     ...article.aiUsageByStep,
     [step]: [...(article.aiUsageByStep?.[step] ?? []), batchUsage(step, response.provider ?? 'unknown', response)].slice(-50),
@@ -365,9 +367,11 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
         `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
         `Primary keyword: ${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
         `Outline: ${JSON.stringify(article.outline)}`,
+        `HARD LIMIT: The complete Markdown output must not exceed ${maxDraftCharacters} characters, including headings and whitespace.`,
         'Follow every supplied Skill rule, use only supported KB claims, preserve the outline headings, and return Markdown only.',
-      ].join('\n'), false, Math.min(12000, Math.max(3500, Math.ceil(Number(article.coreIdeaSuggestions?.[0]?.recommendedWordCount ?? 1600) * 2.4))));
+      ].join('\n'), false, Math.min(12000, Math.max(500, Math.ceil(maxDraftCharacters / 3.2))));
       if (!response.content.trim()) throw new Error('Step 4 returned an empty draft.');
+      if (response.content.length > maxDraftCharacters) throw new Error(`Final draft returned ${response.content.length} characters and exceeded the configured ${maxDraftCharacters}-character limit.`);
       article = await saveArticleCheckpoint(article, { draft: response.content.trim(), draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: appendUsage(4, response) });
     } else if (article.batchStatus !== 'completed') {
       article = await saveArticleCheckpoint(article, { status: 'done', batchStatus: 'completed', completedAt: article.completedAt ?? new Date().toISOString() });
