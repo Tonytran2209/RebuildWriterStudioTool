@@ -1,0 +1,85 @@
+/* Loaded after the theme so Settings interaction states stay deterministic. */
+.codex-dark .minimal-settings button,
+.codex-dark .minimal-settings [role='button'],
+.codex-dark .minimal-settings .settings-content [class*='transition'] {
+  transition-duration: 140ms !important;
+  transition-timing-function: ease !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-settings button:hover,
+.codex-dark .minimal-settings [role='button']:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-settings .settings-header button {
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #8f949e !important;
+}
+
+.codex-dark .minimal-settings .settings-header button:hover {
+  border-color: transparent !important;
+  background: #222 !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .settings-tabs button {
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #8f949e !important;
+}
+
+.codex-dark .minimal-settings .settings-tabs button:hover:not(.bg-slate-100) {
+  border-color: transparent !important;
+  background: #222 !important;
+  color: #d1d5db !important;
+}
+
+.codex-dark .minimal-settings .settings-tabs button.bg-slate-100,
+.codex-dark .minimal-settings .settings-tabs button.bg-slate-100:hover {
+  border-color: #3a3a3a !important;
+  background: #292929 !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .settings-content button:hover {
+  border-color: #3a3a3a !important;
+  background-color: #222 !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .settings-content button.bg-slate-900:hover {
+  border-color: #444 !important;
+  background: #333 !important;
+  color: #fff !important;
+}
+
+.codex-dark .minimal-settings .settings-content section:hover,
+.codex-dark .minimal-settings .settings-content div[class*='hover:bg-slate-100']:hover,
+.codex-dark .minimal-settings .settings-content div[class*='hover:shadow']:hover {
+  border-color: #3a3a3a !important;
+  background-color: #222 !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-settings .settings-content section > button:hover,
+.codex-dark .minimal-settings .settings-content .border-dashed:hover {
+  border-color: #3a3a3a !important;
+  background: #222 !important;
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+.codex-dark .minimal-settings .settings-footer button:first-child:hover {
+  border-color: #3a3a3a !important;
+  background: #222 !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .settings-footer button:last-child:hover {
+  border-color: #fff !important;
+  background: #fff !important;
+  color: #141414 !important;
+}
