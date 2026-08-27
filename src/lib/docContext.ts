@@ -1,4 +1,4 @@
-import type { AppConfig, DocumentFile } from "../types";
+import type { AppConfig, DocumentFile, SkillApplicationConfig } from "../types";
 import { isDocumentReady } from "./documentStatus";
 
 export interface DocRef {
@@ -29,10 +29,10 @@ QUY TẮC PHÂN QUYỀN TÀI LIỆU (BẮT BUỘC TUÂN THỦ):
    → Chỉ dùng để xác định topic, nhóm nội dung và keyword đã được tổng hợp cho bài này.
    → Không được đọc hoặc suy ra từ bất kỳ kế hoạch legacy nào ngoài activity hiện tại.
 
-3) RULES & GUIDELINES — Chuẩn mực bắt buộc (ưu tiên cao nhất)
+3) SKILLS & RULES — Kỹ năng và chuẩn mực có policy áp dụng
    Là quy tắc viết bài, writing pattern, writer rule, tone of voice, brand guidelines.
-   → Mọi output PHẢI tuân thủ tuyệt đối các quy tắc này. Rules ghi đè phong cách mặc định.
-   → Nếu Rules mâu thuẫn với KB hoặc Content Plan hiện tại, LUÔN ưu tiên Rules.
+   → Skill "mandatory" phải được tuân thủ; "supporting" áp dụng khi phù hợp; "reference" chỉ dùng tham khảo.
+   → Chỉ dùng skill đang bật và được chỉ định cho Step hiện tại.
 
 NGUYÊN TẮC CHUNG:
 - Chỉ đề xuất / khẳng định những gì có căn cứ trong tài liệu được cấp.
@@ -49,8 +49,24 @@ function formatFile(file: DocumentFile): DocRef {
   };
 }
 
+const DEFAULT_SKILL_CONFIG: SkillApplicationConfig = {
+  enabled: true,
+  steps: [2, 3, 4],
+  priority: 'mandatory',
+  applicationRule: '',
+};
+
+export function getSkillConfig(file: DocumentFile): SkillApplicationConfig {
+  return { ...DEFAULT_SKILL_CONFIG, ...file.skillConfig };
+}
+
+export function skillAppliesToStep(file: DocumentFile, stepNumber: number): boolean {
+  const policy = getSkillConfig(file);
+  return policy.enabled && policy.steps.includes(stepNumber as 2 | 3 | 4);
+}
+
 export function collectStepDocs(
-  _stepNumber: number,
+  stepNumber: number,
   _config: AppConfig,
   files: DocumentFile[],
   contentPlanInput?: string,
@@ -70,6 +86,7 @@ export function collectStepDocs(
   const rules: DocRef[] = files
     .filter(f => f.category === 'rules')
     .filter(isDocumentReady)
+    .filter(file => skillAppliesToStep(file, stepNumber))
     .map(formatFile);
 
   return {
@@ -118,7 +135,7 @@ export function buildDocContextBlock(bundle: DocBundle): string {
 export function buildStepDocumentPromptRules(
   stepNumber: number,
   config: AppConfig,
-  _files: DocumentFile[],
+  files: DocumentFile[],
 ): string {
   const stepConfig = config.stepConfigs[stepNumber];
   if (!stepConfig) return "";
@@ -131,11 +148,23 @@ export function buildStepDocumentPromptRules(
     const rule = current || legacy;
     return rule ? [`- [${categoryLabels[category]}]: ${rule}`] : [];
   });
-  if (!lines.length) return "";
+  const skillLines = files
+    .filter(file => file.category === 'rules' && isDocumentReady(file) && skillAppliesToStep(file, stepNumber))
+    .map(file => {
+      const policy = getSkillConfig(file);
+      const behavior = policy.priority === 'mandatory'
+        ? 'MUST be followed and overrides default writing behavior'
+        : policy.priority === 'supporting'
+          ? 'apply when relevant to the task'
+          : 'use only as reference; do not force its pattern';
+      return `- [SKILL: ${file.name}] Priority: ${policy.priority}. ${behavior}.${policy.applicationRule.trim() ? ` Application rule: ${policy.applicationRule.trim()}` : ''}`;
+    });
+  if (!lines.length && !skillLines.length) return "";
   return [
     "QUY TẮC ĐỌC THEO PHÂN VÙNG TÀI LIỆU (BẮT BUỘC):",
     "Áp dụng rule cho toàn bộ tài liệu thuộc đúng phân vùng tương ứng.",
     ...lines,
+    ...skillLines,
   ].join("\n");
 }
 
