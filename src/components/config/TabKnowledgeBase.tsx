@@ -63,16 +63,16 @@ export default function TabKnowledgeBase({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
+    <div className="space-y-3">
+      <div className="flex gap-1 overflow-x-auto border-b border-slate-200 pb-2">
         {(Object.entries(SUBTAB_META) as [KbSubTab, typeof SUBTAB_META[KbSubTab]][]).map(([key, item]) => (
           <button
             key={key}
             onClick={() => setActiveSubTab(key)}
-            className={`shrink-0 px-3 sm:px-4 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-normal transition-colors ${
               activeSubTab === key
-                ? 'bg-slate-900 text-white'
-                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+                ? 'bg-slate-100 text-slate-900'
+                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
             }`}
           >
             {language === 'vi' ? item.label : key === 'kb' ? '1. Knowledge Base' : '2. Skills & Rules'}
@@ -80,7 +80,7 @@ export default function TabKnowledgeBase({
         ))}
       </div>
 
-      <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11px] text-blue-700">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-relaxed text-slate-600">
         <strong>{meta.label}:</strong> {activeSubTab === 'kb'
           ? <>{language === 'vi' ? meta.hint : 'Core knowledge, products, research, and references'}. {tr('Mọi phương thức đều được Railway xử lý và chỉ được đánh dấu sẵn sàng sau khi Supabase đã lưu nội dung thật.', 'Every import method is processed by Railway and marked ready only after Supabase stores the actual content.')}</>
           : <>{tr('Hiển thị rule, luồng xử lý và cách đọc dữ liệu thực sự đang điều khiển pipeline AI. Đây là cấu hình vận hành, không phải danh sách tài liệu upload.', 'Shows the rules, processing flow, and data-reading behavior that actually control the AI pipeline. This is operational configuration, not an uploaded-document list.')}</>}

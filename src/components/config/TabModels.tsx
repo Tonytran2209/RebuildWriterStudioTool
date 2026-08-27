@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Cpu } from 'lucide-react';
 import type { AppConfig, AIModel, AIProvider } from '../../types';
 import { PROVIDER_LABELS } from '../../lib/defaultData';
 import { useI18n } from '../../lib/i18n';
@@ -57,10 +58,10 @@ export default function TabModels({ config, onChange }: Props) {
   });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-xs font-bold text-slate-800">{tr('Tích hợp & Kích hoạt Model AI', 'AI Model Integration & Activation')}</h3>
+          <h3 className="text-sm font-medium text-slate-900">{tr('Models', 'Models')}</h3>
           <p className="text-[11px] text-slate-400 mt-0.5">{tr('Bật/tắt Model để hiển thị trong menu phân quyền từng Step', 'Enable models for use in each step')}</p>
         </div>
       </div>
@@ -69,12 +70,12 @@ export default function TabModels({ config, onChange }: Props) {
         const provMeta = PROVIDER_LABELS[provider];
         const anyEnabled = models.some(m => m.enabled);
         return (
-          <div key={provider} className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+          <div key={provider} className="space-y-3 rounded-xl border border-slate-200 bg-white p-3.5">
             {/* Provider header */}
             <div className="flex items-center justify-between border-b border-slate-200/60 pb-2.5">
               <div className="flex items-center gap-2">
-                <span className={`text-base ${provMeta?.color || 'text-slate-700'}`}>{provMeta?.icon}</span>
-                <span className="text-xs font-bold text-slate-800">{provMeta?.label || provider}</span>
+                <Cpu className="app-icon text-slate-500" aria-hidden="true" />
+                <span className="text-xs font-medium text-slate-900">{provMeta?.label || provider}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${anyEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -114,10 +115,10 @@ export default function TabModels({ config, onChange }: Props) {
             {/* Models grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {models.map(model => (
-                <div key={model.id} className="flex items-start justify-between bg-white p-3 rounded-xl border border-slate-200 gap-2">
+                <div key={model.id} className="flex items-start justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 transition-colors hover:bg-slate-100/70">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 mb-0.5">
-                      <h4 className="text-xs font-bold text-slate-800 truncate">{model.name}</h4>
+                      <h4 className="truncate text-xs font-medium text-slate-900">{model.name}</h4>
                       {model.enabled && (
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                       )}

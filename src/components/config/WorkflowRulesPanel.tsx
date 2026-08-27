@@ -36,11 +36,11 @@ export default function WorkflowRulesPanel({ config, files, onChange }: Props) {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-2xl border border-slate-200 bg-white p-4">
+      <section className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-2xl">
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tr('Registry vận hành thực tế', 'Live operational registry')}</p>
-            <h3 className="mt-1 text-base font-semibold text-slate-900">{tr('AI đang xử lý content theo các rule nào?', 'Which rules actually control content generation?')}</h3>
+            <h3 className="mt-1 text-sm font-medium text-slate-900">{tr('AI đang xử lý content theo các rule nào?', 'Which rules actually control content generation?')}</h3>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{tr('Các card dưới đây phản ánh trực tiếp retrieval, prompt contract, validation và persistence đang chạy trong pipeline. Thay đổi được lưu vào cấu hình và đưa vào system prompt của đúng bước.', 'These cards mirror the retrieval, prompt contract, validation and persistence used by the live pipeline. Changes are saved in configuration and injected into the matching step system prompt.')}</p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-center">
@@ -62,11 +62,11 @@ export default function WorkflowRulesPanel({ config, files, onChange }: Props) {
           const setting = getWorkflowRuleSetting(config, rule.id);
           const isExpanded = expanded === rule.id;
           return (
-            <section key={rule.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <section key={rule.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors hover:border-slate-300">
               <button type="button" onClick={() => setExpanded(isExpanded ? null : rule.id)} className="flex w-full items-start gap-3 p-4 text-left hover:bg-slate-50/70">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[10px] font-semibold text-white">{index + 1}</span>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-[10px] font-medium text-slate-600">{index + 1}</span>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2"><h4 className="text-sm font-semibold text-slate-900">{language === 'vi' ? rule.titleVi : rule.title}</h4>{rule.steps.map(step => <span key={step} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">{language === 'vi' ? STEP_LABELS[step].vi : STEP_LABELS[step].en}</span>)}</div>
+                  <div className="flex flex-wrap items-center gap-2"><h4 className="text-xs font-medium text-slate-900">{language === 'vi' ? rule.titleVi : rule.title}</h4>{rule.steps.map(step => <span key={step} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-normal text-slate-500">{language === 'vi' ? STEP_LABELS[step].vi : STEP_LABELS[step].en}</span>)}</div>
                   <p className="mt-1 text-[11px] text-slate-500">{language === 'vi' ? rule.summaryVi : rule.summary}</p>
                 </div>
                 <ChevronDown className={`app-icon shrink-0 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}/>

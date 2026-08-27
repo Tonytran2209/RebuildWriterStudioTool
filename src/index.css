@@ -10,6 +10,117 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Settings follows the reference UI's quiet product surface, adapted to the app's light theme. */
+.writer-light .minimal-settings {
+  background: rgb(20 20 20 / 18%) !important;
+}
+
+.writer-light .minimal-settings .settings-shell,
+.writer-light .minimal-settings .settings-panel {
+  background: #ffffff !important;
+  border-color: #deded9 !important;
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-settings .settings-header,
+.writer-light .minimal-settings .settings-tabs-wrap,
+.writer-light .minimal-settings .settings-footer {
+  border-color: #e6e6e1 !important;
+  background: #ffffff !important;
+}
+
+.writer-light .minimal-settings .settings-tabs {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 0 .5rem !important;
+}
+
+.writer-light .minimal-settings .settings-tabs button {
+  min-height: 2.25rem;
+  border: 0 !important;
+  border-radius: .5rem !important;
+  box-shadow: none !important;
+  font-weight: 400 !important;
+}
+
+.writer-light .minimal-settings .settings-tabs button.bg-slate-100 {
+  background: #f0f0ed !important;
+  color: #20201e !important;
+}
+
+.writer-light .minimal-settings .settings-content {
+  background: #fafaf8;
+  scrollbar-width: thin;
+  scrollbar-color: #d2d2cd transparent;
+}
+
+.writer-light .minimal-settings .settings-content::-webkit-scrollbar { width: 4px; }
+.writer-light .minimal-settings .settings-content::-webkit-scrollbar-thumb { background: #d2d2cd; border-radius: 4px; }
+
+.writer-light .minimal-settings .settings-content .bg-white,
+.writer-light .minimal-settings .settings-status,
+.writer-light .minimal-settings .settings-section,
+.writer-light .minimal-settings .settings-row {
+  background: #ffffff !important;
+  border-color: #deded9 !important;
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-settings .settings-content .bg-slate-50 {
+  background: #f7f7f5 !important;
+}
+
+.writer-light .minimal-settings .settings-content input,
+.writer-light .minimal-settings .settings-content textarea,
+.writer-light .minimal-settings .settings-content select {
+  border-color: #deded9 !important;
+  border-radius: .625rem !important;
+  background: #ffffff !important;
+  color: #2c2c29 !important;
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-settings .settings-content input:focus,
+.writer-light .minimal-settings .settings-content textarea:focus,
+.writer-light .minimal-settings .settings-content select:focus {
+  border-color: #a9a9a2 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 1px #a9a9a2 !important;
+}
+
+.writer-light .minimal-settings .settings-content button,
+.writer-light .minimal-settings .settings-footer button {
+  box-shadow: none !important;
+}
+
+.writer-light .minimal-settings .settings-content button:hover {
+  border-color: #c7c7c1 !important;
+}
+
+.writer-light .minimal-settings .text-indigo-600,
+.writer-light .minimal-settings .text-indigo-700,
+.writer-light .minimal-settings .text-indigo-800,
+.writer-light .minimal-settings .text-indigo-900,
+.writer-light .minimal-settings .text-blue-600,
+.writer-light .minimal-settings .text-blue-700,
+.writer-light .minimal-settings .text-violet-600,
+.writer-light .minimal-settings .text-violet-700 {
+  color: #5f5f59 !important;
+}
+
+.writer-light .minimal-settings .bg-indigo-100,
+.writer-light .minimal-settings .bg-blue-100,
+.writer-light .minimal-settings .bg-violet-100,
+.writer-light .minimal-settings .bg-amber-100,
+.writer-light .minimal-settings .bg-emerald-100 {
+  background: #eeeeea !important;
+}
+
+@media (max-width: 639px) {
+  .writer-light .minimal-settings .settings-shell,
+  .writer-light .minimal-settings .settings-panel { border-radius: 0 !important; }
+}
+
 .writer-light h1 { font-weight: 700; letter-spacing: -0.025em; }
 .writer-light h2 { font-weight: 600; letter-spacing: -0.018em; }
 .writer-light h3 { font-weight: 500; letter-spacing: -0.012em; }
