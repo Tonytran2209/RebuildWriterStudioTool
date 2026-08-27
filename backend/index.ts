@@ -298,7 +298,7 @@ async function runBatchModel(article: any, step: 2 | 3 | 4, prompt: string, json
   const cached = await kvGet<any>(key);
   if (cached?.content) return { ...cached, provider: model.provider, cacheHit: true };
   await reserveAIBudget(article.id, step);
-  const response = await generate({ modelId: model.id, provider: model.provider, prompt, contextDocs: context.contextDocs, jsonMode, maxTokens, temperature: step === 4 ? 0.65 : 0.35 });
+  const response = await generate({ modelId: model.id, provider: model.provider, prompt, contextDocs: context.contextDocs, jsonMode, maxTokens, temperature: step === 4 ? 0.2 : 0.35 });
   const input = Number(response.usage?.inputTokens ?? 0);
   const cachedTokens = Number(response.usage?.cachedInputTokens ?? 0);
   const output = Number(response.usage?.outputTokens ?? 0);
@@ -324,28 +324,41 @@ function batchSeoFailures(text: string, article: any, targetWords: number) {
   return { failures, primaryKeyword, words };
 }
 
-function compactBatchDraftLocally(text: string, targetWords: number) {
-  const count = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
-  const blocks = text.trim().split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
-  const seen = new Set<string>();
-  const uniqueBlocks = blocks.filter(block => {
-    if (/^#{1,6}\s/.test(block)) return true;
-    const key = block.toLocaleLowerCase().replace(/\s+/g, ' ');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-  while (count(uniqueBlocks.join('\n\n')) > targetWords) {
-    const candidates = uniqueBlocks
-      .map((block, index) => ({ block, index, sentences: block.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map(sentence => sentence.trim()).filter(Boolean) ?? [] }))
-      .filter(item => !/^#{1,6}\s/.test(item.block) && item.sentences.length >= 3)
-      .sort((a, b) => count(b.block) - count(a.block));
-    const candidate = candidates[0];
-    if (!candidate) break;
-    candidate.sentences.splice(candidate.sentences.length - 2, 1);
-    uniqueBlocks[candidate.index] = candidate.sentences.join(' ');
+function batchDraftBudget(outline: any[], hardLimit: number) {
+  const targetMax = Math.min(hardLimit, Math.max(800, Math.floor(hardLimit * 0.92)));
+  const introduction = { min: Math.floor(targetMax * 0.08), max: Math.floor(targetMax * 0.09) };
+  const conclusion = { min: Math.floor(targetMax * 0.065), max: Math.floor(targetMax * 0.075) };
+  const pool = targetMax - introduction.max - conclusion.max - 20;
+  const totalWeight = outline.reduce((sum, section) => sum + (section.level === 'h3' ? 0.65 : 1), 0) || 1;
+  return {
+    hardLimit, targetMin: Math.min(hardLimit, Math.max(800, Math.ceil(hardLimit * 0.9))), targetMax, introduction, conclusion,
+    sections: outline.map(section => {
+      const allocation = Math.max(35, Math.floor(pool * (section.level === 'h3' ? 0.65 : 1) / totalWeight));
+      return { id: section.id, heading: section.heading, level: section.level, minWords: Math.floor(allocation * 0.9), maxWords: allocation };
+    }),
+  };
+}
+
+function assembleBatchDraft(raw: string, article: any) {
+  const parsed = parseJsonObject(raw);
+  if (!String(parsed.title ?? '').trim() || !String(parsed.introduction ?? '').trim() || !String(parsed.conclusion ?? '').trim() || !Array.isArray(parsed.sections)) {
+    throw new Error('Structured draft is missing title, introduction, sections, or conclusion.');
   }
-  return uniqueBlocks.join('\n\n');
+  const expected = article.outline ?? [];
+  const byId = new Map(parsed.sections.map((section: any) => [section.id, section]));
+  const sections = expected.map((section: any, index: number) => byId.get(section.id) ?? parsed.sections[index]);
+  if (sections.length !== expected.length || sections.some((section: any) => !String(section?.content ?? '').trim())) {
+    throw new Error(`Structured draft completed only ${sections.filter((section: any) => String(section?.content ?? '').trim()).length}/${expected.length} sections.`);
+  }
+  const idea = article.coreIdeaSuggestions?.find((item: any) => item.id === article.selectedCoreIdeaId) ?? article.coreIdeaSuggestions?.[0];
+  const keyword = String(idea?.primaryKeyword ?? String(article.keywords ?? '').split(',')[0] ?? article.topic ?? '').trim();
+  const parsedTitle = String(parsed.title).trim();
+  const title = parsedTitle.toLocaleLowerCase().includes(keyword.toLocaleLowerCase()) ? parsedTitle : `${parsedTitle}: ${keyword}`;
+  return [
+    `# ${title}`, String(parsed.introduction).trim(),
+    ...sections.flatMap((section: any, index: number) => [`${expected[index].level === 'h3' ? '###' : '##'} ${expected[index].heading}`, String(section.content).trim()]),
+    '## Conclusion', String(parsed.conclusion).trim(),
+  ].join('\n\n');
 }
 
 async function runBatchArticle(initial: any, controller: { paused: boolean; running: boolean }) {
@@ -403,38 +416,22 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
     }
     if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
     if (!article.draft?.trim()) {
-      let response = await runBatchModel(article, 4, [
+      const budget = batchDraftBudget(article.outline ?? [], maxDraftWords);
+      const response = await runBatchModel(article, 4, [
         `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
         `Primary keyword: ${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
         `Outline: ${JSON.stringify(article.outline)}`,
-        `HARD LIMIT: Write ${Math.ceil(maxDraftWords * 0.9)}–${Math.floor(maxDraftWords * 0.92)} English words and never exceed ${maxDraftWords} words.`,
-        'SEO GATE: Start with an H1 containing the exact primary keyword, include H2/H3 headings, and use the primary keyword naturally in the body.',
-        'Follow every supplied Skill rule, use only supported KB claims, preserve the outline headings, and return Markdown only.',
-      ].join('\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.38))));
+        `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
+        'Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most 3–5 sentences.',
+        'Follow every supplied Skill rule and use only supported KB claims.',
+        'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order.',
+      ].join('\n'), true, Math.min(12000, Math.max(1200, Math.ceil(maxDraftWords * 1.55))));
       if (!response.content.trim()) throw new Error('Step 4 returned an empty draft.');
       const draftResponses = [response];
-      let generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
-      if (generatedWords > maxDraftWords && generatedWords <= maxDraftWords * 1.05) {
-        response = { ...response, content: compactBatchDraftLocally(response.content, maxDraftWords) };
-      }
-      let validation = batchSeoFailures(response.content, article, maxDraftWords);
-      if (validation.failures.length) {
-        response = await runBatchModel(article, 4, [
-          `Perform one consolidated revision. Current count: ${validation.words} words. Fix every failed SEO gate together: ${validation.failures.join('; ')}.`,
-          `Use ${Math.ceil(maxDraftWords * 0.9)}–${Math.floor(maxDraftWords * 0.92)} English words and never exceed ${maxDraftWords}. Start with an H1 containing the exact primary keyword “${validation.primaryKeyword}”, include H2/H3 headings, and use that keyword naturally in the body. Count words and revise internally before responding.`,
-          'Preserve supported claims, evidence, links, conclusions, section coverage, and outline order. Return only the complete Markdown article.',
-          response.content,
-        ].join('\n\n'), false, Math.min(12000, Math.max(800, Math.ceil(maxDraftWords * 1.32))));
-        draftResponses.push(response);
-        if (!response.content.trim()) throw new Error('The SEO correction returned an empty draft.');
-        generatedWords = response.content.trim().split(/\s+/).filter(Boolean).length;
-        if (generatedWords > maxDraftWords && generatedWords <= maxDraftWords * 1.05) {
-          response = { ...response, content: compactBatchDraftLocally(response.content, maxDraftWords) };
-        }
-        validation = batchSeoFailures(response.content, article, maxDraftWords);
-      }
+      const assembledDraft = assembleBatchDraft(response.content, article);
+      const validation = batchSeoFailures(assembledDraft, article, maxDraftWords);
       if (validation.failures.length) throw new Error(`Draft was not saved because the SEO checklist is not 100%: ${validation.failures.join('; ')}.`);
-      article = await saveArticleCheckpoint(article, { draft: response.content.trim(), draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? 'unknown', item))].slice(-50) } });
+      article = await saveArticleCheckpoint(article, { draft: assembledDraft, draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? 'unknown', item))].slice(-50) } });
     } else if (article.batchStatus !== 'completed') {
       article = await saveArticleCheckpoint(article, { status: 'done', batchStatus: 'completed', completedAt: article.completedAt ?? new Date().toISOString() });
     }

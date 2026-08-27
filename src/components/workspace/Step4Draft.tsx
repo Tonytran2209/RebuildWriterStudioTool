@@ -15,27 +15,42 @@ function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function compactDraftLocally(text: string, targetWords: number) {
-  const blocks = text.trim().split(/\n{2,}/).map(block => block.trim()).filter(Boolean);
-  const seen = new Set<string>();
-  const uniqueBlocks = blocks.filter(block => {
-    if (/^#{1,6}\s/.test(block)) return true;
-    const key = block.toLocaleLowerCase().replace(/\s+/g, ' ');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit: number) {
+  const target = Math.min(hardLimit, Math.max(800, Math.floor(hardLimit * 0.92)));
+  const introduction = { min: Math.floor(target * 0.08), max: Math.floor(target * 0.09) };
+  const conclusion = { min: Math.floor(target * 0.065), max: Math.floor(target * 0.075) };
+  const sectionPool = target - introduction.max - conclusion.max - 20;
+  const totalWeight = outline.reduce((sum, section) => sum + (section.level === 'h3' ? 0.65 : 1), 0) || 1;
+  const sections = outline.map(section => {
+    const allocation = Math.max(35, Math.floor(sectionPool * (section.level === 'h3' ? 0.65 : 1) / totalWeight));
+    return { id: section.id, heading: section.heading, level: section.level, minWords: Math.floor(allocation * 0.9), maxWords: allocation };
   });
-  while (countWords(uniqueBlocks.join('\n\n')) > targetWords) {
-    const candidates = uniqueBlocks
-      .map((block, index) => ({ block, index, sentences: block.match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map(sentence => sentence.trim()).filter(Boolean) ?? [] }))
-      .filter(item => !/^#{1,6}\s/.test(item.block) && item.sentences.length >= 3)
-      .sort((a, b) => countWords(b.block) - countWords(a.block));
-    const candidate = candidates[0];
-    if (!candidate) break;
-    candidate.sentences.splice(candidate.sentences.length - 2, 1);
-    uniqueBlocks[candidate.index] = candidate.sentences.join(' ');
+  return { hardLimit, targetMin: Math.min(hardLimit, Math.max(800, Math.ceil(hardLimit * 0.9))), targetMax: target, introduction, conclusion, sections };
+}
+
+function parseStructuredDraft(raw: string, article: Article) {
+  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  const parsed = JSON.parse(cleaned) as { title?: string; introduction?: string; conclusion?: string; sections?: Array<{ id?: string; heading?: string; level?: string; content?: string }> };
+  if (!parsed.title?.trim() || !parsed.introduction?.trim() || !parsed.conclusion?.trim() || !Array.isArray(parsed.sections)) {
+    throw new Error('AI trả về structured draft thiếu title, introduction, sections hoặc conclusion.');
   }
-  return uniqueBlocks.join('\n\n');
+  const expected = article.outline ?? [];
+  const byId = new Map(parsed.sections.map(section => [section.id, section]));
+  const sections = expected.map((outlineSection, index) => byId.get(outlineSection.id) ?? parsed.sections?.[index]).filter(Boolean);
+  if (sections.length !== expected.length || sections.some(section => !section?.content?.trim())) {
+    throw new Error(`AI chỉ hoàn thiện ${sections.filter(section => section?.content?.trim()).length}/${expected.length} section; draft không được lưu.`);
+  }
+  const primaryKeyword = getPrimaryKeyword(article);
+  const title = parsed.title.toLocaleLowerCase().includes(primaryKeyword.toLocaleLowerCase())
+    ? parsed.title.trim()
+    : `${parsed.title.trim()}: ${primaryKeyword}`;
+  return [
+    `# ${title}`,
+    parsed.introduction.trim(),
+    ...sections.flatMap((section, index) => [`${expected[index].level === 'h3' ? '###' : '##'} ${expected[index].heading}`, section!.content!.trim()]),
+    '## Conclusion',
+    parsed.conclusion.trim(),
+  ].join('\n\n');
 }
 
 function getPrimaryKeyword(article: Article) {
@@ -86,6 +101,7 @@ function buildVerifiedOutlineContext(outline: NonNullable<Article['outline']>) {
       return id;
     });
     return {
+      id: section.id,
       heading: section.heading,
       level: section.level,
       notes: section.notes,
@@ -145,7 +161,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const draft = article.draft || '';
   const draftSourceFingerprint = useMemo(
     () => [
-      buildWorkflowSourceFingerprint(bundle), model.provider, model.id, 'step4-draft-v4-content-plan',
+      buildWorkflowSourceFingerprint(bundle), model.provider, model.id, 'step4-draft-v5-section-budget-json',
       article.selectedCoreIdeaId, article.topic, article.angle,
       JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, documentPromptRules,
     ].join(':'),
@@ -188,7 +204,8 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         article.keywords,
         ...(article.outline ?? []).map(section => section.heading),
       ].filter(Boolean).join(' ');
-      const maxTokens = Math.min(12_000, Math.max(800, Math.ceil(targetWords * 1.38)));
+      const wordBudget = buildSectionBudget(article.outline || [], targetWords);
+      const maxTokens = Math.min(12_000, Math.max(1200, Math.ceil(targetWords * 1.55)));
 
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -201,9 +218,10 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           '- Nếu KB không có dữ liệu cho một mục, viết mục đó ở dạng khung và ghi chú "[Cần bổ sung dữ liệu]".',
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
-          '- Chỉ trả về nội dung bài viết hoàn chỉnh bằng Markdown, không thêm lời dẫn, nhật ký hoặc giải thích về quá trình viết.',
-          `- HARD LIMIT: Toàn bộ bài viết phải nằm trong khoảng 90–92% (${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.92)} từ tiếng Anh) và tuyệt đối không vượt ${targetWords} từ.`,
-          `- SEO GATE: Dòng đầu tiên phải là H1 Markdown chứa chính xác primary keyword “${getPrimaryKeyword(article)}”; bài phải có H2/H3 và primary keyword phải xuất hiện tự nhiên trong nội dung.`,
+          '- Hoàn thiện mọi section trước khi mở rộng bất kỳ section nào. Không lặp định nghĩa, lợi ích, so sánh, evidence hoặc kết luận.',
+          '- Mỗi đoạn chỉ phục vụ một claim, tối đa 3–5 câu. Không thêm section ngoài outline.',
+          `- TITLE phải chứa chính xác primary keyword “${getPrimaryKeyword(article)}”.`,
+          '- Trả về DUY NHẤT JSON object đúng schema; không Markdown fences, lời dẫn hay nhật ký.',
         ].join('\n'),
         documentPromptRules,
       );
@@ -219,15 +237,20 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         `- Độc giả: ${article.targetAudience || ''}`,
         `- Giọng văn: ${article.tone || ''}`,
         `- Từ khóa: ${article.keywords || ''}`,
-        `- Khoảng mục tiêu bắt buộc: ${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.92)} từ tiếng Anh; tuyệt đối không vượt ${targetWords} từ`,
+        `- Tổng mục tiêu: ${wordBudget.targetMin}–${wordBudget.targetMax} từ tiếng Anh; hard limit ${wordBudget.hardLimit} từ`,
+        `- Introduction: ${wordBudget.introduction.min}–${wordBudget.introduction.max} từ`,
+        `- Conclusion: ${wordBudget.conclusion.min}–${wordBudget.conclusion.max} từ`,
+        `- Section budgets: ${JSON.stringify(wordBudget.sections)}`,
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
         JSON.stringify(verifiedOutline),
         '',
-        'Yêu cầu: Viết bài hoàn chỉnh theo dàn bài trên, tuân thủ toàn bộ Rules & Guidelines.',
+        'SCHEMA OUTPUT:',
+        '{"title":string,"introduction":string,"sections":[{"id":string,"content":string}],"conclusion":string}',
+        'Yêu cầu: Viết đủ đúng một entry cho mọi section ID theo đúng thứ tự. Không lặp nội dung giữa các field.',
       ].join('\n');
 
-      let res = await callAI({
+      const res = await callAI({
         articleId: article.id,
         model,
         railwayUrl,
@@ -237,44 +260,21 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         bypassCache: manual,
         maxTokens,
         temperature: 0.2,
+        jsonMode: true,
         contextQuery,
         skipDocumentContext: !bundle.totalCount,
       });
       if (!res.content.trim()) throw new Error('AI trả về draft rỗng. Kết quả cũ vẫn được giữ nguyên.');
-      let generatedWords = countWords(res.content);
-      if (generatedWords > targetWords && generatedWords <= targetWords * 1.05) {
-        res = { ...res, content: compactDraftLocally(res.content, targetWords) };
-      }
-      let validation = evaluateSeoChecklist(res.content, article, targetWords);
-      if (validation.failed.length) {
-        const exactOverage = Math.max(0, validation.wordCount - targetWords);
-        res = await callAI({
-          articleId: article.id,
-          model,
-          railwayUrl,
-          systemPrompt: `You are a strict SEO quality editor. Perform one consolidated revision and return only the complete Markdown article. Repair every failed requirement without inventing claims or removing supported evidence, links, conclusions, or section coverage. Use ${Math.ceil(targetWords * 0.9)}–${Math.floor(targetWords * 0.92)} English words and never exceed ${targetWords}. The first line must be an H1 containing the exact primary keyword “${validation.primaryKeyword}”, and the body must use H2/H3 headings and contain that keyword naturally. Count the words before responding and revise internally until every gate passes.`,
-          prompt: `Current count: ${validation.wordCount} words${exactOverage ? ` (${exactOverage} over the hard limit)` : ''}.\nFailed SEO requirements:\n${validation.failed.map(item => `- ${item.label}`).join('\n')}\n\nFix length and SEO together in this single revision:\n\n${res.content}`,
-          stepNumber: 4,
-          bypassCache: true,
-          maxTokens: Math.min(maxTokens, Math.ceil(targetWords * 1.32)),
-          temperature: 0,
-          skipDocumentContext: true,
-        });
-        if (!res.content.trim()) throw new Error('AI không trả về bản sửa SEO hợp lệ. Draft cũ vẫn được giữ nguyên.');
-        generatedWords = countWords(res.content);
-        if (generatedWords > targetWords && generatedWords <= targetWords * 1.05) {
-          res = { ...res, content: compactDraftLocally(res.content, targetWords) };
-        }
-        validation = evaluateSeoChecklist(res.content, article, targetWords);
-      }
+      const assembledDraft = parseStructuredDraft(res.content, article);
+      const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
       if (validation.failed.length) throw new Error(`Draft chưa được lưu vì chưa đạt 100% SEO checklist: ${validation.failed.map(item => item.label).join(', ')}.`);
       const saved = await onUpdate({
-        draft: res.content,
+        draft: assembledDraft,
         draftSourceFingerprint,
         draftScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),
       });
       if (!saved) throw new Error('Draft Bước 3 chưa được lưu vào Supabase.');
-      if (editorRef.current) editorRef.current.innerText = res.content;
+      if (editorRef.current) editorRef.current.innerText = assembledDraft;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
