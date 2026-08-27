@@ -27,6 +27,7 @@ import { extractDocumentText } from './documentParser.ts';
 import { extractStructuredSections } from './documentStructure.ts';
 import { resolveStepContext, resolveStep1WaveContexts, type StepWaveContext } from './stepContext.ts';
 import { researchSeoKeywords, seoResearchConfigured } from './seoResearch.ts';
+import { jsonrepair } from 'jsonrepair';
 
 // DIST_PATH env var set by Railway start command; fallback to sibling dist/ of cwd
 const DIST = process.env.DIST_PATH
@@ -187,7 +188,9 @@ function parseJsonObject(raw: string): Record<string, any> {
   const end = cleaned.lastIndexOf('}');
   if (start >= 0 && end > start) {
     const body = cleaned.slice(start, end + 1);
-    try { return JSON.parse(body); } catch { return JSON.parse(repairModelJson(body)); }
+    try { return JSON.parse(body); } catch {
+      try { return JSON.parse(jsonrepair(body)); } catch { return JSON.parse(repairModelJson(body)); }
+    }
   }
   throw new Error('AI did not return a valid JSON object.');
 }

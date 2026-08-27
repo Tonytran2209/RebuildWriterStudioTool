@@ -328,7 +328,7 @@ export default function Step2CoreIdea({
       const systemPrompt = buildRoleSystemPrompt(
         [
           canonicalAIOutputInstruction,
-          `Đề xuất ÍT NHẤT 3 core ideas / góc độ cho bài viết dạng "${article.contentType}".`,
+          `Đề xuất CHÍNH XÁC 3 core ideas / góc độ cho bài viết dạng "${article.contentType}".`,
           selectedSnapshot
             ? `- Dùng lựa chọn Step 1 đã khóa làm định hướng bắt buộc: ${selectedSnapshot.label}; Type ${selectedSnapshot.typeGroup ?? "không xác định"}; ${selectedSnapshot.wave ?? ""}; ${selectedSnapshot.timeframe ?? ""}; keywords: ${(selectedSnapshot.keywords ?? []).join(", ")}.`
             : "- Không có snapshot cấu trúc từ Step 1; chỉ dùng content type đã chọn.",
@@ -341,6 +341,7 @@ export default function Step2CoreIdea({
           "- ratingRationales phải giải thích riêng từng điểm: overall, seoPotential, audienceFit, docSupport và uniqueness; nêu rõ điểm mạnh, điểm yếu hoặc dữ liệu còn thiếu.",
           "- Ứng dụng tự gắn các excerpt đã kiểm chứng sau khi model trả kết quả. KHÔNG trả evidence, matchedDocs hoặc ruleRefs để tránh lặp token.",
           "- Trả CHÍNH XÁC 3 ideas khác nhau; mỗi idea phải chọn một primary keyword accepted.",
+          "- Giữ JSON ngắn và ổn định: mỗi reason/ruleReason/kbReason tối đa 18 từ; angleDescription tối đa 30 từ; mainArgument tối đa 55 từ; mỗi rating rationale tối đa 16 từ.",
           "",
           "Trả về DUY NHẤT một JSON object hợp lệ, không kèm markdown fences hay text giải thích.",
           "Schema:",
@@ -402,7 +403,7 @@ export default function Step2CoreIdea({
           railwayUrl,
           prompt: userPrompt,
           systemPrompt,
-          maxTokens: 5500,
+          maxTokens: 4000,
           temperature: 0.1,
           stepNumber: 2,
           bypassCache,

@@ -1,3 +1,5 @@
+import { jsonrepair } from 'jsonrepair';
+
 function extractJsonBody(raw: string) {
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const body = (fenced ? fenced[1] : raw).trim();
@@ -38,6 +40,7 @@ function escapeUnquotedStringQuotes(input: string) {
 export function parseAIJson(raw: string): unknown {
   const json = extractJsonBody(raw);
   try { return JSON.parse(json); } catch { /* deterministic repair below */ }
+  try { return JSON.parse(jsonrepair(json)); } catch { /* conservative fallback below */ }
   const repaired = escapeUnquotedStringQuotes(json)
     .replace(/\u00a0/g, ' ')
     .replace(/,\s*([}\]])/g, '$1')
