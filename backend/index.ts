@@ -162,12 +162,33 @@ function aiCacheKey(input: unknown): string {
   return `writer:ai-cache:${digest}`;
 }
 
+function repairModelJson(input: string) {
+  let output = '';
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < input.length; index += 1) {
+    const char = input[index];
+    if (!inString) { if (char === '"') inString = true; output += char; continue; }
+    if (escaped) { output += char; escaped = false; continue; }
+    if (char === '\\') { output += char; escaped = true; continue; }
+    if (char !== '"') { output += char; continue; }
+    const next = input.slice(index + 1).match(/^\s*([,:}\]"])/)?.[1];
+    if (next || !input.slice(index + 1).trim()) { inString = false; output += char; }
+    else output += '\\"';
+  }
+  return output.replace(/\u00a0/g, ' ').replace(/,\s*([}\]])/g, '$1').replace(/}\s*{/g, '},{')
+    .replace(/("(?:\\.|[^"\\])*"|\d+(?:\.\d+)?|true|false|null|\]|})\s*\n\s*(?="[^"\n]+"\s*:)/g, '$1,\n');
+}
+
 function parseJsonObject(raw: string): Record<string, any> {
   const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
   try { const parsed = JSON.parse(cleaned); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed; } catch { /* scan below */ }
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
-  if (start >= 0 && end > start) return JSON.parse(cleaned.slice(start, end + 1));
+  if (start >= 0 && end > start) {
+    const body = cleaned.slice(start, end + 1);
+    try { return JSON.parse(body); } catch { return JSON.parse(repairModelJson(body)); }
+  }
   throw new Error('AI did not return a valid JSON object.');
 }
 

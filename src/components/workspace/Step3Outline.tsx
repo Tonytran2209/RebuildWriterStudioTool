@@ -20,6 +20,7 @@ import {
 } from "../../lib/docContext";
 import { hasEvidenceForAuthorizedCategories, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
 import { ProcessTraceModal } from './ProcessTrace';
+import { parseAIJson } from '../../lib/aiJson';
 
 function generateId() {
   return Math.random().toString(36).slice(2, 9);
@@ -34,7 +35,7 @@ const SEARCH_INTENT_META: Record<SearchIntent, { label: string; color: string }>
 
 const EVIDENCE_ROLE_STYLE: Record<string, string> = {
   kb:     "bg-indigo-50 text-indigo-700 border-indigo-100",
-  action: "bg-emerald-50 text-emerald-700 border-emerald-100",
+  content_plan: "bg-emerald-50 text-emerald-700 border-emerald-100",
   rules:  "bg-amber-50 text-amber-700 border-amber-100",
 };
 
@@ -312,12 +313,12 @@ export default function Step3Outline({
         temperature: 0.1,
         stepNumber: 3,
         bypassCache: manual,
-        jsonMode: model.provider === "deepseek",
+        jsonMode: true,
         contextQuery,
       });
       aiResponses.push(res);
       let lastResponse = res;
-      const parsed = extractJson(res.content);
+      const parsed = parseAIJson(res.content);
       const normalized = normalizeSections(parsed, bundle, trustedCoreIdeaEvidence);
       let sections = normalized.sections;
       let generatedAt = res.servedAt ?? res.generatedAt ?? new Date().toISOString();
@@ -343,12 +344,12 @@ export default function Step3Outline({
           temperature: 0.1,
           stepNumber: 3,
           bypassCache: true,
-          jsonMode: model.provider === "deepseek",
+          jsonMode: true,
           contextQuery,
         });
         aiResponses.push(corrected);
         lastResponse = corrected;
-        const correctedNormalized = normalizeSections(extractJson(corrected.content), bundle, trustedCoreIdeaEvidence);
+        const correctedNormalized = normalizeSections(parseAIJson(corrected.content), bundle, trustedCoreIdeaEvidence);
         const additions = correctedNormalized.sections;
         sections = [...sections, ...additions]
           .filter((section, index, all) => all.findIndex(candidate => candidate.heading.toLocaleLowerCase() === section.heading.toLocaleLowerCase()) === index)

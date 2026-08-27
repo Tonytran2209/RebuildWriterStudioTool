@@ -23,6 +23,7 @@ import {
 } from "../../lib/docContext";
 import { hasEvidenceForAuthorizedCategories, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
 import { ProcessTraceModal } from './ProcessTrace';
+import { parseAIJson } from '../../lib/aiJson';
 
 interface Props {
   article: Article;
@@ -33,35 +34,6 @@ interface Props {
   onUpdate: (updates: Partial<Article>) => Promise<boolean>;
   onNext: () => void;
   onPrev: () => void;
-}
-
-function extractJson(raw: string): unknown {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const body = (fenced ? fenced[1] : raw).trim();
-  const objectStart = body.indexOf("{");
-  const arrayStart = body.indexOf("[");
-  const start = objectStart >= 0 && (arrayStart < 0 || objectStart < arrayStart) ? objectStart : arrayStart;
-  const end = start === objectStart ? body.lastIndexOf("}") : body.lastIndexOf("]");
-  if (start === -1 || end === -1) throw new Error("Không tìm thấy JSON trong phản hồi AI.");
-  const json = body.slice(start, end + 1);
-  try {
-    return JSON.parse(json);
-  } catch (firstError) {
-    // Repair common syntax slips without changing evidence text.
-    const repaired = json
-      .replace(/\u00a0/g, " ")
-      .replace(/,\s*([}\]])/g, "$1")
-      .replace(/}\s*{/g, "},{")
-      .replace(
-        /("(?:\\.|[^"\\])*"|\d+(?:\.\d+)?|true|false|null|\]|})\s*\n\s*(?="[^"\n]+"\s*:)/g,
-        "$1,\n",
-      );
-    try {
-      return JSON.parse(repaired);
-    } catch {
-      throw firstError;
-    }
-  }
 }
 
 function toNumber(v: unknown, fallback = 0): number {
@@ -434,11 +406,11 @@ export default function Step2CoreIdea({
           temperature: 0.1,
           stepNumber: 2,
           bypassCache,
-          jsonMode: model.provider === "deepseek",
+          jsonMode: true,
           contextQuery,
         });
         aiResponses.push(res);
-        const parsed = extractJson(res.content);
+        const parsed = parseAIJson(res.content);
         return { res, parsed, ideas: normalizeIdeas(parsed, bundle, seoResearch, trustedEvidence) };
       };
       let result = await requestIdeas(manual);
@@ -469,11 +441,11 @@ export default function Step2CoreIdea({
           temperature: 0.2,
           stepNumber: 2,
           bypassCache: true,
-          jsonMode: model.provider === "deepseek",
+          jsonMode: true,
           skipDocumentContext: true,
         });
         aiResponses.push(correctionResponse);
-        const correctionParsed = extractJson(correctionResponse.content);
+        const correctionParsed = parseAIJson(correctionResponse.content);
         const correctionRoot = correctionParsed && typeof correctionParsed === "object" && !Array.isArray(correctionParsed)
           ? correctionParsed as Record<string, unknown>
           : { ideas: correctionParsed };

@@ -3,6 +3,7 @@ import { Check, LoaderCircle, Sparkles, X } from 'lucide-react';
 import type { Article, AIModel, AppConfig, DocumentFile, EvidenceRef } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
+import { parseAIJson } from '../../lib/aiJson';
 import {
   collectStepDocs,
   buildWorkflowSourceFingerprint,
@@ -29,8 +30,7 @@ function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit:
 }
 
 function parseStructuredDraft(raw: string, article: Article) {
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  const parsed = JSON.parse(cleaned) as { title?: string; introduction?: string; conclusion?: string; sections?: Array<{ id?: string; heading?: string; level?: string; content?: string }> };
+  const parsed = parseAIJson(raw) as { title?: string; introduction?: string; conclusion?: string; sections?: Array<{ id?: string; heading?: string; level?: string; content?: string }> };
   if (!parsed.title?.trim() || !parsed.introduction?.trim() || !parsed.conclusion?.trim() || !Array.isArray(parsed.sections)) {
     throw new Error('AI trả về structured draft thiếu title, introduction, sections hoặc conclusion.');
   }
