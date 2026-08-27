@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import type { ActionDataSource, DocumentFile, FileCategory, KbSubTab } from '../../types';
+import type { ActionDataSource, AppConfig, DocumentFile, FileCategory, KbSubTab } from '../../types';
 import SourceImportPanel from './SourceImportPanel';
+import WorkflowRulesPanel from './WorkflowRulesPanel';
 import { useI18n } from '../../lib/i18n';
 
 const SUBTAB_META: Record<KbSubTab, { label: string; category: FileCategory; hint: string }> = {
@@ -20,6 +21,8 @@ interface Props {
   files: DocumentFile[];
   onChange: (files: DocumentFile[]) => void;
   railwayUrl: string;
+  config: AppConfig;
+  onConfigChange: (config: AppConfig) => void;
 }
 
 function toSource(file: DocumentFile): ActionDataSource {
@@ -44,6 +47,8 @@ export default function TabKnowledgeBase({
   files,
   onChange,
   railwayUrl,
+  config,
+  onConfigChange,
 }: Props) {
   const { language, tr } = useI18n();
   const [activeSubTab, setActiveSubTab] = useState<KbSubTab>('kb');
@@ -76,16 +81,22 @@ export default function TabKnowledgeBase({
       </div>
 
       <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-[11px] text-blue-700">
-        <strong>{meta.label}:</strong> {language === 'vi' ? meta.hint : tr(meta.hint, activeSubTab === 'kb' ? 'Core knowledge, products, research, and references' : 'Reusable skills, taxonomy, tone of voice, structure, and mandatory rules')}. {tr('Mọi phương thức đều được Railway xử lý và chỉ được đánh dấu sẵn sàng sau khi Supabase đã lưu nội dung thật.', 'Every import method is processed by Railway and marked ready only after Supabase stores the actual content.')}
+        <strong>{meta.label}:</strong> {activeSubTab === 'kb'
+          ? <>{language === 'vi' ? meta.hint : 'Core knowledge, products, research, and references'}. {tr('Mọi phương thức đều được Railway xử lý và chỉ được đánh dấu sẵn sàng sau khi Supabase đã lưu nội dung thật.', 'Every import method is processed by Railway and marked ready only after Supabase stores the actual content.')}</>
+          : <>{tr('Hiển thị rule, luồng xử lý và cách đọc dữ liệu thực sự đang điều khiển pipeline AI. Đây là cấu hình vận hành, không phải danh sách tài liệu upload.', 'Shows the rules, processing flow, and data-reading behavior that actually control the AI pipeline. This is operational configuration, not an uploaded-document list.')}</>}
       </div>
 
-      <SourceImportPanel
-        key={activeSubTab}
-        category={meta.category}
-        sources={sources}
-        onChange={handleChange}
-        railwayUrl={railwayUrl}
-      />
+      {activeSubTab === 'rules' ? (
+        <WorkflowRulesPanel config={config} files={files} onChange={onConfigChange} />
+      ) : (
+        <SourceImportPanel
+          key={activeSubTab}
+          category={meta.category}
+          sources={sources}
+          onChange={handleChange}
+          railwayUrl={railwayUrl}
+        />
+      )}
     </div>
   );
 }

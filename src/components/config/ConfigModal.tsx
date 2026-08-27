@@ -94,6 +94,8 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
                 files={localFiles}
                 onChange={setLocalFiles}
                 railwayUrl={localConfig.railwayUrl}
+                config={localConfig}
+                onConfigChange={setLocalConfig}
               />
             )}
           </div>

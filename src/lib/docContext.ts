@@ -1,5 +1,6 @@
-import type { AppConfig, DocumentFile, SkillApplicationConfig } from "../types";
+import type { AppConfig, DocumentFile } from "../types";
 import { isDocumentReady } from "./documentStatus";
+import { buildWorkflowRulePrompt } from './workflowRules';
 
 export interface DocRef {
   id?: string;
@@ -29,10 +30,10 @@ QUY TẮC PHÂN QUYỀN TÀI LIỆU (BẮT BUỘC TUÂN THỦ):
    → Chỉ dùng để xác định topic, nhóm nội dung và keyword đã được tổng hợp cho bài này.
    → Không được đọc hoặc suy ra từ bất kỳ kế hoạch legacy nào ngoài activity hiện tại.
 
-3) SKILLS & RULES — Kỹ năng và chuẩn mực có policy áp dụng
-   Là quy tắc viết bài, writing pattern, writer rule, tone of voice, brand guidelines.
-   → Skill "mandatory" phải được tuân thủ; "supporting" áp dụng khi phù hợp; "reference" chỉ dùng tham khảo.
-   → Chỉ dùng skill đang bật và được chỉ định cho Step hiện tại.
+3) REFERENCE GUIDES — Tài liệu hướng dẫn tham khảo
+   Là tone of voice, brand guide, taxonomy hoặc mẫu nội dung được upload.
+   → Dùng làm dữ liệu tham khảo khi operational rule yêu cầu; bản thân file upload không phải một workflow skill.
+   → Cách pipeline đọc và áp dụng được quyết định bởi WORKFLOW RULE REGISTRY trong Settings.
 
 NGUYÊN TẮC CHUNG:
 - Chỉ đề xuất / khẳng định những gì có căn cứ trong tài liệu được cấp.
@@ -49,24 +50,8 @@ function formatFile(file: DocumentFile): DocRef {
   };
 }
 
-const DEFAULT_SKILL_CONFIG: SkillApplicationConfig = {
-  enabled: true,
-  steps: [2, 3, 4],
-  priority: 'mandatory',
-  applicationRule: '',
-};
-
-export function getSkillConfig(file: DocumentFile): SkillApplicationConfig {
-  return { ...DEFAULT_SKILL_CONFIG, ...file.skillConfig };
-}
-
-export function skillAppliesToStep(file: DocumentFile, stepNumber: number): boolean {
-  const policy = getSkillConfig(file);
-  return policy.enabled && policy.steps.includes(stepNumber as 2 | 3 | 4);
-}
-
 export function collectStepDocs(
-  stepNumber: number,
+  _stepNumber: number,
   _config: AppConfig,
   files: DocumentFile[],
   contentPlanInput?: string,
@@ -86,7 +71,6 @@ export function collectStepDocs(
   const rules: DocRef[] = files
     .filter(f => f.category === 'rules')
     .filter(isDocumentReady)
-    .filter(file => skillAppliesToStep(file, stepNumber))
     .map(formatFile);
 
   return {
@@ -128,43 +112,23 @@ export function buildDocContextBlock(bundle: DocBundle): string {
   return [
     formatSection("KNOWLEDGE BASE", "kiến thức nền tảng để tra cứu và lập luận", bundle.knowledgeBase),
     formatSection("CURRENT CONTENT PLAN", "nguồn topic và phân loại của activity hiện tại", bundle.contentPlan),
-    formatSection("RULES & GUIDELINES", "chuẩn mực bắt buộc cho output", bundle.rules),
+    formatSection("REFERENCE GUIDES", "tài liệu tham khảo được operational workflow sử dụng khi phù hợp", bundle.rules),
   ].join("\n");
 }
 
 export function buildStepDocumentPromptRules(
   stepNumber: number,
   config: AppConfig,
-  files: DocumentFile[],
+  _files: DocumentFile[],
 ): string {
   const stepConfig = config.stepConfigs[stepNumber];
   if (!stepConfig) return "";
-  const categoryLabels = { kb: "KNOWLEDGE BASE", rules: "SKILLS & RULES" } as const;
-  const lines = (['kb', 'rules'] as const).flatMap(category => {
-    const current = stepConfig.categoryPromptRules?.[category]?.trim();
-    const legacy = Object.values(stepConfig.documentPromptRules?.[category] ?? {})
-      .map(rule => rule.trim()).filter(Boolean)
-      .filter((rule, index, rules) => rules.indexOf(rule) === index).join("\n\n");
-    const rule = current || legacy;
-    return rule ? [`- [${categoryLabels[category]}]: ${rule}`] : [];
-  });
-  const skillLines = files
-    .filter(file => file.category === 'rules' && isDocumentReady(file) && skillAppliesToStep(file, stepNumber))
-    .map(file => {
-      const policy = getSkillConfig(file);
-      const behavior = policy.priority === 'mandatory'
-        ? 'MUST be followed and overrides default writing behavior'
-        : policy.priority === 'supporting'
-          ? 'apply when relevant to the task'
-          : 'use only as reference; do not force its pattern';
-      return `- [SKILL: ${file.name}] Priority: ${policy.priority}. ${behavior}.${policy.applicationRule.trim() ? ` Application rule: ${policy.applicationRule.trim()}` : ''}`;
-    });
-  if (!lines.length && !skillLines.length) return "";
+  const workflowRules = buildWorkflowRulePrompt(config, stepNumber);
+  if (!workflowRules) return "";
   return [
-    "QUY TẮC ĐỌC THEO PHÂN VÙNG TÀI LIỆU (BẮT BUỘC):",
-    "Áp dụng rule cho toàn bộ tài liệu thuộc đúng phân vùng tương ứng.",
-    ...lines,
-    ...skillLines,
+    "OPERATIONAL WORKFLOW RULES:",
+    "Tài liệu upload chỉ là nguồn context; registry bên dưới quyết định cách AI đọc và xử lý dữ liệu.",
+    workflowRules,
   ].join("\n");
 }
 

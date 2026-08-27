@@ -47,15 +47,6 @@ export interface StructuredDocumentSection {
   typeGroups: ContentTypeGroup[];
 }
 
-export type SkillPriority = 'mandatory' | 'supporting' | 'reference';
-
-export interface SkillApplicationConfig {
-  enabled: boolean;
-  steps: Array<2 | 3 | 4>;
-  priority: SkillPriority;
-  applicationRule: string;
-}
-
 export interface DocumentFile {
   id: string;
   name: string;
@@ -81,7 +72,6 @@ export interface DocumentFile {
   rows?: ManualRow[];
   airtableBase?: string;
   airtableTable?: string;
-  skillConfig?: SkillApplicationConfig;
 }
 
 export interface StepFileAccess {
@@ -105,10 +95,21 @@ export interface StepConfig {
   systemPrompt?: string;
 }
 
+export type WorkflowRuleId = 'source-grounding' | 'core-idea' | 'outline' | 'draft' | 'quality-persistence';
+export type WorkflowRuleEnforcement = 'strict' | 'guided';
+
+export interface WorkflowRuleSetting {
+  enforcement: WorkflowRuleEnforcement;
+  customInstruction: string;
+}
+
+export type WorkflowRuleSettings = Partial<Record<WorkflowRuleId, WorkflowRuleSetting>>;
+
 export interface AppConfig {
   railwayUrl: string;
   stepConfigs: Record<number, StepConfig>;
   models: AIModel[];
+  workflowRules?: WorkflowRuleSettings;
 }
 
 export type SearchIntent = 'informational' | 'commercial' | 'transactional' | 'navigational';
@@ -395,5 +396,4 @@ export interface ActionDataSource {
   airtableKey?: string;
   airtableBase?: string;
   airtableTable?: string;
-  skillConfig?: SkillApplicationConfig;
 }

@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
-import { Check, ChevronDown, ClipboardPaste, Database, Download, FilePenLine, FolderUp, Link2, Plug, Sheet, Trash2 } from 'lucide-react';
+import { ClipboardPaste, Database, Download, FilePenLine, FolderUp, Link2, Plug, Sheet, Trash2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { ActionDataSource, ActionSourceType, FileCategory, ManualRow, SkillApplicationConfig, SkillPriority } from '../../types';
+import type { ActionDataSource, ActionSourceType, FileCategory, ManualRow } from '../../types';
 import { isImportSourceReady } from '../../lib/documentStatus';
 import { uploadDocumentToRailway } from '../../lib/railwayUpload';
 import { downloadDocumentFromRailway } from '../../lib/railwayDownload';
@@ -406,19 +406,6 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
   const [downloadError, setDownloadError] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
-  const [expandedSkillId, setExpandedSkillId] = useState<string | null>(null);
-
-  const defaultSkillConfig: SkillApplicationConfig = {
-    enabled: true,
-    steps: [2, 3, 4],
-    priority: 'mandatory',
-    applicationRule: '',
-  };
-  const updateSkill = (id: string, patch: Partial<SkillApplicationConfig>) => {
-    onChange(sources.map(source => source.id === id
-      ? { ...source, skillConfig: { ...defaultSkillConfig, ...source.skillConfig, ...patch } }
-      : source));
-  };
 
   const addSource = async (source: ActionDataSource) => {
     setImporting(true);
@@ -449,88 +436,6 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
 
   return (
     <div className="space-y-4">
-      {category === 'rules' && sources.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4">
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <h3 className="text-sm font-semibold text-slate-900">{tr('Skills đang áp dụng', 'Applied skills')}</h3>
-              <p className="mt-0.5 text-[11px] text-slate-500">{tr('Điều chỉnh trực tiếp skill nào được dùng, dùng ở bước nào và cách AI áp dụng.', 'Control which skills AI uses, at which step, and how each one is applied.')}</p>
-            </div>
-            <span className="text-[11px] text-slate-500">
-              {sources.filter(source => source.skillConfig?.enabled !== false).length}/{sources.length} {tr('đang bật', 'enabled')}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {sources.map(source => {
-              const policy = { ...defaultSkillConfig, ...source.skillConfig };
-              const expanded = expandedSkillId === source.id;
-              return (
-                <article key={`skill-${source.id}`} className={`rounded-xl border p-3 transition-colors ${policy.enabled ? 'border-slate-200 bg-slate-50/60' : 'border-slate-200 bg-white opacity-70'}`}>
-                  <div className="flex flex-wrap items-start gap-3">
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={policy.enabled}
-                      onClick={() => updateSkill(source.id, { enabled: !policy.enabled })}
-                      className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors ${policy.enabled ? 'bg-slate-900' : 'bg-slate-300'}`}
-                    >
-                      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${policy.enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-                    </button>
-                    <div className="min-w-[180px] flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-xs font-semibold text-slate-900">{source.name}</h4>
-                        <span className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-semibold uppercase text-slate-500">{source.sourceType}</span>
-                        <span className="text-[10px] text-slate-400">{(source.content?.length ?? 0).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US')} {tr('ký tự', 'characters')}</span>
-                      </div>
-                      <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-500">{source.content?.trim() || source.preview || tr('Chưa có nội dung có thể đọc.', 'No readable content available.')}</p>
-                    </div>
-                    <button type="button" onClick={() => setExpandedSkillId(expanded ? null : source.id)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-100">
-                      {expanded ? tr('Thu gọn', 'Collapse') : tr('Xem & chỉnh', 'View & edit')}
-                      <ChevronDown className={`app-icon transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                    </button>
-                  </div>
-
-                  <div className="mt-3 grid gap-3 border-t border-slate-200 pt-3 md:grid-cols-[180px_1fr]">
-                    <label className="space-y-1">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{tr('Mức ưu tiên', 'Priority')}</span>
-                      <select value={policy.priority} onChange={event => updateSkill(source.id, { priority: event.target.value as SkillPriority })} disabled={!policy.enabled} className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-[11px] text-slate-700 outline-none focus:border-slate-400 disabled:opacity-50">
-                        <option value="mandatory">{tr('Bắt buộc', 'Mandatory')}</option>
-                        <option value="supporting">{tr('Hỗ trợ', 'Supporting')}</option>
-                        <option value="reference">{tr('Tham khảo', 'Reference')}</option>
-                      </select>
-                    </label>
-                    <div>
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{tr('Áp dụng tại', 'Apply at')}</span>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
-                        {([{ step: 2, labelVi: 'Bước 1 · Core Idea', labelEn: 'Step 1 · Core Idea' }, { step: 3, labelVi: 'Bước 2 · Outline', labelEn: 'Step 2 · Outline' }, { step: 4, labelVi: 'Bước 3 · Draft', labelEn: 'Step 3 · Draft' }] as const).map(item => {
-                          const selected = policy.steps.includes(item.step);
-                          return <button key={item.step} type="button" disabled={!policy.enabled} onClick={() => updateSkill(source.id, { steps: selected ? policy.steps.filter(step => step !== item.step) : [...policy.steps, item.step].sort() as Array<2 | 3 | 4> })} className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[10px] font-medium transition-colors disabled:opacity-50 ${selected ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-400'}`}>
-                            {selected && <Check className="app-icon" />}{language === 'vi' ? item.labelVi : item.labelEn}
-                          </button>;
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  {expanded && (
-                    <div className="mt-3 grid gap-3 border-t border-slate-200 pt-3 lg:grid-cols-2">
-                      <label className="space-y-1">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{tr('Cách AI áp dụng skill', 'How AI applies this skill')}</span>
-                        <textarea value={policy.applicationRule} onChange={event => updateSkill(source.id, { applicationRule: event.target.value })} disabled={!policy.enabled} rows={7} placeholder={tr('Ví dụ: Dùng checklist này để kiểm tra outline; không sao chép ví dụ trong tài liệu...', 'Example: Use this checklist to validate the outline; do not copy examples from the document...')} className="w-full resize-y rounded-xl border border-slate-200 bg-white p-3 text-[11px] leading-relaxed text-slate-700 outline-none focus:border-slate-400 disabled:opacity-50" />
-                      </label>
-                      <div className="space-y-1">
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{tr('Toàn bộ nội dung skill', 'Full skill content')}</span>
-                        <pre className="max-h-48 min-h-[174px] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-white p-3 font-sans text-[11px] leading-relaxed text-slate-600">{source.content?.trim() || tr('Tài liệu này chưa có nội dung đã trích xuất.', 'This document has no extracted content.')}</pre>
-                      </div>
-                    </div>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
       {/* Mode selector */}
       <div>
         <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">{tr('Chọn cách nhập dữ liệu', 'Choose an import method')}</p>

@@ -317,12 +317,25 @@ async function runBatchModel(article: any, step: 2 | 3 | 4, prompt: string, json
   const model = config?.models?.find((item: any) => item.id === stepConfig?.modelId && item.enabled);
   if (!model) throw new Error(`Step ${step}: no enabled AI model is configured.`);
   if (!getAvailableProviders()[model.provider]) throw new Error(`${model.provider} API is not configured.`);
+  const ruleIdsByStep: Record<number, string[]> = {
+    2: ['source-grounding', 'core-idea', 'quality-persistence'],
+    3: ['source-grounding', 'outline', 'quality-persistence'],
+    4: ['source-grounding', 'draft', 'quality-persistence'],
+  };
+  const workflowInstructions = (ruleIdsByStep[step] ?? []).flatMap(id => {
+    const setting = config?.workflowRules?.[id];
+    const customInstruction = String(setting?.customInstruction ?? '').trim();
+    return customInstruction ? [`- [${id}] enforcement=${setting?.enforcement ?? 'strict'}: ${customInstruction}`] : [];
+  });
+  const effectivePrompt = workflowInstructions.length
+    ? `${prompt}\n\nUSER-CONFIGURED WORKFLOW RULES:\n${workflowInstructions.join('\n')}`
+    : prompt;
   const context = await resolveStepContext(step, `${article.topic ?? ''} ${article.keywords ?? ''}`, article.id);
-  const key = aiCacheKey({ kind: 'batch-pipeline-v1', articleId: article.id, step, model: model.id, prompt, fingerprint: context.summary.sourceFingerprint });
+  const key = aiCacheKey({ kind: 'batch-pipeline-v2', articleId: article.id, step, model: model.id, prompt: effectivePrompt, fingerprint: context.summary.sourceFingerprint });
   const cached = await kvGet<any>(key);
   if (cached?.content) return { ...cached, provider: model.provider, cacheHit: true };
   await reserveAIBudget(article.id, step);
-  const response = await generate({ modelId: model.id, provider: model.provider, prompt, contextDocs: context.contextDocs, jsonMode, maxTokens, temperature: step === 4 ? 0.2 : 0.35 });
+  const response = await generate({ modelId: model.id, provider: model.provider, prompt: effectivePrompt, contextDocs: context.contextDocs, jsonMode, maxTokens, temperature: step === 4 ? 0.2 : 0.35 });
   const input = Number(response.usage?.inputTokens ?? 0);
   const cachedTokens = Number(response.usage?.cachedInputTokens ?? 0);
   const output = Number(response.usage?.outputTokens ?? 0);
