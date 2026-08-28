@@ -44,7 +44,7 @@
   color: #e5e5e5 !important;
 }
 
-.codex-dark .minimal-settings .settings-content button:hover {
+.codex-dark .minimal-settings .settings-content button:not(.workflow-rule-nav-item):not(.workflow-rule-mode):hover {
   border-color: #3a3a3a !important;
   background-color: #222 !important;
   color: #e5e5e5 !important;
@@ -56,7 +56,6 @@
   color: #fff !important;
 }
 
-.codex-dark .minimal-settings .settings-content section:hover,
 .codex-dark .minimal-settings .settings-content div[class*='hover:bg-slate-100']:hover,
 .codex-dark .minimal-settings .settings-content div[class*='hover:shadow']:hover {
   border-color: #3a3a3a !important;
@@ -64,12 +63,83 @@
   box-shadow: none !important;
 }
 
-.codex-dark .minimal-settings .settings-content section > button:hover,
 .codex-dark .minimal-settings .settings-content .border-dashed:hover {
   border-color: #3a3a3a !important;
   background: #222 !important;
   transform: none !important;
   opacity: 1 !important;
+}
+
+/* Workflow Rules has explicit interaction states; nested content never reacts as a card. */
+.codex-dark .minimal-settings .workflow-rules-panel section,
+.codex-dark .minimal-settings .workflow-rules-panel section:hover,
+.codex-dark .minimal-settings .workflow-rule-editor,
+.codex-dark .minimal-settings .workflow-rule-editor:hover {
+  border-color: #2a2a2a !important;
+  background: #1a1a1a !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-settings .workflow-rules-intro,
+.codex-dark .minimal-settings .workflow-rules-intro:hover,
+.codex-dark .minimal-settings .workflow-rules-layout,
+.codex-dark .minimal-settings .workflow-rules-layout:hover {
+  border-color: #2a2a2a !important;
+  background: #1a1a1a !important;
+}
+
+.codex-dark .minimal-settings .workflow-rules-sidebar {
+  border-color: #2a2a2a !important;
+  background: #181818 !important;
+}
+
+.codex-dark .minimal-settings .workflow-rule-nav-item {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: #9ca3af !important;
+}
+
+.codex-dark .minimal-settings .workflow-rule-nav-item:hover:not(.is-active) {
+  border-color: transparent !important;
+  background: #222 !important;
+  color: #d1d5db !important;
+}
+
+.codex-dark .minimal-settings .workflow-rule-nav-item.is-active,
+.codex-dark .minimal-settings .workflow-rule-nav-item.is-active:hover {
+  border-color: #3a3a3a !important;
+  background: #292929 !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .workflow-rule-enforcement {
+  border-color: #2d2d2d !important;
+  background: #181818 !important;
+}
+
+.codex-dark .minimal-settings .workflow-rule-mode {
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #8f949e !important;
+}
+
+.codex-dark .minimal-settings .workflow-rule-mode:hover:not(.is-active) {
+  border-color: transparent !important;
+  background: #222 !important;
+  color: #d1d5db !important;
+}
+
+.codex-dark .minimal-settings .workflow-rule-mode.is-active,
+.codex-dark .minimal-settings .workflow-rule-mode.is-active:hover {
+  border-color: #3a3a3a !important;
+  background: #292929 !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .workflow-rule-stage,
+.codex-dark .minimal-settings .workflow-rule-stage:hover {
+  border-color: #2a2a2a !important;
+  background: #181818 !important;
 }
 
 .codex-dark .minimal-settings .settings-footer button:first-child:hover {
