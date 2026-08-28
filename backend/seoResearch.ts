@@ -34,7 +34,7 @@ function validUrl(value: unknown): string | null {
   }
 }
 
-export async function researchSeoKeywords(seeds: string[]): Promise<{
+export async function researchSeoKeywords(seeds: string[], keywordCount = 10): Promise<{
   keywords: SeoKeywordMetric[];
   seedKeywords: string[];
   location: string;
@@ -48,6 +48,7 @@ export async function researchSeoKeywords(seeds: string[]): Promise<{
   const location = 'United States';
   const language = 'en';
   const researchedAt = new Date().toISOString();
+  const requestedCount = Math.min(20, Math.max(5, Math.round(keywordCount)));
   const { default: OpenAI } = await import('openai');
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.create({
@@ -56,7 +57,7 @@ export async function researchSeoKeywords(seeds: string[]): Promise<{
     input: [
       'Research the current United States Google search landscape for the seed keywords below.',
       'Use web search and inspect current SERP language, autocomplete/related-query patterns, recurring topics, and search intent.',
-      'Return exactly 10 distinct, actionable English SEO keywords ranked by observed market prominence and relevance.',
+      `Return exactly ${requestedCount} distinct, actionable English SEO keywords ranked by observed market prominence and relevance.`,
       'Do not invent search volume, keyword difficulty, CPC, or competition metrics.',
       'Every keyword must include at least one real supporting URL found during web search and a concise marketEvidence statement describing what was observed.',
       'Return only a valid JSON array with this schema:',
@@ -73,7 +74,7 @@ export async function researchSeoKeywords(seeds: string[]): Promise<{
     if (!keyword || !sources.length || !marketEvidence) return [];
     return [{ keyword, searchVolume: null, keywordDifficulty: null, competition: null, cpc: null, intent: item.intent ? String(item.intent) : null, source: 'openai_web_search', sources, marketEvidence, updatedAt: researchedAt }];
   });
-  const unique = [...new Map(items.map(item => [item.keyword.toLocaleLowerCase(), item])).values()].slice(0, 10);
-  if (unique.length !== 10) throw new Error(`OpenAI Web Search chỉ trả về ${unique.length}/10 keyword có nguồn hợp lệ; pipeline dừng để tránh kết quả thiếu căn cứ.`);
+  const unique = [...new Map(items.map(item => [item.keyword.toLocaleLowerCase(), item])).values()].slice(0, requestedCount);
+  if (unique.length !== requestedCount) throw new Error(`OpenAI Web Search chỉ trả về ${unique.length}/${requestedCount} keyword có nguồn hợp lệ; pipeline dừng để tránh kết quả thiếu căn cứ.`);
   return { keywords: unique, seedKeywords: cleanSeeds, location, language, researchedAt, usage: { inputTokens: response.usage?.input_tokens ?? 0, outputTokens: response.usage?.output_tokens ?? 0, cachedInputTokens: response.usage?.input_tokens_details?.cached_tokens ?? 0 } };
 }

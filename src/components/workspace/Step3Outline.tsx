@@ -21,6 +21,7 @@ import {
 import { hasEvidenceForAuthorizedCategories, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
 import { ProcessTraceModal } from './ProcessTrace';
 import { parseAIJson } from '../../lib/aiJson';
+import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
 
 function generateId() {
   return Math.random().toString(36).slice(2, 9);
@@ -184,6 +185,7 @@ export default function Step3Outline({
 
   const bundle = useMemo(() => collectStepDocs(3, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(3, config, files), [config, files]);
+  const compiledWorkflowRules = useMemo(() => compileWorkflowRules(config, 3, 'manual'), [config]);
   const selectedCoreIdea = useMemo(
     () => article.coreIdeaSuggestions?.find(idea => idea.id === article.selectedCoreIdeaId) ?? null,
     [article.coreIdeaSuggestions, article.selectedCoreIdeaId],
@@ -196,9 +198,9 @@ export default function Step3Outline({
     () => [
       buildWorkflowSourceFingerprint(bundle), model.provider, model.id, "step3-audit-v6-content-plan",
       article.contentType, article.topic, article.angle, article.keywords,
-      article.targetAudience, article.tone, article.wordCount, article.selectedCoreIdeaId, documentPromptRules,
+      article.targetAudience, article.tone, article.wordCount, article.selectedCoreIdeaId, compiledWorkflowRules.fingerprint,
     ].join(":"),
-    [article.angle, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, documentPromptRules, model.id, model.provider],
+    [article.angle, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, model.id, model.provider],
   );
   const outlineIsStale = Boolean(outline.length) && article.outlineSourceFingerprint !== sourceFingerprint;
 
@@ -216,7 +218,8 @@ export default function Step3Outline({
     };
   }, [article]);
   const desiredSections = targetSectionCount(contextBrief.wordCount);
-  const minimumSections = Math.max(4, desiredSections - 2);
+  const configuredMinimumSections = Math.min(12, Math.max(4, Number(getWorkflowParameter(config, 'outline', 'outline-mapping', 'minimumSections') ?? 4)));
+  const minimumSections = Math.max(configuredMinimumSections, desiredSections - 2);
   const contextQuery = [
     contextBrief.contentType,
     contextBrief.topic,
@@ -297,6 +300,7 @@ export default function Step3Outline({
         ] : []),
         "",
         `Yêu cầu: Trả về khoảng ${desiredSections} section trong JSON object với keyword mapping, search intent và evidence chi tiết.`,
+        compiledWorkflowRules.taskGuidance,
       ].join("\n");
 
       let modelCalls = 1;
@@ -373,6 +377,7 @@ export default function Step3Outline({
         outlineSourceFingerprint: sourceFingerprint,
         outlineScannedAt: generatedAt,
         step3ProcessTrace: trace,
+        workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 3: compiledWorkflowRules.snapshot },
         draft: "",
         draftSourceFingerprint: null,
         draftScannedAt: null,

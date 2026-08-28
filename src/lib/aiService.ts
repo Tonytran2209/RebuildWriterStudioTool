@@ -187,12 +187,12 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
   };
 }
 
-export async function researchSeoKeywords(seeds: string[], articleId: string, railwayUrl?: string): Promise<SeoResearchResult> {
+export async function researchSeoKeywords(seeds: string[], articleId: string, railwayUrl?: string, keywordCount = 10): Promise<SeoResearchResult> {
   const baseUrl = railwayUrl || localStorage.getItem('writer:railwayUrl') || 'https://rebuildwriterstudiotool-production.up.railway.app';
   const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/seo/research`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ seeds, articleId }),
+    body: JSON.stringify({ seeds, articleId, keywordCount }),
   });
   const payload = await response.json().catch(() => ({ error: response.statusText })) as SeoResearchResult & AIErrorPayload;
   if (!response.ok) throw new Error(formatAIError(payload, 'openai', payload.modelId ?? 'gpt-5.4-mini'));

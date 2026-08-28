@@ -11,15 +11,16 @@ import {
   buildStepDocumentPromptRules,
   describeBundle,
 } from '../../lib/docContext';
+import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
 
 function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit: number) {
+function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit: number, introductionPercent = 8, conclusionPercent = 7) {
   const target = Math.min(hardLimit, Math.max(800, Math.floor(hardLimit * 0.92)));
-  const introduction = { min: Math.floor(target * 0.08), max: Math.floor(target * 0.09) };
-  const conclusion = { min: Math.floor(target * 0.065), max: Math.floor(target * 0.075) };
+  const introduction = { min: Math.floor(target * introductionPercent / 100), max: Math.floor(target * (introductionPercent + 1) / 100) };
+  const conclusion = { min: Math.floor(target * conclusionPercent / 100), max: Math.floor(target * (conclusionPercent + 1) / 100) };
   const sectionPool = target - introduction.max - conclusion.max - 20;
   const totalWeight = outline.reduce((sum, section) => sum + (section.level === 'h3' ? 0.65 : 1), 0) || 1;
   const sections = outline.map(section => {
@@ -146,6 +147,10 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const { tr, canonicalAIOutputInstruction } = useI18n();
   const bundle = useMemo(() => collectStepDocs(4, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(4, config, files), [config, files]);
+  const compiledWorkflowRules = useMemo(() => compileWorkflowRules(config, 4, 'manual'), [config]);
+  const introductionPercent = Number(getWorkflowParameter(config, 'draft', 'word-allocation', 'introductionPercent') ?? 8);
+  const conclusionPercent = Number(getWorkflowParameter(config, 'draft', 'word-allocation', 'conclusionPercent') ?? 7);
+  const maxSentencesPerParagraph = Number(getWorkflowParameter(config, 'draft', 'structured-assembly', 'maxSentencesPerParagraph') ?? 5);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -163,9 +168,9 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     () => [
       buildWorkflowSourceFingerprint(bundle), model.provider, model.id, 'step4-draft-v5-section-budget-json',
       article.selectedCoreIdeaId, article.topic, article.angle,
-      JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, documentPromptRules,
+      JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, compiledWorkflowRules.fingerprint,
     ].join(':'),
-    [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, article.wordCount, bundle, config.stepConfigs, documentPromptRules, model.id, model.provider],
+    [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, config.stepConfigs, model.id, model.provider],
   );
   const wordCount = countWords(draft);
   const targetWords = Math.min(10000, Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500));
@@ -204,7 +209,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         article.keywords,
         ...(article.outline ?? []).map(section => section.heading),
       ].filter(Boolean).join(' ');
-      const wordBudget = buildSectionBudget(article.outline || [], targetWords);
+      const wordBudget = buildSectionBudget(article.outline || [], targetWords, introductionPercent, conclusionPercent);
       const maxTokens = Math.min(12_000, Math.max(1200, Math.ceil(targetWords * 1.55)));
 
       const systemPrompt = buildRoleSystemPrompt(
@@ -219,7 +224,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Hoàn thiện mọi section trước khi mở rộng bất kỳ section nào. Không lặp định nghĩa, lợi ích, so sánh, evidence hoặc kết luận.',
-          '- Mỗi đoạn chỉ phục vụ một claim, tối đa 3–5 câu. Không thêm section ngoài outline.',
+          `- Mỗi đoạn chỉ phục vụ một claim, tối đa ${maxSentencesPerParagraph} câu. Không thêm section ngoài outline.`,
           `- TITLE phải chứa chính xác primary keyword “${getPrimaryKeyword(article)}”.`,
           '- Trả về DUY NHẤT JSON object đúng schema; không Markdown fences, lời dẫn hay nhật ký.',
         ].join('\n'),
@@ -248,6 +253,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         'SCHEMA OUTPUT:',
         '{"title":string,"introduction":string,"sections":[{"id":string,"content":string}],"conclusion":string}',
         'Yêu cầu: Viết đủ đúng một entry cho mọi section ID theo đúng thứ tự. Không lặp nội dung giữa các field.',
+        compiledWorkflowRules.taskGuidance,
       ].join('\n');
 
       const res = await callAI({
@@ -272,6 +278,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         draft: assembledDraft,
         draftSourceFingerprint,
         draftScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),
+        workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 4: compiledWorkflowRules.snapshot },
       });
       if (!saved) throw new Error('Draft Bước 3 chưa được lưu vào Supabase.');
       if (editorRef.current) editorRef.current.innerText = assembledDraft;

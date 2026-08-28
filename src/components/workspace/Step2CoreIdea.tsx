@@ -24,6 +24,7 @@ import {
 import { hasEvidenceForAuthorizedCategories, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
 import { ProcessTraceModal } from './ProcessTrace';
 import { parseAIJson } from '../../lib/aiJson';
+import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
 
 interface Props {
   article: Article;
@@ -251,6 +252,9 @@ export default function Step2CoreIdea({
 
   const bundle = useMemo(() => collectStepDocs(2, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(2, config, files), [config, files]);
+  const compiledWorkflowRules = useMemo(() => compileWorkflowRules(config, 2, 'manual'), [config]);
+  const requestedIdeaCount = Math.min(6, Math.max(1, Number(getWorkflowParameter(config, 'core-idea', 'idea-generation', 'ideaCount') ?? 3)));
+  const requestedKeywordCount = Math.min(20, Math.max(5, Number(getWorkflowParameter(config, 'core-idea', 'market-research', 'keywordCount') ?? 10)));
   const selectedSnapshot = useMemo(
     () => article.selectedContentTypeSnapshot
       ?? article.contentTypeSuggestions?.find(item => item.id === article.selectedContentTypeSuggestionId)
@@ -290,8 +294,8 @@ export default function Step2CoreIdea({
     [article.contentType, selectedSnapshot],
   );
   const sourceFingerprint = useMemo(
-    () => `${buildWorkflowSourceFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v11-content-plan:${selectedSnapshotSignature}:${documentPromptRules}`,
-    [bundle, documentPromptRules, model.id, model.provider, selectedSnapshotSignature],
+    () => `${buildWorkflowSourceFingerprint(bundle)}:${model.provider}:${model.id}:step2-seo-pipeline-v12-rules:${selectedSnapshotSignature}:${compiledWorkflowRules.fingerprint}`,
+    [bundle, compiledWorkflowRules.fingerprint, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
   // Saved Supabase results remain authoritative until the Step 1 selection
@@ -320,7 +324,7 @@ export default function Step2CoreIdea({
         selectedSnapshot?.label ?? "",
         article.contentType ?? "",
       ].map(seed => seed.trim()).filter(Boolean);
-      const seoResearch = await researchSeoKeywords(seeds, article.id, railwayUrl);
+      const seoResearch = await researchSeoKeywords(seeds, article.id, railwayUrl, requestedKeywordCount);
       const contextQuery = [
         ...seeds,
         ...seoResearch.keywords.map(item => item.keyword),
@@ -328,19 +332,19 @@ export default function Step2CoreIdea({
       const systemPrompt = buildRoleSystemPrompt(
         [
           canonicalAIOutputInstruction,
-          `Đề xuất CHÍNH XÁC 3 core ideas / góc độ cho bài viết dạng "${article.contentType}".`,
+          `Đề xuất CHÍNH XÁC ${requestedIdeaCount} core ideas / góc độ cho bài viết dạng "${article.contentType}".`,
           selectedSnapshot
             ? `- Dùng lựa chọn Step 1 đã khóa làm định hướng bắt buộc: ${selectedSnapshot.label}; Type ${selectedSnapshot.typeGroup ?? "không xác định"}; ${selectedSnapshot.wave ?? ""}; ${selectedSnapshot.timeframe ?? ""}; keywords: ${(selectedSnapshot.keywords ?? []).join(", ")}.`
             : "- Không có snapshot cấu trúc từ Step 1; chỉ dùng content type đã chọn.",
           "- Mọi ý tưởng phải suy ra từ các phân vùng tài liệu thực sự được cấp quyền; không yêu cầu hoặc suy đoán dữ liệu từ phân vùng đang trống.",
           "- Dữ liệu SEO thị trường duy nhất được phép dùng là SEO_RESEARCH_TOP_10 do OpenAI Web Search thu thập kèm URL nguồn.",
-          "- Đánh giá đủ cả 10 keyword đúng MỘT LẦN ở keywordAudit cấp cao nhất: đối chiếu với từng phân vùng tài liệu đang được cấp quyền, rồi ghi accepted/rejected cùng lý do cụ thể.",
+          `- Đánh giá đủ cả ${requestedKeywordCount} keyword đúng MỘT LẦN ở keywordAudit cấp cao nhất: đối chiếu với từng phân vùng tài liệu đang được cấp quyền, rồi ghi accepted/rejected cùng lý do cụ thể.`,
           "- primary/secondary keywords chỉ được lấy từ các keyword accepted trong SEO_RESEARCH_TOP_10; không tự tạo keyword mới.",
           "- Mỗi idea phải có tiêu đề rõ ràng, main argument (luận điểm cốt lõi), Top SEO keywords, và rating chi tiết.",
           "- Rating cho theo thang 0-10 với 5 tiêu chí (overall, seoPotential, audienceFit, docSupport, uniqueness). Ghi rõ căn cứ chấm điểm.",
           "- ratingRationales phải giải thích riêng từng điểm: overall, seoPotential, audienceFit, docSupport và uniqueness; nêu rõ điểm mạnh, điểm yếu hoặc dữ liệu còn thiếu.",
           "- Ứng dụng tự gắn các excerpt đã kiểm chứng sau khi model trả kết quả. KHÔNG trả evidence, matchedDocs hoặc ruleRefs để tránh lặp token.",
-          "- Trả CHÍNH XÁC 3 ideas khác nhau; mỗi idea phải chọn một primary keyword accepted.",
+          `- Trả CHÍNH XÁC ${requestedIdeaCount} ideas khác nhau; mỗi idea phải chọn một primary keyword accepted.`,
           "- Giữ JSON ngắn và ổn định: mỗi reason/ruleReason/kbReason tối đa 18 từ; angleDescription tối đa 30 từ; mainArgument tối đa 55 từ; mỗi rating rationale tối đa 16 từ.",
           "",
           "Trả về DUY NHẤT một JSON object hợp lệ, không kèm markdown fences hay text giải thích.",
@@ -387,8 +391,9 @@ export default function Step2CoreIdea({
         `SEO_RESEARCH_TOP_10 — dữ liệu thị trường ${seoResearch.location}/${seoResearch.language}, research lúc ${seoResearch.researchedAt}:`,
         JSON.stringify(seoResearch.keywords),
         "",
-        "Yêu cầu: Đề xuất ít nhất 3 core ideas theo schema.",
+        `Yêu cầu: Đề xuất ${requestedIdeaCount} core ideas theo schema.`,
         "Chỉ trả về JSON object theo schema — không markdown, không giải thích, không text thừa.",
+        compiledWorkflowRules.taskGuidance,
       ].join("\n");
 
       let modelCalls = 0;
@@ -415,7 +420,7 @@ export default function Step2CoreIdea({
         return { res, parsed, ideas: normalizeIdeas(parsed, bundle, seoResearch, trustedEvidence) };
       };
       let result = await requestIdeas(manual);
-      if (result.ideas.length < 3) {
+      if (result.ideas.length < requestedIdeaCount) {
         evidenceCorrectionCalls += 1;
         const acceptedIdeas = result.ideas;
         const root = result.parsed && typeof result.parsed === "object" && !Array.isArray(result.parsed)
@@ -431,14 +436,14 @@ export default function Step2CoreIdea({
           model,
           railwayUrl,
           prompt: [
-            `Create exactly ${3 - acceptedIdeas.length} additional distinct English core ideas for: ${article.contentType}.`,
+            `Create exactly ${requestedIdeaCount - acceptedIdeas.length} additional distinct English core ideas for: ${article.contentType}.`,
             `Existing titles that must not be repeated: ${acceptedIdeas.map(item => JSON.stringify(item.title)).join(", ") || "none"}.`,
             `Allowed accepted SEO keywords only: ${JSON.stringify(acceptedKeywords)}.`,
             "Return only a JSON object with an ideas array. Do not return keywordAudit, evidence, documents, or explanations outside JSON.",
             "Each idea must include: title, angleLabel, angleDescription, mainArgument, seoKeywords {primary, secondary}, targetAudience, recommendedTone, recommendedWordCount, rating, ratingRationale, ratingRationales.",
           ].join("\n"),
           systemPrompt: canonicalAIOutputInstruction,
-          maxTokens: Math.min(2800, 1000 + (3 - acceptedIdeas.length) * 700),
+          maxTokens: Math.min(4200, 1000 + (requestedIdeaCount - acceptedIdeas.length) * 700),
           temperature: 0.2,
           stepNumber: 2,
           bypassCache: true,
@@ -453,7 +458,7 @@ export default function Step2CoreIdea({
         const correctionIdeas = normalizeIdeas({ keywordAudit: baseAudit, ideas: correctionRoot.ideas }, bundle, seoResearch, trustedEvidence);
         const mergedIdeas = [...acceptedIdeas, ...correctionIdeas]
           .filter((idea, index, all) => all.findIndex(candidate => candidate.title.toLocaleLowerCase() === idea.title.toLocaleLowerCase()) === index)
-          .slice(0, Math.max(3, acceptedIdeas.length));
+          .slice(0, Math.max(requestedIdeaCount, acceptedIdeas.length));
         result = { ...result, res: correctionResponse, ideas: mergedIdeas };
       }
       if (!result.ideas.length) {
@@ -461,7 +466,7 @@ export default function Step2CoreIdea({
           `Không có core idea nào vượt qua kiểm chứng sau một lần bổ sung có mục tiêu. Đã đối chiếu ${bundle.knowledgeBase.length} KB, ${bundle.contentPlan.length} Content Plan và ${bundle.rules.length} Skills.`,
         );
       }
-      const partialResult = result.ideas.length < 3;
+      const partialResult = result.ideas.length < requestedIdeaCount;
       const allAudits = result.ideas.flatMap(idea => idea.keywordAudit ?? []);
       const acceptedKeywords = new Set(allAudits.filter(item => item.decision === 'accepted').map(item => item.keyword.toLocaleLowerCase())).size;
       const rejectedKeywords = new Set(allAudits.filter(item => item.decision === 'rejected').map(item => item.keyword.toLocaleLowerCase())).size;
@@ -480,10 +485,11 @@ export default function Step2CoreIdea({
         coreIdeaScannedAt: result.res.servedAt ?? result.res.generatedAt ?? new Date().toISOString(),
         seoResearch,
         step2ProcessTrace: trace,
+        workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 2: compiledWorkflowRules.snapshot },
       });
       if (!saved) throw new Error('Kết quả Bước 1 chưa được lưu vào Supabase.');
       if (partialResult) {
-        setWarning(`Đã lưu ${result.ideas.length}/3 core idea vượt qua đầy đủ kiểm chứng. Bạn có thể tiếp tục với kết quả hợp lệ hoặc nhấn “Đề xuất lại” để thử bổ sung.`);
+        setWarning(`Đã lưu ${result.ideas.length}/${requestedIdeaCount} core idea vượt qua đầy đủ kiểm chứng. Bạn có thể tiếp tục với kết quả hợp lệ hoặc nhấn “Đề xuất lại” để thử bổ sung.`);
       }
       setSelectedId(null);
     } catch (err) {
@@ -542,7 +548,7 @@ export default function Step2CoreIdea({
               <div>
                 <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 1 — Ý tưởng cốt lõi & Góc tiếp cận', 'Step 1 — Core Idea & Angle')}</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  {tr('AI đề xuất ≥3 ý tưởng cho loại nội dung ', 'AI proposes ≥3 core ideas for ')}<b>"{article.contentType || tr('(chưa chọn)', '(not selected)')}"</b>. {tr('Chọn một để sang Bước 2.', 'Select one to continue to Step 2.')}
+                  {tr(`AI đề xuất ${requestedIdeaCount} ý tưởng cho loại nội dung `, `AI proposes ${requestedIdeaCount} core ideas for `)}<b>"{article.contentType || tr('(chưa chọn)', '(not selected)')}"</b>. {tr('Chọn một để sang Bước 2.', 'Select one to continue to Step 2.')}
                 </p>
               </div>
               <button

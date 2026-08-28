@@ -97,10 +97,19 @@ export interface StepConfig {
 
 export type WorkflowRuleId = 'source-grounding' | 'core-idea' | 'outline' | 'draft' | 'quality-persistence';
 export type WorkflowRuleEnforcement = 'strict' | 'guided';
+export type WorkflowExecutionMode = 'manual' | 'batch';
+
+export interface WorkflowStageOverride {
+  instruction?: string;
+  parameters?: Record<string, number | string | boolean>;
+}
 
 export interface WorkflowRuleSetting {
   enforcement: WorkflowRuleEnforcement;
   customInstruction: string;
+  appliesTo: { manual: boolean; batch: boolean };
+  stageOverrides: Record<string, WorkflowStageOverride>;
+  version: number;
 }
 
 export type WorkflowRuleSettings = Partial<Record<WorkflowRuleId, WorkflowRuleSetting>>;
@@ -267,6 +276,7 @@ export interface Article {
   draft?: string;
   draftSourceFingerprint?: string | null;
   draftScannedAt?: string | null;
+  workflowRuleSnapshots?: Partial<Record<2 | 3 | 4, WorkflowRuleSnapshot>>;
   aiUsageByStep?: Partial<Record<1 | 2 | 3 | 4, AICallUsage[]>>;
   // Activity workspace / per-run content plan
   activityType?: 'comparison-seo' | 'editorial-originality';
@@ -282,6 +292,15 @@ export interface Article {
   contentPlanId?: string;
   contentPlanVersion?: number;
   contentPlanSourceItemId?: string;
+}
+
+export interface WorkflowRuleSnapshot {
+  version: number;
+  executionMode: WorkflowExecutionMode;
+  stepNumber: number;
+  fingerprint: string;
+  capturedAt: string;
+  rules: Array<{ id: WorkflowRuleId; enforcement: WorkflowRuleEnforcement; stages: Array<{ id: string; instruction: string; parameters: Record<string, number | string | boolean> }>; customInstruction: string }>;
 }
 
 export interface ContentPlanItem {

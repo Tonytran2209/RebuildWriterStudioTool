@@ -26,6 +26,7 @@ import {
 import { extractDocumentText } from './documentParser.ts';
 import { extractStructuredSections } from './documentStructure.ts';
 import { resolveStepContext, resolveStep1WaveContexts, type StepWaveContext } from './stepContext.ts';
+import { compileBackendWorkflowRules } from './workflowRules.ts';
 import { researchSeoKeywords, seoResearchConfigured } from './seoResearch.ts';
 import { jsonrepair } from 'jsonrepair';
 
@@ -317,32 +318,21 @@ async function runBatchModel(article: any, step: 2 | 3 | 4, prompt: string, json
   const model = config?.models?.find((item: any) => item.id === stepConfig?.modelId && item.enabled);
   if (!model) throw new Error(`Step ${step}: no enabled AI model is configured.`);
   if (!getAvailableProviders()[model.provider]) throw new Error(`${model.provider} API is not configured.`);
-  const ruleIdsByStep: Record<number, string[]> = {
-    2: ['source-grounding', 'core-idea', 'quality-persistence'],
-    3: ['source-grounding', 'outline', 'quality-persistence'],
-    4: ['source-grounding', 'draft', 'quality-persistence'],
-  };
-  const workflowInstructions = (ruleIdsByStep[step] ?? []).flatMap(id => {
-    const setting = config?.workflowRules?.[id];
-    const customInstruction = String(setting?.customInstruction ?? '').trim();
-    return customInstruction ? [`- [${id}] enforcement=${setting?.enforcement ?? 'strict'}: ${customInstruction}`] : [];
-  });
-  const effectivePrompt = workflowInstructions.length
-    ? `${prompt}\n\nUSER-CONFIGURED WORKFLOW RULES:\n${workflowInstructions.join('\n')}`
-    : prompt;
+  const compiledRules=compileBackendWorkflowRules(config,step,'batch');
+  const effectivePrompt=compiledRules.taskGuidance?`${prompt}\n\n${compiledRules.taskGuidance}`:prompt;
   const context = await resolveStepContext(step, `${article.topic ?? ''} ${article.keywords ?? ''}`, article.id);
-  const key = aiCacheKey({ kind: 'batch-pipeline-v2', articleId: article.id, step, model: model.id, prompt: effectivePrompt, fingerprint: context.summary.sourceFingerprint });
+  const key = aiCacheKey({ kind: 'batch-pipeline-v3', articleId: article.id, step, model: model.id, prompt: effectivePrompt, fingerprint: `${context.summary.sourceFingerprint}:${compiledRules.fingerprint}` });
   const cached = await kvGet<any>(key);
-  if (cached?.content) return { ...cached, provider: model.provider, cacheHit: true };
+  if (cached?.content) return { ...cached, provider: model.provider, cacheHit: true, workflowRuleSnapshot:compiledRules.snapshot };
   await reserveAIBudget(article.id, step);
-  const response = await generate({ modelId: model.id, provider: model.provider, prompt: effectivePrompt, contextDocs: context.contextDocs, jsonMode, maxTokens, temperature: step === 4 ? 0.2 : 0.35 });
+  const response = await generate({ modelId: model.id, provider: model.provider, prompt: effectivePrompt, systemPrompt:compiledRules.systemPrompt, contextDocs: context.contextDocs, jsonMode, maxTokens, temperature: step === 4 ? 0.2 : 0.35 });
   const input = Number(response.usage?.inputTokens ?? 0);
   const cachedTokens = Number(response.usage?.cachedInputTokens ?? 0);
   const output = Number(response.usage?.outputTokens ?? 0);
   const pricing = model.pricing;
   const costUsd = pricing ? (((input - cachedTokens) * Number(pricing.inputUsdPerMillion ?? 0)) + (cachedTokens * Number(pricing.cachedInputUsdPerMillion ?? pricing.inputUsdPerMillion ?? 0)) + (output * Number(pricing.outputUsdPerMillion ?? 0))) / 1_000_000 : null;
   await kvSet(key, { ...response, costUsd, generatedAt: new Date().toISOString() });
-  return { ...response, provider: model.provider, costUsd, cacheHit: false };
+  return { ...response, provider: model.provider, costUsd, cacheHit: false, workflowRuleSnapshot:compiledRules.snapshot };
 }
 
 function batchSeoFailures(text: string, article: any, targetWords: number) {
@@ -361,10 +351,10 @@ function batchSeoFailures(text: string, article: any, targetWords: number) {
   return { failures, primaryKeyword, words };
 }
 
-function batchDraftBudget(outline: any[], hardLimit: number) {
+function batchDraftBudget(outline: any[], hardLimit: number, introductionPercent=8, conclusionPercent=7) {
   const targetMax = Math.min(hardLimit, Math.max(800, Math.floor(hardLimit * 0.92)));
-  const introduction = { min: Math.floor(targetMax * 0.08), max: Math.floor(targetMax * 0.09) };
-  const conclusion = { min: Math.floor(targetMax * 0.065), max: Math.floor(targetMax * 0.075) };
+  const introduction = { min: Math.floor(targetMax * introductionPercent/100), max: Math.floor(targetMax * (introductionPercent+1)/100) };
+  const conclusion = { min: Math.floor(targetMax * conclusionPercent/100), max: Math.floor(targetMax * (conclusionPercent+1)/100) };
   const pool = targetMax - introduction.max - conclusion.max - 20;
   const totalWeight = outline.reduce((sum, section) => sum + (section.level === 'h3' ? 0.65 : 1), 0) || 1;
   return {
@@ -403,6 +393,12 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
   const contentMode = article.activityType === 'editorial-originality' ? 'Editorial/Originality' : 'Comparison/SEO';
   const runtimeConfig = await kvGet<any>('writer:config');
   const maxDraftWords = Math.min(10000, Math.max(800, Number(runtimeConfig?.stepConfigs?.[4]?.maxDraftWords ?? runtimeConfig?.stepConfigs?.[4]?.maxDraftCharacters ?? 1500)));
+  const workflowParam=(rule:string,stage:string,param:string,fallback:number)=>Number(runtimeConfig?.workflowRules?.[rule]?.stageOverrides?.[stage]?.parameters?.[param]??fallback);
+  const minimumOutlineSections=Math.min(12,Math.max(4,workflowParam('outline','outline-mapping','minimumSections',4)));
+  const keywordCount=Math.min(20,Math.max(5,workflowParam('core-idea','market-research','keywordCount',10)));
+  const introductionPercent=Math.min(15,Math.max(5,workflowParam('draft','word-allocation','introductionPercent',8)));
+  const conclusionPercent=Math.min(12,Math.max(5,workflowParam('draft','word-allocation','conclusionPercent',7)));
+  const maxSentencesPerParagraph=Math.min(7,Math.max(2,workflowParam('draft','structured-assembly','maxSentencesPerParagraph',5)));
   const appendUsage = (step: 2 | 3 | 4, response: any) => ({
     ...article.aiUsageByStep,
     [step]: [...(article.aiUsageByStep?.[step] ?? []), batchUsage(step, response.provider ?? 'unknown', response)].slice(-50),
@@ -415,12 +411,12 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
       let seoUsage: any = null;
       if (!seoResearch) {
         const seeds = [article.topic, ...String(article.keywords ?? '').split(',')].map(String).map(value => value.trim()).filter(Boolean).slice(0, 10);
-        const seoKey = aiCacheKey({ kind: 'batch-seo-v1', seeds: seeds.map(value => value.toLowerCase()).sort() });
+        const seoKey = aiCacheKey({ kind: 'batch-seo-v2', keywordCount, seeds: seeds.map(value => value.toLowerCase()).sort() });
         seoResearch = await kvGet<any>(seoKey);
         if (seoResearch?.researchedAt && Date.now() - new Date(seoResearch.researchedAt).getTime() > 24 * 60 * 60 * 1000) seoResearch = null;
         if (!seoResearch) {
           await reserveAIBudget(article.id, 2);
-          seoResearch = await researchSeoKeywords(seeds);
+          seoResearch = await researchSeoKeywords(seeds, keywordCount);
           seoUsage = batchUsage(2, 'openai', { model: 'gpt-5.4-mini-web-search', usage: seoResearch.usage, costUsd: null, cacheHit: false });
           await kvSet(seoKey, seoResearch);
           article = await saveArticleCheckpoint(article, { seoResearch, aiUsageByStep: { ...article.aiUsageByStep, 2: [...(article.aiUsageByStep?.[2] ?? []), seoUsage].slice(-50) } });
@@ -437,29 +433,29 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
       const normalized = { id: `batch-idea-${article.id}`, matchedDocs: [], ruleRefs: [], evidence: [], ...idea };
       const step2Usage = appendUsage(2, response);
       if (seoUsage) step2Usage[2] = [seoUsage, ...(step2Usage[2] ?? [])].slice(-50);
-      article = await saveArticleCheckpoint(article, { seoResearch, coreIdeaSuggestions: [normalized], selectedCoreIdeaId: normalized.id, coreIdeaScannedAt: new Date().toISOString(), currentStep: 3, aiUsageByStep: step2Usage });
+      article = await saveArticleCheckpoint(article, { seoResearch, coreIdeaSuggestions: [normalized], selectedCoreIdeaId: normalized.id, coreIdeaScannedAt: new Date().toISOString(), currentStep: 3, aiUsageByStep: step2Usage, workflowRuleSnapshots:{...article.workflowRuleSnapshots,2:response.workflowRuleSnapshot} });
     }
     if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
     if (!article.outline?.length) {
       const idea = article.coreIdeaSuggestions.find((item: any) => item.id === article.selectedCoreIdeaId) ?? article.coreIdeaSuggestions[0];
       const response = await runBatchModel(article, 3, [
         `Create a detailed SEO outline for ${article.topic}.`, `Core idea: ${JSON.stringify(idea)}`,
-        'Use KB facts and Skills rules. Return only JSON: {"sections":[{"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational"}]}. Include at least 6 sections.',
+        `Use KB facts and workflow rules. Return only JSON: {"sections":[{"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational"}]}. Include at least ${minimumOutlineSections} sections.`,
       ].join('\n'), true, 5000);
       const parsed = parseJsonObject(response.content);
       const sections = (Array.isArray(parsed.sections) ? parsed.sections : []).map((section: any, index: number) => ({ id: `batch-section-${index + 1}`, evidence: [], ruleRefs: [], ...section }));
-      if (sections.length < 4) throw new Error(`Step 3 returned only ${sections.length}/4 usable sections.`);
-      article = await saveArticleCheckpoint(article, { outline: sections, outlineScannedAt: new Date().toISOString(), currentStep: 4, aiUsageByStep: appendUsage(3, response) });
+      if (sections.length < minimumOutlineSections) throw new Error(`Step 3 returned only ${sections.length}/${minimumOutlineSections} usable sections.`);
+      article = await saveArticleCheckpoint(article, { outline: sections, outlineScannedAt: new Date().toISOString(), currentStep: 4, aiUsageByStep: appendUsage(3, response), workflowRuleSnapshots:{...article.workflowRuleSnapshots,3:response.workflowRuleSnapshot} });
     }
     if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
     if (!article.draft?.trim()) {
-      const budget = batchDraftBudget(article.outline ?? [], maxDraftWords);
+      const budget = batchDraftBudget(article.outline ?? [], maxDraftWords, introductionPercent, conclusionPercent);
       const response = await runBatchModel(article, 4, [
         `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
         `Primary keyword: ${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
         `Outline: ${JSON.stringify(article.outline)}`,
         `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
-        'Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most 3–5 sentences.',
+        `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
         'Follow every supplied Skill rule and use only supported KB claims.',
         'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order.',
       ].join('\n'), true, Math.min(12000, Math.max(1200, Math.ceil(maxDraftWords * 1.55))));
@@ -468,7 +464,7 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
       const assembledDraft = assembleBatchDraft(response.content, article);
       const validation = batchSeoFailures(assembledDraft, article, maxDraftWords);
       if (validation.failures.length) throw new Error(`Draft was not saved because the SEO checklist is not 100%: ${validation.failures.join('; ')}.`);
-      article = await saveArticleCheckpoint(article, { draft: assembledDraft, draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? 'unknown', item))].slice(-50) } });
+      article = await saveArticleCheckpoint(article, { draft: assembledDraft, draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? 'unknown', item))].slice(-50) }, workflowRuleSnapshots:{...article.workflowRuleSnapshots,4:response.workflowRuleSnapshot} });
     } else if (article.batchStatus !== 'completed') {
       article = await saveArticleCheckpoint(article, { status: 'done', batchStatus: 'completed', completedAt: article.completedAt ?? new Date().toISOString() });
     }
@@ -793,15 +789,16 @@ app.get('/health/dependencies', async (_req, res) => {
 app.post('/api/seo/research', async (req, res) => {
   try {
     const seeds = Array.isArray(req.body?.seeds) ? req.body.seeds : [];
+    const keywordCount = Math.min(20, Math.max(5, Number(req.body?.keywordCount ?? 10)));
     const articleId = String(req.body?.articleId ?? '');
     if (!articleId) return res.status(400).json({ error: 'articleId là bắt buộc.' });
-    const cacheKey = `writer:seo-cache:web-v1:${crypto.createHash('sha256').update(JSON.stringify(seeds.map((seed: unknown) => String(seed).trim().toLocaleLowerCase()).sort())).digest('hex')}`;
+    const cacheKey = `writer:seo-cache:web-v2:${keywordCount}:${crypto.createHash('sha256').update(JSON.stringify(seeds.map((seed: unknown) => String(seed).trim().toLocaleLowerCase()).sort())).digest('hex')}`;
     const cached = await kvGet<any>(cacheKey);
     if (cached?.researchedAt && Date.now() - new Date(cached.researchedAt).getTime() < 24 * 60 * 60 * 1000) {
       return res.json({ ...cached, cacheHit: true });
     }
     const budget = await reserveAIBudget(articleId, 2);
-    const result = await researchSeoKeywords(seeds);
+    const result = await researchSeoKeywords(seeds, keywordCount);
     await kvSet(cacheKey, result);
     res.json({ ...result, cacheHit: false, budget });
   } catch (error) {
