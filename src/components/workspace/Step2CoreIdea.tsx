@@ -275,9 +275,17 @@ export default function Step2CoreIdea({
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(article.selectedCoreIdeaId ?? null);
+  const [detailIdeaId, setDetailIdeaId] = useState<string | null>(null);
   const [auditIdeaId, setAuditIdeaId] = useState<string | null>(null);
   const autoRequestedRef = useRef<string | null>(null);
   const { tr, canonicalAIOutputInstruction } = useI18n();
+
+  useEffect(() => {
+    if (!detailIdeaId) return;
+    const closeOnEscape = (event: KeyboardEvent) => event.key === "Escape" && setDetailIdeaId(null);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [detailIdeaId]);
 
   const bundle = useMemo(() => collectStepDocs(2, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(2, config, files), [config, files]);
@@ -625,109 +633,28 @@ export default function Step2CoreIdea({
             )}
 
             {!loading && ideas.length > 0 && (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {ideas.map(idea => {
                   const isSelected = selectedId === idea.id;
-                  const tag = ratingTag(idea.rating.overall);
                   return (
-                    <div key={idea.id} className="relative">
-                    <button
-                      onClick={() => handleSelect(idea)}
-                      className={`step-result-card w-full text-left rounded-xl border transition-all flex flex-col ${
-                        isSelected
-                          ? "border-slate-900 bg-slate-50 ring-1 ring-slate-900"
-                          : "border-slate-200 bg-white hover:border-slate-400"
-                      }`}
-                    >
-                      {/* Top: angle + recommendation + compact overall rating */}
-                      <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-4 pr-14">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          {idea.angleLabel && (
-                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">
-                              {idea.angleLabel}
-                            </div>
-                          )}
-                          <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold leading-none ${tag.className}`}>
-                            {tag.label}
-                          </span>
-                        </div>
-                        <div className="inline-flex shrink-0 items-baseline gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-                          <span className={`font-mono text-xs font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
-                          <span className="text-[9px] font-medium text-slate-400">/10</span>
-                        </div>
-                      </div>
-
-                      {/* Title */}
-                      <div className="px-4 pb-4">
-                        <h3 className="text-[15px] font-semibold leading-snug text-slate-900">{idea.title}</h3>
-                      </div>
-
-                      {/* Main argument */}
-                      <div className="mx-4 mb-4 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
-                        <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Main Argument</div>
-                        <p className="text-[11px] text-slate-700 leading-relaxed">{idea.mainArgument}</p>
-                      </div>
-
-                      <div className="space-y-3 px-4 pb-4">
-                        {idea.angleDescription && <div><div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Lý do chọn góc tiếp cận', 'Angle rationale')}</div><p className="text-[11px] text-slate-600 leading-relaxed mt-1">{idea.angleDescription}</p></div>}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
-                          <div className="rounded-lg border border-slate-100 bg-slate-50 p-2"><b className="block text-slate-500">{tr('Độc giả', 'Audience')}</b><span>{idea.targetAudience || '—'}</span></div>
-                          <div className="rounded-lg border border-slate-100 bg-slate-50 p-2"><b className="block text-slate-500">Tone</b><span>{idea.recommendedTone || '—'}</span></div>
-                          <div className="rounded-lg border border-slate-100 bg-slate-50 p-2"><b className="block text-slate-500">{tr('Độ dài', 'Length')}</b><span>{idea.recommendedWordCount.toLocaleString()} {tr('từ', 'words')}</span></div>
-                        </div>
-                      </div>
-
-                      {/* Top SEO Keywords */}
-                      <div className="px-4 pb-4">
-                        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Top SEO Keywords</div>
-                        <div className="flex flex-wrap gap-1">
-                          {idea.primaryKeyword && (
-                            <span className="text-[10px] font-bold bg-indigo-600 text-white rounded-full px-2 py-0.5">
-                              {idea.primaryKeyword}
-                            </span>
-                          )}
-                          {idea.secondaryKeywords.map((kw, i) => (
-                            <span key={i} className="text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-full px-2 py-0.5">
-                              {kw}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Rating breakdown */}
-                      <div className="mt-auto border-t border-slate-100 px-4 py-4">
-                        <div className="mb-3 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Rating breakdown</div>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-4">
-                        {[
-                          { key: "seoPotential" as const, label: "SEO Potential", val: idea.rating.seoPotential },
-                          { key: "audienceFit" as const, label: "Audience Fit", val: idea.rating.audienceFit },
-                          { key: "docSupport" as const, label: "Doc Support", val: idea.rating.docSupport },
-                          { key: "uniqueness" as const, label: "Uniqueness", val: idea.rating.uniqueness },
-                        ].map(r => (
-                          <div key={r.label} className="min-w-0 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-3">
-                            <RatingCircle label={r.label} score={r.val} />
-                            {(idea.ratingRationales?.[r.key] || idea.ratingRationale) && <p className="mt-2 text-[9px] leading-relaxed text-slate-500">{idea.ratingRationales?.[r.key] || idea.ratingRationale}</p>}
+                    <div key={idea.id} className={`step-result-card flex min-h-[250px] flex-col rounded-xl border bg-white transition-colors ${isSelected ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-400"}`}>
+                      <button type="button" onClick={() => handleSelect(idea)} className="flex flex-1 flex-col p-4 text-left" aria-pressed={isSelected}>
+                        <div className="flex justify-end">
+                          <div className="inline-flex shrink-0 items-baseline gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                            <span className={`font-mono text-sm font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
+                            <span className="text-[9px] font-medium text-slate-400">/10</span>
                           </div>
-                        ))}
                         </div>
-                        {idea.ratingRationale && <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[10px] leading-relaxed text-slate-600"><b className="font-semibold text-slate-800">{tr('Đánh giá tổng quan:', 'Overall assessment:')}</b> {idea.ratingRationales?.overall || idea.ratingRationale}</div>}
-                      </div>
-
-                      <div className="border-t border-slate-100 px-4 py-4 space-y-2">
-                        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Toàn bộ dẫn chứng đã kiểm chứng', 'All verified evidence')}</div>
-                        {(idea.evidence ?? []).map((e, i) => <div key={`${e.source}-${i}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap gap-1.5 mb-1.5"><span className="text-[9px] font-bold uppercase text-slate-500">{e.role}</span><span className="text-[10px] font-semibold text-slate-700">{e.source}</span></div>{e.quote && <blockquote className="border-l-2 border-slate-300 pl-2 text-[10px] text-slate-700 leading-relaxed whitespace-pre-wrap">“{e.quote}”</blockquote>}{e.note && <p className="text-[10px] text-slate-500 mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]"><div><b className="text-slate-500">KB / Action:</b> {idea.matchedDocs.join(', ') || '—'}</div><div><b className="text-slate-500">Rules:</b> {idea.ruleRefs.join(', ') || '—'}</div></div>
-                      </div>
-
-                      {isSelected && (
-                        <div className="border-t border-slate-100 px-4 py-2 text-[10px] font-bold text-slate-900">
-                          ✓ Đã chọn
+                        <h3 className="mt-4 text-sm font-semibold leading-snug text-slate-900">{idea.title}</h3>
+                        <div className="mt-3 flex-1 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
+                          <p className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Main argument</p>
+                          <p className="line-clamp-4 text-[11px] leading-relaxed text-slate-700">{idea.mainArgument}</p>
                         </div>
-                      )}
-                    </button>
-                    <button type="button" onClick={() => setAuditIdeaId(idea.id)} className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${idea.title}`}>
-                      <Search className="app-icon" aria-hidden="true" />
-                    </button>
+                      </button>
+                      <div className="flex items-center gap-2 border-t border-slate-100 p-2.5">
+                        <button type="button" onClick={() => setDetailIdeaId(idea.id)} className="flex-1 rounded-lg px-3 py-2 text-[10px] font-semibold text-slate-700 hover:bg-slate-100">{tr('Xem chi tiết', 'View details')}</button>
+                        <span className={`rounded-md px-2 py-1 text-[9px] font-semibold ${isSelected ? "bg-slate-900 text-white" : "text-slate-400"}`}>{isSelected ? tr('Đã chọn', 'Selected') : tr('Chọn', 'Select')}</span>
+                      </div>
                     </div>
                   );
                 })}
@@ -742,6 +669,55 @@ export default function Step2CoreIdea({
           </div>
         </div>
       </div>
+
+      {detailIdeaId && (() => {
+        const idea = ideas.find(item => item.id === detailIdeaId);
+        if (!idea) return null;
+        const isSelected = selectedId === idea.id;
+        const tag = ratingTag(idea.rating.overall);
+        const ratings = [
+          { key: "seoPotential" as const, label: "SEO Potential", value: idea.rating.seoPotential },
+          { key: "audienceFit" as const, label: "Audience Fit", value: idea.rating.audienceFit },
+          { key: "docSupport" as const, label: "Doc Support", value: idea.rating.docSupport },
+          { key: "uniqueness" as const, label: "Uniqueness", value: idea.rating.uniqueness },
+        ];
+        return <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/55 p-3 backdrop-blur-sm sm:p-6" onMouseDown={event => event.target === event.currentTarget && setDetailIdeaId(null)} role="dialog" aria-modal="true" aria-labelledby="core-idea-detail-title">
+          <div className="flex max-h-[92dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-6">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  {idea.angleLabel && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{idea.angleLabel}</span>}
+                  <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold leading-none ${tag.className}`}>{tag.label}</span>
+                  <span className="inline-flex items-baseline gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+                    <b className={`font-mono text-xs ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</b><span className="text-[9px] text-slate-400">/10</span>
+                  </span>
+                </div>
+                <h3 id="core-idea-detail-title" className="mt-2 text-base font-semibold leading-snug text-slate-900">{idea.title}</h3>
+              </div>
+              <button type="button" onClick={() => setDetailIdeaId(null)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-500 hover:bg-slate-200" aria-label={tr('Đóng', 'Close')}>×</button>
+            </header>
+            <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">Main argument</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-slate-800">{idea.mainArgument}</p>
+              </section>
+              {idea.angleDescription && <section><h4 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{tr('Lý do chọn góc tiếp cận', 'Angle rationale')}</h4><p className="mt-1.5 text-xs leading-relaxed text-slate-600">{idea.angleDescription}</p></section>}
+              <section className="grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 p-3"><b className="block text-[10px] text-slate-500">{tr('Độc giả', 'Audience')}</b><span className="mt-1 block leading-relaxed text-slate-800">{idea.targetAudience || '—'}</span></div>
+                <div className="rounded-lg border border-slate-200 p-3"><b className="block text-[10px] text-slate-500">Tone</b><span className="mt-1 block leading-relaxed text-slate-800">{idea.recommendedTone || '—'}</span></div>
+                <div className="rounded-lg border border-slate-200 p-3"><b className="block text-[10px] text-slate-500">{tr('Độ dài', 'Length')}</b><span className="mt-1 block text-slate-800">{idea.recommendedWordCount.toLocaleString()} {tr('từ', 'words')}</span></div>
+              </section>
+              <section><h4 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Top SEO keywords</h4><div className="mt-2 flex flex-wrap gap-1.5">{idea.primaryKeyword && <span className="rounded-full bg-indigo-600 px-2.5 py-1 text-[10px] font-semibold text-white">{idea.primaryKeyword}</span>}{idea.secondaryKeywords.map(keyword => <span key={keyword} className="rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[10px] font-medium text-indigo-700">{keyword}</span>)}</div></section>
+              <section><h4 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Rating breakdown</h4><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{ratings.map(rating => <div key={rating.key} className="rounded-xl border border-slate-200 bg-slate-50 p-3"><RatingCircle label={rating.label} score={rating.value}/><p className="mt-2 text-[9px] leading-relaxed text-slate-500">{idea.ratingRationales?.[rating.key] || idea.ratingRationale}</p></div>)}</div>{idea.ratingRationale && <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2.5 text-[10px] leading-relaxed text-slate-600"><b className="font-semibold text-slate-800">{tr('Đánh giá tổng quan:', 'Overall assessment:')}</b> {idea.ratingRationales?.overall || idea.ratingRationale}</div>}</section>
+              <section><h4 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{tr('Toàn bộ dẫn chứng đã kiểm chứng', 'All verified evidence')}</h4><div className="mt-2 grid gap-2">{(idea.evidence ?? []).map((evidence, index) => <div key={`${evidence.source}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap gap-1.5"><span className="text-[9px] font-semibold uppercase text-slate-500">{evidence.role}</span><span className="text-[10px] font-semibold text-slate-700">{evidence.source}</span></div>{evidence.quote && <blockquote className="mt-1.5 border-l-2 border-slate-300 pl-2 text-[10px] leading-relaxed text-slate-700">“{evidence.quote}”</blockquote>}{evidence.note && <p className="mt-1.5 text-[10px] text-slate-500"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {evidence.note}</p>}</div>)}</div></section>
+            </div>
+            <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 sm:px-6">
+              <button type="button" onClick={() => { setDetailIdeaId(null); setAuditIdeaId(idea.id); }} className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[10px] font-semibold text-slate-600 hover:bg-slate-100"><Search className="app-icon"/>{tr('Xem nhật ký AI', 'View AI log')}</button>
+              <button type="button" onClick={() => { handleSelect(idea); setDetailIdeaId(null); }} className={`rounded-lg px-4 py-2 text-[10px] font-semibold ${isSelected ? "border border-slate-200 bg-white text-slate-700" : "bg-slate-900 text-white hover:bg-slate-800"}`}>{isSelected ? tr('Đã chọn ý tưởng này', 'This idea is selected') : tr('Chọn ý tưởng này', 'Select this idea')}</button>
+            </footer>
+          </div>
+        </div>;
+      })()}
 
       {auditIdeaId && (() => { const idea = ideas.find(item => item.id === auditIdeaId); if (!idea) return null; return <ProcessTraceModal title={idea.title} events={article.step2ProcessTrace} onClose={() => setAuditIdeaId(null)}><div className="space-y-4"><div><h4 className="text-xs font-bold text-slate-800">SEO Research Top 10</h4><div className="space-y-2 mt-2">{article.seoResearch?.keywords.map((keyword, index) => <div key={keyword.keyword} className="rounded-lg border border-cyan-100 bg-cyan-50/50 p-3 text-[10px]"><div className="flex flex-wrap gap-2"><span className="font-mono text-cyan-700">#{index + 1}</span><b>{keyword.keyword}</b><span>{keyword.intent ?? 'intent n/a'}</span></div>{keyword.marketEvidence && <p className="mt-1 text-slate-600">{keyword.marketEvidence}</p>}<div className="flex gap-2 mt-1">{keyword.sources?.map((url, i) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-cyan-700 underline">Source {i + 1}</a>)}</div></div>)}</div></div><div><h4 className="text-xs font-bold text-slate-800">{tr('Đối chứng keyword của lựa chọn', 'Keyword validation for this idea')}</h4><div className="divide-y divide-slate-100 rounded-lg border border-slate-200 mt-2">{idea.keywordAudit?.map(item => <div key={item.keyword} className="p-3 text-[10px]"><div className="flex gap-2"><span className={`font-bold ${item.decision === 'accepted' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.decision}</span><b>{item.keyword}</b></div><p className="mt-1">{item.reason}</p><p className="mt-1 text-amber-700"><b>Rules:</b> {item.ruleReason}</p><p className="mt-1 text-indigo-700"><b>KB/Action:</b> {item.kbReason}</p></div>)}</div></div></div></ProcessTraceModal>; })()}
 
