@@ -1328,6 +1328,105 @@ html, body, #root {
   accent-color: #e5e5e5;
 }
 
+/* Compact Core Idea comparison cards — follows the supplied demo's flat card rhythm. */
+.core-idea-card {
+  background: #fff;
+  border-color: #deded9;
+  box-shadow: none;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.core-idea-card:hover {
+  background: #f6f6f3;
+  border-color: #bcbcb6;
+}
+
+.core-idea-card.is-selected {
+  border-color: #555550;
+  box-shadow: inset 0 0 0 1px #555550;
+}
+
+.core-idea-select-area,
+.core-idea-select-area:hover {
+  background: transparent !important;
+}
+
+.core-idea-select-area:focus-visible,
+.core-idea-details-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+.core-idea-score {
+  border-color: #deded9;
+  background: #f6f6f3;
+}
+
+.core-idea-footer {
+  border-color: #e5e5e1;
+}
+
+.core-idea-details-button {
+  color: #555550;
+  background: transparent !important;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.core-idea-details-button:hover {
+  color: #171717;
+  background: #eaeae6 !important;
+}
+
+.core-idea-selected-tag {
+  color: #fff;
+  background: #242422;
+}
+
+.codex-dark .core-idea-card {
+  background: #1a1a1a !important;
+  border-color: #2a2a2a !important;
+}
+
+.codex-dark .core-idea-card:hover {
+  background: #222 !important;
+  border-color: #3a3a3a !important;
+}
+
+.codex-dark .core-idea-card.is-selected {
+  background: #1d1d1d !important;
+  border-color: #5a5a5a !important;
+  box-shadow: inset 0 0 0 1px #5a5a5a !important;
+}
+
+.codex-dark .core-idea-select-area,
+.codex-dark .core-idea-select-area:hover {
+  background: transparent !important;
+}
+
+.codex-dark .core-idea-score {
+  border-color: #303030 !important;
+  background: #1c1c1c !important;
+}
+
+.codex-dark .core-idea-footer {
+  border-color: #2a2a2a !important;
+}
+
+.codex-dark .core-idea-details-button {
+  color: #b9b9b9 !important;
+  background: transparent !important;
+}
+
+.codex-dark .core-idea-details-button:hover {
+  color: #fff !important;
+  background: #2a2a2a !important;
+}
+
+.codex-dark .core-idea-selected-tag {
+  color: #141414 !important;
+  background: #e5e5e5 !important;
+}
+
 @media (max-width: 767px) {
   .codex-dark .writer-sidebar {
     width: 100% !important;

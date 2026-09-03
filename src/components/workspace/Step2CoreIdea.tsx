@@ -637,23 +637,23 @@ export default function Step2CoreIdea({
                 {ideas.map(idea => {
                   const isSelected = selectedId === idea.id;
                   return (
-                    <div key={idea.id} className={`step-result-card flex min-h-[250px] flex-col rounded-xl border bg-white transition-colors ${isSelected ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-400"}`}>
-                      <button type="button" onClick={() => handleSelect(idea)} className="flex flex-1 flex-col p-4 text-left" aria-pressed={isSelected}>
+                    <div key={idea.id} className={`core-idea-card step-result-card flex h-[224px] min-w-0 flex-col overflow-hidden rounded-xl border ${isSelected ? "is-selected" : ""}`}>
+                      <button type="button" onClick={() => handleSelect(idea)} className="core-idea-select-area flex min-h-0 flex-1 flex-col p-3.5 text-left" aria-pressed={isSelected}>
                         <div className="flex justify-end">
-                          <div className="inline-flex shrink-0 items-baseline gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-                            <span className={`font-mono text-sm font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
+                          <div className="core-idea-score inline-flex shrink-0 items-baseline gap-1 rounded-full border px-2.5 py-1">
+                            <span className={`font-mono text-xs font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
                             <span className="text-[9px] font-medium text-slate-400">/10</span>
                           </div>
                         </div>
-                        <h3 className="mt-4 text-sm font-semibold leading-snug text-slate-900">{idea.title}</h3>
-                        <div className="mt-3 flex-1 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
-                          <p className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Main argument</p>
-                          <p className="line-clamp-4 text-[11px] leading-relaxed text-slate-700">{idea.mainArgument}</p>
+                        <h3 className="mt-2.5 line-clamp-3 text-[13px] font-medium leading-[1.4] text-slate-900">{idea.title}</h3>
+                        <div className="mt-2.5 min-h-0 flex-1">
+                          <p className="mb-1 text-[9px] font-medium uppercase tracking-wider text-slate-500">Main argument</p>
+                          <p className="line-clamp-3 text-[10px] leading-relaxed text-slate-600">{idea.mainArgument}</p>
                         </div>
                       </button>
-                      <div className="flex items-center gap-2 border-t border-slate-100 p-2.5">
-                        <button type="button" onClick={() => setDetailIdeaId(idea.id)} className="flex-1 rounded-lg px-3 py-2 text-[10px] font-semibold text-slate-700 hover:bg-slate-100">{tr('Xem chi tiết', 'View details')}</button>
-                        <span className={`rounded-md px-2 py-1 text-[9px] font-semibold ${isSelected ? "bg-slate-900 text-white" : "text-slate-400"}`}>{isSelected ? tr('Đã chọn', 'Selected') : tr('Chọn', 'Select')}</span>
+                      <div className="core-idea-footer flex h-11 items-center justify-between gap-2 border-t px-2.5">
+                        <button type="button" onClick={() => setDetailIdeaId(idea.id)} className="core-idea-details-button rounded-lg px-2.5 py-1.5 text-[10px] font-medium">{tr('Xem chi tiết', 'View details')}</button>
+                        {isSelected && <span className="core-idea-selected-tag rounded-full px-2.5 py-1 text-[9px] font-medium">{tr('Đã chọn', 'Selected')}</span>}
                       </div>
                     </div>
                   );
