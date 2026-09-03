@@ -725,7 +725,7 @@ export default function Step2CoreIdea({
                         </div>
                       )}
                     </button>
-                    <button type="button" onClick={() => setAuditIdeaId(idea.id)} className="absolute top-3 right-16 w-8 h-8 rounded-full border border-slate-200 bg-white hover:bg-violet-50 hover:border-violet-300 text-slate-500 hover:text-violet-700 flex items-center justify-center shadow-sm" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${idea.title}`}>
+                    <button type="button" onClick={() => setAuditIdeaId(idea.id)} className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm hover:border-violet-300 hover:bg-violet-50 hover:text-violet-700" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${idea.title}`}>
                       <Search className="app-icon" aria-hidden="true" />
                     </button>
                     </div>
