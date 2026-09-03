@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { ChevronDown, ChevronUp, LoaderCircle, Plus, Search, Sparkles, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, Ellipsis, Eye, LoaderCircle, PanelTopOpen, Plus, Sparkles, Trash2 } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -527,6 +527,8 @@ export default function Step3Outline({
                     <SectionRow
                       key={section.id}
                       index={index}
+                      isFirst={index === 0}
+                      isLast={index === outline.length - 1}
                       section={section}
                       onChange={patch => updateSection(section.id, patch)}
                       onRemove={() => removeSection(section.id)}
@@ -622,6 +624,8 @@ export default function Step3Outline({
 
 function SectionRow({
   index,
+  isFirst,
+  isLast,
   section,
   onChange,
   onRemove,
@@ -631,6 +635,8 @@ function SectionRow({
   processTrace,
 }: {
   index: number;
+  isFirst: boolean;
+  isLast: boolean;
   section: OutlineSection;
   onChange: (patch: Partial<OutlineSection>) => void;
   onRemove: () => void;
@@ -642,7 +648,18 @@ function SectionRow({
   const { tr } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const isH3 = section.level === "h3";
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeMenu = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeMenu);
+    return () => document.removeEventListener('mousedown', closeMenu);
+  }, [menuOpen]);
 
   return (
     <div className={`outline-card group rounded-xl border transition-colors ${
@@ -664,11 +681,12 @@ function SectionRow({
               <span className="text-[9px] text-slate-400">· {SEARCH_INTENT_META[section.searchIntent].label}</span>
             )}
           </div>
-          <input
+          <textarea
             value={section.heading}
             onChange={e => onChange({ heading: e.target.value })}
+            rows={isH3 ? 1 : 2}
             placeholder={tr('Tiêu đề section...', 'Section heading...')}
-            className={`w-full bg-transparent outline-none text-slate-800 placeholder:text-slate-300 ${
+            className={`outline-heading-input w-full resize-none overflow-hidden bg-transparent text-slate-800 outline-none placeholder:text-slate-300 ${
               isH3 ? "text-sm font-semibold" : "text-sm font-bold"
             }`}
           />
@@ -693,44 +711,46 @@ function SectionRow({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-0.5 shrink-0 w-full sm:w-auto">
-          <button onClick={() => setShowAudit(true)} className="ai-log-button is-icon flex h-7 w-7 items-center justify-center rounded-md border" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${section.heading}`}>
-            <Search className="app-icon" aria-hidden="true" />
-          </button>
-          <button onClick={() => onMove(-1)} className="outline-icon-button flex h-7 w-7 items-center justify-center rounded-md" title={tr('Lên', 'Move up')}>
-            <ChevronUp className="app-icon" aria-hidden="true" />
-          </button>
-          <button onClick={() => onMove(1)} className="outline-icon-button flex h-7 w-7 items-center justify-center rounded-md" title={tr('Xuống', 'Move down')}>
-            <ChevronDown className="app-icon" aria-hidden="true" />
-          </button>
+        <div ref={menuRef} className="outline-action-menu relative shrink-0">
           <button
-            onClick={() => setExpanded(!expanded)}
-            className="outline-details-button rounded-md px-2 py-1 text-[10px] font-medium transition-colors"
+            type="button"
+            onClick={() => setMenuOpen(open => !open)}
+            className="outline-menu-trigger flex h-8 w-8 items-center justify-center rounded-lg border"
+            aria-label={tr('Mở thao tác section', 'Open section actions')}
+            aria-expanded={menuOpen}
           >
-            {expanded ? tr('Thu gọn', 'Collapse') : tr('Chi tiết', 'Details')}
+            <Ellipsis className="app-icon" aria-hidden="true" />
           </button>
-          <button onClick={onRemove} className="outline-icon-button is-danger flex h-7 w-7 items-center justify-center rounded-md" title={tr('Xoá', 'Delete')}>
-            <X className="app-icon" aria-hidden="true" />
-          </button>
+          {menuOpen && (
+            <div className="outline-menu-popover absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-lg border p-1 shadow-lg" role="menu">
+              <button type="button" role="menuitem" onClick={() => { setShowAudit(true); setMenuOpen(false); }}><Eye className="app-icon" aria-hidden="true" /><span>{tr('Xem AI log', 'View AI log')}</span></button>
+              <button type="button" role="menuitem" onClick={() => { setExpanded(value => !value); setMenuOpen(false); }}><PanelTopOpen className="app-icon" aria-hidden="true" /><span>{expanded ? tr('Thu gọn chi tiết', 'Collapse details') : tr('Mở chi tiết', 'Open details')}</span></button>
+              <div className="outline-menu-divider my-1 border-t" />
+              <button type="button" role="menuitem" disabled={isFirst} onClick={() => { onMove(-1); setMenuOpen(false); }}><ChevronUp className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển lên', 'Move up')}</span></button>
+              <button type="button" role="menuitem" disabled={isLast} onClick={() => { onMove(1); setMenuOpen(false); }}><ChevronDown className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển xuống', 'Move down')}</span></button>
+              <div className="outline-menu-divider my-1 border-t" />
+              <button type="button" role="menuitem" className="is-danger" onClick={() => { onRemove(); setMenuOpen(false); }}><Trash2 className="app-icon" aria-hidden="true" /><span>{tr('Xóa section', 'Delete section')}</span></button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Expanded editor */}
       {expanded && (
         <div className="outline-expanded space-y-3 border-t border-slate-100 px-4 py-4">
-          <div>
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Notes</label>
+          <div className="outline-field">
+            <label>Notes</label>
             <textarea
               value={section.notes}
               onChange={e => onChange({ notes: e.target.value })}
               rows={2}
               placeholder={tr('Nội dung sẽ trình bày trong section...', 'Content to cover in this section...')}
-              className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 resize-none mt-1"
+              className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none"
             />
           </div>
-          <div>
-            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Lý do & điểm cần đánh giá', 'Rationale & review points')}</label>
-            <textarea value={section.rationale ?? ''} onChange={e => onChange({ rationale: e.target.value })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800 resize-y mt-1" />
+          <div className="outline-field">
+            <label>{tr('Lý do & điểm cần đánh giá', 'Rationale & review points')}</label>
+            <textarea value={section.rationale ?? ''} onChange={e => onChange({ rationale: e.target.value })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
@@ -812,7 +832,7 @@ function SectionRow({
           )}
         </div>
       )}
-      {showAudit && <ProcessTraceModal title={section.heading} events={processTrace} onClose={() => setShowAudit(false)}><div className="space-y-4"><div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{tr('Lý do tạo section', 'Section rationale')}</div><p className="text-xs text-slate-700 leading-relaxed mt-2 whitespace-pre-wrap">{section.rationale || tr('Chưa có rationale trong kết quả đã lưu.', 'No rationale in the saved result.')}</p></div><div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">{tr('Dẫn chứng của section', 'Section evidence')}</div><div className="space-y-2">{section.evidence?.map((e, i) => <div key={`${e.source}-${i}`} className={`rounded-lg border p-3 text-[10px] ${e.role ? EVIDENCE_ROLE_STYLE[e.role] : 'bg-white border-slate-200'}`}><b>{e.role?.toUpperCase()} · {e.source}</b>{e.quote && <blockquote className="border-l-2 border-current/30 pl-2 mt-1.5 whitespace-pre-wrap">“{e.quote}”</blockquote>}{e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}</div></div></div></ProcessTraceModal>}
+      {showAudit && <ProcessTraceModal title={section.heading} events={processTrace} onClose={() => setShowAudit(false)}><div className="outline-audit-content space-y-4"><div className="outline-audit-summary rounded-lg border p-4"><div className="outline-audit-label">{tr('Lý do tạo section', 'Section rationale')}</div><p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">{section.rationale || tr('Chưa có rationale trong kết quả đã lưu.', 'No rationale in the saved result.')}</p></div><div><div className="outline-audit-label mb-2">{tr('Dẫn chứng của section', 'Section evidence')}</div><div className="space-y-2">{section.evidence?.map((e, i) => <div key={`${e.source}-${i}`} className="outline-audit-evidence rounded-lg border p-3 text-[10px]"><b>{e.role?.toUpperCase()} · {e.source}</b>{e.quote && <blockquote className="mt-1.5 whitespace-pre-wrap border-l-2 pl-2">“{e.quote}”</blockquote>}{e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}</div></div></div></ProcessTraceModal>}
     </div>
   );
 }

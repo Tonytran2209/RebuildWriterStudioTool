@@ -1371,6 +1371,72 @@ html, body, #root {
   background: #fafaf8 !important;
 }
 
+.outline-heading-input {
+  min-height: 1.5rem !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  white-space: normal;
+  line-height: 1.45;
+}
+
+.outline-menu-trigger {
+  color: #666660;
+  background: transparent;
+  border-color: #deded9;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.outline-menu-trigger:hover,
+.outline-menu-trigger[aria-expanded='true'] {
+  color: #242422;
+  background: #eeeeeb;
+  border-color: #c8c8c2;
+}
+
+.outline-menu-popover {
+  color: #555550;
+  background: #fff;
+  border-color: #deded9;
+}
+
+.outline-menu-popover button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.375rem;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  text-align: left;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.outline-menu-popover button:hover {
+  color: #171717;
+  background: #f1f1ee;
+}
+
+.outline-menu-popover button:disabled {
+  color: #b8b8b2;
+  cursor: not-allowed;
+}
+
+.outline-menu-popover button.is-danger {
+  color: #985050;
+}
+
+.outline-menu-popover button.is-danger:hover {
+  background: #f8eeee;
+}
+
+.outline-menu-divider {
+  border-color: #e5e5e1;
+}
+
 .outline-section-index.is-h2 {
   color: #fff;
   background: #3a3a37;
@@ -1419,6 +1485,26 @@ html, body, #root {
   background: #fafaf8;
 }
 
+.outline-field > label,
+.outline-audit-label {
+  color: #666660;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.outline-audit-summary,
+.outline-audit-evidence {
+  color: #555550;
+  background: #f7f7f5;
+  border-color: #deded9;
+}
+
+.outline-audit-evidence blockquote {
+  border-color: #bcbcb6;
+}
+
 .codex-dark .outline-workspace-shell {
   border-color: #2a2a2a !important;
   background: #1a1a1a !important;
@@ -1458,6 +1544,53 @@ html, body, #root {
 .codex-dark .outline-card:hover {
   border-color: #3a3a3a !important;
   background: #202020 !important;
+}
+
+.codex-dark .outline-heading-input {
+  color: #e5e7eb !important;
+  background: transparent !important;
+}
+
+.codex-dark .outline-menu-trigger {
+  color: #9ca3af !important;
+  background: transparent !important;
+  border-color: #303030 !important;
+}
+
+.codex-dark .outline-menu-trigger:hover,
+.codex-dark .outline-menu-trigger[aria-expanded='true'] {
+  color: #fff !important;
+  background: #282828 !important;
+  border-color: #3a3a3a !important;
+}
+
+.codex-dark .outline-menu-popover {
+  color: #b9b9b9 !important;
+  background: #202020 !important;
+  border-color: #333 !important;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.3) !important;
+}
+
+.codex-dark .outline-menu-popover button:hover {
+  color: #fff !important;
+  background: #2a2a2a !important;
+}
+
+.codex-dark .outline-menu-popover button:disabled {
+  color: #5f5f5f !important;
+  background: transparent !important;
+}
+
+.codex-dark .outline-menu-popover button.is-danger {
+  color: #d19a9a !important;
+}
+
+.codex-dark .outline-menu-popover button.is-danger:hover {
+  background: #302222 !important;
+}
+
+.codex-dark .outline-menu-divider {
+  border-color: #333 !important;
 }
 
 .codex-dark .outline-section-index.is-h2 {
@@ -1501,6 +1634,22 @@ html, body, #root {
 .codex-dark .outline-icon-button.is-danger:hover {
   color: #d79a9a !important;
   background: #2c2020 !important;
+}
+
+.codex-dark .outline-field > label,
+.codex-dark .outline-audit-label {
+  color: #9ca3af !important;
+}
+
+.codex-dark .outline-audit-summary,
+.codex-dark .outline-audit-evidence {
+  color: #b9b9b9 !important;
+  background: #1c1c1c !important;
+  border-color: #2a2a2a !important;
+}
+
+.codex-dark .outline-audit-evidence blockquote {
+  border-color: #444 !important;
 }
 
 /* Compact Core Idea comparison cards — follows the supplied demo's flat card rhythm. */
