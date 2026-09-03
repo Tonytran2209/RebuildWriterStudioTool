@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { CircleCheck, CircleX, Highlighter, LoaderCircle, Sparkles } from 'lucide-react';
+import { Check, CircleX, Highlighter, LoaderCircle, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AppConfig, DocumentFile, EvidenceRef } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
@@ -547,7 +547,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                 {seoChecklist.items.map(item => (
                   <div key={item.label} className="flex items-center gap-2">
                     {item.pass
-                      ? <CircleCheck className="seo-check-icon is-pass app-icon shrink-0" aria-hidden="true" />
+                      ? <span className="seo-check-icon is-pass flex h-4 w-4 shrink-0 items-center justify-center rounded-full" aria-hidden="true"><Check className="app-icon" /></span>
                       : <CircleX className="seo-check-icon app-icon shrink-0" aria-hidden="true" />}
                     <span className={`text-[10px] leading-snug ${item.pass ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}</span>
                   </div>
