@@ -634,32 +634,31 @@ export default function Step2CoreIdea({
             )}
 
             {!loading && ideas.length > 0 && (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {ideas.map(idea => {
-                  const isSelected = selectedId === idea.id;
-                  return (
-                    <div key={idea.id} className={`core-idea-card step-result-card flex min-h-[224px] min-w-0 flex-col overflow-hidden rounded-xl border ${isSelected ? "is-selected" : ""}`}>
-                      <button type="button" onClick={() => handleSelect(idea)} className="core-idea-select-area flex min-h-0 flex-1 flex-col p-3.5 text-left" aria-pressed={isSelected}>
-                        <div className="flex justify-start">
-                          <div className="core-idea-score inline-flex shrink-0 items-baseline gap-1 rounded-full border px-2.5 py-1">
-                            <span className="core-idea-score-label text-[9px] font-medium">Score</span>
-                            <span className={`font-mono text-xs font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
-                            <span className="text-[9px] font-medium text-slate-400">/10</span>
+              <div className="core-idea-suggestions border-t pt-4">
+                <h3 className="core-idea-suggestions-title mb-2 px-2 text-sm font-medium text-slate-600">{tr('Các đề xuất', 'Suggestions')}</h3>
+                <div className="space-y-1">
+                  {ideas.map(idea => {
+                    const isSelected = selectedId === idea.id;
+                    return (
+                      <div key={idea.id} className={`core-idea-card group flex min-w-0 items-start rounded-xl ${isSelected ? "is-selected" : ""}`}>
+                        <button type="button" onClick={() => handleSelect(idea)} className="core-idea-select-area flex min-w-0 flex-1 items-start gap-3 px-3 py-3.5 text-left sm:gap-4" aria-pressed={isSelected}>
+                          <div className="core-idea-score flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-lg border">
+                            <span className={`font-mono text-[11px] font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
+                            <span className="mt-0.5 text-[8px] leading-none text-slate-400">/10</span>
                           </div>
-                        </div>
-                        <h3 className="mt-2.5 line-clamp-3 text-[13px] font-medium leading-[1.4] text-slate-900">{idea.title}</h3>
-                        <div className="mt-2.5 min-h-0 flex-1">
-                          <p className="mb-1 text-[9px] font-medium uppercase tracking-wider text-slate-500">Main argument</p>
-                          <p className="text-[10px] leading-relaxed text-slate-600">{idea.mainArgument}</p>
-                        </div>
-                      </button>
-                      <div className="core-idea-footer flex h-11 items-center justify-between gap-2 border-t px-2.5">
-                        <button type="button" onClick={() => setDetailIdeaId(idea.id)} className="core-idea-details-button rounded-lg px-2.5 py-1.5 text-[10px] font-medium">{tr('Xem chi tiết', 'View details')}</button>
-                        {isSelected && <span className="core-idea-selected-tag rounded-full px-2.5 py-1 text-[9px] font-medium">{tr('Đã chọn', 'Selected')}</span>}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <h3 className="text-[13px] font-medium leading-snug text-slate-900">{idea.title}</h3>
+                              {isSelected && <span className="core-idea-selected-tag rounded-md px-2 py-0.5 text-[9px] font-medium">{tr('Đã chọn', 'Selected')}</span>}
+                            </div>
+                            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">{idea.mainArgument}</p>
+                          </div>
+                        </button>
+                        <button type="button" onClick={() => setDetailIdeaId(idea.id)} className="core-idea-details-button mr-2 mt-3 shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-medium">{tr('Chi tiết', 'Details')}</button>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
 

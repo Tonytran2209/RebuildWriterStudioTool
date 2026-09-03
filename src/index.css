@@ -1666,22 +1666,28 @@ html, body, #root {
   border-color: #444 !important;
 }
 
-/* Compact Core Idea comparison cards — follows the supplied demo's flat card rhythm. */
+/* Step 1 suggestion list — flat rows with a single active surface. */
+.core-idea-suggestions {
+  border-color: #e5e5e1;
+}
+
+.core-idea-suggestions-title {
+  color: #666660;
+}
+
 .core-idea-card {
-  background: #fff;
-  border-color: #deded9;
+  background: transparent;
   box-shadow: none;
-  transition: background-color 160ms ease, border-color 160ms ease;
+  transition: background-color 160ms ease;
 }
 
 .core-idea-card:hover {
-  background: #f6f6f3;
-  border-color: #bcbcb6;
+  background: #f1f1ee;
 }
 
 .core-idea-card.is-selected {
-  border-color: #555550;
-  box-shadow: inset 0 0 0 1px #555550;
+  background: #e9e9e5;
+  box-shadow: none;
 }
 
 .core-idea-select-area,
@@ -1696,10 +1702,9 @@ html, body, #root {
 }
 
 .core-idea-score {
-  border-color: #b7e4d2;
-  background: #e8f8f1;
-  padding-inline: 0.7rem;
-  box-shadow: inset 0 0 0 1px rgba(5, 150, 105, 0.05);
+  border-color: #deded9;
+  background: transparent;
+  box-shadow: none;
 }
 
 .core-idea-score-label {
@@ -1707,14 +1712,17 @@ html, body, #root {
   margin-right: 0.1rem;
 }
 
-.core-idea-footer {
-  border-color: #e5e5e1;
-}
-
 .core-idea-details-button {
   color: #555550;
   background: transparent !important;
+  opacity: 0;
   transition: color 160ms ease, background-color 160ms ease;
+}
+
+.core-idea-card:hover .core-idea-details-button,
+.core-idea-card:focus-within .core-idea-details-button,
+.core-idea-card.is-selected .core-idea-details-button {
+  opacity: 1;
 }
 
 .core-idea-details-button:hover {
@@ -1723,8 +1731,8 @@ html, body, #root {
 }
 
 .core-idea-selected-tag {
-  color: #fff;
-  background: #242422;
+  color: #555550;
+  background: #d7d7d2;
 }
 
 .core-keyword-chip {
@@ -1821,19 +1829,16 @@ html, body, #root {
 }
 
 .codex-dark .core-idea-card {
-  background: #1a1a1a !important;
-  border-color: #2a2a2a !important;
+  background: transparent !important;
 }
 
 .codex-dark .core-idea-card:hover {
-  background: #222 !important;
-  border-color: #3a3a3a !important;
+  background: #2a2a2a !important;
 }
 
 .codex-dark .core-idea-card.is-selected {
-  background: #1d1d1d !important;
-  border-color: #5a5a5a !important;
-  box-shadow: inset 0 0 0 1px #5a5a5a !important;
+  background: #2a2a2a !important;
+  box-shadow: none !important;
 }
 
 .codex-dark .core-idea-select-area,
@@ -1842,17 +1847,21 @@ html, body, #root {
 }
 
 .codex-dark .core-idea-score {
-  border-color: #245a49 !important;
-  background: #17362c !important;
-  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.08) !important;
+  border-color: #3a3a3a !important;
+  background: #222 !important;
+  box-shadow: none !important;
 }
 
 .codex-dark .core-idea-score-label {
   color: #9ca3af !important;
 }
 
-.codex-dark .core-idea-footer {
+.codex-dark .core-idea-suggestions {
   border-color: #2a2a2a !important;
+}
+
+.codex-dark .core-idea-suggestions-title {
+  color: #9ca3af !important;
 }
 
 .codex-dark .core-idea-details-button {
@@ -1866,8 +1875,12 @@ html, body, #root {
 }
 
 .codex-dark .core-idea-selected-tag {
-  color: #141414 !important;
-  background: #e5e5e5 !important;
+  color: #d1d5db !important;
+  background: #3a3a3a !important;
+}
+
+@media (hover: none) {
+  .core-idea-details-button { opacity: 1; }
 }
 
 .codex-dark .core-keyword-chip {
