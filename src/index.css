@@ -1646,25 +1646,73 @@ html, body, #root {
   color: #b9b9b9 !important;
 }
 
+.draft-highlight-legend > b,
 .draft-highlight-legend > span {
-  border: 1px solid #deded9;
-  border-radius: 999px;
-  background: #f7f7f5;
-  padding: 0.2rem 0.5rem;
   color: #666660;
   font-size: 0.5625rem;
   font-weight: 500;
 }
 
-.draft-highlight-legend .is-heading { border-color: #c7d2fe; background: #eef2ff; color: #4338ca; }
-.draft-highlight-legend .is-keyword { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
-.draft-highlight-legend .is-evidence { border-color: #bae6fd; background: #f0f9ff; color: #0369a1; }
-.draft-highlight-legend .is-attention { border-color: #fde68a; background: #fffbeb; color: #a16207; }
+.draft-highlight-legend > b {
+  color: #363633;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.draft-highlight-legend > span::before {
+  display: inline-block;
+  width: 0.35rem;
+  height: 0.35rem;
+  margin-right: 0.3rem;
+  border-radius: 999px;
+  background: #9a9a94;
+  content: '';
+  vertical-align: 0.05rem;
+}
+
+.draft-highlight-legend .is-keyword::before { background: #5f8d7c; }
+.draft-highlight-legend .is-attention::before { background: #a78738; }
+
+.draft-workspace-shell {
+  border-radius: 0.75rem !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.draft-editor {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.draft-toolbar {
+  min-height: 3.75rem;
+}
+
+.draft-stale-notice {
+  color: #80651f;
+  background: #fbf8ef;
+  border-color: #e6dcc0;
+}
+
+.draft-prose {
+  color: #30302d;
+  font-size: 0.8125rem;
+  line-height: 1.8;
+}
+
+.draft-progress-fill {
+  background: #777772;
+}
 
 .draft-insight-panel {
   border-color: #e5e5e1;
   background: transparent;
   box-shadow: none;
+}
+
+.draft-insight-panel .divide-y > :not(:last-child),
+.keyword-density-list > :not(:last-child) {
+  border-bottom-color: #e5e5e1 !important;
 }
 
 .draft-readability-progress {
@@ -1722,16 +1770,46 @@ html, body, #root {
   border-color: #c8c8c2;
 }
 
+.codex-dark .draft-highlight-legend > b,
 .codex-dark .draft-highlight-legend > span {
-  border-color: #303030 !important;
-  background: #1c1c1c !important;
   color: #9ca3af !important;
 }
 
-.codex-dark .draft-highlight-legend .is-heading { border-color: #373b63 !important; background: #252743 !important; color: #a5b4fc !important; }
-.codex-dark .draft-highlight-legend .is-keyword { border-color: #245a49 !important; background: #17362c !important; color: #6ee7b7 !important; }
-.codex-dark .draft-highlight-legend .is-evidence { border-color: #254b61 !important; background: #173142 !important; color: #7dd3fc !important; }
-.codex-dark .draft-highlight-legend .is-attention { border-color: #5a4618 !important; background: #33280f !important; color: #fbbf24 !important; }
+.codex-dark .draft-highlight-legend > b { color: #d1d5db !important; }
+.codex-dark .draft-highlight-legend > span::before { background: #6b6b68; }
+.codex-dark .draft-highlight-legend .is-keyword::before { background: #527c6d; }
+.codex-dark .draft-highlight-legend .is-attention::before { background: #8d7130; }
+
+.codex-dark .draft-workspace-shell {
+  border-color: #222 !important;
+  background: #141414 !important;
+}
+
+.codex-dark .draft-workspace-shell > div {
+  padding: 0 !important;
+}
+
+.codex-dark .draft-editor {
+  background: #1a1a1a !important;
+}
+
+.codex-dark .draft-toolbar {
+  border-color: #2a2a2a !important;
+}
+
+.codex-dark .draft-stale-notice {
+  color: #c4a85d !important;
+  background: #201d16 !important;
+  border-color: #3b3422 !important;
+}
+
+.codex-dark .draft-prose {
+  color: #d1d5db !important;
+}
+
+.codex-dark .draft-progress-fill {
+  background: #737373 !important;
+}
 
 .codex-dark .draft-insight-panel {
   border-color: #2a2a2a !important;
@@ -1741,6 +1819,11 @@ html, body, #root {
 .codex-dark .draft-insights {
   border-color: #2a2a2a !important;
   background: #1a1a1a !important;
+}
+
+.codex-dark .draft-insight-panel .divide-y > :not(:last-child),
+.codex-dark .keyword-density-list > :not(:last-child) {
+  border-bottom-color: #2a2a2a !important;
 }
 
 .codex-dark .draft-readability-progress {

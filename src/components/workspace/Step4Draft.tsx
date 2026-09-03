@@ -324,10 +324,10 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     if (!registry || !HighlightConstructor || !root || !draft) return;
     const highlightStyles = document.createElement('style');
     highlightStyles.textContent = `
-      ::highlight(draft-heading){color:#c7d2fe;background-color:#303353}
-      ::highlight(draft-keyword){color:#a7f3d0;background-color:#194536}
-      ::highlight(draft-evidence){color:#bae6fd;background-color:#1b4054}
-      ::highlight(draft-attention){color:#fde68a;background-color:#4b3912}
+      ::highlight(draft-heading){color:#e5e5e5;background-color:#292929}
+      ::highlight(draft-keyword){color:#9fd3c0;background-color:transparent;text-decoration:underline;text-decoration-color:#426f5f;text-underline-offset:3px}
+      ::highlight(draft-evidence){color:#c8c8c8;background-color:#222}
+      ::highlight(draft-attention){color:#e7c66e;background-color:#332a16}
     `;
     document.head.appendChild(highlightStyles);
     const names = ['draft-heading', 'draft-keyword', 'draft-evidence', 'draft-attention'];
@@ -351,13 +351,17 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
       return [range];
     });
     const regexMatches = (regex: RegExp) => [...text.matchAll(regex)].map(match => ({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
+    const headingMatches = regexMatches(/^#{1,3}\s+.+$/gm);
+    const evidenceMatches = regexMatches(/^>\s+.+$/gm);
+    const attentionMatches = regexMatches(/\[Cần bổ sung dữ liệu\]/gi);
+    const reserved = [...headingMatches, ...evidenceMatches, ...attentionMatches];
     const keywords = [...new Set([getPrimaryKeyword(article), ...(article.keywords || '').split(',')].map(item => item.trim()).filter(item => item.length >= 3))];
-    const keywordMatches = keywords.flatMap(keyword => regexMatches(new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')));
+    const keywordMatches = keywords.flatMap(keyword => regexMatches(new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'))).filter(match => !reserved.some(item => match.start < item.end && match.end > item.start));
     const groups = {
-      'draft-heading': rangesFor(regexMatches(/^#{1,3}\s+.+$/gm)),
+      'draft-heading': rangesFor(headingMatches),
       'draft-keyword': rangesFor(keywordMatches),
-      'draft-evidence': rangesFor(regexMatches(/^>\s+.+$/gm)),
-      'draft-attention': rangesFor(regexMatches(/\[Cần bổ sung dữ liệu\]/gi)),
+      'draft-evidence': rangesFor(evidenceMatches),
+      'draft-attention': rangesFor(attentionMatches),
     };
     Object.entries(groups).forEach(([name, ranges]) => { if (ranges.length) registry.set(name, new HighlightConstructor(...ranges)); });
     return () => { names.forEach(name => registry.delete(name)); highlightStyles.remove(); };
@@ -405,13 +409,13 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
   return (
     <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
-      <div className="minimal-step-shell bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-3 overflow-y-auto p-2 sm:p-3 lg:flex-row lg:overflow-hidden">
+      <div className="draft-workspace-shell minimal-step-shell flex min-h-0 flex-1 flex-col border border-slate-200 bg-[#ebedf3]">
+        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
 
           {/* Editor panel */}
-          <div className="draft-editor flex-1 bg-white rounded-2xl flex flex-col shadow-sm min-w-0 min-h-[55dvh] lg:min-h-0">
+          <div className="draft-editor flex min-h-[55dvh] min-w-0 flex-1 flex-col bg-white lg:min-h-0">
             {/* Editor toolbar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 sm:px-4 py-2.5 border-b border-slate-100">
+            <div className="draft-toolbar flex flex-col justify-between gap-2 border-b border-slate-100 px-3 py-2.5 sm:flex-row sm:items-center sm:px-4">
               <div className="min-w-0">
                 <h2 className="text-sm font-bold text-slate-800">{tr('Bước 3: Bản nháp & Kiểm tra', 'Step 3: First Draft & Audit')}</h2>
                 <p className="text-[10px] text-slate-400">{article.title || 'Bài viết mới'}</p>
@@ -446,7 +450,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             )}
 
             {draftIsStale && !generating && (
-              <div className="mx-3 sm:mx-4 mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              <div className="draft-stale-notice mx-3 mt-3 rounded-lg border px-3 py-2 text-[10px] leading-relaxed sm:mx-4">
                 Outline, tài liệu, prompting rules hoặc model đã thay đổi. Draft đã lưu vẫn được giữ nguyên; chỉ cập nhật khi bạn nhấn “Viết lại”.
               </div>
             )}
@@ -462,7 +466,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
             {/* Draft editor */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-5">
-              {!generating && draft && <div className="draft-highlight-legend mb-4 flex flex-wrap gap-1.5" aria-label={tr('Chú giải nội dung quan trọng', 'Important content legend')}><span className="is-heading">{tr('Heading', 'Heading')}</span><span className="is-keyword">SEO keyword</span><span className="is-evidence">{tr('Dẫn chứng', 'Evidence')}</span><span className="is-attention">{tr('Cần chú ý', 'Needs attention')}</span></div>}
+              {!generating && draft && <div className="draft-highlight-legend mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5" aria-label={tr('Chú giải nội dung quan trọng', 'Important content legend')}><b>{tr('Điểm nhấn', 'Highlights')}</b><span className="is-heading">{tr('Heading', 'Heading')}</span><span className="is-keyword">SEO keyword</span><span className="is-evidence">{tr('Dẫn chứng', 'Evidence')}</span><span className="is-attention">{tr('Cần chú ý', 'Needs attention')}</span></div>}
               {generating ? (
                 <div className="space-y-3">
                   {[...Array(12)].map((_, i) => (
@@ -476,7 +480,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                   suppressContentEditableWarning
                   onInput={handleEditorInput}
                   data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
-                  className="prose-editor min-h-full whitespace-pre-wrap"
+                  className="draft-prose prose-editor min-h-full whitespace-pre-wrap"
                 >
                   {draft || ''}
                 </div>
@@ -491,7 +495,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
               </div>
               <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${progress >= 100 ? 'bg-emerald-500' : progress >= 70 ? 'bg-blue-500' : 'bg-amber-400'}`}
+                  className="draft-progress-fill h-full rounded-full transition-all"
                   style={{ width: `${progress}%` }}
                 />
               </div>
@@ -499,7 +503,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           </div>
 
           {/* Audit panel */}
-          <aside className="draft-insights grid w-full shrink-0 grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 lg:flex lg:w-[252px] lg:flex-col">
+          <aside className="draft-insights grid w-full shrink-0 grid-cols-1 overflow-hidden border-t border-slate-200 bg-white sm:grid-cols-2 lg:flex lg:w-[236px] lg:flex-col lg:border-l lg:border-t-0">
             {/* Readability */}
             <section className="draft-insight-panel space-y-3 border-b border-slate-200 p-3 sm:border-r lg:border-r-0">
               <h3 className="text-[11px] font-medium text-slate-800">{tr('Phân tích nội dung', 'Content analysis')}</h3>
