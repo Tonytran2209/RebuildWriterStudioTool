@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Search } from "lucide-react";
 import type {
   Article,
@@ -637,10 +638,11 @@ export default function Step2CoreIdea({
                 {ideas.map(idea => {
                   const isSelected = selectedId === idea.id;
                   return (
-                    <div key={idea.id} className={`core-idea-card step-result-card flex h-[224px] min-w-0 flex-col overflow-hidden rounded-xl border ${isSelected ? "is-selected" : ""}`}>
+                    <div key={idea.id} className={`core-idea-card step-result-card flex min-h-[224px] min-w-0 flex-col overflow-hidden rounded-xl border ${isSelected ? "is-selected" : ""}`}>
                       <button type="button" onClick={() => handleSelect(idea)} className="core-idea-select-area flex min-h-0 flex-1 flex-col p-3.5 text-left" aria-pressed={isSelected}>
-                        <div className="flex justify-end">
+                        <div className="flex justify-start">
                           <div className="core-idea-score inline-flex shrink-0 items-baseline gap-1 rounded-full border px-2.5 py-1">
+                            <span className="core-idea-score-label text-[9px] font-medium">Score</span>
                             <span className={`font-mono text-xs font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
                             <span className="text-[9px] font-medium text-slate-400">/10</span>
                           </div>
@@ -648,7 +650,7 @@ export default function Step2CoreIdea({
                         <h3 className="mt-2.5 line-clamp-3 text-[13px] font-medium leading-[1.4] text-slate-900">{idea.title}</h3>
                         <div className="mt-2.5 min-h-0 flex-1">
                           <p className="mb-1 text-[9px] font-medium uppercase tracking-wider text-slate-500">Main argument</p>
-                          <p className="line-clamp-3 text-[10px] leading-relaxed text-slate-600">{idea.mainArgument}</p>
+                          <p className="text-[10px] leading-relaxed text-slate-600">{idea.mainArgument}</p>
                         </div>
                       </button>
                       <div className="core-idea-footer flex h-11 items-center justify-between gap-2 border-t px-2.5">
@@ -681,7 +683,7 @@ export default function Step2CoreIdea({
           { key: "docSupport" as const, label: "Doc Support", value: idea.rating.docSupport },
           { key: "uniqueness" as const, label: "Uniqueness", value: idea.rating.uniqueness },
         ];
-        return <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/55 p-3 backdrop-blur-sm sm:p-6" onMouseDown={event => event.target === event.currentTarget && setDetailIdeaId(null)} role="dialog" aria-modal="true" aria-labelledby="core-idea-detail-title">
+        return createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6" onMouseDown={event => event.target === event.currentTarget && setDetailIdeaId(null)} role="dialog" aria-modal="true" aria-labelledby="core-idea-detail-title">
           <div className="flex max-h-[92dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
             <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-6">
               <div className="min-w-0">
@@ -716,7 +718,7 @@ export default function Step2CoreIdea({
               <button type="button" onClick={() => { handleSelect(idea); setDetailIdeaId(null); }} className={`rounded-lg px-4 py-2 text-[10px] font-semibold ${isSelected ? "border border-slate-200 bg-white text-slate-700" : "bg-slate-900 text-white hover:bg-slate-800"}`}>{isSelected ? tr('Đã chọn ý tưởng này', 'This idea is selected') : tr('Chọn ý tưởng này', 'Select this idea')}</button>
             </footer>
           </div>
-        </div>;
+        </div>, document.body);
       })()}
 
       {auditIdeaId && (() => { const idea = ideas.find(item => item.id === auditIdeaId); if (!idea) return null; return <ProcessTraceModal title={idea.title} events={article.step2ProcessTrace} onClose={() => setAuditIdeaId(null)}><div className="space-y-4"><div><h4 className="text-xs font-bold text-slate-800">SEO Research Top 10</h4><div className="space-y-2 mt-2">{article.seoResearch?.keywords.map((keyword, index) => <div key={keyword.keyword} className="rounded-lg border border-cyan-100 bg-cyan-50/50 p-3 text-[10px]"><div className="flex flex-wrap gap-2"><span className="font-mono text-cyan-700">#{index + 1}</span><b>{keyword.keyword}</b><span>{keyword.intent ?? 'intent n/a'}</span></div>{keyword.marketEvidence && <p className="mt-1 text-slate-600">{keyword.marketEvidence}</p>}<div className="flex gap-2 mt-1">{keyword.sources?.map((url, i) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-cyan-700 underline">Source {i + 1}</a>)}</div></div>)}</div></div><div><h4 className="text-xs font-bold text-slate-800">{tr('Đối chứng keyword của lựa chọn', 'Keyword validation for this idea')}</h4><div className="divide-y divide-slate-100 rounded-lg border border-slate-200 mt-2">{idea.keywordAudit?.map(item => <div key={item.keyword} className="p-3 text-[10px]"><div className="flex gap-2"><span className={`font-bold ${item.decision === 'accepted' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.decision}</span><b>{item.keyword}</b></div><p className="mt-1">{item.reason}</p><p className="mt-1 text-amber-700"><b>Rules:</b> {item.ruleReason}</p><p className="mt-1 text-indigo-700"><b>KB/Action:</b> {item.kbReason}</p></div>)}</div></div></div></ProcessTraceModal>; })()}

@@ -1358,8 +1358,15 @@ html, body, #root {
 }
 
 .core-idea-score {
-  border-color: #deded9;
-  background: #f6f6f3;
+  border-color: #b7e4d2;
+  background: #e8f8f1;
+  padding-inline: 0.7rem;
+  box-shadow: inset 0 0 0 1px rgba(5, 150, 105, 0.05);
+}
+
+.core-idea-score-label {
+  color: #477365;
+  margin-right: 0.1rem;
 }
 
 .core-idea-footer {
@@ -1404,8 +1411,13 @@ html, body, #root {
 }
 
 .codex-dark .core-idea-score {
-  border-color: #303030 !important;
-  background: #1c1c1c !important;
+  border-color: #245a49 !important;
+  background: #17362c !important;
+  box-shadow: inset 0 0 0 1px rgba(52, 211, 153, 0.08) !important;
+}
+
+.codex-dark .core-idea-score-label {
+  color: #9ca3af !important;
 }
 
 .codex-dark .core-idea-footer {
