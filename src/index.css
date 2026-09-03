@@ -1662,9 +1662,64 @@ html, body, #root {
 .draft-highlight-legend .is-attention { border-color: #fde68a; background: #fffbeb; color: #a16207; }
 
 .draft-insight-panel {
-  border-color: #deded9;
-  background: #fafaf8;
+  border-color: #e5e5e1;
+  background: transparent;
   box-shadow: none;
+}
+
+.draft-readability-progress {
+  background: #8a8a84;
+}
+
+.seo-score-tag {
+  color: #666660;
+  background: #f1f1ee;
+  border-color: #deded9;
+}
+
+.seo-score-tag.is-pass {
+  color: #3f6257;
+  background: #edf4f1;
+  border-color: #cbded7;
+}
+
+.seo-check-indicator {
+  color: #8a8a84;
+  background: transparent;
+  border-color: #c8c8c2;
+}
+
+.seo-check-indicator.is-pass {
+  color: #477365;
+  background: transparent;
+  border-color: #8eb7a9;
+}
+
+.keyword-density-list > * {
+  border-color: #e5e5e1;
+}
+
+.draft-export-primary {
+  color: #171717;
+  background: #deded9;
+  border-color: #deded9;
+}
+
+.draft-export-primary:hover {
+  background: #cecec8;
+  border-color: #cecec8;
+}
+
+.draft-export-secondary {
+  color: #666660;
+  background: transparent;
+  border-color: #deded9;
+}
+
+.draft-export-secondary:hover {
+  color: #242422;
+  background: #f1f1ee;
+  border-color: #c8c8c2;
 }
 
 .codex-dark .draft-highlight-legend > span {
@@ -1680,7 +1735,74 @@ html, body, #root {
 
 .codex-dark .draft-insight-panel {
   border-color: #2a2a2a !important;
+  background: transparent !important;
+}
+
+.codex-dark .draft-insights {
+  border-color: #2a2a2a !important;
   background: #1a1a1a !important;
+}
+
+.codex-dark .draft-readability-progress {
+  background: #6b6b68 !important;
+}
+
+.codex-dark .seo-score-tag {
+  color: #9ca3af !important;
+  background: #222 !important;
+  border-color: #3a3a3a !important;
+}
+
+.codex-dark .seo-score-tag.is-pass {
+  color: #86b8a7 !important;
+  background: #1d2b26 !important;
+  border-color: #36594d !important;
+}
+
+.codex-dark .seo-check-indicator {
+  color: #6b7280 !important;
+  background: transparent !important;
+  border-color: #444 !important;
+}
+
+.codex-dark .seo-check-indicator.is-pass {
+  color: #70a894 !important;
+  background: transparent !important;
+  border-color: #456d5f !important;
+}
+
+.codex-dark .keyword-density-list > * {
+  border-color: #2a2a2a !important;
+}
+
+.codex-dark .draft-export-primary {
+  color: #141414 !important;
+  background: #d4d4d4 !important;
+  border-color: #d4d4d4 !important;
+}
+
+.codex-dark .draft-export-primary:hover {
+  color: #141414 !important;
+  background: #fff !important;
+  border-color: #fff !important;
+}
+
+.codex-dark .minimal-step-shell .draft-export-primary:hover {
+  color: #141414 !important;
+  background: #fff !important;
+  border-color: #fff !important;
+}
+
+.codex-dark .draft-export-secondary {
+  color: #9ca3af !important;
+  background: transparent !important;
+  border-color: #303030 !important;
+}
+
+.codex-dark .draft-export-secondary:hover {
+  color: #fff !important;
+  background: #222 !important;
+  border-color: #3a3a3a !important;
 }
 
 @media (max-width: 767px) {

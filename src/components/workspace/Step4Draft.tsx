@@ -499,38 +499,38 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           </div>
 
           {/* Audit panel */}
-          <aside className="draft-insights grid w-full shrink-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-[252px] lg:flex-col">
+          <aside className="draft-insights grid w-full shrink-0 grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 lg:flex lg:w-[252px] lg:flex-col">
             {/* Readability */}
-            <section className="draft-insight-panel space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+            <section className="draft-insight-panel space-y-3 border-b border-slate-200 p-3 sm:border-r lg:border-r-0">
               <h3 className="text-[11px] font-medium text-slate-800">{tr('Phân tích nội dung', 'Content analysis')}</h3>
               <div className="space-y-2">
                 <div>
                   <div className="mb-1.5 flex justify-between text-[10px]">
                     <span className="text-slate-500">{tr('Độ dễ đọc', 'Readability')}</span>
-                    <span className={`font-medium ${readability?.color || 'text-slate-400'}`}>{readability
+                    <span className="font-medium text-slate-600">{readability
                       ? tr(readability.label, readability.score >= 90 ? 'Very easy' : readability.score >= 75 ? 'Easy' : readability.score >= 60 ? 'Medium' : 'Difficult')
                       : '—'}</span>
                   </div>
                   <div className="h-1 overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${readability?.score || 0}%` }} />
+                    <div className="draft-readability-progress h-full rounded-full transition-all" style={{ width: `${readability?.score || 0}%` }} />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-1 border-t border-slate-100 pt-2 text-center">
-                  <div><span className="block text-[8px] uppercase tracking-wider text-slate-400">{tr('Từ', 'Words')}</span><b className="mt-0.5 block font-mono text-[10px] font-medium text-slate-700">{wordCount.toLocaleString()}</b></div>
-                  <div><span className="block text-[8px] uppercase tracking-wider text-slate-400">{tr('Đoạn', 'Paragraphs')}</span><b className="mt-0.5 block font-mono text-[10px] font-medium text-slate-700">{draft.split('\n\n').filter(p => p.trim()).length}</b></div>
-                  <div><span className="block text-[8px] uppercase tracking-wider text-slate-400">{tr('Ký tự', 'Characters')}</span><b className="mt-0.5 block font-mono text-[10px] font-medium text-slate-700">{draft.length.toLocaleString()}</b></div>
+                <div className="divide-y divide-slate-100 border-t border-slate-100 pt-1">
+                  <div className="flex items-center justify-between py-1 text-[10px]"><span className="text-slate-500">{tr('Số từ', 'Words')}</span><b className="font-mono font-medium text-slate-700">{wordCount.toLocaleString()}</b></div>
+                  <div className="flex items-center justify-between py-1 text-[10px]"><span className="text-slate-500">{tr('Số đoạn', 'Paragraphs')}</span><b className="font-mono font-medium text-slate-700">{draft.split('\n\n').filter(p => p.trim()).length}</b></div>
+                  <div className="flex items-center justify-between py-1 text-[10px]"><span className="text-slate-500">{tr('Số ký tự', 'Characters')}</span><b className="font-mono font-medium text-slate-700">{draft.length.toLocaleString()}</b></div>
                 </div>
               </div>
             </section>
 
             {/* SEO Checklist */}
-            <section className="draft-insight-panel space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
-              <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">SEO Checklist</h3><span className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{seoChecklist.items.length - seoChecklist.failed.length}/{seoChecklist.items.length}</span></div>
+            <section className="draft-insight-panel space-y-2.5 border-b border-slate-200 p-3">
+              <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">SEO Checklist</h3><span className={`seo-score-tag rounded-full border px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'is-pass' : ''}`}>{seoChecklist.items.length - seoChecklist.failed.length}/{seoChecklist.items.length}</span></div>
               <div className="space-y-1.5">
                 {seoChecklist.items.map(item => (
                   <div key={item.label} className="flex items-center gap-2">
-                    <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${item.pass ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                    <div className={`seo-check-indicator flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${item.pass ? 'is-pass' : ''}`}>
                       {item.pass ? <Check className="app-icon" aria-hidden="true" /> : <X className="app-icon" aria-hidden="true" />}
                     </div>
                     <span className={`text-[10px] leading-snug ${item.pass ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}</span>
@@ -541,9 +541,9 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
             {/* Keyword density */}
             {keywordStats.length > 0 && (
-              <section className="draft-insight-panel space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
+              <section className="draft-insight-panel space-y-2.5 border-b border-slate-200 p-3 sm:border-r lg:border-r-0">
                 <h3 className="text-[11px] font-medium text-slate-800">{tr('Mật độ từ khóa', 'Keyword density')}</h3>
-                <div className="divide-y divide-slate-100">
+                <div className="keyword-density-list divide-y divide-slate-100">
                   {keywordStats.map(kw => (
                     <div key={kw.keyword} className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
                       <span className="max-w-[150px] truncate text-[10px] text-slate-500" title={kw.keyword}>{kw.keyword}</span>
@@ -555,19 +555,19 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
             )}
 
             {/* Export */}
-            <section className="draft-insight-panel space-y-1.5 rounded-xl border border-slate-200 bg-white p-3">
+            <section className="draft-insight-panel space-y-1.5 p-3">
               <h3 className="mb-2 text-[11px] font-medium text-slate-800">{tr('Xuất bài viết', 'Export article')}</h3>
               <button
                 onClick={handleCopy}
                 disabled={!draft}
-                className="w-full rounded-lg bg-slate-900 py-2 text-[10px] font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
+                className="draft-export-primary w-full rounded-lg border py-2 text-[10px] font-medium transition-colors disabled:opacity-40"
               >
                 {copied ? tr('✓ Đã copy', '✓ Copied') : tr('Copy toàn bộ nội dung', 'Copy all content')}
               </button>
               <button
                 onClick={handleCopyGoogleDocs}
                 disabled={!draft || formatCopying}
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 text-[10px] font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40"
+                className="draft-export-secondary w-full rounded-lg border py-2 text-[10px] font-medium transition-colors disabled:opacity-40"
               >
                 {formatCopying
                   ? tr('Đang chuẩn hóa heading…', 'Formatting headings…')
@@ -586,7 +586,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                className="w-full rounded-lg bg-slate-100 py-2 text-[10px] font-medium text-slate-600 transition-colors hover:bg-slate-200 disabled:opacity-40"
+                className="draft-export-secondary w-full rounded-lg border py-2 text-[10px] font-medium transition-colors disabled:opacity-40"
               >
                 {tr('Tải xuống .txt', 'Download .txt')}
               </button>
