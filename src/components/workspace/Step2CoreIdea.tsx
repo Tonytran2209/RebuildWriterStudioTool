@@ -642,8 +642,8 @@ export default function Step2CoreIdea({
                     return (
                       <div key={idea.id} className={`core-idea-card group flex min-w-0 items-start rounded-xl ${isSelected ? "is-selected" : ""}`}>
                         <button type="button" onClick={() => handleSelect(idea)} className="core-idea-select-area flex min-w-0 flex-1 items-start gap-3 px-3 py-3.5 text-left sm:gap-4" aria-pressed={isSelected}>
-                          <div className="core-idea-score flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border">
-                            <span className={`font-mono text-sm font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
+                          <div className="core-idea-score flex h-9 w-9 shrink-0 items-center justify-center rounded-full border">
+                            <span className={`core-idea-score-value text-[13px] font-semibold leading-none tracking-tight tabular-nums ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
