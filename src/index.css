@@ -1371,15 +1371,24 @@ html, body, #root {
   background: #fafaf8 !important;
 }
 
-.outline-heading-input {
+.minimal-step textarea.outline-heading-input,
+.writer-light .minimal-step textarea.outline-heading-input {
   min-height: 1.5rem !important;
   padding: 0 !important;
-  border: 0 !important;
+  border: none !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
+  appearance: none;
   white-space: normal;
   line-height: 1.45;
+}
+
+.minimal-step textarea.outline-heading-input:focus,
+.writer-light .minimal-step textarea.outline-heading-input:focus {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .outline-menu-trigger {
@@ -1546,9 +1555,14 @@ html, body, #root {
   background: #202020 !important;
 }
 
-.codex-dark .outline-heading-input {
+.codex-dark .minimal-step-shell textarea.outline-heading-input,
+.codex-dark .minimal-step-shell textarea.outline-heading-input:focus {
   color: #e5e7eb !important;
   background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .codex-dark .outline-menu-trigger {
