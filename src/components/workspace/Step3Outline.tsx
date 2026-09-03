@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
+import { ChevronDown, ChevronUp, LoaderCircle, Plus, Search, Sparkles, X } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -464,14 +464,14 @@ export default function Step3Outline({
 
   return (
     <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
-      <div className="minimal-step-shell bg-white rounded-2xl border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div className="p-3.5 sm:p-5 md:p-6 flex-1 overflow-y-auto">
-          <div className="max-w-4xl mx-auto space-y-6">
+      <div className="outline-workspace-shell minimal-step-shell flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6">
+          <div className="mx-auto max-w-4xl space-y-5">
 
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
-              <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 2 — Dàn bài nháp', 'Step 2 — Draft Outline')}</h2>
+            <div className="outline-toolbar flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:gap-4">
+              <div className="min-w-0">
+                <h2 className="mb-1 text-base font-semibold text-slate-800">{tr('Bước 2 — Dàn bài nháp', 'Step 2 — Draft Outline')}</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   {tr('Đọc và chỉnh dàn ý theo đúng thứ tự bài viết. Mở chi tiết khi cần xem keyword, intent hoặc nguồn tham khảo.', 'Review and edit the outline in article order. Open details to inspect keywords, intent, or sources.')}
                 </p>
@@ -479,9 +479,10 @@ export default function Step3Outline({
               <button
                 onClick={() => handleGenerate(Boolean(outline.length))}
                 disabled={generating}
-                className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all"
+                className="outline-generate-button flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition-colors disabled:opacity-40"
               >
-                {generating ? tr('Đang dựng...', 'Generating...') : outline.length ? tr('Tạo lại', 'Regenerate') : tr('Tạo outline', 'Generate outline')}
+                {generating ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : <Sparkles className="app-icon" aria-hidden="true" />}
+                <span>{generating ? tr('Đang dựng...', 'Generating...') : outline.length ? tr('Tạo lại', 'Regenerate') : tr('Tạo outline', 'Generate outline')}</span>
               </button>
             </div>
 
@@ -506,7 +507,7 @@ export default function Step3Outline({
             )}
 
             {!generating && outline.length === 0 && (
-              <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center">
+              <div className="outline-empty-state rounded-xl border border-dashed border-slate-200 p-8 text-center">
                 <p className="text-sm font-semibold text-slate-600">{tr('Chưa có outline', 'No outline yet')}</p>
                 <p className="text-xs text-slate-400 mt-1">{tr('Nhấn “Tạo outline” để dựng dàn bài từ dữ liệu Bước 1–2', 'Click “Generate outline” to build it from Step 1–2 data')}</p>
               </div>
@@ -515,7 +516,7 @@ export default function Step3Outline({
             {/* Outline */}
             {!generating && outline.length > 0 && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                <div className="outline-summary flex items-center justify-between px-1 text-[11px] text-slate-500">
                   <span>
                     <span className="font-mono text-slate-700 font-bold">{outline.length}</span> section — {h2Count} H2 · {h3Count} H3
                   </span>
@@ -540,13 +541,13 @@ export default function Step3Outline({
             )}
 
             {/* Add section */}
-            <div className="border border-slate-200 rounded-xl p-4 space-y-3">
+            <div className="outline-add-panel space-y-3 rounded-xl border border-slate-200 p-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="text-xs font-bold text-slate-700">{tr('Thêm section hoặc luận điểm nhánh', 'Add a section or supporting point')}</div>
                 <button
                   onClick={handleSuggestKeywords}
                   disabled={suggestingKeywords || (!contextBrief.angle && !contextBrief.topic)}
-                  className="text-[10px] font-semibold bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 border border-slate-200 rounded-md px-2.5 py-1 transition-all"
+                  className="outline-secondary-button rounded-md border border-slate-200 px-2.5 py-1 text-[10px] font-medium transition-colors disabled:opacity-40"
                 >
                   {suggestingKeywords ? tr('Đang lấy...', 'Loading...') : tr('Lấy keyword đã kiểm chứng', 'Use verified keywords')}
                 </button>
@@ -571,9 +572,10 @@ export default function Step3Outline({
                 <button
                   onClick={() => addSection()}
                   disabled={!newSectionHeading.trim()}
-                  className="col-span-2 sm:col-span-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-all"
+                  className="outline-add-button col-span-2 flex items-center justify-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-medium transition-colors disabled:opacity-40 sm:col-span-1"
                 >
-                  {tr('Thêm', 'Add')}
+                  <Plus className="app-icon" aria-hidden="true" />
+                  <span>{tr('Thêm', 'Add')}</span>
                 </button>
               </div>
 
@@ -587,7 +589,7 @@ export default function Step3Outline({
                       <button
                         key={kw}
                         onClick={() => addSection(kw, kw)}
-                        className="text-[11px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md px-2 py-0.5 transition-all"
+                        className="outline-keyword-chip rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors"
                       >
                         {kw}
                       </button>
@@ -647,8 +649,8 @@ function SectionRow({
       isH3 ? "ml-2 sm:ml-6 border-slate-200 bg-slate-50/60" : "border-slate-200 bg-white"
     }`}>
       <div className="flex flex-wrap sm:flex-nowrap items-start gap-2 sm:gap-3 p-3 sm:p-4">
-        <div className={`w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold ${
-          isH3 ? "bg-white border border-slate-200 text-slate-500" : "bg-slate-900 text-white"
+        <div className={`outline-section-index flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
+          isH3 ? "is-h3 border border-slate-200" : "is-h2"
         }`}>
           {index + 1}
         </div>
@@ -677,7 +679,7 @@ function SectionRow({
           {!expanded && (
             <div className="flex flex-wrap items-center gap-1.5 mt-3">
               {section.keywords?.slice(0, 3).map((kw, i) => (
-                <span key={i} className="text-[10px] text-slate-600 bg-slate-100 rounded-md px-2 py-0.5">
+                <span key={i} className="outline-keyword-chip rounded-md border px-2 py-0.5 text-[10px]">
                   {kw}
                 </span>
               ))}
@@ -695,19 +697,19 @@ function SectionRow({
           <button onClick={() => setShowAudit(true)} className="ai-log-button is-icon flex h-7 w-7 items-center justify-center rounded-md border" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${section.heading}`}>
             <Search className="app-icon" aria-hidden="true" />
           </button>
-          <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title={tr('Lên', 'Move up')}>
+          <button onClick={() => onMove(-1)} className="outline-icon-button flex h-7 w-7 items-center justify-center rounded-md" title={tr('Lên', 'Move up')}>
             <ChevronUp className="app-icon" aria-hidden="true" />
           </button>
-          <button onClick={() => onMove(1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title={tr('Xuống', 'Move down')}>
+          <button onClick={() => onMove(1)} className="outline-icon-button flex h-7 w-7 items-center justify-center rounded-md" title={tr('Xuống', 'Move down')}>
             <ChevronDown className="app-icon" aria-hidden="true" />
           </button>
           <button
             onClick={() => setExpanded(!expanded)}
-            className="text-[10px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded-md hover:bg-slate-100"
+            className="outline-details-button rounded-md px-2 py-1 text-[10px] font-medium transition-colors"
           >
             {expanded ? tr('Thu gọn', 'Collapse') : tr('Chi tiết', 'Details')}
           </button>
-          <button onClick={onRemove} className="w-6 h-6 flex items-center justify-center text-slate-300 hover:text-red-500 rounded" title={tr('Xoá', 'Delete')}>
+          <button onClick={onRemove} className="outline-icon-button is-danger flex h-7 w-7 items-center justify-center rounded-md" title={tr('Xoá', 'Delete')}>
             <X className="app-icon" aria-hidden="true" />
           </button>
         </div>
@@ -715,7 +717,7 @@ function SectionRow({
 
       {/* Expanded editor */}
       {expanded && (
-        <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-4 space-y-3">
+        <div className="outline-expanded space-y-3 border-t border-slate-100 px-4 py-4">
           <div>
             <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Notes</label>
             <textarea

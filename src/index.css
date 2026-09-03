@@ -1328,6 +1328,181 @@ html, body, #root {
   accent-color: #e5e5e5;
 }
 
+/* Step 2 outline workspace — shares the same restrained surface system as Step 3. */
+.outline-workspace-shell {
+  border-color: #deded9 !important;
+  border-radius: 0.75rem !important;
+  background: #fff !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.03) !important;
+}
+
+.outline-toolbar,
+.outline-summary {
+  border-color: #e5e5e1 !important;
+}
+
+.outline-generate-button,
+.outline-add-button {
+  color: #fff;
+  background: #242422;
+  border: 1px solid #242422;
+}
+
+.outline-generate-button:hover,
+.outline-add-button:hover {
+  background: #363633;
+  border-color: #363633;
+}
+
+.outline-empty-state,
+.outline-add-panel {
+  border-color: #deded9 !important;
+  background: #fafaf8;
+}
+
+.outline-card {
+  border-color: #deded9 !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.outline-card:hover {
+  border-color: #bcbcb6 !important;
+  background: #fafaf8 !important;
+}
+
+.outline-section-index.is-h2 {
+  color: #fff;
+  background: #3a3a37;
+}
+
+.outline-section-index.is-h3 {
+  color: #666660;
+  background: #f1f1ee;
+  border-color: #deded9 !important;
+}
+
+.outline-keyword-chip {
+  color: #666660;
+  background: #f7f7f5;
+  border-color: #deded9;
+}
+
+.outline-keyword-chip:hover {
+  color: #242422;
+  background: #eeeeeb;
+  border-color: #c8c8c2;
+}
+
+.outline-secondary-button,
+.outline-icon-button,
+.outline-details-button {
+  color: #666660;
+  background: transparent;
+  border-color: #deded9;
+}
+
+.outline-secondary-button:hover,
+.outline-icon-button:hover,
+.outline-details-button:hover {
+  color: #242422;
+  background: #eeeeeb;
+}
+
+.outline-icon-button.is-danger:hover {
+  color: #a74d4d;
+  background: #f8eeee;
+}
+
+.outline-expanded {
+  border-color: #e5e5e1 !important;
+  background: #fafaf8;
+}
+
+.codex-dark .outline-workspace-shell {
+  border-color: #2a2a2a !important;
+  background: #1a1a1a !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .outline-toolbar,
+.codex-dark .outline-summary {
+  border-color: #2a2a2a !important;
+}
+
+.codex-dark .outline-generate-button,
+.codex-dark .outline-add-button {
+  color: #171717 !important;
+  background: #d4d4d4 !important;
+  border-color: #d4d4d4 !important;
+}
+
+.codex-dark .outline-generate-button:hover,
+.codex-dark .outline-add-button:hover {
+  background: #fff !important;
+  border-color: #fff !important;
+}
+
+.codex-dark .outline-empty-state,
+.codex-dark .outline-add-panel,
+.codex-dark .outline-expanded {
+  border-color: #2a2a2a !important;
+  background: #1c1c1c !important;
+}
+
+.codex-dark .outline-card {
+  border-color: #2a2a2a !important;
+  background: #1c1c1c !important;
+}
+
+.codex-dark .outline-card:hover {
+  border-color: #3a3a3a !important;
+  background: #202020 !important;
+}
+
+.codex-dark .outline-section-index.is-h2 {
+  color: #d1d5db !important;
+  background: #303030 !important;
+}
+
+.codex-dark .outline-section-index.is-h3 {
+  color: #9ca3af !important;
+  background: #222 !important;
+  border-color: #3a3a3a !important;
+}
+
+.codex-dark .outline-keyword-chip {
+  color: #b9b9b9 !important;
+  background: #222 !important;
+  border-color: #303030 !important;
+}
+
+.codex-dark .outline-keyword-chip:hover {
+  color: #fff !important;
+  background: #2a2a2a !important;
+  border-color: #3a3a3a !important;
+}
+
+.codex-dark .outline-secondary-button,
+.codex-dark .outline-icon-button,
+.codex-dark .outline-details-button {
+  color: #9ca3af !important;
+  background: transparent !important;
+  border-color: #303030 !important;
+}
+
+.codex-dark .outline-secondary-button:hover,
+.codex-dark .outline-icon-button:hover,
+.codex-dark .outline-details-button:hover {
+  color: #fff !important;
+  background: #282828 !important;
+}
+
+.codex-dark .outline-icon-button.is-danger:hover {
+  color: #d79a9a !important;
+  background: #2c2020 !important;
+}
+
 /* Compact Core Idea comparison cards — follows the supplied demo's flat card rhythm. */
 .core-idea-card {
   background: #fff;
