@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Search } from "lucide-react";
+import { Eye, Search } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -642,9 +642,8 @@ export default function Step2CoreIdea({
                     return (
                       <div key={idea.id} className={`core-idea-card group flex min-w-0 items-start rounded-xl ${isSelected ? "is-selected" : ""}`}>
                         <button type="button" onClick={() => handleSelect(idea)} className="core-idea-select-area flex min-w-0 flex-1 items-start gap-3 px-3 py-3.5 text-left sm:gap-4" aria-pressed={isSelected}>
-                          <div className="core-idea-score flex h-9 w-9 shrink-0 flex-col items-center justify-center rounded-lg border">
-                            <span className={`font-mono text-[11px] font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
-                            <span className="mt-0.5 text-[8px] leading-none text-slate-400">/10</span>
+                          <div className="core-idea-score flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border">
+                            <span className={`font-mono text-sm font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -654,7 +653,7 @@ export default function Step2CoreIdea({
                             <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">{idea.mainArgument}</p>
                           </div>
                         </button>
-                        <button type="button" onClick={() => setDetailIdeaId(idea.id)} className="core-idea-details-button mr-2 mt-3 shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-medium">{tr('Chi tiết', 'Details')}</button>
+                        <button type="button" onClick={() => setDetailIdeaId(idea.id)} className="core-idea-details-button mr-2 mt-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" title={tr('Xem chi tiết', 'View details')} aria-label={`${tr('Xem chi tiết', 'View details')}: ${idea.title}`}><Eye className="app-icon" aria-hidden="true" /></button>
                       </div>
                     );
                   })}
