@@ -71,8 +71,8 @@ export default function StepNav({ currentStep, onStepChange, currentModel, syncS
           </button>
         )}
         {currentModel && (
-          <span className="hidden sm:flex bg-indigo-50 border border-indigo-100 text-indigo-700 font-medium px-2.5 py-1.5 rounded-xl items-center space-x-1.5 max-w-40">
-            <Monitor className="app-icon text-indigo-500" aria-hidden="true" />
+          <span className="app-model-tag hidden max-w-40 items-center space-x-1.5 rounded-lg border px-2.5 py-1.5 font-medium sm:flex">
+            <Monitor className="app-icon" aria-hidden="true" />
             <span className="truncate">{currentModel.name}</span>
           </span>
         )}

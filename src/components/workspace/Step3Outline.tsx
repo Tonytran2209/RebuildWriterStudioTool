@@ -692,7 +692,7 @@ function SectionRow({
         </div>
 
         <div className="flex items-center justify-end gap-0.5 shrink-0 w-full sm:w-auto">
-          <button onClick={() => setShowAudit(true)} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-violet-700 hover:bg-violet-50 rounded-md" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${section.heading}`}>
+          <button onClick={() => setShowAudit(true)} className="ai-log-button is-icon flex h-7 w-7 items-center justify-center rounded-md border" title={tr('Xem nhật ký AI', 'View AI log')} aria-label={`${tr('Xem nhật ký AI cho', 'View AI log for')} ${section.heading}`}>
             <Search className="app-icon" aria-hidden="true" />
           </button>
           <button onClick={() => onMove(-1)} className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-slate-800 rounded" title={tr('Lên', 'Move up')}>
