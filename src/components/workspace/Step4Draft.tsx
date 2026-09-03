@@ -317,6 +317,52 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current });
   }, []);
 
+  useEffect(() => {
+    const registry = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+    const HighlightConstructor = (globalThis as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
+    const root = editorRef.current;
+    if (!registry || !HighlightConstructor || !root || !draft) return;
+    const highlightStyles = document.createElement('style');
+    highlightStyles.textContent = `
+      ::highlight(draft-heading){color:#c7d2fe;background-color:#303353}
+      ::highlight(draft-keyword){color:#a7f3d0;background-color:#194536}
+      ::highlight(draft-evidence){color:#bae6fd;background-color:#1b4054}
+      ::highlight(draft-attention){color:#fde68a;background-color:#4b3912}
+    `;
+    document.head.appendChild(highlightStyles);
+    const names = ['draft-heading', 'draft-keyword', 'draft-evidence', 'draft-attention'];
+    names.forEach(name => registry.delete(name));
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes: Array<{ node: Text; start: number; end: number }> = [];
+    let text = '';
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text;
+      const start = text.length;
+      text += node.data;
+      nodes.push({ node, start, end: text.length });
+    }
+    const rangesFor = (matches: Array<{ start: number; end: number }>) => matches.flatMap(match => {
+      const startNode = nodes.find(item => match.start >= item.start && match.start <= item.end);
+      const endNode = [...nodes].reverse().find(item => match.end >= item.start && match.end <= item.end);
+      if (!startNode || !endNode || match.end <= match.start) return [];
+      const range = new Range();
+      range.setStart(startNode.node, Math.min(match.start - startNode.start, startNode.node.length));
+      range.setEnd(endNode.node, Math.min(match.end - endNode.start, endNode.node.length));
+      return [range];
+    });
+    const regexMatches = (regex: RegExp) => [...text.matchAll(regex)].map(match => ({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
+    const keywords = [...new Set([getPrimaryKeyword(article), ...(article.keywords || '').split(',')].map(item => item.trim()).filter(item => item.length >= 3))];
+    const keywordMatches = keywords.flatMap(keyword => regexMatches(new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')));
+    const groups = {
+      'draft-heading': rangesFor(regexMatches(/^#{1,3}\s+.+$/gm)),
+      'draft-keyword': rangesFor(keywordMatches),
+      'draft-evidence': rangesFor(regexMatches(/^>\s+.+$/gm)),
+      'draft-attention': rangesFor(regexMatches(/\[Cần bổ sung dữ liệu\]/gi)),
+    };
+    Object.entries(groups).forEach(([name, ranges]) => { if (ranges.length) registry.set(name, new HighlightConstructor(...ranges)); });
+    return () => { names.forEach(name => registry.delete(name)); highlightStyles.remove(); };
+  }, [article, draft]);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(draft);
     setCopied(true);
@@ -360,7 +406,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   return (
     <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="minimal-step-shell bg-[#ebedf3] rounded-3xl p-1.5 shadow-sm border border-slate-200/60 flex-1 flex flex-col min-h-0">
-        <div className="flex-1 flex flex-col lg:flex-row gap-3 p-2 sm:p-3 min-h-0 overflow-y-auto lg:overflow-hidden">
+        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-3 overflow-y-auto p-2 sm:p-3 lg:flex-row lg:overflow-hidden">
 
           {/* Editor panel */}
           <div className="draft-editor flex-1 bg-white rounded-2xl flex flex-col shadow-sm min-w-0 min-h-[55dvh] lg:min-h-0">
@@ -416,6 +462,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
             {/* Draft editor */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+              {!generating && draft && <div className="draft-highlight-legend mb-4 flex flex-wrap gap-1.5" aria-label={tr('Chú giải nội dung quan trọng', 'Important content legend')}><span className="is-heading">{tr('Heading', 'Heading')}</span><span className="is-keyword">SEO keyword</span><span className="is-evidence">{tr('Dẫn chứng', 'Evidence')}</span><span className="is-attention">{tr('Cần chú ý', 'Needs attention')}</span></div>}
               {generating ? (
                 <div className="space-y-3">
                   {[...Array(12)].map((_, i) => (
@@ -452,90 +499,75 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           </div>
 
           {/* Audit panel */}
-          <div className="w-full lg:w-60 grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-col gap-3 shrink-0">
+          <aside className="draft-insights grid w-full shrink-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-[252px] lg:flex-col">
             {/* Readability */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
-              <h3 className="text-xs font-bold text-slate-800">{tr('Phân tích nội dung', 'Content analysis')}</h3>
-              <div className="space-y-2.5">
+            <section className="draft-insight-panel space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+              <h3 className="text-[11px] font-medium text-slate-800">{tr('Phân tích nội dung', 'Content analysis')}</h3>
+              <div className="space-y-2">
                 <div>
-                  <div className="flex justify-between text-[11px] mb-1">
-                    <span className="text-slate-500 font-medium">{tr('Độ dễ đọc', 'Readability')}</span>
-                    <span className={`font-bold ${readability?.color || 'text-slate-400'}`}>{readability
+                  <div className="mb-1.5 flex justify-between text-[10px]">
+                    <span className="text-slate-500">{tr('Độ dễ đọc', 'Readability')}</span>
+                    <span className={`font-medium ${readability?.color || 'text-slate-400'}`}>{readability
                       ? tr(readability.label, readability.score >= 90 ? 'Very easy' : readability.score >= 75 ? 'Easy' : readability.score >= 60 ? 'Medium' : 'Difficult')
                       : '—'}</span>
                   </div>
-                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-1 overflow-hidden rounded-full bg-slate-100">
                     <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${readability?.score || 0}%` }} />
                   </div>
                 </div>
 
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">{tr('Số từ', 'Words')}</span>
-                  <span className="font-mono font-bold text-slate-700">{wordCount.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">{tr('Số đoạn', 'Paragraphs')}</span>
-                  <span className="font-mono font-bold text-slate-700">{draft.split('\n\n').filter(p => p.trim()).length}</span>
-                </div>
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-slate-500">{tr('Số ký tự', 'Characters')}</span>
-                  <span className="font-mono font-bold text-slate-700">{draft.length.toLocaleString()}</span>
+                <div className="grid grid-cols-3 gap-1 border-t border-slate-100 pt-2 text-center">
+                  <div><span className="block text-[8px] uppercase tracking-wider text-slate-400">{tr('Từ', 'Words')}</span><b className="mt-0.5 block font-mono text-[10px] font-medium text-slate-700">{wordCount.toLocaleString()}</b></div>
+                  <div><span className="block text-[8px] uppercase tracking-wider text-slate-400">{tr('Đoạn', 'Paragraphs')}</span><b className="mt-0.5 block font-mono text-[10px] font-medium text-slate-700">{draft.split('\n\n').filter(p => p.trim()).length}</b></div>
+                  <div><span className="block text-[8px] uppercase tracking-wider text-slate-400">{tr('Ký tự', 'Characters')}</span><b className="mt-0.5 block font-mono text-[10px] font-medium text-slate-700">{draft.length.toLocaleString()}</b></div>
                 </div>
               </div>
-            </div>
+            </section>
 
             {/* SEO Checklist */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
-              <h3 className="text-xs font-bold text-slate-800">SEO Checklist</h3>
-              <div className="space-y-2">
+            <section className="draft-insight-panel space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">SEO Checklist</h3><span className={`rounded-full px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{seoChecklist.items.length - seoChecklist.failed.length}/{seoChecklist.items.length}</span></div>
+              <div className="space-y-1.5">
                 {seoChecklist.items.map(item => (
                   <div key={item.label} className="flex items-center gap-2">
-                    <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${item.pass ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                    <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${item.pass ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
                       {item.pass ? <Check className="app-icon" aria-hidden="true" /> : <X className="app-icon" aria-hidden="true" />}
                     </div>
-                    <span className={`text-[11px] ${item.pass ? 'text-slate-700' : 'text-slate-400'}`}>{item.label}</span>
+                    <span className={`text-[10px] leading-snug ${item.pass ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}</span>
                   </div>
                 ))}
               </div>
-            </div>
+            </section>
 
             {/* Keyword density */}
             {keywordStats.length > 0 && (
-              <div className="bg-white rounded-2xl p-4 shadow-sm space-y-3">
-                <h3 className="text-xs font-bold text-slate-800">{tr('Mật độ từ khóa', 'Keyword density')}</h3>
-                <div className="space-y-2">
+              <section className="draft-insight-panel space-y-2.5 rounded-xl border border-slate-200 bg-white p-3">
+                <h3 className="text-[11px] font-medium text-slate-800">{tr('Mật độ từ khóa', 'Keyword density')}</h3>
+                <div className="divide-y divide-slate-100">
                   {keywordStats.map(kw => (
-                    <div key={kw.keyword}>
-                      <div className="flex justify-between text-[11px] mb-0.5">
-                        <span className="text-slate-600 font-medium truncate max-w-[120px]">{kw.keyword}</span>
-                        <span className="font-mono text-slate-700 font-bold">{kw.density}</span>
-                      </div>
-                      <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-indigo-400 rounded-full"
-                          style={{ width: `${Math.min(parseFloat(kw.density) * 20, 100)}%` }}
-                        />
-                      </div>
+                    <div key={kw.keyword} className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
+                      <span className="max-w-[150px] truncate text-[10px] text-slate-500" title={kw.keyword}>{kw.keyword}</span>
+                      <div className="shrink-0 text-right"><span className="block font-mono text-[10px] font-medium text-slate-700">{kw.density}</span><span className="block text-[8px] text-slate-400">{kw.count}×</span></div>
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
             )}
 
             {/* Export */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm space-y-2">
-              <h3 className="text-xs font-bold text-slate-800">{tr('Xuất bài viết', 'Export article')}</h3>
+            <section className="draft-insight-panel space-y-1.5 rounded-xl border border-slate-200 bg-white p-3">
+              <h3 className="mb-2 text-[11px] font-medium text-slate-800">{tr('Xuất bài viết', 'Export article')}</h3>
               <button
                 onClick={handleCopy}
                 disabled={!draft}
-                className="w-full py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold rounded-xl transition-all"
+                className="w-full rounded-lg bg-slate-900 py-2 text-[10px] font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-40"
               >
                 {copied ? tr('✓ Đã copy', '✓ Copied') : tr('Copy toàn bộ nội dung', 'Copy all content')}
               </button>
               <button
                 onClick={handleCopyGoogleDocs}
                 disabled={!draft || formatCopying}
-                className="w-full py-2 border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 text-slate-700 text-xs font-semibold rounded-xl transition-all"
+                className="w-full rounded-lg border border-slate-200 bg-white py-2 text-[10px] font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40"
               >
                 {formatCopying
                   ? tr('Đang chuẩn hóa heading…', 'Formatting headings…')
@@ -554,12 +586,12 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                className="w-full py-2 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 text-xs font-semibold rounded-xl transition-all"
+                className="w-full rounded-lg bg-slate-100 py-2 text-[10px] font-medium text-slate-600 transition-colors hover:bg-slate-200 disabled:opacity-40"
               >
                 {tr('Tải xuống .txt', 'Download .txt')}
               </button>
-            </div>
-          </div>
+            </section>
+          </aside>
         </div>
       </div>
 
