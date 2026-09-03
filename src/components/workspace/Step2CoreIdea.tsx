@@ -216,19 +216,48 @@ function ratingColor(score: number): string {
   return "text-rose-600";
 }
 
-function ratingBar(score: number): string {
-  if (score >= 8.5) return "bg-emerald-500";
-  if (score >= 7) return "bg-blue-500";
-  if (score >= 5.5) return "bg-amber-400";
-  return "bg-rose-400";
-}
-
 function ratingTag(score: number): { label: string; className: string } {
   if (score >= 9)   return { label: "Đề xuất mạnh", className: "bg-emerald-600 text-white" };
   if (score >= 8)   return { label: "Đề xuất",      className: "bg-emerald-100 text-emerald-800 border border-emerald-200" };
   if (score >= 7)   return { label: "Cân nhắc",     className: "bg-blue-100 text-blue-800 border border-blue-200" };
   if (score >= 5.5) return { label: "Tùy chọn",     className: "bg-amber-100 text-amber-800 border border-amber-200" };
   return { label: "Yếu", className: "bg-rose-100 text-rose-800 border border-rose-200" };
+}
+
+function RatingCircle({ label, score }: { label: string; score: number }) {
+  const normalizedScore = Math.min(10, Math.max(0, score));
+  const radius = 25;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - normalizedScore / 10);
+
+  return (
+    <div className="flex flex-col items-center gap-2 text-center">
+      <div
+        className={`relative h-16 w-16 ${ratingColor(normalizedScore)}`}
+        role="img"
+        aria-label={`${label}: ${normalizedScore.toFixed(1)} out of 10`}
+      >
+        <svg className="h-full w-full -rotate-90" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r={radius} fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth="4" />
+          <circle
+            cx="32"
+            cy="32"
+            r={radius}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+          />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center font-mono text-sm font-semibold text-slate-800">
+          {normalizedScore.toFixed(1)}
+        </span>
+      </div>
+      <span className="text-[10px] font-semibold leading-tight text-slate-700">{label}</span>
+    </div>
+  );
 }
 
 export default function Step2CoreIdea({
@@ -610,38 +639,36 @@ export default function Step2CoreIdea({
                           : "border-slate-200 bg-white hover:border-slate-400"
                       }`}
                     >
-                      {/* Top: angle + tag + rating number */}
-                      <div className="flex items-start justify-between gap-2 p-4 pb-3">
-                        <div className="min-w-0 flex-1 space-y-1.5">
+                      {/* Top: angle + recommendation + compact overall rating */}
+                      <div className="flex items-start justify-between gap-3 px-4 pb-2 pt-4 pr-14">
+                        <div className="min-w-0 flex-1 space-y-2">
                           {idea.angleLabel && (
                             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider truncate">
                               {idea.angleLabel}
                             </div>
                           )}
-                          <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${tag.className}`}>
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold leading-none ${tag.className}`}>
                             {tag.label}
                           </span>
                         </div>
-                        <div className="shrink-0 text-right">
-                          <div className={`text-2xl font-bold font-mono leading-none ${ratingColor(idea.rating.overall)}`}>
-                            {idea.rating.overall.toFixed(1)}
-                          </div>
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">/10</div>
+                        <div className="inline-flex shrink-0 items-baseline gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                          <span className={`font-mono text-xs font-semibold leading-none ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
+                          <span className="text-[9px] font-medium text-slate-400">/10</span>
                         </div>
                       </div>
 
                       {/* Title */}
-                      <div className="px-4 pb-3">
-                        <h3 className="text-sm font-bold text-slate-800 leading-snug">{idea.title}</h3>
+                      <div className="px-4 pb-4">
+                        <h3 className="text-[15px] font-semibold leading-snug text-slate-900">{idea.title}</h3>
                       </div>
 
                       {/* Main argument */}
-                      <div className="mx-4 mb-3 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Main Argument</div>
+                      <div className="mx-4 mb-4 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2.5">
+                        <div className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Main Argument</div>
                         <p className="text-[11px] text-slate-700 leading-relaxed">{idea.mainArgument}</p>
                       </div>
 
-                      <div className="px-4 pb-3 space-y-2">
+                      <div className="space-y-3 px-4 pb-4">
                         {idea.angleDescription && <div><div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Lý do chọn góc tiếp cận', 'Angle rationale')}</div><p className="text-[11px] text-slate-600 leading-relaxed mt-1">{idea.angleDescription}</p></div>}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
                           <div className="rounded-lg border border-slate-100 bg-slate-50 p-2"><b className="block text-slate-500">{tr('Độc giả', 'Audience')}</b><span>{idea.targetAudience || '—'}</span></div>
@@ -651,7 +678,7 @@ export default function Step2CoreIdea({
                       </div>
 
                       {/* Top SEO Keywords */}
-                      <div className="px-4 pb-3">
+                      <div className="px-4 pb-4">
                         <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Top SEO Keywords</div>
                         <div className="flex flex-wrap gap-1">
                           {idea.primaryKeyword && (
@@ -668,24 +695,22 @@ export default function Step2CoreIdea({
                       </div>
 
                       {/* Rating breakdown */}
-                      <div className="mt-auto border-t border-slate-100 p-4 space-y-1.5">
-                        <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Rating breakdown</div>
+                      <div className="mt-auto border-t border-slate-100 px-4 py-4">
+                        <div className="mb-3 text-[9px] font-semibold uppercase tracking-wider text-slate-500">Rating breakdown</div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-4">
                         {[
                           { key: "seoPotential" as const, label: "SEO Potential", val: idea.rating.seoPotential },
                           { key: "audienceFit" as const, label: "Audience Fit", val: idea.rating.audienceFit },
                           { key: "docSupport" as const, label: "Doc Support", val: idea.rating.docSupport },
                           { key: "uniqueness" as const, label: "Uniqueness", val: idea.rating.uniqueness },
                         ].map(r => (
-                          <div key={r.label} className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-slate-500 font-medium w-24 shrink-0">{r.label}</span>
-                              <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden"><div className={`h-full rounded-full ${ratingBar(r.val)}`} style={{ width: `${Math.min(r.val * 10, 100)}%` }} /></div>
-                              <span className={`text-[10px] font-mono font-bold w-6 text-right ${ratingColor(r.val)}`}>{r.val.toFixed(1)}</span>
-                            </div>
-                            {(idea.ratingRationales?.[r.key] || idea.ratingRationale) && <p className="pl-[6.5rem] text-[10px] text-slate-500 leading-relaxed">{idea.ratingRationales?.[r.key] || idea.ratingRationale}</p>}
+                          <div key={r.label} className="min-w-0 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-3">
+                            <RatingCircle label={r.label} score={r.val} />
+                            {(idea.ratingRationales?.[r.key] || idea.ratingRationale) && <p className="mt-2 text-[9px] leading-relaxed text-slate-500">{idea.ratingRationales?.[r.key] || idea.ratingRationale}</p>}
                           </div>
                         ))}
-                        {idea.ratingRationale && <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-[10px] text-blue-800"><b>{tr('Đánh giá tổng quan:', 'Overall assessment:')}</b> {idea.ratingRationales?.overall || idea.ratingRationale}</div>}
+                        </div>
+                        {idea.ratingRationale && <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[10px] leading-relaxed text-slate-600"><b className="font-semibold text-slate-800">{tr('Đánh giá tổng quan:', 'Overall assessment:')}</b> {idea.ratingRationales?.overall || idea.ratingRationale}</div>}
                       </div>
 
                       <div className="border-t border-slate-100 px-4 py-4 space-y-2">
