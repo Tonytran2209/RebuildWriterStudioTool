@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Check, CircleX, Highlighter, LoaderCircle, Sparkles } from 'lucide-react';
+import { Check, CircleX, ClipboardCopy, Copy, Download, Highlighter, LoaderCircle, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AppConfig, DocumentFile, EvidenceRef } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
@@ -576,20 +576,22 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
               <button
                 onClick={handleCopy}
                 disabled={!draft}
-                className="draft-export-primary w-full rounded-lg border py-2 text-[10px] font-medium transition-colors disabled:opacity-40"
+                className="draft-export-primary flex h-9 w-full items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40"
               >
-                {copied ? tr('✓ Đã copy', '✓ Copied') : tr('Copy toàn bộ nội dung', 'Copy all content')}
+                {copied ? <Check className="app-icon" aria-hidden="true" /> : <Copy className="app-icon" aria-hidden="true" />}
+                <span>{copied ? tr('Đã copy', 'Copied') : tr('Copy toàn bộ nội dung', 'Copy all content')}</span>
               </button>
               <button
                 onClick={handleCopyGoogleDocs}
                 disabled={!draft || formatCopying}
-                className="draft-export-secondary w-full rounded-lg border py-2 text-[10px] font-medium transition-colors disabled:opacity-40"
+                className="draft-export-secondary flex h-9 w-full items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40"
               >
-                {formatCopying
+                {formatCopying ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : formatCopied ? <Check className="app-icon" aria-hidden="true" /> : <ClipboardCopy className="app-icon" aria-hidden="true" />}
+                <span>{formatCopying
                   ? tr('Đang chuẩn hóa heading…', 'Formatting headings…')
                   : formatCopied
-                    ? tr('✓ Đã copy chuẩn Google Docs', '✓ Copied for Google Docs')
-                    : 'Copy formated content'}
+                    ? tr('Đã copy chuẩn Google Docs', 'Copied for Google Docs')
+                    : 'Copy formated content'}</span>
               </button>
               <button
                 disabled={!draft}
@@ -602,9 +604,10 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
-                className="draft-export-secondary w-full rounded-lg border py-2 text-[10px] font-medium transition-colors disabled:opacity-40"
+                className="draft-export-secondary flex h-9 w-full items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40"
               >
-                {tr('Tải xuống .txt', 'Download .txt')}
+                <Download className="app-icon" aria-hidden="true" />
+                <span>{tr('Tải xuống .txt', 'Download .txt')}</span>
               </button>
             </section>
           </aside>
