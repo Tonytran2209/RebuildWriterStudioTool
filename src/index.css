@@ -1389,6 +1389,26 @@ html, body, #root {
   background: #242422;
 }
 
+.core-keyword-chip {
+  color: #555550;
+  background: #f7f7f5;
+  border-color: #deded9;
+  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
+}
+
+.core-keyword-chip:hover {
+  color: #171717;
+  background: #eeeeeb;
+  border-color: #bcbcb6;
+}
+
+.core-keyword-chip.is-primary {
+  color: #242422;
+  background: #e7e7e3;
+  border-color: #c8c8c2;
+  font-weight: 600;
+}
+
 .codex-dark .core-idea-card {
   background: #1a1a1a !important;
   border-color: #2a2a2a !important;
@@ -1437,6 +1457,24 @@ html, body, #root {
 .codex-dark .core-idea-selected-tag {
   color: #141414 !important;
   background: #e5e5e5 !important;
+}
+
+.codex-dark .core-keyword-chip {
+  color: #b9b9b9 !important;
+  background: #1c1c1c !important;
+  border-color: #303030 !important;
+}
+
+.codex-dark .core-keyword-chip:hover {
+  color: #fff !important;
+  background: #222 !important;
+  border-color: #3a3a3a !important;
+}
+
+.codex-dark .core-keyword-chip.is-primary {
+  color: #e5e5e5 !important;
+  background: #2a2a2a !important;
+  border-color: #444 !important;
 }
 
 @media (max-width: 767px) {
