@@ -53,6 +53,45 @@ const aiBudgetQueues = new Map<string, Promise<unknown>>();
 const batchControllers = new Map<string, { paused: boolean; running: boolean }>();
 const DAILY_AI_LIMITS: Record<number, number> = { 1: 12, 2: 12, 3: 10, 4: 6 };
 
+function hasArticlePlanSelection(article: any) {
+  return Boolean(
+    article?.contentPlanId
+    && (article.contentPlanSourceItemId || article.contentPlanItemId || article.selectedContentTypeSuggestionId)
+    && String(article.contentPlanInput ?? '').trim()
+    && String(article.topic ?? '').trim()
+    && String(article.contentType ?? '').trim(),
+  );
+}
+
+function selectedArticleIdea(article: any) {
+  if (!article?.selectedCoreIdeaId || !Array.isArray(article.coreIdeaSuggestions)) return null;
+  return article.coreIdeaSuggestions.find((idea: any) => idea?.id === article.selectedCoreIdeaId) ?? null;
+}
+
+function articleStepPrerequisite(article: any, step: number): string | null {
+  if (!hasArticlePlanSelection(article)) return 'Select an article from a classified Content Plan before running Step 1.';
+  if (step >= 3 && !selectedArticleIdea(article)) return 'Step 2 requires a saved Core Idea output and an explicit user selection from Step 1.';
+  if (step >= 4 && (!Array.isArray(article.outline) || !article.outline.length || article.outline.some((section: any) => !String(section?.heading ?? '').trim()))) {
+    return 'Step 3 requires a valid saved outline from Step 2.';
+  }
+  return null;
+}
+
+function highestReachableArticleStep(article: any): 2 | 3 | 4 {
+  if (!articleStepPrerequisite(article, 4)) return 4;
+  if (!articleStepPrerequisite(article, 3)) return 3;
+  return 2;
+}
+
+function clampStoredArticleStep(article: any): 2 | 3 | 4 {
+  const requested = Math.min(4, Math.max(2, Number(article?.currentStep) || 2));
+  return Math.min(requested, highestReachableArticleStep(article)) as 2 | 3 | 4;
+}
+
+function workflowPrerequisiteResponse(res: any, message: string) {
+  return res.status(409).json({ code: 'WORKFLOW_PREREQUISITE_MISSING', error: message });
+}
+
 const PROVIDER_NAMES: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
@@ -405,6 +444,8 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
   });
   try {
     if (controller.paused) return;
+    const planError = articleStepPrerequisite(article, 2);
+    if (planError) throw new Error(planError);
     article = await saveArticleCheckpoint(article, { batchStatus: 'running', batchError: null, batchStartedAt: article.batchStartedAt ?? new Date().toISOString(), status: 'in_progress' });
     if (!article.coreIdeaSuggestions?.length) {
       let seoResearch = article.seoResearch;
@@ -437,6 +478,7 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
     }
     if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
     if (!article.outline?.length) {
+      if (!selectedArticleIdea(article)) throw new Error('Batch Step 2 did not produce a selected Core Idea; outline generation was blocked.');
       const idea = article.coreIdeaSuggestions.find((item: any) => item.id === article.selectedCoreIdeaId) ?? article.coreIdeaSuggestions[0];
       const response = await runBatchModel(article, 3, [
         `Create a detailed SEO outline for ${article.topic}.`, `Core idea: ${JSON.stringify(idea)}`,
@@ -449,6 +491,8 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
     }
     if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
     if (!article.draft?.trim()) {
+      const draftPrerequisite = articleStepPrerequisite(article, 4);
+      if (draftPrerequisite) throw new Error(draftPrerequisite);
       const budget = batchDraftBudget(article.outline ?? [], maxDraftWords, introductionPercent, conclusionPercent);
       const response = await runBatchModel(article, 4, [
         `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
@@ -792,6 +836,13 @@ app.post('/api/seo/research', async (req, res) => {
     const keywordCount = Math.min(20, Math.max(5, Number(req.body?.keywordCount ?? 10)));
     const articleId = String(req.body?.articleId ?? '');
     if (!articleId) return res.status(400).json({ error: 'articleId là bắt buộc.' });
+    const article = await kvGet<any>(`${ARTICLE_PREFIX}${articleId}`);
+    if (!article) return res.status(404).json({ error: 'Article không tồn tại.' });
+    if (article.activityKind === 'batch') {
+      return res.status(409).json({ code: 'BATCH_ORCHESTRATION_REQUIRED', error: 'Bài batch chỉ được xử lý qua batch orchestration.' });
+    }
+    const prerequisiteError = articleStepPrerequisite(article, 2);
+    if (prerequisiteError) return workflowPrerequisiteResponse(res, prerequisiteError);
     const cacheKey = `writer:seo-cache:web-v2:${keywordCount}:${crypto.createHash('sha256').update(JSON.stringify(seeds.map((seed: unknown) => String(seed).trim().toLocaleLowerCase()).sort())).digest('hex')}`;
     const cached = await kvGet<any>(cacheKey);
     if (cached?.researchedAt && Date.now() - new Date(cached.researchedAt).getTime() < 24 * 60 * 60 * 1000) {
@@ -817,6 +868,9 @@ app.post('/api/generate', async (req, res) => {
   if (!modelId || !provider || !prompt || !Number.isInteger(stepNumber) || !articleId) {
     return res.status(400).json({ error: 'modelId, provider, prompt, stepNumber và articleId là bắt buộc.' });
   }
+  if (![2, 3, 4].includes(stepNumber)) {
+    return res.status(400).json({ error: 'Manual article generation only supports workflow steps 2, 3, and 4.' });
+  }
 
   const providers = getAvailableProviders();
   if (!providers[provider]) {
@@ -829,6 +883,13 @@ app.post('/api/generate', async (req, res) => {
   }
 
   try {
+    const article = await kvGet<any>(`${ARTICLE_PREFIX}${String(articleId)}`);
+    if (!article) return res.status(404).json({ error: 'Article không tồn tại.' });
+    if (article.activityKind === 'batch') {
+      return res.status(409).json({ code: 'BATCH_ORCHESTRATION_REQUIRED', error: 'Bài batch chỉ được xử lý qua batch orchestration.' });
+    }
+    const prerequisiteError = articleStepPrerequisite(article, stepNumber);
+    if (prerequisiteError) return workflowPrerequisiteResponse(res, prerequisiteError);
     const startedAt = Date.now();
     const contextsStartedAt = Date.now();
     const normalizedContextQuery = String(contextQuery ?? '').trim().slice(0, 4_000);
@@ -1174,6 +1235,8 @@ app.post('/api/batches/:activityId/start', async (req, res) => {
     const activityId = req.params.activityId;
     const articles = (await loadArticles()).filter(article => article.activityId === activityId && article.activityKind === 'batch');
     if (!articles.length) return res.status(404).json({ error: 'Batch activity không tồn tại.' });
+    const invalid = articles.filter(article => articleStepPrerequisite(article, 2));
+    if (invalid.length) return workflowPrerequisiteResponse(res, `${invalid.length} batch article(s) do not have a valid Content Plan selection.`);
     void runBatch(activityId).catch(error => console.error(`[batch] ${activityId}`, error));
     res.status(202).json({ ok: true, activityId, queued: articles.length });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -1194,6 +1257,8 @@ app.post('/api/batches/:activityId/retry/:articleId', async (req, res) => {
     const key = `${ARTICLE_PREFIX}${req.params.articleId}`;
     const article = await kvGet<any>(key);
     if (!article || article.activityId !== req.params.activityId) return res.status(404).json({ error: 'Article không thuộc batch này.' });
+    const prerequisiteError = articleStepPrerequisite(article, 2);
+    if (prerequisiteError) return workflowPrerequisiteResponse(res, prerequisiteError);
     await kvSet(key, { ...article, batchStatus: 'queued', batchError: null, updatedAt: new Date().toISOString() });
     void runBatch(req.params.activityId).catch(error => console.error(`[batch-retry] ${req.params.activityId}`, error));
     res.status(202).json({ ok: true });
@@ -1225,6 +1290,7 @@ app.post('/api/articles', async (req, res) => {
     const now = new Date().toISOString();
     const article = { ...req.body, updatedAt: now };
     if (!article.id) return res.status(400).json({ error: 'Article id là bắt buộc.' });
+    article.currentStep = clampStoredArticleStep(article);
     await kvSet(`${ARTICLE_PREFIX}${article.id}`, article);
     await projectArticle(article);
     res.json({ ok: true, article });
@@ -1242,13 +1308,25 @@ app.put('/api/articles/:id', async (req, res) => {
       if (!existing) existing = (await loadArticles()).find(item => item.id === id);
       if (!existing) throw new Error('Bài viết không tồn tại trong Supabase.');
       const next = { ...existing, ...updates, id, updatedAt: new Date().toISOString() };
+      if (Object.prototype.hasOwnProperty.call(updates, 'currentStep')) {
+        const requestedStep = Math.min(4, Math.max(2, Number(updates.currentStep) || 2));
+        const allowedStep = highestReachableArticleStep(next);
+        if (requestedStep > allowedStep) {
+          throw new Error(`WORKFLOW_PREREQUISITE_MISSING:${articleStepPrerequisite(next, requestedStep) ?? 'The previous step is incomplete.'}`);
+        }
+        next.currentStep = requestedStep;
+      }
       await kvSet(`${ARTICLE_PREFIX}${id}`, next);
       await projectArticle(next);
       return next;
     });
     res.json({ ok: true, article });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    const workflowError = String(err?.message ?? '').startsWith('WORKFLOW_PREREQUISITE_MISSING:');
+    res.status(workflowError ? 409 : 500).json({
+      code: workflowError ? 'WORKFLOW_PREREQUISITE_MISSING' : undefined,
+      error: workflowError ? String(err.message).slice('WORKFLOW_PREREQUISITE_MISSING:'.length) : err.message,
+    });
   }
 });
 

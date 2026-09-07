@@ -674,7 +674,7 @@ export default function ActivityLauncher({
                         <span>{item.totalArticles} {tr("bài đã tạo", "generated")}</span>
                         <span>{item.comparisonCount} Comparison/SEO</span>
                         <span>{item.editorialCount} Editorial</span>
-                        {source && <span className="ml-auto max-w-40 truncate text-[#7d7d7d]">{source.name} · {source.sourceType.replaceAll("_", " ")}</span>}
+                        {source && <span className="ml-auto max-w-40 truncate text-[#7d7d7d]">{source.name} · {source.sourceType.replace(/_/g, " ")}</span>}
                       </div>
                     </div>
                   </div>

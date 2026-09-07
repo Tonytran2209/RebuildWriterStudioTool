@@ -22,6 +22,7 @@ import { hasEvidenceForAuthorizedCategories, verifiedRuleRefs, verifyEvidence } 
 import { ProcessTraceModal } from './ProcessTrace';
 import { parseAIJson } from '../../lib/aiJson';
 import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
+import { gateArticleStep, gateStepCompletion } from '../../lib/workflowGuards';
 
 function generateId() {
   return Math.random().toString(36).slice(2, 9);
@@ -181,7 +182,9 @@ export default function Step3Outline({
   const suggestedKeywords = article.step3SuggestedKeywords ?? [];
   const [newSectionHeading, setNewSectionHeading] = useState("");
   const [newSectionLevel, setNewSectionLevel] = useState<"h2" | "h3">("h2");
+  const generationInFlight = useRef(false);
   const outline = article.outline || [];
+  const prerequisite = gateArticleStep(article, 3);
 
   const bundle = useMemo(() => collectStepDocs(3, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(3, config, files), [config, files]);
@@ -229,6 +232,11 @@ export default function Step3Outline({
   ].filter(Boolean).join(" ");
 
   const handleGenerate = async (manual = false) => {
+    if (generationInFlight.current) return;
+    if (!prerequisite.allowed) {
+      setError(tr(prerequisite.reasonVi, prerequisite.reason));
+      return;
+    }
     if (!article.contentPlanInput?.trim() || !article.topic?.trim()) {
       setError("Bài viết chưa có topic được tổng hợp từ Content Plan hiện tại.");
       return;
@@ -241,6 +249,7 @@ export default function Step3Outline({
       setError("Chưa có tài liệu nào được phân quyền cho Bước 2. Chỉ cần ít nhất một tài liệu từ Knowledge Base hoặc Skills.");
       return;
     }
+    generationInFlight.current = true;
     setGenerating(true);
     setError(null);
     setWarning(null);
@@ -339,8 +348,8 @@ export default function Step3Outline({
             "",
             `CHỈ BỔ SUNG ${missingCount} SECTION CÒN THIẾU; không tạo lại section đã hợp lệ.`,
             `Heading đã hợp lệ, không được lặp: ${sections.map(section => JSON.stringify(section.heading)).join(", ") || "(chưa có)"}.`,
-            `Heading bị loại do evidence không hợp lệ: ${normalized.rejectedHeadings.map(JSON.stringify).join(", ") || "(không xác định)"}.`,
-            "Nếu KB/Action có nguồn, mỗi section mới cần ít nhất 1 evidenceRef tới quote KB hoặc Action. Nếu Rules có nguồn, cần thêm evidenceRef tới quote Rules. Bỏ qua nhóm trống.",
+            `Heading bị loại do evidence không hợp lệ: ${normalized.rejectedHeadings.map(heading => JSON.stringify(heading)).join(", ") || "(không xác định)"}.`,
+            "Nếu KB hoặc Content Plan có nguồn, mỗi section mới cần ít nhất 1 evidenceRef tới quote từ nguồn đó. Nếu Skills có nguồn, cần thêm evidenceRef tới quote Skills. Bỏ qua nhóm trống.",
             "Chỉ trả về JSON object { evidenceRegistry, sections } chứa các section bổ sung.",
           ].join("\n"),
           systemPrompt,
@@ -390,6 +399,7 @@ export default function Step3Outline({
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không tạo được outline: ${message}`);
     } finally {
+      generationInFlight.current = false;
       setGenerating(false);
     }
   };
@@ -478,7 +488,8 @@ export default function Step3Outline({
               </div>
               <button
                 onClick={() => handleGenerate(Boolean(outline.length))}
-                disabled={generating}
+                disabled={generating || !prerequisite.allowed}
+                title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : undefined}
                 className="outline-generate-button flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition-colors disabled:opacity-40"
               >
                 {generating ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : <Sparkles className="app-icon" aria-hidden="true" />}
@@ -610,7 +621,7 @@ export default function Step3Outline({
         </button>
         <button
           onClick={onNext}
-          disabled={outline.length === 0}
+          disabled={!gateStepCompletion(article, 3).allowed}
           className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
         >
           {tr('Tiếp tục — First Draft', 'Continue — First Draft')}

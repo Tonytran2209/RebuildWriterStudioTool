@@ -19,6 +19,7 @@ import Step4Draft from "./components/workspace/Step4Draft"
 import { useI18n } from "./lib/i18n"
 import ActivityLauncher from "./components/ActivityLauncher"
 import BatchActivity from "./components/BatchActivity"
+import { clampArticleStep, gateArticleStep, gateStepCompletion } from "./lib/workflowGuards"
 
 function generateId() {
   return `art-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -58,6 +59,7 @@ export default function App() {
     null,
   )
   const articleMutationQueue = useRef<Promise<void>>(Promise.resolve())
+  const failedArticleMutations = useRef(new Set<string>())
   const articlesRef = useRef<Article[]>([])
   const activeIdRef = useRef<string | null>(null)
   articlesRef.current = articles
@@ -89,7 +91,7 @@ export default function App() {
         ])
 
         if (remoteArticles?.length) {
-          setArticles(remoteArticles.map((item) => ({ ...item, currentStep: Math.max(2, item.currentStep || 2) })))
+          setArticles(remoteArticles.map((item) => ({ ...item, currentStep: clampArticleStep(item) })))
         }
         if (remoteConfig) {
           setConfig(mergeWithLatestModelCatalog(remoteConfig))
@@ -114,6 +116,7 @@ export default function App() {
 
   const handleUpdateArticle = useCallback(
     (id: string, updates: Partial<Article>) => {
+      const previous = articlesRef.current.find((article) => article.id === id)
       setArticles((prev) =>
         prev.map((a) =>
           a.id === id
@@ -124,10 +127,23 @@ export default function App() {
       setSyncStatus("saving")
       return enqueueArticleMutation(() => db.updateArticle(id, updates))
         .then(() => {
+          failedArticleMutations.current.delete(id)
           setSyncStatus("idle")
           return true
         })
         .catch((error: unknown) => {
+          failedArticleMutations.current.add(id)
+          if (previous) {
+            setArticles((current) => current.map((article) => {
+              if (article.id !== id) return article
+              const rollback = Object.fromEntries(
+                Object.entries(updates)
+                  .filter(([key, value]) => Object.is((article as unknown as Record<string, unknown>)[key], value))
+                  .map(([key]) => [key, (previous as unknown as Record<string, unknown>)[key]]),
+              ) as Partial<Article>
+              return { ...article, ...rollback }
+            }))
+          }
           setArticleActionError(
             `Không đồng bộ được bài viết với Supabase: ${
               error instanceof Error ? error.message : String(error)
@@ -202,7 +218,7 @@ export default function App() {
           label: item.title,
           description: item.sourceLine,
           keywords: item.keywords,
-          typeGroup: (type === "comparison-seo" ? "A" : "C") as const,
+          typeGroup: type === "comparison-seo" ? "A" as const : "C" as const,
           wave: "Current activity",
           timeframe: new Date().toISOString().slice(0, 10),
           contentPlanEvidence: item.sourceLine,
@@ -410,15 +426,42 @@ export default function App() {
     }
   }, [activeBatchIds])
 
-  const handleStepChange = (step: number) => {
+  const handleStepChange = async (step: number) => {
     if (!article) return
-    handleUpdateArticle(article.id, { currentStep: step })
+    const requestedStep = Math.min(4, Math.max(2, step)) as 2 | 3 | 4
+    const movingForward = requestedStep > article.currentStep
+    const gate = gateArticleStep(article, requestedStep)
+    if (!gate.allowed) {
+      setArticleActionError(tr(gate.reasonVi, gate.reason))
+      return
+    }
+    await articleMutationQueue.current
+    if (movingForward && failedArticleMutations.current.has(article.id)) {
+      setArticleActionError(tr("Không thể chuyển bước vì dữ liệu của thao tác trước chưa được lưu vào Supabase.", "Cannot change steps because the previous update was not saved to Supabase."))
+      return
+    }
+    setArticleActionError(null)
+    await handleUpdateArticle(article.id, { currentStep: requestedStep })
   }
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!article) return
+    const currentStep = Math.min(4, Math.max(2, article.currentStep)) as 2 | 3 | 4
+    const completion = gateStepCompletion(article, currentStep)
+    if (!completion.allowed) {
+      setArticleActionError(tr(completion.reasonVi, completion.reason))
+      return
+    }
     const next = Math.min(Math.max(article.currentStep, 2) + 1, 4)
-    handleUpdateArticle(article.id, {
+    // Wait for the selected output from the current step to reach Supabase
+    // before exposing the next step and its AI controls.
+    await articleMutationQueue.current
+    if (failedArticleMutations.current.has(article.id)) {
+      setArticleActionError(tr("Không thể tiếp tục vì output hoặc lựa chọn hiện tại chưa được lưu vào Supabase.", "Cannot continue because the current output or selection was not saved to Supabase."))
+      return
+    }
+    setArticleActionError(null)
+    await handleUpdateArticle(article.id, {
       currentStep: next,
       status: next === 4 ? "review" : "in_progress",
     })
@@ -567,6 +610,10 @@ export default function App() {
               onStepChange={handleStepChange}
               currentModel={currentModel}
               syncStatus={syncStatus}
+              canAccessStep={(step) => {
+                const gate = gateArticleStep(article, step)
+                return { allowed: gate.allowed, reason: tr(gate.reasonVi, gate.reason) }
+              }}
               usage={
                 article.aiUsageByStep?.[
                   (article.currentStep as 1 | 2 | 3 | 4)
