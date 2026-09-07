@@ -410,7 +410,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   return (
     <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
       <div className="draft-workspace-shell minimal-step-shell flex min-h-0 flex-1 flex-col">
-        <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-3 overflow-y-auto p-2 sm:p-3 lg:flex-row lg:overflow-hidden">
+        <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-3 overflow-y-auto p-2 sm:p-3 lg:flex-row lg:overflow-hidden">
 
           {/* Editor panel */}
           <div className="draft-editor flex min-h-[55dvh] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:min-h-0">
@@ -514,7 +514,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           </div>
 
           {/* Audit panel */}
-          <aside className="draft-insights grid w-full shrink-0 grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 lg:flex lg:w-[236px] lg:flex-col">
+          <aside className="draft-insights grid w-full shrink-0 grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 lg:flex lg:min-h-0 lg:w-[236px] lg:flex-col lg:overflow-y-auto lg:overscroll-contain">
             {/* Readability */}
             <section className="draft-insight-panel space-y-3 border-b border-slate-200 p-3 sm:border-r lg:border-r-0">
               <h3 className="text-[11px] font-medium text-slate-800">{tr('Phân tích nội dung', 'Content analysis')}</h3>
