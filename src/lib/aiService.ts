@@ -157,6 +157,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
       const billedCachedInput = response.cacheHit ? 0 : response.usage?.cachedInputTokens ?? 0;
       const usage: AICallUsage = {
         id: `usage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        articleId,
         step: stepNumber,
         provider: model.provider,
         model: response.model || model.id,

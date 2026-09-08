@@ -58,7 +58,7 @@ export default function App() {
   const [deletingArticleId, setDeletingArticleId] = useState<string | null>(
     null,
   )
-  const articleMutationQueue = useRef<Promise<void>>(Promise.resolve())
+  const articleMutationQueues = useRef(new Map<string, Promise<void>>())
   const failedArticleMutations = useRef(new Set<string>())
   const articlesRef = useRef<Article[]>([])
   const activeIdRef = useRef<string | null>(null)
@@ -66,16 +66,25 @@ export default function App() {
   activeIdRef.current = activeId
 
   const enqueueArticleMutation = useCallback(
-    (operation: () => Promise<Article>): Promise<Article> => {
-      const result = articleMutationQueue.current.then(operation, operation)
-      articleMutationQueue.current = result.then(
+    (articleId: string, operation: () => Promise<Article>): Promise<Article> => {
+      const currentQueue = articleMutationQueues.current.get(articleId) ?? Promise.resolve()
+      const result = currentQueue.then(operation, operation)
+      const settled = result.then(
         () => undefined,
         () => undefined,
       )
+      articleMutationQueues.current.set(articleId, settled)
+      void settled.then(() => {
+        if (articleMutationQueues.current.get(articleId) === settled)
+          articleMutationQueues.current.delete(articleId)
+      })
       return result
     },
     [],
   )
+
+  const waitForArticleMutations = useCallback((articleId: string) =>
+    articleMutationQueues.current.get(articleId) ?? Promise.resolve(), [])
 
   // Load all data from Supabase / Railway on mount
   useEffect(() => {
@@ -125,7 +134,7 @@ export default function App() {
         ),
       )
       setSyncStatus("saving")
-      return enqueueArticleMutation(() => db.updateArticle(id, updates))
+      return enqueueArticleMutation(id, () => db.updateArticle(id, updates))
         .then(() => {
           failedArticleMutations.current.delete(id)
           setSyncStatus("idle")
@@ -159,7 +168,7 @@ export default function App() {
   useEffect(() => {
     const recordUsage = (event: Event) => {
       const usage = (event as CustomEvent<AICallUsage>).detail
-      const articleId = activeIdRef.current
+      const articleId = usage?.articleId ?? activeIdRef.current
       const current = articlesRef.current.find((item) => item.id === articleId)
       if (!articleId || !current || !usage) return
       try {
@@ -186,7 +195,7 @@ export default function App() {
       )
       articlesRef.current = updated
       setArticles(updated)
-      enqueueArticleMutation(() =>
+      enqueueArticleMutation(articleId, () =>
         db.updateArticle(articleId, { aiUsageByStep }),
       ).catch((error: unknown) => {
         setArticleActionError(
@@ -254,7 +263,7 @@ export default function App() {
       })
       const saved: Article[] = []
       for (const record of records)
-        saved.push(await enqueueArticleMutation(() => db.saveArticle(record)))
+        saved.push(await enqueueArticleMutation(record.id, () => db.saveArticle(record)))
       setArticles((current) => [...saved, ...current])
       setActiveId(saved[0]?.id ?? null)
       setShowBatchOverview(isBatch)
@@ -286,7 +295,7 @@ export default function App() {
       setCompletionSavingId(target.id)
       setSyncStatus("saving")
       try {
-        const savedArticle = await enqueueArticleMutation(() =>
+        const savedArticle = await enqueueArticleMutation(target.id, () =>
           db.updateArticle(target.id, updates),
         )
         setArticles((prev) =>
@@ -326,7 +335,7 @@ export default function App() {
       setSyncStatus("saving")
       try {
         // Finish any content save already queued before deleting the database record.
-        await articleMutationQueue.current
+        await Promise.all(targets.map((item) => waitForArticleMutations(item.id)))
         for (const item of targets) await db.deleteArticle(item.id)
         const targetIds = new Set(targets.map((item) => item.id))
         const remaining = articles.filter((item) => !targetIds.has(item.id))
@@ -345,7 +354,7 @@ export default function App() {
         setDeletingArticleId(null)
       }
     },
-    [activeId, articles, deletingArticleId],
+    [activeId, articles, deletingArticleId, waitForArticleMutations],
   )
 
   const handleSaveConfig = async (
@@ -408,11 +417,18 @@ export default function App() {
         if (stopped) return
         setArticles((current) => {
           const remoteArticles = results.flatMap((result) => result.articles)
-          const remoteIds = new Set(remoteArticles.map((item) => item.id))
-          return [
-            ...remoteArticles,
-            ...current.filter((item) => !remoteIds.has(item.id)),
-          ]
+          const remoteById = new Map(remoteArticles.map((item) => [item.id, item]))
+          const currentIds = new Set(current.map((item) => item.id))
+          let changed = false
+          const merged = current.map((item) => {
+            const remote = remoteById.get(item.id)
+            if (!remote || remote.updatedAt === item.updatedAt) return item
+            changed = true
+            return remote
+          })
+          const added = remoteArticles.filter((item) => !currentIds.has(item.id))
+          if (added.length) changed = true
+          return changed ? [...added, ...merged] : current
         })
       } catch {
         /* retain the last durable snapshot while Railway reconnects */
@@ -435,7 +451,7 @@ export default function App() {
       setArticleActionError(tr(gate.reasonVi, gate.reason))
       return
     }
-    await articleMutationQueue.current
+    await waitForArticleMutations(article.id)
     if (movingForward && failedArticleMutations.current.has(article.id)) {
       setArticleActionError(tr("Không thể chuyển bước vì dữ liệu của thao tác trước chưa được lưu vào Supabase.", "Cannot change steps because the previous update was not saved to Supabase."))
       return
@@ -455,7 +471,7 @@ export default function App() {
     const next = Math.min(Math.max(article.currentStep, 2) + 1, 4)
     // Wait for the selected output from the current step to reach Supabase
     // before exposing the next step and its AI controls.
-    await articleMutationQueue.current
+    await waitForArticleMutations(article.id)
     if (failedArticleMutations.current.has(article.id)) {
       setArticleActionError(tr("Không thể tiếp tục vì output hoặc lựa chọn hiện tại chưa được lưu vào Supabase.", "Cannot continue because the current output or selection was not saved to Supabase."))
       return

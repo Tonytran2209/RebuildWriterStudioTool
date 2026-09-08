@@ -22,6 +22,7 @@ export type AppLanguage = 'vi' | 'en';
 
 export interface AICallUsage {
   id: string;
+  articleId?: string;
   step: 1 | 2 | 3 | 4;
   provider: AIProvider;
   model: string;

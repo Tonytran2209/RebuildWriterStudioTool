@@ -660,8 +660,15 @@ function SectionRow({
   const [expanded, setExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [headingDraft, setHeadingDraft] = useState(section.heading);
+  const [notesDraft, setNotesDraft] = useState(section.notes ?? '');
+  const [rationaleDraft, setRationaleDraft] = useState(section.rationale ?? '');
   const menuRef = useRef<HTMLDivElement>(null);
   const isH3 = section.level === "h3";
+
+  useEffect(() => setHeadingDraft(section.heading), [section.heading]);
+  useEffect(() => setNotesDraft(section.notes ?? ''), [section.notes]);
+  useEffect(() => setRationaleDraft(section.rationale ?? ''), [section.rationale]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -693,8 +700,9 @@ function SectionRow({
             )}
           </div>
           <textarea
-            value={section.heading}
-            onChange={e => onChange({ heading: e.target.value })}
+            value={headingDraft}
+            onChange={e => setHeadingDraft(e.target.value)}
+            onBlur={() => headingDraft !== section.heading && onChange({ heading: headingDraft })}
             rows={isH3 ? 1 : 2}
             placeholder={tr('Tiêu đề section...', 'Section heading...')}
             className={`outline-heading-input w-full resize-none overflow-hidden bg-transparent text-slate-800 outline-none placeholder:text-slate-300 ${
@@ -752,8 +760,9 @@ function SectionRow({
           <div className="outline-field">
             <label>Notes</label>
             <textarea
-              value={section.notes}
-              onChange={e => onChange({ notes: e.target.value })}
+              value={notesDraft}
+              onChange={e => setNotesDraft(e.target.value)}
+              onBlur={() => notesDraft !== (section.notes ?? '') && onChange({ notes: notesDraft })}
               rows={2}
               placeholder={tr('Nội dung sẽ trình bày trong section...', 'Content to cover in this section...')}
               className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none"
@@ -761,7 +770,7 @@ function SectionRow({
           </div>
           <div className="outline-field">
             <label>{tr('Lý do & điểm cần đánh giá', 'Rationale & review points')}</label>
-            <textarea value={section.rationale ?? ''} onChange={e => onChange({ rationale: e.target.value })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none" />
+            <textarea value={rationaleDraft} onChange={e => setRationaleDraft(e.target.value)} onBlur={() => rationaleDraft !== (section.rationale ?? '') && onChange({ rationale: rationaleDraft })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
