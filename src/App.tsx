@@ -37,6 +37,7 @@ function createNewArticle(): Article {
 }
 
 type SyncStatus = "idle" | "loading" | "saving" | "error"
+type ArticleUpdateOptions = { silent?: boolean }
 
 export default function App() {
   const { tr } = useI18n()
@@ -124,7 +125,7 @@ export default function App() {
   }, [])
 
   const handleUpdateArticle = useCallback(
-    (id: string, updates: Partial<Article>) => {
+    (id: string, updates: Partial<Article>, options: ArticleUpdateOptions = {}) => {
       const previous = articlesRef.current.find((article) => article.id === id)
       setArticles((prev) =>
         prev.map((a) =>
@@ -133,11 +134,11 @@ export default function App() {
             : a,
         ),
       )
-      setSyncStatus("saving")
+      if (!options.silent) setSyncStatus("saving")
       return enqueueArticleMutation(id, () => db.updateArticle(id, updates))
         .then(() => {
           failedArticleMutations.current.delete(id)
-          setSyncStatus("idle")
+          if (!options.silent) setSyncStatus("idle")
           return true
         })
         .catch((error: unknown) => {
@@ -445,19 +446,20 @@ export default function App() {
   const handleStepChange = async (step: number) => {
     if (!article) return
     const requestedStep = Math.min(4, Math.max(2, step)) as 2 | 3 | 4
+    if (requestedStep === article.currentStep) return
     const movingForward = requestedStep > article.currentStep
     const gate = gateArticleStep(article, requestedStep)
     if (!gate.allowed) {
       setArticleActionError(tr(gate.reasonVi, gate.reason))
       return
     }
-    await waitForArticleMutations(article.id)
+    if (movingForward) await waitForArticleMutations(article.id)
     if (movingForward && failedArticleMutations.current.has(article.id)) {
       setArticleActionError(tr("Không thể chuyển bước vì dữ liệu của thao tác trước chưa được lưu vào Supabase.", "Cannot change steps because the previous update was not saved to Supabase."))
       return
     }
     setArticleActionError(null)
-    await handleUpdateArticle(article.id, { currentStep: requestedStep })
+    await handleUpdateArticle(article.id, { currentStep: requestedStep }, { silent: true })
   }
 
   const handleNext = async () => {
@@ -480,14 +482,14 @@ export default function App() {
     await handleUpdateArticle(article.id, {
       currentStep: next,
       status: next === 4 ? "review" : "in_progress",
-    })
+    }, { silent: true })
   }
 
   const handlePrev = () => {
     if (!article) return
-    handleUpdateArticle(article.id, {
-      currentStep: Math.max(article.currentStep - 1, 2),
-    })
+    const previousStep = Math.max(article.currentStep - 1, 2)
+    if (previousStep === article.currentStep) return
+    void handleUpdateArticle(article.id, { currentStep: previousStep }, { silent: true })
   }
 
   const stepCfg = article ? config.stepConfigs[article.currentStep] : null
