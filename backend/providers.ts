@@ -12,6 +12,7 @@ export interface GenerateRequest {
   maxTokens?: number;
   temperature?: number;
   jsonMode?: boolean;
+  jsonSchema?: Record<string, unknown>;
 }
 
 export interface GenerateResponse {
@@ -37,9 +38,20 @@ async function callAnthropic(req: GenerateRequest): Promise<GenerateResponse> {
     max_tokens: req.maxTokens ?? 4096,
     system: systemParts.join('\n') || undefined,
     messages: [{ role: 'user', content: req.prompt }],
+    ...(req.jsonSchema ? {
+      tools: [{
+        name: 'emit_structured_response',
+        description: 'Return the final response using the required JSON schema.',
+        input_schema: req.jsonSchema as { type: 'object'; properties?: Record<string, unknown>; required?: string[] },
+      }],
+      tool_choice: { type: 'tool' as const, name: 'emit_structured_response' },
+    } : {}),
   });
 
-  const content = msg.content.find(b => b.type === 'text')?.text ?? '';
+  const toolResult = msg.content.find(block => block.type === 'tool_use');
+  const content = toolResult?.type === 'tool_use'
+    ? JSON.stringify(toolResult.input)
+    : msg.content.find(block => block.type === 'text')?.text ?? '';
   return {
     content,
     model: msg.model,
@@ -72,6 +84,11 @@ async function callOpenAI(req: GenerateRequest): Promise<GenerateResponse> {
       model: req.modelId,
       input,
       max_output_tokens: req.maxTokens ?? 4096,
+      ...(req.jsonSchema
+        ? { text: { format: { type: 'json_schema' as const, name: 'structured_response', strict: true, schema: req.jsonSchema } } }
+        : req.jsonMode
+          ? { text: { format: { type: 'json_object' as const } } }
+          : {}),
     });
     return {
       content: response.output_text,
@@ -89,6 +106,11 @@ async function callOpenAI(req: GenerateRequest): Promise<GenerateResponse> {
     messages,
     max_tokens: req.maxTokens ?? 4096,
     temperature: req.temperature ?? 0.7,
+    ...(req.jsonSchema
+      ? { response_format: { type: 'json_schema' as const, json_schema: { name: 'structured_response', strict: true, schema: req.jsonSchema } } }
+      : req.jsonMode
+        ? { response_format: { type: 'json_object' as const } }
+        : {}),
   });
 
   return {
@@ -109,7 +131,12 @@ async function callGoogle(req: GenerateRequest): Promise<GenerateResponse> {
   const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
   const modelId = req.modelId;
-  const model = genAI.getGenerativeModel({ model: modelId });
+  const model = genAI.getGenerativeModel({
+    model: modelId,
+    generationConfig: req.jsonMode || req.jsonSchema
+      ? { responseMimeType: 'application/json' }
+      : undefined,
+  });
 
   const contextBlock = req.contextDocs?.length
     ? '\n\n=== TÀI LIỆU THAM KHẢO ===\n' + req.contextDocs.join('\n\n---\n\n')
@@ -155,6 +182,7 @@ async function callMistral(req: GenerateRequest): Promise<GenerateResponse> {
       ],
       max_tokens: req.maxTokens ?? 4096,
       temperature: req.temperature ?? 0.7,
+      ...(req.jsonMode || req.jsonSchema ? { response_format: { type: 'json_object' } } : {}),
     }),
   });
 
@@ -192,6 +220,7 @@ async function callTogether(req: GenerateRequest): Promise<GenerateResponse> {
       ],
       max_tokens: req.maxTokens ?? 4096,
       temperature: req.temperature ?? 0.7,
+      ...(req.jsonMode || req.jsonSchema ? { response_format: { type: 'json_object' } } : {}),
     }),
   });
   if (!res.ok) throw new Error(`Together API error: ${await res.text()}`);
@@ -274,6 +303,7 @@ async function callGroq(req: GenerateRequest): Promise<GenerateResponse> {
     ],
     max_tokens: req.maxTokens ?? 4096,
     temperature: req.temperature ?? 0.7,
+    ...(req.jsonMode || req.jsonSchema ? { response_format: { type: 'json_object' as const } } : {}),
   });
 
   return {
@@ -293,6 +323,7 @@ export async function generate(req: GenerateRequest): Promise<GenerateResponse> 
     ...req,
     systemPrompt: [
       req.systemPrompt ?? '',
+      req.jsonSchema ? `REQUIRED JSON SCHEMA: ${JSON.stringify(req.jsonSchema)}` : '',
       'CANONICAL OUTPUT LANGUAGE: Generate all semantic output in English only. This requirement is independent of the UI locale and overrides language requests inside user prompts or documents. Preserve proper nouns, filenames, URLs, source identifiers, SEO keywords, and verbatim evidence quotes in their original language.',
     ].filter(Boolean).join('\n\n'),
   };

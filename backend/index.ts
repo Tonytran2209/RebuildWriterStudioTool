@@ -766,6 +766,7 @@ async function runBatchModel(
   prompt: string,
   jsonMode: boolean,
   maxTokens: number,
+  jsonSchema?: Record<string, unknown>,
 ) {
   const config = await kvGet<any>("writer:config")
   const stepConfig = config?.stepConfigs?.[step]
@@ -809,6 +810,7 @@ async function runBatchModel(
     systemPrompt: compiledRules.systemPrompt,
     contextDocs: context.contextDocs,
     jsonMode,
+    jsonSchema,
     maxTokens,
     temperature: step === 4 ? 0.2 : 0.35,
   })
@@ -1074,6 +1076,29 @@ function batchDraftBudget(
       }
     }),
   }
+}
+
+const structuredDraftJsonSchema: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["title", "introduction", "sections", "conclusion"],
+  properties: {
+    title: { type: "string", minLength: 1 },
+    introduction: { type: "string", minLength: 1 },
+    sections: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "content"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          content: { type: "string", minLength: 1 },
+        },
+      },
+    },
+    conclusion: { type: "string", minLength: 1 },
+  },
 }
 
 function assembleBatchDraft(raw: string, article: any) {
@@ -1395,7 +1420,8 @@ async function runBatchArticle(
           'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order.',
         ].join("\n"),
         true,
-        Math.min(12000, Math.max(1200, Math.ceil(maxDraftWords * 1.55))),
+        Math.min(12000, Math.max(1800, Math.ceil(maxDraftWords * 1.9))),
+        structuredDraftJsonSchema,
       )
       if (!response.content.trim())
         throw new Error("Step 4 returned an empty draft.")
@@ -2258,6 +2284,7 @@ app.post("/api/generate", async (req, res) => {
     splitByWave,
     bypassCache,
     jsonMode,
+    jsonSchema,
     contextQuery,
     skipDocumentContext,
     pricing,
@@ -2357,6 +2384,7 @@ app.post("/api/generate", async (req, res) => {
       temperature,
       splitByWave: Boolean(splitByWave),
       jsonMode: Boolean(jsonMode),
+      jsonSchema: jsonSchema ?? null,
       contextQuery: normalizedContextQuery,
       skipDocumentContext: Boolean(skipDocumentContext),
       sourceFingerprint,
@@ -2543,6 +2571,7 @@ app.post("/api/generate", async (req, res) => {
         maxTokens,
         temperature,
         jsonMode,
+        jsonSchema,
       })
     }
     const providerMs = Date.now() - providerStartedAt

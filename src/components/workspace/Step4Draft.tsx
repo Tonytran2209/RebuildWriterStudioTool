@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Check, CircleX, ClipboardCopy, Copy, Download, Highlighter, LoaderCircle, Sparkles } from 'lucide-react';
-import type { Article, AIModel, AppConfig, DocumentFile, EvidenceRef, QualityGateCheck } from '../../types';
+import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, LoaderCircle, Sparkles } from 'lucide-react';
+import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
 import { parseAIJson } from '../../lib/aiJson';
@@ -15,9 +15,79 @@ import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRu
 import { selectInternalLinkCandidates } from '../../lib/internalLinkInventory';
 import { gateArticleStep } from '../../lib/workflowGuards';
 import { deterministicQualityChecks, qualityReport } from '../../lib/universalQuality';
+import { ProcessTraceModal } from './ProcessTrace';
 
 function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+type StructuredDraftPayload = {
+  title?: string;
+  introduction?: string;
+  conclusion?: string;
+  sections?: Array<{ id?: string; content?: string }>;
+};
+
+const structuredDraftSchema: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['title', 'introduction', 'sections', 'conclusion'],
+  properties: {
+    title: { type: 'string', minLength: 1 },
+    introduction: { type: 'string', minLength: 1 },
+    sections: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'content'],
+        properties: {
+          id: { type: 'string', minLength: 1 },
+          content: { type: 'string', minLength: 1 },
+        },
+      },
+    },
+    conclusion: { type: 'string', minLength: 1 },
+  },
+};
+
+function missingStructuredParts(parsed: StructuredDraftPayload, article: Article) {
+  const missing: Array<'title' | 'introduction' | 'sections' | 'conclusion'> = [];
+  if (!parsed.title?.trim()) missing.push('title');
+  if (!parsed.introduction?.trim()) missing.push('introduction');
+  if (!parsed.conclusion?.trim()) missing.push('conclusion');
+  const expected = article.outline ?? [];
+  const byId = new Map((parsed.sections ?? []).map(section => [section.id, section]));
+  const resolved = expected.map((section, index) => byId.get(section.id) ?? parsed.sections?.[index]);
+  if (!Array.isArray(parsed.sections) || resolved.length !== expected.length || resolved.some(section => !section?.content?.trim())) missing.push('sections');
+  return missing;
+}
+
+function repairSchemaFor(parts: ReturnType<typeof missingStructuredParts>) {
+  const properties = structuredDraftSchema.properties as Record<string, unknown>;
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: parts,
+    properties: Object.fromEntries(parts.map(part => [part, properties[part]])),
+  };
+}
+
+function mergeStructuredDraft(base: StructuredDraftPayload, repair: StructuredDraftPayload, article: Article): StructuredDraftPayload {
+  const expected = article.outline ?? [];
+  const baseById = new Map((base.sections ?? []).map(section => [section.id, section]));
+  const repairById = new Map((repair.sections ?? []).map(section => [section.id, section]));
+  return {
+    title: base.title?.trim() || repair.title,
+    introduction: base.introduction?.trim() || repair.introduction,
+    conclusion: base.conclusion?.trim() || repair.conclusion,
+    sections: expected.map((section, index) => {
+      const existing = baseById.get(section.id) ?? base.sections?.[index];
+      if (existing?.content?.trim()) return { id: section.id, content: existing.content };
+      const replacement = repairById.get(section.id) ?? repair.sections?.[index];
+      return { id: section.id, content: replacement?.content };
+    }),
+  };
 }
 
 function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit: number, introductionPercent = 8, conclusionPercent = 7) {
@@ -34,7 +104,7 @@ function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit:
 }
 
 function parseStructuredDraft(raw: string, article: Article) {
-  const parsed = parseAIJson(raw) as { title?: string; introduction?: string; conclusion?: string; sections?: Array<{ id?: string; heading?: string; level?: string; content?: string }> };
+  const parsed = parseAIJson(raw) as StructuredDraftPayload;
   if (!parsed.title?.trim() || !parsed.introduction?.trim() || !parsed.conclusion?.trim() || !Array.isArray(parsed.sections)) {
     throw new Error('AI trả về structured draft thiếu title, introduction, sections hoặc conclusion.');
   }
@@ -173,6 +243,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const [formatCopying, setFormatCopying] = useState(false);
   const [formatCopied, setFormatCopied] = useState(false);
   const [highlightsEnabled, setHighlightsEnabled] = useState(true);
+  const [showAudit, setShowAudit] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const generationInFlight = useRef(false);
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -235,6 +306,15 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     generationInFlight.current = true;
     setGenerating(true);
     setError('');
+    const processTrace: AIProcessTraceEvent[] = [{
+      id: `draft-request-${Date.now()}`,
+      stage: 'generation',
+      status: 'completed',
+      title: 'Structured draft request',
+      detail: `Requested title, introduction, ${article.outline?.length ?? 0} outline sections and conclusion with provider JSON enforcement.`,
+      facts: { model: model.id, provider: model.provider, targetWords },
+    }];
+    let rawResponseExcerpt = '';
     try {
       const verifiedOutline = buildVerifiedOutlineContext(article.outline || []);
       const contextQuery = [
@@ -244,7 +324,9 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         ...(article.outline ?? []).map(section => section.heading),
       ].filter(Boolean).join(' ');
       const wordBudget = buildSectionBudget(article.outline || [], targetWords, introductionPercent, conclusionPercent);
-      const maxTokens = Math.min(12_000, Math.max(1200, Math.ceil(targetWords * 1.55)));
+      // English prose, JSON escaping and provider tokenization need headroom beyond
+      // the visible word target. The hard word limit is still enforced after assembly.
+      const maxTokens = Math.min(12_000, Math.max(1800, Math.ceil(targetWords * 1.9)));
 
       const systemPrompt = buildRoleSystemPrompt(
         [
@@ -304,11 +386,78 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         maxTokens,
         temperature: 0.2,
         jsonMode: true,
+        jsonSchema: structuredDraftSchema,
         contextQuery,
         skipDocumentContext: !bundle.totalCount,
       });
+      rawResponseExcerpt = res.content.slice(0, 12_000);
       if (!res.content.trim()) throw new Error('AI trả về draft rỗng. Kết quả cũ vẫn được giữ nguyên.');
-      const assembledDraft = parseStructuredDraft(res.content, article);
+      let parsed: StructuredDraftPayload;
+      try {
+        parsed = parseAIJson(res.content) as StructuredDraftPayload;
+      } catch {
+        parsed = {};
+      }
+      const missingParts = missingStructuredParts(parsed, article);
+      processTrace.push({
+        id: `draft-validate-${Date.now()}`,
+        stage: 'validation',
+        status: missingParts.length ? 'warning' : 'completed',
+        title: 'Validate structured response',
+        detail: missingParts.length ? `Missing or incomplete fields: ${missingParts.join(', ')}.` : 'All required structured fields were returned.',
+        facts: { missingFields: missingParts.join(', ') || 'none', responseCharacters: res.content.length },
+      });
+      if (missingParts.length) {
+        const missingSectionIds = (article.outline ?? []).filter((section, index) => {
+          const byId = new Map((parsed.sections ?? []).map(item => [item.id, item]));
+          return !(byId.get(section.id) ?? parsed.sections?.[index])?.content?.trim();
+        }).map(section => section.id);
+        const repairResponse = await callAI({
+          articleId: article.id,
+          model,
+          railwayUrl,
+          stepNumber: 4,
+          bypassCache: true,
+          maxTokens: missingParts.includes('sections')
+            ? Math.min(maxTokens, Math.max(1200, Math.ceil(maxTokens * Math.max(0.25, missingSectionIds.length / Math.max(article.outline?.length ?? 1, 1)))))
+            : 700,
+          temperature: 0.1,
+          jsonMode: true,
+          jsonSchema: repairSchemaFor(missingParts),
+          contextQuery,
+          skipDocumentContext: !bundle.totalCount,
+          systemPrompt: [
+            systemPrompt,
+            'Repair only the missing structured-draft fields listed by the user. Return only those fields as one JSON object. Do not rewrite fields that already passed validation.',
+          ].join('\n'),
+          prompt: [
+            `MISSING FIELDS: ${missingParts.join(', ')}`,
+            missingSectionIds.length ? `MISSING SECTION IDS: ${missingSectionIds.join(', ')}` : '',
+            `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+            `OUTLINE: ${JSON.stringify(verifiedOutline)}`,
+            `WORD BUDGET: ${JSON.stringify(wordBudget)}`,
+            `FIELDS ALREADY RECEIVED: ${JSON.stringify({
+              hasTitle: Boolean(parsed.title?.trim()),
+              hasIntroduction: Boolean(parsed.introduction?.trim()),
+              sectionIds: (parsed.sections ?? []).filter(item => item.content?.trim()).map(item => item.id),
+              hasConclusion: Boolean(parsed.conclusion?.trim()),
+            })}`,
+          ].filter(Boolean).join('\n\n'),
+        });
+        rawResponseExcerpt = `${rawResponseExcerpt}\n\n--- TARGETED REPAIR RESPONSE ---\n${repairResponse.content.slice(0, 6_000)}`.slice(0, 18_000);
+        const repaired = parseAIJson(repairResponse.content) as StructuredDraftPayload;
+        parsed = mergeStructuredDraft(parsed, repaired, article);
+        const remaining = missingStructuredParts(parsed, article);
+        processTrace.push({
+          id: `draft-repair-${Date.now()}`,
+          stage: 'repair',
+          status: remaining.length ? 'failed' : 'completed',
+          title: 'Targeted field repair',
+          detail: remaining.length ? `Repair still missing: ${remaining.join(', ')}.` : `Recovered only the missing fields: ${missingParts.join(', ')}.`,
+          facts: { repairedFields: missingParts.join(', '), remainingFields: remaining.join(', ') || 'none' },
+        });
+      }
+      const assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
       const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
       if (validation.failed.length) throw new Error(`Draft chưa được lưu vì chưa đạt 100% SEO checklist: ${validation.failed.map(item => item.label).join(', ')}.`);
       const deterministic = deterministicQualityChecks(article, assembledDraft, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name));
@@ -341,11 +490,25 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         qualityReport: report,
         draftSourceFingerprint,
         draftScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),
+        step4ProcessTrace: processTrace,
+        step4RawResponseExcerpt: rawResponseExcerpt,
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 4: compiledWorkflowRules.snapshot },
       });
       if (!saved) throw new Error('Draft Bước 3 chưa được lưu vào Supabase.');
       if (editorRef.current) editorRef.current.innerText = assembledDraft;
     } catch (err) {
+      processTrace.push({
+        id: `draft-failure-${Date.now()}`,
+        stage: 'validation',
+        status: 'failed',
+        title: 'Draft rejected safely',
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      try {
+        await onUpdate({ step4ProcessTrace: processTrace, step4RawResponseExcerpt: rawResponseExcerpt || null });
+      } catch {
+        // Preserve the original generation error even if diagnostic persistence fails.
+      }
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       generationInFlight.current = false;
@@ -475,6 +638,16 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                 <p className="text-[10px] text-slate-400">{article.title || 'Bài viết mới'}</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowAudit(true)}
+                  disabled={!article.step4ProcessTrace?.length}
+                  title={tr('Xem nhật ký AI', 'View AI log')}
+                  className="ai-log-button flex h-8 w-8 items-center justify-center rounded-lg border disabled:opacity-40"
+                >
+                  <Eye className="app-icon" aria-hidden="true" />
+                  <span className="sr-only">{tr('Xem nhật ký AI', 'View AI log')}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setHighlightsEnabled(enabled => !enabled)}
@@ -680,6 +853,20 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           {completionSaving ? tr('Đang lưu...', 'Saving...') : article.status === 'done' ? tr('↺ Mở lại bài viết', '↺ Reopen article') : !seoChecklistPassed ? `SEO ${seoChecklist.items.length - seoChecklist.failed.length}/${seoChecklist.items.length}` : tr('✓ Đánh dấu hoàn thành', '✓ Mark complete')}
         </button>
       </div>
+      {showAudit && (
+        <ProcessTraceModal
+          title={tr('Nhật ký tạo bản nháp', 'Draft generation log')}
+          events={article.step4ProcessTrace}
+          onClose={() => setShowAudit(false)}
+        >
+          {article.step4RawResponseExcerpt && (
+            <section className="rounded-xl border border-slate-200 p-4">
+              <h4 className="text-[11px] font-medium text-slate-800">{tr('Phản hồi cấu trúc từ AI', 'Raw structured AI response')}</h4>
+              <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[9px] leading-relaxed text-slate-500">{article.step4RawResponseExcerpt}</pre>
+            </section>
+          )}
+        </ProcessTraceModal>
+      )}
     </div>
   );
 }

@@ -361,6 +361,8 @@ export interface Article {
   draft?: string
   draftSourceFingerprint?: string | null
   draftScannedAt?: string | null
+  step4ProcessTrace?: AIProcessTraceEvent[]
+  step4RawResponseExcerpt?: string | null
   qualityReport?: UniversalQualityReport | null
   editorialApproval?: EditorialApproval | null
   workflowRuleSnapshots?: Partial<Record<2 | 3 | 4, WorkflowRuleSnapshot>>
