@@ -12,6 +12,7 @@ import {
   describeBundle,
 } from '../../lib/docContext';
 import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
+import { selectInternalLinkCandidates } from '../../lib/internalLinkInventory';
 import { gateArticleStep } from '../../lib/workflowGuards';
 import { deterministicQualityChecks, qualityReport } from '../../lib/universalQuality';
 
@@ -280,7 +281,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         `- Introduction: ${wordBudget.introduction.min}–${wordBudget.introduction.max} từ`,
         `- Conclusion: ${wordBudget.conclusion.min}–${wordBudget.conclusion.max} từ`,
         `- Section budgets: ${JSON.stringify(wordBudget.sections)}`,
-        `- APPROVED INTERNAL LINK INVENTORY: ${JSON.stringify((config.websiteInventory ?? []).filter(item => item.eligibleForInternalLink && (item.status === 'active' || item.status === 'redirected')).map(item => ({ title: item.title, url: item.redirectTarget || item.canonicalUrl || item.url, topics: item.topics, contentType: item.contentType })))}`,
+        `- RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(selectInternalLinkCandidates(article, config.websiteInventory ?? [], 6))}`,
         '- Never invent a URL. Use only URLs in the approved inventory, and only when the Article Spec requires a relevant internal link.',
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',

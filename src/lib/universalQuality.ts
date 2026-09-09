@@ -13,7 +13,8 @@ export function deterministicQualityChecks(article: Article, draft: string, inve
   const target = Math.max(800, article.wordCount ?? 1500);
   const count = words(draft);
   const approvedUrls = new Set(inventory.filter(item => item.eligibleForInternalLink && (item.status === "active" || item.status === "redirected")).flatMap(item => [item.url, item.canonicalUrl, item.redirectTarget].filter(Boolean) as string[]));
-  const draftLinks = links(draft);
+  const inventoryHosts = new Set([...approvedUrls].flatMap(value => { try { return [new URL(value).hostname]; } catch { return []; } }));
+  const draftLinks = links(draft).filter(value => { try { return inventoryHosts.has(new URL(value).hostname); } catch { return false; } });
   const leaked = sourceNames.filter(name => name && draft.toLowerCase().includes(name.toLowerCase()));
   const missingCoverage = (spec?.mustCover ?? []).filter(topic => {
     const terms = normalized(topic).split(" ").filter(term => term.length > 3);
