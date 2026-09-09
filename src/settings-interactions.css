@@ -93,6 +93,16 @@
 .minimal-settings .workflow-rule-group .divide-y > * { border-color: var(--settings-border) !important; }
 .minimal-settings .workflow-rule-group,
 .minimal-settings .workflow-rule-group:hover { background: var(--settings-card) !important; border-color: var(--settings-border) !important; }
+.minimal-settings .settings-content .model-provider-group,
+.minimal-settings .settings-content .model-provider-group:hover,
+.minimal-settings .settings-content .model-provider-group .model-setting-row,
+.minimal-settings .settings-content .model-provider-group .model-setting-row:hover {
+  background: var(--settings-card) !important;
+  border-color: var(--settings-border) !important;
+  box-shadow: none !important;
+  transform: none !important;
+  transition: none !important;
+}
 .minimal-settings .knowledge-source-summary > div,
 .minimal-settings .knowledge-source-summary > div:hover { border: 0 !important; background: var(--settings-card-subtle) !important; box-shadow: none !important; }
 .minimal-settings .prompt-group,
@@ -154,6 +164,10 @@
 .codex-dark .minimal-settings .settings-content button.bg-slate-900:hover { border-color: #4a4a4c !important; background: #323234 !important; }
 .codex-dark .minimal-settings .settings-content .workflow-rule-group,
 .codex-dark .minimal-settings .settings-content .workflow-rule-group:hover { border-color: var(--settings-border) !important; background: var(--settings-card) !important; }
+.codex-dark .minimal-settings .settings-content .model-provider-group,
+.codex-dark .minimal-settings .settings-content .model-provider-group:hover,
+.codex-dark .minimal-settings .settings-content .model-provider-group .model-setting-row,
+.codex-dark .minimal-settings .settings-content .model-provider-group .model-setting-row:hover { background: var(--settings-card) !important; border-color: var(--settings-border) !important; }
 .codex-dark .minimal-settings .prompt-group pre { color: #c9c9cc !important; }
 
 @media (max-width: 767px) {
