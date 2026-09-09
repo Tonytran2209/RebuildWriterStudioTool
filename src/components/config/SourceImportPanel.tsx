@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
-import { ClipboardPaste, Database, Download, FilePenLine, FolderUp, Link2, Plug, Sheet, Trash2 } from 'lucide-react';
+import { ChevronDown, ClipboardPaste, Database, Download, FilePenLine, FolderUp, Link2, Plus, Plug, Sheet, Trash2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { ActionDataSource, ActionSourceType, FileCategory, ManualRow } from '../../types';
+import type { ActionDataSource, ActionSourceType, FileCategory, KnowledgeMetadata, ManualRow } from '../../types';
 import { isImportSourceReady } from '../../lib/documentStatus';
 import { uploadDocumentToRailway } from '../../lib/railwayUpload';
 import { downloadDocumentFromRailway } from '../../lib/railwayDownload';
@@ -392,20 +392,29 @@ interface Props {
   onChange: (sources: ActionDataSource[]) => void;
   railwayUrl: string;
   category?: FileCategory;
+  knowledgeGovernance?: boolean;
 }
+
+type GovernedSource = ActionDataSource & { knowledgeMetadata?: KnowledgeMetadata };
+
+const DEFAULT_KNOWLEDGE_METADATA: KnowledgeMetadata = {
+  type: 'reference', topics: [], visibility: 'internal', approvedForExternalUse: false,
+};
 
 const CATEGORY_LABEL: Record<FileCategory, string> = {
   kb: 'Knowledge Base',
   rules: 'Skills & Rules',
 };
 
-export default function SourceImportPanel({ sources = [], onChange, railwayUrl, category = 'kb' }: Props) {
+export default function SourceImportPanel({ sources = [], onChange, railwayUrl, category = 'kb', knowledgeGovernance = false }: Props) {
   const { language, tr } = useI18n();
   const [mode, setMode] = useState<ActionSourceType>('file');
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState('');
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
+  const [showImporter, setShowImporter] = useState(sources.length === 0);
+  const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null);
 
   const addSource = async (source: ActionDataSource) => {
     setImporting(true);
@@ -413,14 +422,23 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
     try {
       const result = await importSourceThroughRailway(source, category, railwayUrl);
       onChange([result.record as ActionDataSource, ...sources]);
+      setShowImporter(false);
     } catch (error: unknown) {
       setImportError(error instanceof Error ? error.message : String(error));
     } finally {
       setImporting(false);
     }
   };
-  const addSources = (newSources: ActionDataSource[]) => onChange([...newSources, ...sources]);
+  const addSources = (newSources: ActionDataSource[]) => {
+    onChange([...newSources, ...sources]);
+    if (newSources.length) setShowImporter(false);
+  };
   const removeSource = (id: string) => onChange(sources.filter(s => s.id !== id));
+  const updateKnowledgeMetadata = (id: string, patch: Partial<KnowledgeMetadata>) => onChange(sources.map(source => {
+    if (source.id !== id) return source;
+    const current = (source as GovernedSource).knowledgeMetadata ?? DEFAULT_KNOWLEDGE_METADATA;
+    return { ...source, knowledgeMetadata: { ...current, ...patch } } as GovernedSource;
+  }));
   const readySourceCount = sources.filter(isImportSourceReady).length;
   const downloadSource = async (source: ActionDataSource) => {
     setDownloadingId(source.id);
@@ -435,31 +453,42 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
   };
 
   return (
-    <div className="space-y-4">
+    <div className="knowledge-source-manager space-y-3">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-medium text-slate-800">{tr('Tài liệu Knowledge Base', 'Knowledge Base sources')}</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{tr('Quản lý nội dung AI có thể đọc và quyền sử dụng của từng nguồn.', 'Manage what AI can read and how each source may be used.')}</p>
+        </div>
+        <button onClick={() => setShowImporter(value => !value)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50">
+          <Plus className="app-icon" aria-hidden="true" />
+          {showImporter ? tr('Đóng', 'Close') : tr('Thêm nguồn', 'Add source')}
+        </button>
+      </div>
+
+      {showImporter && <div className="knowledge-importer rounded-xl border border-slate-200 bg-slate-50 p-3">
       {/* Mode selector */}
       <div>
-        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">{tr('Chọn cách nhập dữ liệu', 'Choose an import method')}</p>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <p className="mb-2 text-xs font-medium text-slate-600">{tr('Phương thức nhập', 'Import method')}</p>
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
           {MODES.map(m => { const ModeIcon = m.icon; return (
             <button
               key={m.id}
               onClick={() => setMode(m.id)}
-              className={`flex flex-col items-center gap-1 py-2.5 px-2 rounded-xl border text-center transition-all ${
+              className={`flex min-w-max items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
                 mode === m.id
                   ? 'bg-slate-900 border-slate-900 text-white shadow-md'
                   : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400 hover:shadow-sm'
               }`}
             >
               <ModeIcon className="app-icon" aria-hidden="true" />
-              <span className={`text-[10px] font-bold leading-tight ${mode === m.id ? 'text-white' : 'text-slate-700'}`}>{language === 'vi' ? m.label : ({ paste: 'Paste Data', manual: 'Manual Entry', file: 'File Upload', url: 'URL / API', gsheet: 'Google Sheets', supabase: 'Supabase Query', airtable: 'Airtable' } as Record<ActionSourceType, string>)[m.id]}</span>
-              <span className={`text-[9px] leading-tight text-slate-400`}>{language === 'vi' ? m.hint : ({ paste: 'CSV, JSON, plain text', manual: 'Create a data table', file: 'CSV, XLSX, JSON, PDF', url: 'REST API, RSS feed', gsheet: 'Public spreadsheet link', supabase: 'SQL SELECT from DB', airtable: 'API Key + Base ID' } as Record<ActionSourceType, string>)[m.id]}</span>
+              <span className={`text-xs font-medium leading-tight ${mode === m.id ? 'text-white' : 'text-slate-700'}`}>{language === 'vi' ? m.label : ({ paste: 'Paste Data', manual: 'Manual Entry', file: 'File Upload', url: 'URL / API', gsheet: 'Google Sheets', supabase: 'Supabase Query', airtable: 'Airtable' } as Record<ActionSourceType, string>)[m.id]}</span>
             </button>
           ); })}
         </div>
       </div>
 
       {/* Active form */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+      <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
         {mode === 'file'     && <FileForm     onAdd={addSources} railwayUrl={railwayUrl} category={category} />}
         {mode === 'paste'    && <PasteForm    onAdd={addSource} />}
         {mode === 'url'      && <UrlForm      onAdd={addSource} />}
@@ -470,16 +499,17 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
         {importing && <p className="mt-3 text-[11px] font-semibold text-blue-600">{tr('Railway đang lấy dữ liệu và lưu Supabase...', 'Railway is importing and saving data to Supabase...')}</p>}
         {importError && <p className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[11px] text-red-600">{importError}</p>}
       </div>
+      </div>}
 
       {/* Saved sources list */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3">
-        <div className="flex items-center justify-between mb-3 px-1">
-          <h4 className="text-xs font-bold text-slate-800">
-            {tr('Nguồn dữ liệu', 'Data sources')} {CATEGORY_LABEL[category]}
-            <span className="text-slate-400 font-normal ml-1">({sources.length})</span>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <h4 className="text-sm font-medium text-slate-800">
+            {CATEGORY_LABEL[category]}
+            <span className="ml-1.5 font-normal text-slate-400">{sources.length}</span>
           </h4>
           {sources.length > 0 && (
-            <span className={`text-[10px] font-semibold border px-2 py-0.5 rounded-md ${
+            <span className={`rounded-md border px-2 py-1 text-xs font-medium ${
               readySourceCount === sources.length
                 ? 'text-emerald-600 bg-emerald-50 border-emerald-100'
                 : 'text-red-600 bg-red-50 border-red-100'
@@ -502,40 +532,31 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
             <p className="text-[11px] text-slate-300 mt-0.5">{tr('Chọn cách nhập ở trên và thêm dữ liệu.', 'Choose an import method above and add data.')}</p>
           </div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="divide-y divide-slate-200">
             {sources.map(s => {
               const ready = isImportSourceReady(s);
               const SourceIcon = SOURCE_ICONS[s.sourceType];
+              const knowledgeMetadata = (s as GovernedSource).knowledgeMetadata ?? DEFAULT_KNOWLEDGE_METADATA;
+              const expanded = expandedSourceId === s.id;
               return (
-              <div key={s.id} className={`group flex items-start gap-3 bg-white border rounded-xl p-3 hover:shadow-sm transition-all ${ready ? 'border-slate-200' : 'border-red-200'}`}>
-                <SourceIcon className="app-icon mt-0.5" aria-hidden="true" />
-                <div className="flex-1 min-w-0 space-y-0.5">
+              <div key={s.id} className={`knowledge-source-row group bg-white transition-colors ${ready ? '' : 'bg-red-50/40'}`}>
+                <div className="flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-slate-50/70">
+                <SourceIcon className="app-icon shrink-0 text-slate-400" aria-hidden="true" />
+                <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-800 truncate">{s.name}</span>
-                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-md shrink-0 ${
-                      s.sourceType === 'file'      ? 'bg-emerald-100 text-emerald-700' :
-                      s.sourceType === 'paste'     ? 'bg-blue-100 text-blue-700' :
-                      s.sourceType === 'url'       ? 'bg-violet-100 text-violet-700' :
-                      s.sourceType === 'gsheet'    ? 'bg-green-100 text-green-700' :
-                      s.sourceType === 'manual'    ? 'bg-amber-100 text-amber-700' :
-                      s.sourceType === 'supabase'  ? 'bg-slate-700 text-white' :
-                      'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {s.sourceType}
-                    </span>
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${
+                    <span className="truncate text-sm font-medium text-slate-800">{s.name}</span>
+                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium ${
                       ready ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
                     }`}>
-                      {ready ? `${s.content!.length.toLocaleString('vi-VN')} ký tự` : 'THIẾU NỘI DUNG — TẢI LẠI'}
+                      {ready ? tr('Sẵn sàng', 'Ready') : tr('Cần tải lại', 'Needs re-upload')}
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-400 font-mono truncate">
-                    {s.preview?.split('\n')[0]}
-                  </p>
-                  <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                    <span>{s.sourceType.toUpperCase()}</span>
                     {s.rowCount && <span>{s.rowCount} dòng</span>}
                     {s.size && <span>{s.size}</span>}
                     <span>{new Date(s.addedAt).toLocaleDateString('vi-VN')}</span>
+                    {knowledgeGovernance && <><span className="text-slate-500">{knowledgeMetadata.type.replace('_', ' ')}</span><span>{knowledgeMetadata.approvedForExternalUse ? tr('Được dùng công khai', 'External use allowed') : tr('Chỉ dùng nội bộ', 'Internal only')}</span></>}
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -543,19 +564,23 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
                     onClick={() => downloadSource(s)}
                     disabled={!ready || downloadingId === s.id}
                     title={s.storagePath ? 'Tải file gốc từ Supabase' : 'Tải dữ liệu đã lưu'}
-                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+                    aria-label={tr('Tải tài liệu', 'Download source')}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40"
                   >
                     <Download className="app-icon" aria-hidden="true" />
-                    {downloadingId === s.id ? tr('Đang tải', 'Downloading') : tr('Tải về', 'Download')}
                   </button>
                   <button
                     onClick={() => removeSource(s.id)}
                     title="Xóa nguồn dữ liệu"
-                    className="text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"
+                    aria-label={tr('Xóa tài liệu', 'Delete source')}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 opacity-0 transition-colors hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 focus:opacity-100"
                   >
                     <Trash2 className="app-icon" aria-hidden="true" />
                   </button>
+                  {knowledgeGovernance && <button onClick={() => setExpandedSourceId(expanded ? null : s.id)} aria-expanded={expanded} aria-label={tr('Chỉnh quyền sử dụng', 'Edit source governance')} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"><ChevronDown className={`app-icon transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" /></button>}
                 </div>
+                </div>
+                {knowledgeGovernance && expanded && <div className="knowledge-governance-editor border-t border-slate-200 bg-slate-50 px-4 py-4"><div className="grid gap-4 md:grid-cols-[180px_1fr_auto] md:items-end"><label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-600">{tr('Loại kiến thức', 'Knowledge type')}</span><select value={knowledgeMetadata.type} onChange={event => updateKnowledgeMetadata(s.id, { type: event.target.value as KnowledgeMetadata['type'] })} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"><option value="reference">Reference</option><option value="usp">USP</option><option value="positioning">Positioning</option><option value="client_insight">Client insight</option><option value="case_study">Case study</option><option value="framework">Framework</option><option value="approved_claim">Approved claim</option><option value="production_insight">Production insight</option></select></label><label className="block"><span className="mb-1.5 block text-xs font-medium text-slate-600">Topics</span><input value={knowledgeMetadata.topics.join(', ')} onChange={event => updateKnowledgeMetadata(s.id, { topics: event.target.value.split(',').map(value => value.trim()).filter(Boolean) })} placeholder={tr('Ví dụ: healthcare, animation, training', 'For example: healthcare, animation, training')} className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm" /></label><label className="flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-600"><input type="checkbox" checked={knowledgeMetadata.approvedForExternalUse} onChange={event => updateKnowledgeMetadata(s.id, { approvedForExternalUse: event.target.checked, visibility: event.target.checked ? 'public' : 'internal' })} className="h-4 w-4"/><span>{tr('Cho phép xuất hiện trong nội dung công khai', 'Allow use in public content')}</span></label></div><p className="mt-3 text-xs leading-5 text-slate-400">{knowledgeMetadata.approvedForExternalUse ? tr('AI có thể nhắc tên nguồn này trong nội dung xuất bản.', 'AI may identify this source in published content.') : tr('AI được dùng kiến thức nhưng tên file sẽ được ẩn khỏi output.', 'AI may use the knowledge, but the filename stays hidden from output.')}</p></div>}
               </div>
               );
             })}

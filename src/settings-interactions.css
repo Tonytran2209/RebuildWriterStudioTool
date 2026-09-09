@@ -153,3 +153,48 @@
   background: #fff !important;
   color: #141414 !important;
 }
+
+/* Knowledge sources: one quiet list, with governance disclosed only on demand. */
+.codex-dark .minimal-settings .knowledge-source-manager > .bg-white,
+.codex-dark .minimal-settings .knowledge-importer,
+.codex-dark .minimal-settings .knowledge-importer > .bg-white {
+  border-color: #2a2a2a !important;
+  background: #1a1a1a !important;
+}
+
+.codex-dark .minimal-settings .knowledge-source-row,
+.codex-dark .minimal-settings .knowledge-source-row:hover {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #1a1a1a !important;
+  box-shadow: none !important;
+}
+
+.codex-dark .minimal-settings .knowledge-source-row > div:first-child:hover {
+  background: #202020 !important;
+}
+
+.codex-dark .minimal-settings .knowledge-governance-editor,
+.codex-dark .minimal-settings .knowledge-governance-editor:hover {
+  border-color: #2a2a2a !important;
+  background: #181818 !important;
+}
+
+.codex-dark .minimal-settings .knowledge-source-row button:hover {
+  border-color: transparent !important;
+  background: #2a2a2a !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .knowledge-source-row button[aria-label*='Delete']:hover,
+.codex-dark .minimal-settings .knowledge-source-row button[aria-label*='Xóa']:hover {
+  background: #2a2020 !important;
+  color: #d98b8b !important;
+}
+
+@media (max-width: 767px) {
+  .minimal-settings .knowledge-governance-editor label:last-of-type {
+    min-height: 2.75rem;
+    height: auto;
+  }
+}
