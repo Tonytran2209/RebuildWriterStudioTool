@@ -198,3 +198,125 @@
     height: auto;
   }
 }
+
+/* Full-height settings workspace based on the app's native two-pane settings pattern. */
+.minimal-settings .settings-shell {
+  max-width: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.minimal-settings .settings-sidebar,
+.minimal-settings .settings-main {
+  border-color: #e5e5e1;
+}
+
+.minimal-settings .settings-nav-item {
+  min-height: 2.25rem;
+}
+
+.writer-light .minimal-settings .settings-sidebar {
+  background: #f7f7f5 !important;
+}
+
+.writer-light .minimal-settings .settings-nav-item.is-active,
+.writer-light .minimal-settings .settings-nav-item.is-active:hover {
+  background: #e8e8e4 !important;
+  color: #20201e !important;
+}
+
+.codex-dark .minimal-settings {
+  padding: 0 !important;
+  background: #141414 !important;
+}
+
+.codex-dark .minimal-settings .settings-shell,
+.codex-dark .minimal-settings .settings-main,
+.codex-dark .minimal-settings .settings-page-header,
+.codex-dark .minimal-settings .settings-footer {
+  background: #141414 !important;
+  border-color: #252525 !important;
+}
+
+.codex-dark .minimal-settings .settings-sidebar {
+  background: #202020 !important;
+  border-color: #2b2b2b !important;
+}
+
+.codex-dark .minimal-settings .settings-back-button {
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #d1d1d1 !important;
+}
+
+.codex-dark .minimal-settings .settings-back-button:hover {
+  border-color: transparent !important;
+  background: #2d2d2d !important;
+  color: #fff !important;
+}
+
+.codex-dark .minimal-settings .settings-search input {
+  height: 2.25rem !important;
+  border-color: #303030 !important;
+  border-radius: .5rem !important;
+  background: #2a2a2a !important;
+  color: #e5e5e5 !important;
+}
+
+.codex-dark .minimal-settings .settings-nav-item {
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #c2c2c2 !important;
+}
+
+.codex-dark .minimal-settings .settings-nav-item:hover:not(.is-active) {
+  border-color: transparent !important;
+  background: #292929 !important;
+  color: #ededed !important;
+}
+
+.codex-dark .minimal-settings .settings-nav-item.is-active,
+.codex-dark .minimal-settings .settings-nav-item.is-active:hover {
+  border-color: transparent !important;
+  background: #343434 !important;
+  color: #f2f2f2 !important;
+}
+
+.codex-dark .minimal-settings .settings-connection {
+  border-color: #2b2b2b !important;
+}
+
+.codex-dark .minimal-settings .settings-page-header h1 {
+  color: #ededed !important;
+}
+
+.codex-dark .minimal-settings .settings-preference-group,
+.codex-dark .minimal-settings .model-provider-group {
+  border-color: #303030 !important;
+  background: #202020 !important;
+}
+
+.codex-dark .minimal-settings .settings-preference-group > *,
+.codex-dark .minimal-settings .model-provider-group > *,
+.codex-dark .minimal-settings .model-provider-group .divide-y > * {
+  border-color: #303030 !important;
+}
+
+.codex-dark .minimal-settings .settings-preference-row:hover,
+.codex-dark .minimal-settings .model-setting-row:hover {
+  background: #252525 !important;
+}
+
+.codex-dark .minimal-settings .settings-preference-row span[class*='bg-slate-100'],
+.codex-dark .minimal-settings .model-setting-row span[class*='bg-slate-100'] {
+  background: #303030 !important;
+  color: #c7c7c7 !important;
+}
+
+@media (max-width: 767px) {
+  .minimal-settings .settings-sidebar { max-height: 14rem; }
+  .minimal-settings .settings-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .25rem; }
+  .minimal-settings .settings-nav > div > div:first-child { display: none; }
+  .minimal-settings .settings-nav-item { justify-content: center; padding-inline: .5rem; }
+}

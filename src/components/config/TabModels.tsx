@@ -58,11 +58,11 @@ export default function TabModels({ config, onChange }: Props) {
   });
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-between items-center">
+    <div className="space-y-7">
+      <div className="flex items-end justify-between gap-4">
         <div>
           <h3 className="text-sm font-medium text-slate-900">{tr('Models', 'Models')}</h3>
-          <p className="text-[11px] text-slate-400 mt-0.5">{tr('Bật/tắt Model để hiển thị trong menu phân quyền từng Step', 'Enable models for use in each step')}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-400">{tr('Bật model để sử dụng trong workflow và quản lý giá token.', 'Enable models for workflow use and manage token pricing.')}</p>
         </div>
       </div>
 
@@ -70,20 +70,20 @@ export default function TabModels({ config, onChange }: Props) {
         const provMeta = PROVIDER_LABELS[provider];
         const anyEnabled = models.some(m => m.enabled);
         return (
-          <div key={provider} className="space-y-3 rounded-xl border border-slate-200 bg-white p-3.5">
+          <section key={provider} className="model-provider-group overflow-hidden rounded-xl border border-slate-200 bg-white">
             {/* Provider header */}
-            <div className="flex items-center justify-between border-b border-slate-200/60 pb-2.5">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div className="flex items-center gap-2">
                 <Cpu className="app-icon text-slate-500" aria-hidden="true" />
-                <span className="text-xs font-medium text-slate-900">{provMeta?.label || provider}</span>
+                <span className="text-sm font-medium text-slate-900">{provMeta?.label || provider}</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${anyEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                <span className={`rounded-md px-2 py-1 text-xs font-medium ${anyEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                   {anyEnabled ? 'Active' : 'Inactive'}
                 </span>
                 <button
                   onClick={() => setShowKeyFor(showKeyFor === provider ? null : provider)}
-                  className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 px-2 py-0.5 rounded-md transition-all"
+                  className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
                 >
                   {showKeyFor === provider ? tr('Ẩn', 'Hide') : 'API Key'}
                 </button>
@@ -92,8 +92,8 @@ export default function TabModels({ config, onChange }: Props) {
 
             {/* API key input */}
             {showKeyFor === provider && (
-              <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+              <div className="space-y-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <label className="text-xs font-medium text-slate-600">
                   {API_KEY_NAMES[provider as AIProvider]} (lưu trong Railway env)
                 </label>
                 <div className="flex flex-col sm:flex-row gap-2">
@@ -102,34 +102,34 @@ export default function TabModels({ config, onChange }: Props) {
                     value={apiKeys[provider] || ''}
                     onChange={e => setApiKeys(k => ({ ...k, [provider]: e.target.value }))}
                     placeholder="sk-••••••••••••••••••••••••"
-                    className="flex-1 font-mono bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-slate-800"
+                    className="h-10 flex-1 rounded-lg border border-slate-200 bg-white px-3 font-mono text-sm text-slate-700 outline-none"
                   />
-                  <button className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-all">
+                  <button className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800">
                     {tr('Lưu vào Railway', 'Save to Railway')}
                   </button>
                 </div>
-                <p className="text-[10px] text-slate-400">{tr('API Key được mã hóa và lưu an toàn trong biến môi trường Railway.', 'API keys are encrypted and stored in Railway environment variables.')}</p>
+                <p className="text-xs text-slate-400">{tr('API Key được lưu trong biến môi trường Railway.', 'API keys are stored in Railway environment variables.')}</p>
               </div>
             )}
 
             {/* Models grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="divide-y divide-slate-200">
               {models.map(model => (
-                <div key={model.id} className="flex items-start justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 transition-colors hover:bg-slate-100/70">
-                  <div className="min-w-0">
+                <div key={model.id} className="model-setting-row flex items-start gap-4 px-4 py-3.5 transition-colors hover:bg-slate-50/70">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 mb-0.5">
-                      <h4 className="truncate text-xs font-medium text-slate-900">{model.name}</h4>
+                      <h4 className="truncate text-sm font-medium text-slate-900">{model.name}</h4>
                       {model.enabled && (
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-400 leading-snug">{language === 'vi' ? model.description : `${model.name} for Step-based AI content workflows.`}</p>
+                    <p className="text-xs leading-5 text-slate-400">{language === 'vi' ? model.description : `${model.name} for step-based content workflows.`}</p>
                     <div className="flex items-center gap-2 mt-1.5">
-                      <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{model.contextWindow}</span>
-                      <span className={`text-[10px] font-semibold ${SPEED_COLORS[model.speed]}`}>{language === 'vi' ? SPEED_LABELS[model.speed] : ({ fast: 'Fast', medium: 'Medium', slow: 'Slow' } as const)[model.speed]}</span>
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-500">{model.contextWindow}</span>
+                      <span className={`text-xs font-medium ${SPEED_COLORS[model.speed]}`}>{language === 'vi' ? SPEED_LABELS[model.speed] : ({ fast: 'Fast', medium: 'Medium', slow: 'Slow' } as const)[model.speed]}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5 mt-2">
-                      <label className="text-[9px] text-slate-500">
+                    <div className="mt-3 grid max-w-lg grid-cols-3 gap-2">
+                      <label className="text-xs text-slate-500">
                         Input $/1M
                         <input
                           type="number"
@@ -138,10 +138,10 @@ export default function TabModels({ config, onChange }: Props) {
                           value={model.pricing?.inputUsdPerMillion ?? ''}
                           onChange={event => updatePricing(model.id, 'inputUsdPerMillion', event.target.value)}
                           placeholder="N/A"
-                          className="mt-0.5 w-full rounded-md border border-slate-200 bg-slate-50 px-1.5 py-1 font-mono text-[9px] outline-none"
+                          className="mt-1 h-8 w-full rounded-md border border-slate-200 bg-white px-2 font-mono text-xs outline-none"
                         />
                       </label>
-                      <label className="text-[9px] text-slate-500">
+                      <label className="text-xs text-slate-500">
                         Cache $/1M
                         <input
                           type="number"
@@ -150,10 +150,10 @@ export default function TabModels({ config, onChange }: Props) {
                           value={model.pricing?.cachedInputUsdPerMillion ?? ''}
                           onChange={event => updatePricing(model.id, 'cachedInputUsdPerMillion', event.target.value)}
                           placeholder="= input"
-                          className="mt-0.5 w-full rounded-md border border-slate-200 bg-slate-50 px-1.5 py-1 font-mono text-[9px] outline-none"
+                          className="mt-1 h-8 w-full rounded-md border border-slate-200 bg-white px-2 font-mono text-xs outline-none"
                         />
                       </label>
-                      <label className="text-[9px] text-slate-500">
+                      <label className="text-xs text-slate-500">
                         Output $/1M
                         <input
                           type="number"
@@ -162,12 +162,12 @@ export default function TabModels({ config, onChange }: Props) {
                           value={model.pricing?.outputUsdPerMillion ?? ''}
                           onChange={event => updatePricing(model.id, 'outputUsdPerMillion', event.target.value)}
                           placeholder="N/A"
-                          className="mt-0.5 w-full rounded-md border border-slate-200 bg-slate-50 px-1.5 py-1 font-mono text-[9px] outline-none"
+                          className="mt-1 h-8 w-full rounded-md border border-slate-200 bg-white px-2 font-mono text-xs outline-none"
                         />
                       </label>
                     </div>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                  <label className="relative mt-0.5 inline-flex shrink-0 cursor-pointer items-center">
                     <input
                       type="checkbox"
                       checked={model.enabled}
@@ -179,7 +179,7 @@ export default function TabModels({ config, onChange }: Props) {
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         );
       })}
     </div>

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Bot, Cpu, Library, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ArrowLeft, Bot, Cpu, Library, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AppConfig, Article, DocumentFile, ActiveTab } from '../../types';
 import TabStepSetup from './TabStepSetup';
@@ -16,17 +16,25 @@ interface Props {
   onClose: () => void;
 }
 
-const TABS: { id: ActiveTab; label: string; icon: LucideIcon }[] = [
-  { id: 'step-setup', label: 'Phân quyền AI theo Step', icon: Bot },
-  { id: 'models', label: 'Quản lý AI Models', icon: Cpu },
-  { id: 'knowledge-base', label: 'Knowledge Base & Skills', icon: Library },
+const TABS: Array<{ id: ActiveTab; labelVi: string; labelEn: string; descriptionVi: string; descriptionEn: string; icon: LucideIcon; group: string }> = [
+  { id: 'step-setup', labelVi: 'Workflow AI', labelEn: 'AI workflow', descriptionVi: 'Model theo bước, nguồn context và usage', descriptionEn: 'Step models, context sources, and usage', icon: Bot, group: 'Workflow' },
+  { id: 'models', labelVi: 'AI Models', labelEn: 'AI models', descriptionVi: 'Provider, model và chi phí token', descriptionEn: 'Providers, models, and token pricing', icon: Cpu, group: 'Models' },
+  { id: 'knowledge-base', labelVi: 'Knowledge & Rules', labelEn: 'Knowledge & rules', descriptionVi: 'Knowledge Base, Skills và website inventory', descriptionEn: 'Knowledge Base, skills, and website inventory', icon: Library, group: 'Knowledge' },
 ];
 
 export default function ConfigModal({ config, files, articles, onSave, onClose }: Props) {
   const { language, tr } = useI18n();
   const [activeTab, setActiveTab] = useState<ActiveTab>('step-setup');
+  const [query, setQuery] = useState('');
   const [localConfig, setLocalConfig] = useState<AppConfig>({ ...config });
   const [localFiles, setLocalFiles] = useState<DocumentFile[]>([...files]);
+
+  const active = TABS.find(tab => tab.id === activeTab) ?? TABS[0];
+  const visibleTabs = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized) return TABS;
+    return TABS.filter(tab => [tab.labelVi, tab.labelEn, tab.descriptionVi, tab.descriptionEn].some(value => value.toLocaleLowerCase().includes(normalized)));
+  }, [query]);
 
   const handleSave = () => {
     const sanitized = sanitizeConfigFileAccess(localConfig, localFiles);
@@ -36,87 +44,62 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
   };
 
   return (
-    <div className="minimal-settings fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-0 sm:p-5">
-      <div className="settings-shell flex h-dvh w-full max-w-5xl flex-col border border-slate-200 bg-white sm:h-auto sm:max-h-[93dvh] sm:rounded-2xl">
-        <div className="settings-panel flex flex-1 flex-col overflow-hidden bg-white sm:rounded-2xl">
-
-          {/* Modal Header */}
-          <div className="settings-header flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5">
-            <div className="min-w-0">
-              <h2 className="text-sm font-medium text-slate-900">{tr('Cài đặt Writer Studio', 'Writer Studio settings')}</h2>
-              <p className="mt-0.5 hidden text-[11px] text-slate-500 sm:block">{tr('Models, nguồn kiến thức và workflow rules', 'Models, knowledge sources, and workflow rules')}</p>
-            </div>
-            <button
-              onClick={onClose}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-            >
-              <X className="app-icon" aria-hidden="true" />
+    <div className="minimal-settings fixed inset-0 z-50 bg-white">
+      <div className="settings-shell grid h-dvh w-full grid-cols-1 overflow-hidden bg-white md:grid-cols-[240px_minmax(0,1fr)]">
+        <aside className="settings-sidebar flex min-h-0 flex-col border-b border-slate-200 bg-slate-50 md:border-b-0 md:border-r">
+          <div className="p-3">
+            <button onClick={onClose} className="settings-back-button inline-flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100">
+              <ArrowLeft className="app-icon" aria-hidden="true" />
+              {tr('Quay lại ứng dụng', 'Back to app')}
             </button>
+            <label className="settings-search relative mt-2 block">
+              <Search className="app-icon pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input value={query} onChange={event => setQuery(event.target.value)} placeholder={tr('Tìm cài đặt...', 'Search settings...')} className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-sm text-slate-700 outline-none" />
+            </label>
           </div>
 
-          {/* Tab nav */}
-          <div className="settings-tabs-wrap shrink-0 overflow-x-auto border-b border-slate-200 px-3 pt-2 sm:px-5">
-            <div className="settings-tabs flex min-w-max items-center gap-1 sm:min-w-0">
-              {TABS.map(tab => {
-                const TabIcon = tab.icon;
-                return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-center text-[11px] font-normal transition-colors sm:flex-1 sm:px-2 ${
-                    activeTab === tab.id
-                      ? 'bg-slate-100 text-slate-900'
-                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <TabIcon className="app-icon" aria-hidden="true" />
-                  <span>{language === 'vi' ? tab.label : ({
-                    'step-setup': 'AI access by Step',
-                    models: 'AI Model management',
-                    'knowledge-base': 'Knowledge Base & Skills',
-                  } as Record<ActiveTab, string>)[tab.id]}</span>
+          <nav className="settings-nav min-h-0 overflow-y-auto px-2 pb-3" aria-label={tr('Danh mục cài đặt', 'Settings categories')}>
+            {visibleTabs.map((tab, index) => {
+              const Icon = tab.icon;
+              const showGroup = !visibleTabs[index - 1] || visibleTabs[index - 1].group !== tab.group;
+              return <div key={tab.id}>
+                {showGroup && <div className="px-2.5 pb-1 pt-3 text-xs font-medium text-slate-400">{tab.group}</div>}
+                <button onClick={() => setActiveTab(tab.id)} className={`settings-nav-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${activeTab === tab.id ? 'is-active bg-slate-200 text-slate-900' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                  <Icon className="app-icon shrink-0" aria-hidden="true" />
+                  <span className="truncate">{language === 'vi' ? tab.labelVi : tab.labelEn}</span>
                 </button>
-                );
-              })}
+              </div>;
+            })}
+            {!visibleTabs.length && <p className="px-2.5 py-4 text-xs leading-5 text-slate-400">{tr('Không tìm thấy mục cài đặt phù hợp.', 'No matching settings found.')}</p>}
+          </nav>
+
+          <div className="settings-connection mt-auto hidden border-t border-slate-200 px-4 py-3 text-xs text-slate-400 md:block">
+            <span className={`mr-2 inline-block h-2 w-2 rounded-full ${localConfig.railwayUrl ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+            Railway {localConfig.railwayUrl ? tr('đã kết nối', 'connected') : tr('chưa cấu hình', 'not configured')}
+          </div>
+        </aside>
+
+        <main className="settings-main flex min-h-0 min-w-0 flex-col bg-white">
+          <header className="settings-page-header shrink-0 border-b border-slate-200 px-5 py-4 md:px-8 md:py-6">
+            <div className="mx-auto max-w-4xl">
+              <h1 className="text-xl font-medium text-slate-900">{language === 'vi' ? active.labelVi : active.labelEn}</h1>
+              <p className="mt-1 text-sm leading-5 text-slate-500">{language === 'vi' ? active.descriptionVi : active.descriptionEn}</p>
+            </div>
+          </header>
+
+          <div className="settings-content min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-7">
+            <div className="mx-auto max-w-4xl">
+              {activeTab === 'step-setup' && <TabStepSetup config={localConfig} files={localFiles} articles={articles} onChange={setLocalConfig} />}
+              {activeTab === 'models' && <TabModels config={localConfig} onChange={setLocalConfig} />}
+              {activeTab === 'knowledge-base' && <TabKnowledgeBase files={localFiles} onChange={setLocalFiles} railwayUrl={localConfig.railwayUrl} config={localConfig} onConfigChange={setLocalConfig} />}
             </div>
           </div>
 
-          {/* Tab content */}
-          <div className="settings-content min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-            {activeTab === 'step-setup' && (
-              <TabStepSetup config={localConfig} files={localFiles} articles={articles} onChange={setLocalConfig} />
-            )}
-            {activeTab === 'models' && (
-              <TabModels config={localConfig} onChange={setLocalConfig} />
-            )}
-            {activeTab === 'knowledge-base' && (
-              <TabKnowledgeBase
-                files={localFiles}
-                onChange={setLocalFiles}
-                railwayUrl={localConfig.railwayUrl}
-                config={localConfig}
-                onConfigChange={setLocalConfig}
-              />
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="settings-footer flex shrink-0 flex-col justify-between gap-2 border-t border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="hidden sm:block text-[11px] text-slate-400">
-                Railway: <code className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{localConfig.railwayUrl ? '✓ kết nối' : 'Chưa cấu hình'}</code>
-              </div>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button onClick={onClose} className="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900">
-                {tr('Đóng', 'Close')}
-              </button>
-              <button onClick={handleSave} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-800">
-                {tr('Lưu cấu hình', 'Save settings')}
-              </button>
-            </div>
-          </div>
-        </div>
+          <footer className="settings-footer flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3 md:px-8">
+            <button onClick={onClose} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900">{tr('Huỷ', 'Cancel')}</button>
+            <button onClick={handleSave} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800">{tr('Lưu thay đổi', 'Save changes')}</button>
+          </footer>
+        </main>
       </div>
     </div>
   );
