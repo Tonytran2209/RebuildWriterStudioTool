@@ -16,10 +16,10 @@ interface Props {
   onClose: () => void;
 }
 
-const TABS: Array<{ id: ActiveTab; labelVi: string; labelEn: string; descriptionVi: string; descriptionEn: string; icon: LucideIcon; group: string }> = [
-  { id: 'step-setup', labelVi: 'Workflow AI', labelEn: 'AI workflow', descriptionVi: 'Model theo bước, nguồn context và usage', descriptionEn: 'Step models, context sources, and usage', icon: Bot, group: 'Workflow' },
-  { id: 'models', labelVi: 'AI Models', labelEn: 'AI models', descriptionVi: 'Provider, model và chi phí token', descriptionEn: 'Providers, models, and token pricing', icon: Cpu, group: 'Models' },
-  { id: 'knowledge-base', labelVi: 'Knowledge & Rules', labelEn: 'Knowledge & rules', descriptionVi: 'Knowledge Base, Skills và website inventory', descriptionEn: 'Knowledge Base, skills, and website inventory', icon: Library, group: 'Knowledge' },
+const TABS: Array<{ id: ActiveTab; labelVi: string; labelEn: string; descriptionVi: string; descriptionEn: string; icon: LucideIcon }> = [
+  { id: 'step-setup', labelVi: 'Workflow AI', labelEn: 'AI workflow', descriptionVi: 'Model theo bước, nguồn context và usage', descriptionEn: 'Step models, context sources, and usage', icon: Bot },
+  { id: 'models', labelVi: 'AI Models', labelEn: 'AI models', descriptionVi: 'Provider, model và chi phí token', descriptionEn: 'Providers, models, and token pricing', icon: Cpu },
+  { id: 'knowledge-base', labelVi: 'Knowledge & Rules', labelEn: 'Knowledge & rules', descriptionVi: 'Knowledge Base, Skills và website inventory', descriptionEn: 'Knowledge Base, skills, and website inventory', icon: Library },
 ];
 
 export default function ConfigModal({ config, files, articles, onSave, onClose }: Props) {
@@ -58,12 +58,10 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
             </label>
           </div>
 
-          <nav className="settings-nav min-h-0 overflow-y-auto px-2 pb-3" aria-label={tr('Danh mục cài đặt', 'Settings categories')}>
-            {visibleTabs.map((tab, index) => {
+          <nav className="settings-nav min-h-0 space-y-1 overflow-y-auto px-2 pb-3 pt-2" aria-label={tr('Danh mục cài đặt', 'Settings categories')}>
+            {visibleTabs.map(tab => {
               const Icon = tab.icon;
-              const showGroup = !visibleTabs[index - 1] || visibleTabs[index - 1].group !== tab.group;
               return <div key={tab.id}>
-                {showGroup && <div className="px-2.5 pb-1 pt-3 text-xs font-medium text-slate-400">{tab.group}</div>}
                 <button onClick={() => setActiveTab(tab.id)} className={`settings-nav-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${activeTab === tab.id ? 'is-active bg-slate-200 text-slate-900' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
                   <Icon className="app-icon shrink-0" aria-hidden="true" />
                   <span className="truncate">{language === 'vi' ? tab.labelVi : tab.labelEn}</span>
