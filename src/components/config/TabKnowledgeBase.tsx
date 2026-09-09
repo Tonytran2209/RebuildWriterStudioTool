@@ -66,15 +66,15 @@ export default function TabKnowledgeBase({
 
   return (
     <div className="space-y-7">
-      <div className="flex gap-5 overflow-x-auto border-b border-slate-200">
+      <div className="settings-subnav flex gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
         {(Object.entries(SUBTAB_META) as [KbSubTab, typeof SUBTAB_META[KbSubTab]][]).map(([key, item]) => (
           <button
             key={key}
             onClick={() => setActiveSubTab(key)}
-            className={`shrink-0 border-b-2 px-0 pb-2.5 text-sm font-medium transition-colors ${
+            className={`shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               activeSubTab === key
-                ? 'border-slate-900 text-slate-900'
-                : 'border-transparent text-slate-400 hover:text-slate-700'
+                ? 'is-active bg-white text-slate-900'
+                : 'text-slate-500 hover:text-slate-800'
             }`}
           >
             {item.label}

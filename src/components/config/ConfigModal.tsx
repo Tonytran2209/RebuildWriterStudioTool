@@ -80,15 +80,15 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
         </aside>
 
         <main className="settings-main flex min-h-0 min-w-0 flex-col bg-white">
-          <header className="settings-page-header shrink-0 border-b border-slate-200 px-5 py-4 md:px-8 md:py-6">
-            <div className="mx-auto max-w-4xl">
-              <h1 className="text-xl font-medium text-slate-900">{language === 'vi' ? active.labelVi : active.labelEn}</h1>
+          <header className="settings-page-header shrink-0 px-5 pb-3 pt-6 md:px-8 md:pb-4 md:pt-9">
+            <div className="mx-auto max-w-[760px]">
+              <h1 className="text-[26px] font-semibold tracking-[-0.01em] text-slate-900">{language === 'vi' ? active.labelVi : active.labelEn}</h1>
               <p className="mt-1 text-sm leading-5 text-slate-500">{language === 'vi' ? active.descriptionVi : active.descriptionEn}</p>
             </div>
           </header>
 
           <div className="settings-content min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-7">
-            <div className="mx-auto max-w-4xl">
+            <div className="mx-auto max-w-[760px]">
               {activeTab === 'step-setup' && <TabStepSetup config={localConfig} files={localFiles} articles={articles} onChange={setLocalConfig} />}
               {activeTab === 'models' && <TabModels config={localConfig} onChange={setLocalConfig} />}
               {activeTab === 'knowledge-base' && <TabKnowledgeBase files={localFiles} onChange={setLocalFiles} railwayUrl={localConfig.railwayUrl} config={localConfig} onConfigChange={setLocalConfig} />}

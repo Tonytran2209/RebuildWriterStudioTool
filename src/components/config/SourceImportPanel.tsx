@@ -477,7 +477,7 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
               className={`flex min-w-max items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
                 mode === m.id
                   ? 'bg-slate-900 border-slate-900 text-white shadow-md'
-                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400 hover:shadow-sm'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
               }`}
             >
               <ModeIcon className="app-icon" aria-hidden="true" />
@@ -527,9 +527,8 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
 
         {sources.length === 0 ? (
           <div className="text-center py-10">
-            <div className="text-3xl mb-2">📂</div>
-            <p className="text-xs text-slate-400">{tr('Chưa có nguồn dữ liệu nào.', 'No data sources yet.')}</p>
-            <p className="text-[11px] text-slate-300 mt-0.5">{tr('Chọn cách nhập ở trên và thêm dữ liệu.', 'Choose an import method above and add data.')}</p>
+            <p className="text-sm text-slate-500">{tr('Chưa có nguồn dữ liệu nào.', 'No data sources yet.')}</p>
+            <p className="mt-1 text-xs text-slate-400">{tr('Chọn “Thêm nguồn” để bắt đầu.', 'Choose “Add source” to begin.')}</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-200">

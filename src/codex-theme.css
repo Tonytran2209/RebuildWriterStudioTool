@@ -249,9 +249,7 @@
 .codex-dark .settings-stack { gap: .75rem; }
 .codex-dark .settings-status,
 .codex-dark .settings-section,
-.codex-dark .settings-row,
-.codex-dark .settings-content .bg-slate-50,
-.codex-dark .settings-content .bg-white {
+.codex-dark .settings-row {
   background: var(--cx-card) !important;
   border: 1px solid var(--cx-border) !important;
   border-radius: .75rem !important;

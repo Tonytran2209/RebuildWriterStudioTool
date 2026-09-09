@@ -1,342 +1,146 @@
-/* Loaded after the theme so Settings interaction states stay deterministic. */
-.codex-dark .minimal-settings button,
-.codex-dark .minimal-settings [role='button'],
-.codex-dark .minimal-settings .settings-content [class*='transition'] {
-  transition-duration: 140ms !important;
-  transition-timing-function: ease !important;
-  box-shadow: none !important;
+/* Settings is a quiet working surface. Only controls react to hover. */
+.minimal-settings {
+  --settings-bg: #ffffff;
+  --settings-sidebar: #f7f7f5;
+  --settings-card: #ffffff;
+  --settings-card-subtle: #f8f8f6;
+  --settings-control: #f3f3f1;
+  --settings-border: #e2e2de;
+  --settings-text: #20201e;
+  --settings-muted: #73736f;
+  --settings-faint: #9a9a95;
+  --settings-danger-bg: #fff1f1;
+  --settings-danger: #c94a4a;
+  background: var(--settings-bg) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-.codex-dark .minimal-settings button:hover,
-.codex-dark .minimal-settings [role='button']:hover {
-  transform: none !important;
-  box-shadow: none !important;
-}
+.minimal-settings .settings-shell { max-width: none !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+.minimal-settings .settings-sidebar { border-color: var(--settings-border) !important; background: var(--settings-sidebar) !important; }
+.minimal-settings .settings-main,
+.minimal-settings .settings-page-header,
+.minimal-settings .settings-footer { background: var(--settings-bg) !important; }
+.minimal-settings .settings-footer { min-height: 4rem; border-color: var(--settings-border) !important; }
 
-.codex-dark .minimal-settings .settings-header button {
-  border: 1px solid transparent !important;
-  background: transparent !important;
-  color: #8f949e !important;
-}
+.minimal-settings button,
+.minimal-settings [role='button'],
+.minimal-settings select,
+.minimal-settings input,
+.minimal-settings textarea { box-shadow: none !important; }
+.minimal-settings button,
+.minimal-settings [role='button'] { transform: none !important; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, opacity 150ms ease !important; }
 
-.codex-dark .minimal-settings .settings-header button:hover {
-  border-color: transparent !important;
-  background: #222 !important;
-  color: #e5e5e5 !important;
-}
+.minimal-settings .settings-back-button,
+.minimal-settings .settings-nav-item { border: 1px solid transparent !important; }
+.minimal-settings .settings-back-button:hover,
+.minimal-settings .settings-nav-item:hover:not(.is-active) { background: var(--settings-control) !important; color: var(--settings-text) !important; }
+.minimal-settings .settings-nav-item.is-active,
+.minimal-settings .settings-nav-item.is-active:hover { background: #e8e8e4 !important; color: var(--settings-text) !important; }
 
-.codex-dark .minimal-settings .settings-tabs button {
-  border: 1px solid transparent !important;
-  background: transparent !important;
-  color: #8f949e !important;
-}
+.minimal-settings .settings-search input,
+.minimal-settings .settings-content input,
+.minimal-settings .settings-content textarea,
+.minimal-settings .settings-content select { border: 1px solid var(--settings-border) !important; border-radius: .5rem !important; background: var(--settings-card) !important; color: var(--settings-text) !important; outline: none !important; }
+.minimal-settings .settings-content input:focus,
+.minimal-settings .settings-content textarea:focus,
+.minimal-settings .settings-content select:focus,
+.minimal-settings .settings-search input:focus { border-color: #a9a9a3 !important; box-shadow: 0 0 0 1px #a9a9a3 !important; }
 
-.codex-dark .minimal-settings .settings-tabs button:hover:not(.bg-slate-100) {
-  border-color: transparent !important;
-  background: #222 !important;
-  color: #d1d5db !important;
-}
+.minimal-settings .settings-preference-group,
+.minimal-settings .model-provider-group,
+.minimal-settings .workflow-rule-group,
+.minimal-settings .knowledge-source-manager > .overflow-hidden,
+.minimal-settings .knowledge-importer,
+.minimal-settings .settings-content section > .rounded-xl.border { border-color: var(--settings-border) !important; background: var(--settings-card) !important; box-shadow: none !important; }
 
-.codex-dark .minimal-settings .settings-tabs button.bg-slate-100,
-.codex-dark .minimal-settings .settings-tabs button.bg-slate-100:hover {
-  border-color: #3a3a3a !important;
-  background: #292929 !important;
-  color: #e5e5e5 !important;
-}
+/* One group owns its perimeter; children only contribute a single divider. */
+.minimal-settings .settings-preference-group > *,
+.minimal-settings .model-provider-group > *,
+.minimal-settings .model-provider-group .divide-y > *,
+.minimal-settings .workflow-rule-group > *,
+.minimal-settings .knowledge-source-row,
+.minimal-settings .website-inventory-row { border-color: var(--settings-border) !important; border-left: 0 !important; border-right: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
 
-.codex-dark .minimal-settings .settings-content button.bg-slate-900:hover {
-  border-color: #444 !important;
-  background: #333 !important;
-  color: #fff !important;
-}
-
-.codex-dark .minimal-settings .settings-content .border-dashed:hover {
-  border-color: #3a3a3a !important;
-  background: #222 !important;
-  transform: none !important;
-  opacity: 1 !important;
-}
-
-/* Workflow Rules has explicit interaction states; nested content never reacts as a card. */
-.codex-dark .minimal-settings .workflow-rules-panel section,
-.codex-dark .minimal-settings .workflow-rules-panel section:hover,
-.codex-dark .minimal-settings .workflow-rule-editor,
-.codex-dark .minimal-settings .workflow-rule-editor:hover {
-  border-color: #2a2a2a !important;
-  background: #1a1a1a !important;
-  box-shadow: none !important;
-}
-
-.codex-dark .minimal-settings .workflow-rules-intro,
-.codex-dark .minimal-settings .workflow-rules-intro:hover,
-.codex-dark .minimal-settings .workflow-rules-layout,
-.codex-dark .minimal-settings .workflow-rules-layout:hover {
-  border-color: #2a2a2a !important;
-  background: #1a1a1a !important;
-}
-
-.codex-dark .minimal-settings .workflow-rules-sidebar {
-  border-color: #2a2a2a !important;
-  background: #181818 !important;
-}
-
-.codex-dark .minimal-settings .workflow-rule-nav-item {
-  border-color: transparent !important;
-  background: transparent !important;
-  color: #9ca3af !important;
-}
-
-.codex-dark .minimal-settings .workflow-rule-nav-item:hover:not(.is-active) {
-  border-color: transparent !important;
-  background: #222 !important;
-  color: #d1d5db !important;
-}
-
-.codex-dark .minimal-settings .workflow-rule-nav-item.is-active,
-.codex-dark .minimal-settings .workflow-rule-nav-item.is-active:hover {
-  border-color: #3a3a3a !important;
-  background: #292929 !important;
-  color: #e5e5e5 !important;
-}
-
-.codex-dark .minimal-settings .workflow-rule-enforcement {
-  border-color: #2d2d2d !important;
-  background: #181818 !important;
-}
-
-.codex-dark .minimal-settings .workflow-rule-mode {
-  border: 1px solid transparent !important;
-  background: transparent !important;
-  color: #8f949e !important;
-}
-
-.codex-dark .minimal-settings .workflow-rule-mode:hover:not(.is-active) {
-  border-color: transparent !important;
-  background: #222 !important;
-  color: #d1d5db !important;
-}
-
-.codex-dark .minimal-settings .workflow-rule-mode.is-active,
-.codex-dark .minimal-settings .workflow-rule-mode.is-active:hover {
-  border-color: #3a3a3a !important;
-  background: #292929 !important;
-  color: #e5e5e5 !important;
-}
-
-.codex-dark .minimal-settings .workflow-rule-stage,
-.codex-dark .minimal-settings .workflow-rule-stage:hover {
-  border-color: #2a2a2a !important;
-  background: #181818 !important;
-}
-
-.codex-dark .minimal-settings .settings-footer button:first-child:hover {
-  border-color: #3a3a3a !important;
-  background: #222 !important;
-  color: #e5e5e5 !important;
-}
-
-.codex-dark .minimal-settings .settings-footer button:last-child:hover {
-  border-color: #fff !important;
-  background: #fff !important;
-  color: #141414 !important;
-}
-
-/* Knowledge sources: one quiet list, with governance disclosed only on demand. */
-.codex-dark .minimal-settings .knowledge-source-manager > .bg-white,
-.codex-dark .minimal-settings .knowledge-importer,
-.codex-dark .minimal-settings .knowledge-importer > .bg-white {
-  border-color: #2a2a2a !important;
-  background: #1a1a1a !important;
-}
-
-.codex-dark .minimal-settings .knowledge-source-row,
-.codex-dark .minimal-settings .knowledge-source-row:hover {
-  border: 0 !important;
-  border-radius: 0 !important;
-  background: #1a1a1a !important;
-  box-shadow: none !important;
-}
-
-.codex-dark .minimal-settings .knowledge-governance-editor,
-.codex-dark .minimal-settings .knowledge-governance-editor:hover {
-  border-color: #2a2a2a !important;
-  background: #181818 !important;
-}
-
-.codex-dark .minimal-settings .knowledge-source-row button:hover {
-  border-color: transparent !important;
-  background: #2a2a2a !important;
-  color: #e5e5e5 !important;
-}
-
-/* Preference rows communicate state without pretending the whole row is clickable. */
+/* Read-only rows and containers never impersonate buttons. */
 .minimal-settings .settings-preference-row:hover,
 .minimal-settings .model-setting-row:hover,
 .minimal-settings .workflow-setting-row:hover,
 .minimal-settings .workflow-stage-row:hover,
 .minimal-settings .website-inventory-row:hover,
-.minimal-settings .knowledge-source-row > div:first-child:hover {
-  background: inherit !important;
-  box-shadow: none !important;
-}
+.minimal-settings .knowledge-source-row:hover,
+.minimal-settings .knowledge-source-row > div:first-child:hover,
+.minimal-settings .workflow-rule-group:hover,
+.minimal-settings section:hover { background-color: inherit !important; box-shadow: none !important; transform: none !important; }
 
-.minimal-settings .workflow-phase-button {
-  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease !important;
-}
+.minimal-settings .settings-subnav { border: 0 !important; background: var(--settings-control) !important; }
+.minimal-settings .settings-subnav button { border: 0 !important; background: transparent !important; }
+.minimal-settings .settings-subnav button:hover:not(.is-active) { color: var(--settings-text) !important; }
+.minimal-settings .settings-subnav button.is-active,
+.minimal-settings .settings-subnav button.is-active:hover { background: var(--settings-card) !important; color: var(--settings-text) !important; }
 
-.minimal-settings .workflow-phase-button:hover:not(.is-active) {
-  border-color: #c7c7c2;
-  background: #fafaf8;
-}
+.minimal-settings .workflow-phase-button { border-color: var(--settings-border) !important; background: var(--settings-card) !important; }
+.minimal-settings .workflow-phase-button:hover:not(.is-active) { border-color: #bebeb8 !important; background: var(--settings-card) !important; }
+.minimal-settings .workflow-phase-button.is-active,
+.minimal-settings .workflow-phase-button.is-active:hover { border-color: #9d9d97 !important; background: var(--settings-control) !important; }
 
-.codex-dark .minimal-settings .workflow-phase-button {
-  border-color: #303030 !important;
-  background: #202020 !important;
-}
+.minimal-settings .knowledge-source-row { background: var(--settings-card) !important; }
+.minimal-settings .knowledge-governance-editor { border-color: var(--settings-border) !important; background: var(--settings-card-subtle) !important; }
+.minimal-settings .knowledge-source-row button:hover { background: var(--settings-control) !important; color: var(--settings-text) !important; }
+.minimal-settings .knowledge-source-row button[aria-label*='Delete']:hover,
+.minimal-settings .knowledge-source-row button[aria-label*='Xóa']:hover { background: var(--settings-danger-bg) !important; color: var(--settings-danger) !important; }
 
-.codex-dark .minimal-settings .workflow-phase-button:hover:not(.is-active) {
-  border-color: #3b3b3b !important;
-  background: #242424 !important;
-  color: #ededed !important;
-}
-
-.codex-dark .minimal-settings .workflow-phase-button.is-active,
-.codex-dark .minimal-settings .workflow-phase-button.is-active:hover {
-  border-color: #555 !important;
-  background: #2b2b2b !important;
-}
-
-.codex-dark .minimal-settings .knowledge-source-row button[aria-label*='Delete']:hover,
-.codex-dark .minimal-settings .knowledge-source-row button[aria-label*='Xóa']:hover {
-  background: #2a2020 !important;
-  color: #d98b8b !important;
-}
-
-@media (max-width: 767px) {
-  .minimal-settings .knowledge-governance-editor label:last-of-type {
-    min-height: 2.75rem;
-    height: auto;
-  }
-}
-
-/* Full-height settings workspace based on the app's native two-pane settings pattern. */
-.minimal-settings .settings-shell {
-  max-width: none !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-}
-
-.minimal-settings .settings-sidebar,
-.minimal-settings .settings-main {
-  border-color: #e5e5e1;
-}
-
-.minimal-settings .settings-nav-item {
-  min-height: 2.25rem;
-}
-
-.writer-light .minimal-settings .settings-sidebar {
-  background: #f7f7f5 !important;
-}
-
-.writer-light .minimal-settings .settings-nav-item.is-active,
-.writer-light .minimal-settings .settings-nav-item.is-active:hover {
-  background: #e8e8e4 !important;
-  color: #20201e !important;
-}
+.minimal-settings .settings-content button.bg-slate-900:hover,
+.minimal-settings .settings-footer button:last-child:hover { background: #333330 !important; color: #fff !important; }
+.minimal-settings .settings-footer button:first-child:hover { background: var(--settings-control) !important; color: var(--settings-text) !important; }
+.minimal-settings .settings-content .border-dashed:hover { border-color: #a9a9a3 !important; background: var(--settings-card-subtle) !important; }
 
 .codex-dark .minimal-settings {
+  --settings-bg: #121212;
+  --settings-sidebar: #1e1e1e;
+  --settings-card: #1e1e1e;
+  --settings-card-subtle: #191919;
+  --settings-control: #2a2a2c;
+  --settings-border: #2c2c2e;
+  --settings-text: #ececec;
+  --settings-muted: #8e8e93;
+  --settings-faint: #636366;
+  --settings-danger-bg: #2a181a;
+  --settings-danger: #f87171;
   padding: 0 !important;
-  background: #141414 !important;
 }
-
-.codex-dark .minimal-settings .settings-shell,
-.codex-dark .minimal-settings .settings-main,
-.codex-dark .minimal-settings .settings-page-header,
-.codex-dark .minimal-settings .settings-footer {
-  background: #141414 !important;
-  border-color: #252525 !important;
-}
-
-.codex-dark .minimal-settings .settings-sidebar {
-  background: #202020 !important;
-  border-color: #2b2b2b !important;
-}
-
-.codex-dark .minimal-settings .settings-back-button {
-  border: 1px solid transparent !important;
-  background: transparent !important;
-  color: #d1d1d1 !important;
-}
-
-.codex-dark .minimal-settings .settings-back-button:hover {
-  border-color: transparent !important;
-  background: #2d2d2d !important;
-  color: #fff !important;
-}
-
-.codex-dark .minimal-settings .settings-search input {
-  height: 2.25rem !important;
-  border-color: #303030 !important;
-  border-radius: .5rem !important;
-  background: #2a2a2a !important;
-  color: #e5e5e5 !important;
-}
-
-.codex-dark .minimal-settings .settings-nav-item {
-  border: 1px solid transparent !important;
-  background: transparent !important;
-  color: #c2c2c2 !important;
-}
-
-.codex-dark .minimal-settings .settings-nav-item:hover:not(.is-active) {
-  border-color: transparent !important;
-  background: #292929 !important;
-  color: #ededed !important;
-}
-
+.codex-dark .minimal-settings .settings-page-header h1,
+.codex-dark .minimal-settings .settings-content .text-slate-700,
+.codex-dark .minimal-settings .settings-content .text-slate-800,
+.codex-dark .minimal-settings .settings-content .text-slate-900 { color: var(--settings-text) !important; }
+.codex-dark .minimal-settings .settings-content .text-slate-300,
+.codex-dark .minimal-settings .settings-content .text-slate-400 { color: var(--settings-faint) !important; }
+.codex-dark .minimal-settings .settings-content .text-slate-500,
+.codex-dark .minimal-settings .settings-content .text-slate-600,
+.codex-dark .minimal-settings .settings-page-header p { color: var(--settings-muted) !important; }
 .codex-dark .minimal-settings .settings-nav-item.is-active,
-.codex-dark .minimal-settings .settings-nav-item.is-active:hover {
-  border-color: transparent !important;
-  background: #343434 !important;
-  color: #f2f2f2 !important;
-}
-
-.codex-dark .minimal-settings .settings-connection {
-  border-color: #2b2b2b !important;
-}
-
-.codex-dark .minimal-settings .settings-page-header h1 {
-  color: #ededed !important;
-}
-
-.codex-dark .minimal-settings .settings-preference-group,
-.codex-dark .minimal-settings .model-provider-group {
-  border-color: #303030 !important;
-  background: #202020 !important;
-}
-
-.codex-dark .minimal-settings .settings-preference-group > *,
-.codex-dark .minimal-settings .model-provider-group > *,
-.codex-dark .minimal-settings .model-provider-group .divide-y > * {
-  border-color: #303030 !important;
-}
-
-.codex-dark .minimal-settings .settings-preference-row:hover,
-.codex-dark .minimal-settings .model-setting-row:hover {
-  background: #252525 !important;
-}
-
-.codex-dark .minimal-settings .settings-preference-row span[class*='bg-slate-100'],
-.codex-dark .minimal-settings .model-setting-row span[class*='bg-slate-100'] {
-  background: #303030 !important;
-  color: #c7c7c7 !important;
-}
+.codex-dark .minimal-settings .settings-nav-item.is-active:hover { background: #343434 !important; }
+.codex-dark .minimal-settings .settings-back-button:hover,
+.codex-dark .minimal-settings .settings-nav-item:hover:not(.is-active) { background: #292929 !important; }
+.codex-dark .minimal-settings .settings-search input,
+.codex-dark .minimal-settings .settings-content input,
+.codex-dark .minimal-settings .settings-content textarea,
+.codex-dark .minimal-settings .settings-content select { background: #242426 !important; border-color: #3a3a3c !important; }
+.codex-dark .minimal-settings .settings-content input:focus,
+.codex-dark .minimal-settings .settings-content textarea:focus,
+.codex-dark .minimal-settings .settings-content select:focus,
+.codex-dark .minimal-settings .settings-search input:focus { border-color: #555558 !important; box-shadow: 0 0 0 1px #555558 !important; }
+.codex-dark .minimal-settings .settings-subnav button.is-active,
+.codex-dark .minimal-settings .settings-subnav button.is-active:hover { background: #38383a !important; }
+.codex-dark .minimal-settings .workflow-phase-button:hover:not(.is-active) { border-color: #4a4a4c !important; }
+.codex-dark .minimal-settings .workflow-phase-button.is-active,
+.codex-dark .minimal-settings .workflow-phase-button.is-active:hover { border-color: #555558 !important; background: #2a2a2c !important; }
+.codex-dark .minimal-settings .settings-content button.bg-slate-900 { border: 1px solid #3a3a3c !important; background: #2a2a2c !important; color: var(--settings-text) !important; }
+.codex-dark .minimal-settings .settings-content button.bg-slate-900:hover { border-color: #4a4a4c !important; background: #323234 !important; }
 
 @media (max-width: 767px) {
   .minimal-settings .settings-sidebar { max-height: 14rem; }
   .minimal-settings .settings-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .25rem; }
   .minimal-settings .settings-nav > div > div:first-child { display: none; }
   .minimal-settings .settings-nav-item { justify-content: center; padding-inline: .5rem; }
+  .minimal-settings .knowledge-governance-editor label:last-of-type { min-height: 2.75rem; height: auto; }
 }
