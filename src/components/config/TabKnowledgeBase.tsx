@@ -1,22 +1,27 @@
 import { useState } from 'react';
+import { BookOpen, Globe2, ScrollText } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { ActionDataSource, AppConfig, DocumentFile, FileCategory, KbSubTab, WebsiteContentRecord } from '../../types';
 import SourceImportPanel from './SourceImportPanel';
 import WorkflowRulesPanel from './WorkflowRulesPanel';
 
-const SUBTAB_META: Record<KbSubTab, { label: string; category?: FileCategory; hint: string }> = {
+const SUBTAB_META: Record<KbSubTab, { label: string; category?: FileCategory; hint: string; icon: LucideIcon }> = {
   kb: {
     label: 'Knowledge Base',
     category: 'kb',
     hint: 'Kiến thức cốt lõi, sản phẩm, nghiên cứu và tài liệu tham khảo',
+    icon: BookOpen,
   },
   rules: {
     label: 'Skills & Rules',
     category: 'rules',
     hint: 'Taxonomy, tone of voice, cấu trúc và quy tắc bắt buộc',
+    icon: ScrollText,
   },
   website: {
     label: 'Website Inventory',
     hint: 'Danh sách URL duy nhất AI được phép đề xuất làm internal link',
+    icon: Globe2,
   },
 };
 
@@ -72,12 +77,13 @@ export default function TabKnowledgeBase({
             key={key}
             onClick={() => setActiveSubTab(key)}
             aria-current={activeSubTab === key ? 'page' : undefined}
-            className={`shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+            className={`inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               activeSubTab === key
                 ? 'is-active bg-white text-slate-900'
                 : 'text-slate-500 hover:text-slate-800'
             }`}
           >
+            <item.icon className="app-icon shrink-0" aria-hidden="true" />
             {item.label}
           </button>
         ))}
