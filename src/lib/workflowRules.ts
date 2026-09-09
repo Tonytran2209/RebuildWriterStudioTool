@@ -4,18 +4,19 @@ export interface WorkflowParameterDefinition { id: string; label: string; labelV
 export interface WorkflowStageDefinition { id: string; title: string; titleVi: string; detail: string; detailVi: string; locked?: boolean; parameters?: WorkflowParameterDefinition[] }
 export interface WorkflowRuleDefinition { id: WorkflowRuleId; title: string; titleVi: string; summary: string; summaryVi: string; steps: number[]; stages: WorkflowStageDefinition[] }
 
-export const WORKFLOW_RULE_VERSION = 2;
+export const WORKFLOW_RULE_VERSION = 3;
 export const DEFAULT_WORKFLOW_RULE_SETTING: WorkflowRuleSetting = { enforcement: 'strict', customInstruction: '', appliesTo: { manual: true, batch: true }, stageOverrides: {}, version: WORKFLOW_RULE_VERSION };
 
 export const WORKFLOW_RULE_DEFINITIONS: WorkflowRuleDefinition[] = [
   { id: 'source-grounding', title: 'Source retrieval & grounding', titleVi: 'Truy xuất và đối chứng nguồn', summary: 'Controls how Content Plan, Knowledge Base and reference guides become model context.', summaryVi: 'Quy định cách Content Plan, Knowledge Base và guide tham khảo được đưa vào context.', steps: [2,3,4], stages: [
     { id:'topic-authority', title:'Topic authority', titleVi:'Nguồn topic', detail:'Use only the topic classified from the current Content Plan activity.', detailVi:'Chỉ lấy topic đã phân loại từ Content Plan của activity hiện tại.', locked:true },
     { id:'focused-retrieval', title:'Focused retrieval', titleVi:'Truy xuất tập trung', detail:'Select relevant KB sections using topic, angle, headings and keywords.', detailVi:'Chọn đoạn KB liên quan theo topic, angle, heading và keyword.' },
-    { id:'evidence-boundary', title:'Evidence boundary', titleVi:'Ranh giới evidence', detail:'Do not invent facts; preserve source names and verbatim evidence quotes.', detailVi:'Không bịa dữ kiện; giữ đúng tên nguồn và quote nguyên văn.', locked:true },
+    { id:'evidence-boundary', title:'Evidence boundary', titleVi:'Ranh giới evidence', detail:'Do not invent facts. Preserve evidence quotes, but never expose internal filenames unless approved for external use.', detailVi:'Không bịa dữ kiện. Giữ quote evidence nhưng không lộ tên file nội bộ nếu chưa được duyệt.', locked:true },
   ]},
   { id:'core-idea', title:'Core Idea & SEO research', titleVi:'Core Idea và nghiên cứu SEO', summary:'Researches, audits and ranks content angles.', summaryVi:'Research, đối chứng và chấm điểm góc nội dung.', steps:[2], stages:[
     { id:'market-research', title:'Market research', titleVi:'Nghiên cứu thị trường', detail:'Collect a sourced keyword set through OpenAI Web Search.', detailVi:'Thu thập bộ keyword có URL nguồn bằng OpenAI Web Search.', parameters:[{id:'keywordCount',label:'Keyword count',labelVi:'Số keyword',type:'number',defaultValue:10,min:5,max:20,step:1}] },
     { id:'keyword-audit', title:'Keyword audit', titleVi:'Đối chứng keyword', detail:'Accept or reject every keyword against the current plan and internal knowledge.', detailVi:'Chấp nhận hoặc loại từng keyword theo content plan và knowledge nội bộ.' },
+    { id:'article-spec', title:'Article Spec contract', titleVi:'Hợp đồng Article Spec', detail:'Create one canonical contract for intent, reader outcome, must-cover topics, thesis, evidence, CTA and internal-link requirements.', detailVi:'Tạo contract chuẩn cho intent, reader outcome, nội dung bắt buộc, thesis, evidence, CTA và internal link.', locked:true },
     { id:'idea-generation', title:'Idea generation', titleVi:'Tạo ý tưởng', detail:'Generate distinct ideas and score SEO, audience fit, support and uniqueness.', detailVi:'Tạo các ý tưởng khác nhau và chấm SEO, audience fit, support, uniqueness.', parameters:[{id:'ideaCount',label:'Idea count',labelVi:'Số Core Idea',type:'number',defaultValue:3,min:1,max:6,step:1}] },
   ]},
   { id:'outline', title:'Evidence-backed outline', titleVi:'Outline có dẫn chứng', summary:'Transforms the selected idea into a validated heading and evidence structure.', summaryVi:'Chuyển core idea thành cấu trúc heading và evidence đã kiểm chứng.', steps:[3], stages:[
@@ -30,7 +31,8 @@ export const WORKFLOW_RULE_DEFINITIONS: WorkflowRuleDefinition[] = [
   ]},
   { id:'quality-persistence', title:'Quality gate, cache & persistence', titleVi:'Quality gate, cache và lưu trữ', summary:'Defines the non-negotiable output contract and when a result may be saved.', summaryVi:'Quy định output contract và điều kiện được phép lưu.', steps:[2,3,4], stages:[
     { id:'canonical-language', title:'Canonical language', titleVi:'Ngôn ngữ chuẩn', detail:'Generate semantic content in English; translate labels only in the UI.', detailVi:'Generate bằng tiếng Anh; chỉ dịch label tại UI.', locked:true },
-    { id:'validation-gate', title:'Validation gate', titleVi:'Cổng kiểm tra', detail:'Validate required fields and require the final SEO checklist to reach 100%.', detailVi:'Kiểm tra field và yêu cầu SEO checklist cuối đạt 100%.', locked:true },
+    { id:'validation-gate', title:'Universal Quality Gate', titleVi:'Universal Quality Gate', detail:'Require deterministic structure, word, coverage, confidentiality and link checks plus semantic intent, reader-outcome, evidence and brand-POV review.', detailVi:'Yêu cầu kiểm tra cấu trúc, word, coverage, bảo mật, link và review semantic về intent, outcome, evidence, brand POV.', locked:true },
+    { id:'editorial-approval', title:'Editorial approval', titleVi:'Phê duyệt Editorial', detail:'Editorial / Originality must receive explicit human outline approval before drafting; Standard / Scalable may continue automatically.', detailVi:'Editorial / Originality phải được duyệt outline trước draft; Standard / Scalable có thể tự động chạy tiếp.', locked:true },
     { id:'controlled-persistence', title:'Controlled persistence', titleVi:'Lưu có kiểm soát', detail:'Reuse matching cache and save accepted results plus audit traces to Supabase.', detailVi:'Dùng cache phù hợp và lưu kết quả cùng audit trace vào Supabase.', locked:true },
   ]},
 ];

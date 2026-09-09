@@ -12,6 +12,7 @@ import type {
   SeoResearchResult,
   KeywordAuditItem,
   AIProcessTraceEvent,
+  ArticleSpec,
 } from "../../types";
 import { callAI, researchSeoKeywords } from "../../lib/aiService";
 import { useI18n } from "../../lib/i18n";
@@ -27,6 +28,7 @@ import { ProcessTraceModal } from './ProcessTrace';
 import { parseAIJson } from '../../lib/aiJson';
 import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
 import { gateArticleStep, gateStepCompletion } from '../../lib/workflowGuards';
+import { articleSpecFingerprint, normalizeArticleSpec } from '../../lib/articleSpec';
 
 interface Props {
   article: Article;
@@ -293,7 +295,8 @@ export default function Step2CoreIdea({
   const bundle = useMemo(() => collectStepDocs(2, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(2, config, files), [config, files]);
   const compiledWorkflowRules = useMemo(() => compileWorkflowRules(config, 2, 'manual'), [config]);
-  const requestedIdeaCount = Math.min(6, Math.max(1, Number(getWorkflowParameter(config, 'core-idea', 'idea-generation', 'ideaCount') ?? 3)));
+  const configuredIdeaCount = Math.min(6, Math.max(1, Number(getWorkflowParameter(config, 'core-idea', 'idea-generation', 'ideaCount') ?? 3)));
+  const requestedIdeaCount = article.activityType === 'comparison-seo' ? 1 : Math.max(2, configuredIdeaCount);
   const requestedKeywordCount = Math.min(20, Math.max(5, Number(getWorkflowParameter(config, 'core-idea', 'market-research', 'keywordCount') ?? 10)));
   const selectedSnapshot = useMemo(
     () => article.selectedContentTypeSnapshot
@@ -378,7 +381,7 @@ export default function Step2CoreIdea({
       const systemPrompt = buildRoleSystemPrompt(
         [
           canonicalAIOutputInstruction,
-          `Đề xuất CHÍNH XÁC ${requestedIdeaCount} core ideas / góc độ cho bài viết dạng "${article.contentType}".`,
+          `Build one canonical Article Spec, then propose EXACTLY ${requestedIdeaCount} content direction(s) for "${article.contentType}".`,
           selectedSnapshot
             ? `- Dùng lựa chọn Step 1 đã khóa làm định hướng bắt buộc: ${selectedSnapshot.label}; Type ${selectedSnapshot.typeGroup ?? "không xác định"}; ${selectedSnapshot.wave ?? ""}; ${selectedSnapshot.timeframe ?? ""}; keywords: ${(selectedSnapshot.keywords ?? []).join(", ")}.`
             : "- Không có snapshot cấu trúc từ Step 1; chỉ dùng content type đã chọn.",
@@ -396,6 +399,16 @@ export default function Step2CoreIdea({
           "Trả về DUY NHẤT một JSON object hợp lệ, không kèm markdown fences hay text giải thích.",
           "Schema:",
           `{
+  "articleSpec": {
+    "topic": string, "primaryQuery": string, "secondaryQueries": string[],
+    "audience": string, "market": string, "language": "English",
+    "primaryIntent": "informational" | "commercial" | "transactional" | "navigational",
+    "secondaryIntent": "informational" | "commercial" | "transactional" | "navigational" | null,
+    "expectedReaderOutcome": string, "winningFormat": string,
+    "mustCover": string[] (4-10 required coverage areas), "optionalCoverage": string[],
+    "thesis": string, "brandPov": string, "ctaObjective": string,
+    "internalLinkRequirements": string[]
+  },
   "keywordAudit": [{ "keyword": string (chép đúng từ SEO_RESEARCH_TOP_10), "decision": "accepted" | "rejected", "reason": string, "ruleReason": string, "kbReason": string }],
   "ideas": [{
   "title": string (tiêu đề bài viết đề xuất, sẵn sàng dùng),
@@ -466,6 +479,20 @@ export default function Step2CoreIdea({
         return { res, parsed, ideas: normalizeIdeas(parsed, bundle, seoResearch, trustedEvidence) };
       };
       let result = await requestIdeas(manual);
+      const resultRoot = result.parsed && typeof result.parsed === 'object' && !Array.isArray(result.parsed)
+        ? result.parsed as Record<string, unknown>
+        : {};
+      const articleSpec: ArticleSpec = normalizeArticleSpec(resultRoot.articleSpec, {
+        topic: selectedSnapshot?.label ?? article.topic ?? article.contentType,
+        audience: selectedSnapshot?.audience,
+        market: seoResearch.location,
+        language: seoResearch.language,
+        evidence: trustedEvidence,
+        research: seoResearch,
+      });
+      if (!articleSpec.expectedReaderOutcome || articleSpec.mustCover.length < 3 || !articleSpec.thesis) {
+        throw new Error('Article Spec thiếu expected outcome, thesis hoặc must-cover topics. Kết quả chưa được lưu.');
+      }
       if (result.ideas.length < requestedIdeaCount) {
         evidenceCorrectionCalls += 1;
         const acceptedIdeas = result.ideas;
@@ -524,9 +551,22 @@ export default function Step2CoreIdea({
         { id: 'step2-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls || partialResult ? 'warning' : 'completed', title: '5. Đối chứng tài liệu và kiểm tra output', detail: 'Cả bộ Core Idea phải audit đủ Top 10 và chỉ dùng keyword accepted. Evidence từ Knowledge Base, Content Plan và Skills được chọn, xác minh trong ứng dụng; lượt bổ sung idea không nạp lại tài liệu.', facts: { acceptedKeywords, rejectedKeywords, ideasAccepted: result.ideas.length, verifiedEvidence: trustedEvidence.length, jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step2-persist', stage: 'persistence', status: 'completed', title: '6. Lưu kết quả có thể audit', detail: 'Lưu Top 10, quyết định chọn/loại, evidence, điểm số, lý do và nhật ký này cùng bài viết trong Supabase.' },
       ];
+      const autoSelectedIdea = article.activityType === 'comparison-seo' && result.ideas.length === 1 ? result.ideas[0] : null;
+      const specFingerprint = articleSpecFingerprint(articleSpec);
       const saved = await onUpdate({
         coreIdeaSuggestions: result.ideas,
-        selectedCoreIdeaId: undefined,
+        selectedCoreIdeaId: autoSelectedIdea?.id,
+        articleSpec,
+        articleSpecFingerprint: specFingerprint,
+        ...(autoSelectedIdea ? {
+          title: autoSelectedIdea.title,
+          topic: autoSelectedIdea.title,
+          angle: autoSelectedIdea.angleLabel,
+          keywords: [autoSelectedIdea.primaryKeyword, ...autoSelectedIdea.secondaryKeywords].filter(Boolean).join(', '),
+          targetAudience: autoSelectedIdea.targetAudience || articleSpec.audience,
+          tone: autoSelectedIdea.recommendedTone,
+          wordCount: autoSelectedIdea.recommendedWordCount,
+        } : {}),
         coreIdeaSourceFingerprint: sourceFingerprint,
         coreIdeaScannedAt: result.res.servedAt ?? result.res.generatedAt ?? new Date().toISOString(),
         seoResearch,
@@ -537,7 +577,7 @@ export default function Step2CoreIdea({
       if (partialResult) {
         setWarning(`Đã lưu ${result.ideas.length}/${requestedIdeaCount} core idea vượt qua đầy đủ kiểm chứng. Bạn có thể tiếp tục với kết quả hợp lệ hoặc nhấn “Đề xuất lại” để thử bổ sung.`);
       }
-      setSelectedId(null);
+      setSelectedId(autoSelectedIdea?.id ?? null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
@@ -549,6 +589,7 @@ export default function Step2CoreIdea({
 
   const handleSelect = (idea: CoreIdeaSuggestion) => {
     const selectionChanged = article.selectedCoreIdeaId !== idea.id;
+    const selectedSpec = article.articleSpec ? { ...article.articleSpec, thesis: idea.mainArgument, audience: idea.targetAudience || article.articleSpec.audience } : null;
     setSelectedId(idea.id);
     onUpdate({
       selectedCoreIdeaId: idea.id,
@@ -559,6 +600,8 @@ export default function Step2CoreIdea({
       targetAudience: idea.targetAudience,
       tone: idea.recommendedTone,
       wordCount: idea.recommendedWordCount,
+      articleSpec: selectedSpec,
+      articleSpecFingerprint: selectedSpec ? articleSpecFingerprint(selectedSpec) : article.articleSpecFingerprint,
       ...(selectionChanged ? {
         outline: [],
         outlineSourceFingerprint: null,
@@ -578,7 +621,7 @@ export default function Step2CoreIdea({
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 1 — Ý tưởng cốt lõi & Góc tiếp cận', 'Step 1 — Core Idea & Angle')}</h2>
+                <h2 className="text-base font-bold text-slate-800 mb-1">{tr('Bước 1 — Article Spec & Hướng nội dung', 'Step 1 — Article Spec & Direction')}</h2>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   {tr(`AI đề xuất ${requestedIdeaCount} ý tưởng cho loại nội dung `, `AI proposes ${requestedIdeaCount} core ideas for `)}<b>"{article.contentType || tr('(chưa chọn)', '(not selected)')}"</b>. {tr('Chọn một để sang Bước 2.', 'Select one to continue to Step 2.')}
                 </p>
@@ -605,6 +648,17 @@ export default function Step2CoreIdea({
 
             {warning && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">{warning}</div>
+            )}
+
+            {!loading && article.articleSpec && (
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-xs font-semibold text-slate-800">Article Spec</h3>
+                  <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] text-slate-500">{article.articleSpec.market} · {article.articleSpec.primaryIntent}</span>
+                </div>
+                <p className="mt-2 text-[11px] leading-relaxed text-slate-600"><b className="text-slate-800">{tr('Kết quả người đọc:', 'Reader outcome:')}</b> {article.articleSpec.expectedReaderOutcome}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">{article.articleSpec.mustCover.map(item => <span key={item} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[9px] text-slate-600">{item}</span>)}</div>
+              </section>
             )}
 
             {loading && (

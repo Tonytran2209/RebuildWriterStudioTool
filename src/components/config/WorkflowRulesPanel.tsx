@@ -8,7 +8,7 @@ import { useI18n } from '../../lib/i18n';
 interface Props { config: AppConfig; files: DocumentFile[]; onChange: (config: AppConfig) => void }
 
 const STEP_LABELS: Record<number, { vi: string; en: string }> = {
-  2: { vi: 'Bước 1 · Core Idea', en: 'Step 1 · Core Idea' },
+  2: { vi: 'Bước 1 · Article Spec', en: 'Step 1 · Article Spec' },
   3: { vi: 'Bước 2 · Outline', en: 'Step 2 · Outline' },
   4: { vi: 'Bước 3 · Draft', en: 'Step 3 · Draft' },
 };

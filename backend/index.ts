@@ -70,10 +70,11 @@ function selectedArticleIdea(article: any) {
 
 function articleStepPrerequisite(article: any, step: number): string | null {
   if (!hasArticlePlanSelection(article)) return 'Select an article from a classified Content Plan before running Step 1.';
-  if (step >= 3 && !selectedArticleIdea(article)) return 'Step 2 requires a saved Core Idea output and an explicit user selection from Step 1.';
+  if (step >= 3 && (!selectedArticleIdea(article) || !article?.articleSpec || !article?.articleSpecFingerprint)) return 'Step 2 requires a saved Article Spec and an explicit direction selection from Step 1.';
   if (step >= 4 && (!Array.isArray(article.outline) || !article.outline.length || article.outline.some((section: any) => !String(section?.heading ?? '').trim()))) {
     return 'Step 3 requires a valid saved outline from Step 2.';
   }
+  if (step >= 4 && article?.activityType === 'editorial-originality' && article?.editorialApproval?.status !== 'approved') return 'Editorial articles require explicit outline approval before draft generation.';
   return null;
 }
 
@@ -282,6 +283,29 @@ async function projectArticle(article: any) {
   }, 'id');
   await projectArticleStageRuns(article);
   await projectBatchState(article);
+  if (article.articleSpec && article.articleSpecFingerprint && await tableAvailable('article_specs')) {
+    await tableUpsert('article_specs', {
+      article_id: article.id, content_plan_id: article.contentPlanId ?? null,
+      version: Number(article.articleSpec.version ?? 1), fingerprint: article.articleSpecFingerprint,
+      spec: article.articleSpec, updated_at: article.updatedAt,
+    }, 'article_id');
+  }
+  if (article.qualityReport && await tableAvailable('quality_gate_runs')) {
+    const qualityId = snapshotFingerprint({ articleId: article.id, checkedAt: article.qualityReport.checkedAt, report: article.qualityReport });
+    await tableUpsert('quality_gate_runs', {
+      id: qualityId, article_id: article.id, spec_fingerprint: article.qualityReport.articleSpecFingerprint,
+      version: Number(article.qualityReport.version ?? 1), status: article.qualityReport.status,
+      report: article.qualityReport, created_at: article.qualityReport.checkedAt,
+    }, 'id');
+  }
+  if (article.editorialApproval && await tableAvailable('editorial_approvals')) {
+    await tableUpsert('editorial_approvals', {
+      article_id: article.id, status: article.editorialApproval.status,
+      outline_fingerprint: article.editorialApproval.outlineFingerprint ?? null,
+      note: article.editorialApproval.note ?? null, approved_at: article.editorialApproval.approvedAt ?? null,
+      updated_at: article.updatedAt,
+    }, 'article_id');
+  }
   if (article.contentPlanSourceItemId && await tableAvailable('article_stage_runs')) {
     const itemStatus = article.batchStatus === 'failed' ? 'failed'
       : article.status === 'done' || article.batchStatus === 'completed' ? 'completed'
@@ -299,6 +323,25 @@ async function projectArticle(article: any) {
 
 function snapshotFingerprint(value: unknown) {
   return crypto.createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
+}
+
+function normalizeBatchArticleSpec(raw: any, article: any, idea: any) {
+  const list = (value: any) => (Array.isArray(value) ? value : []).map(String).map(item => item.trim()).filter(Boolean);
+  const intent = ['informational', 'commercial', 'transactional', 'navigational'].includes(raw?.primaryIntent) ? raw.primaryIntent : 'informational';
+  const spec = {
+    version: 1, topic: String(raw?.topic ?? article.topic ?? '').trim(),
+    primaryQuery: String(raw?.primaryQuery ?? idea?.primaryKeyword ?? article.topic ?? '').trim(),
+    secondaryQueries: list(raw?.secondaryQueries ?? idea?.secondaryKeywords), audience: String(raw?.audience ?? idea?.targetAudience ?? '').trim(),
+    market: String(raw?.market ?? 'Global / USA').trim(), language: 'English', primaryIntent: intent,
+    secondaryIntent: ['informational', 'commercial', 'transactional', 'navigational'].includes(raw?.secondaryIntent) ? raw.secondaryIntent : undefined,
+    expectedReaderOutcome: String(raw?.expectedReaderOutcome ?? '').trim(), winningFormat: String(raw?.winningFormat ?? 'Evidence-led article').trim(),
+    mustCover: list(raw?.mustCover), optionalCoverage: list(raw?.optionalCoverage), thesis: String(raw?.thesis ?? idea?.mainArgument ?? '').trim(),
+    brandPov: String(raw?.brandPov ?? '').trim(), evidence: Array.isArray(raw?.evidence) ? raw.evidence : [],
+    ctaObjective: String(raw?.ctaObjective ?? 'Continue to a relevant next step').trim(), internalLinkRequirements: list(raw?.internalLinkRequirements),
+    createdAt: new Date().toISOString(),
+  };
+  if (!spec.topic || !spec.primaryQuery || !spec.expectedReaderOutcome || spec.mustCover.length < 3 || !spec.thesis) throw new Error('Batch Step 1 returned an incomplete Article Spec.');
+  return spec;
 }
 
 async function projectArticleStageRuns(article: any) {
@@ -390,6 +433,38 @@ function batchSeoFailures(text: string, article: any, targetWords: number) {
   return { failures, primaryKeyword, words };
 }
 
+function batchUniversalChecks(text: string, article: any, targetWords: number, inventory: any[] = [], sourceNames: string[] = []) {
+  const basic = batchSeoFailures(text, article, targetWords);
+  const normalized = (value: string) => value.toLocaleLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const body = normalized(text);
+  const missing = (article.articleSpec?.mustCover ?? []).filter((topic: any) => {
+    const terms = normalized(String(topic)).split(' ').filter(term => term.length > 3);
+    return terms.length && terms.filter(term => body.includes(term)).length < Math.ceil(terms.length * .5);
+  });
+  const urls = [...text.matchAll(/https?:\/\/[^\s)\]}>"']+/gi)].map(match => match[0].replace(/[.,;:!?]+$/, ''));
+  const approved = new Set(inventory.filter(item => item.eligibleForInternalLink && ['active', 'redirected'].includes(item.status)).flatMap(item => [item.url, item.canonicalUrl, item.redirectTarget].filter(Boolean)));
+  const leaked = sourceNames.filter(name => name && text.toLocaleLowerCase().includes(String(name).toLocaleLowerCase()));
+  const checks = [
+    { id: 'seo-contract', label: 'SEO and structure contract', kind: 'deterministic', status: basic.failures.length ? 'fail' : 'pass', reason: basic.failures.join('; ') || 'Structure, primary query and word budget pass.', autoFixAllowed: true },
+    { id: 'must-cover', label: 'Must-cover topics', kind: 'deterministic', status: missing.length ? 'fail' : 'pass', reason: missing.length ? `Missing: ${missing.join(', ')}` : 'Every required topic has lexical coverage.', autoFixAllowed: true },
+    { id: 'placeholders', label: 'No placeholders', kind: 'deterministic', status: /\[(?:needs?|todo|tbd)[^\]]*\]|lorem ipsum|about:blank/i.test(text) ? 'fail' : 'pass', reason: 'Draft must not contain placeholders.', autoFixAllowed: true },
+    { id: 'source-confidentiality', label: 'No internal source leakage', kind: 'deterministic', status: leaked.length ? 'fail' : 'pass', reason: leaked.length ? `Leaked source names: ${leaked.join(', ')}` : 'No infrastructure filenames detected.', autoFixAllowed: false },
+    { id: 'link-correctness', label: 'Approved internal links', kind: 'deterministic', status: urls.every(url => approved.has(url)) ? 'pass' : 'fail', reason: urls.length ? 'Every URL must exist in the active website inventory.' : 'No unapproved URL detected.', autoFixAllowed: false },
+  ];
+  return checks;
+}
+
+function parseBatchSemanticChecks(raw: string) {
+  const payload = parseJsonObject(raw);
+  const required = new Set(['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov']);
+  const checks = (Array.isArray(payload.checks) ? payload.checks : []).filter((item: any) => required.has(String(item.id))).map((item: any) => ({
+    id: String(item.id), label: String(item.label ?? item.id), kind: 'semantic', status: item.status === 'pass' ? 'pass' : item.status === 'warning' ? 'warning' : 'fail',
+    reason: String(item.reason ?? ''), evidence: String(item.evidence ?? ''), location: String(item.location ?? ''), recommendedAction: String(item.recommendedAction ?? ''), autoFixAllowed: Boolean(item.autoFixAllowed),
+  }));
+  if (new Set(checks.map((item: any) => item.id)).size !== required.size) throw new Error('Universal semantic reviewer returned an incomplete report.');
+  return checks;
+}
+
 function batchDraftBudget(outline: any[], hardLimit: number, introductionPercent=8, conclusionPercent=7) {
   const targetMax = Math.min(hardLimit, Math.max(800, Math.floor(hardLimit * 0.92)));
   const introduction = { min: Math.floor(targetMax * introductionPercent/100), max: Math.floor(targetMax * (introductionPercent+1)/100) };
@@ -447,7 +522,7 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
     const planError = articleStepPrerequisite(article, 2);
     if (planError) throw new Error(planError);
     article = await saveArticleCheckpoint(article, { batchStatus: 'running', batchError: null, batchStartedAt: article.batchStartedAt ?? new Date().toISOString(), status: 'in_progress' });
-    if (!article.coreIdeaSuggestions?.length) {
+    if (!article.coreIdeaSuggestions?.length || !article.articleSpec || !article.articleSpecFingerprint) {
       let seoResearch = article.seoResearch;
       let seoUsage: any = null;
       if (!seoResearch) {
@@ -465,23 +540,26 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
         }
       }
       const response = await runBatchModel(article, 2, [
-        `Create the strongest evidence-grounded ${contentMode} core idea for: ${article.topic}.`,
+        `Create one canonical Article Spec and the strongest evidence-grounded ${contentMode} direction for: ${article.topic}.`,
         `SEO research: ${JSON.stringify(seoResearch.keywords)}`,
         'Use the supplied Knowledge Base and Skills. Return only JSON:',
-        '{"title":string,"angleLabel":string,"angleDescription":string,"mainArgument":string,"primaryKeyword":string,"secondaryKeywords":string[],"targetAudience":string,"recommendedTone":string,"recommendedWordCount":number,"rating":{"overall":number,"seoPotential":number,"audienceFit":number,"docSupport":number,"uniqueness":number},"ratingRationale":string}',
+        '{"articleSpec":{"topic":string,"primaryQuery":string,"secondaryQueries":string[],"audience":string,"market":"Global / USA","language":"English","primaryIntent":"informational|commercial|transactional|navigational","secondaryIntent":"informational|commercial|transactional|navigational","expectedReaderOutcome":string,"winningFormat":string,"mustCover":string[],"optionalCoverage":string[],"thesis":string,"brandPov":string,"evidence":[],"ctaObjective":string,"internalLinkRequirements":string[]},"idea":{"title":string,"angleLabel":string,"angleDescription":string,"mainArgument":string,"primaryKeyword":string,"secondaryKeywords":string[],"targetAudience":string,"recommendedTone":string,"recommendedWordCount":number,"rating":{"overall":number,"seoPotential":number,"audienceFit":number,"docSupport":number,"uniqueness":number},"ratingRationale":string}}',
       ].join('\n'), true, 3500);
-      const idea = parseJsonObject(response.content);
+      const payload = parseJsonObject(response.content);
+      const idea = payload.idea && typeof payload.idea === 'object' ? payload.idea : payload;
       const normalized = { id: `batch-idea-${article.id}`, matchedDocs: [], ruleRefs: [], evidence: [], ...idea };
+      const articleSpec = normalizeBatchArticleSpec(payload.articleSpec, article, normalized);
+      const articleSpecFingerprint = snapshotFingerprint(articleSpec);
       const step2Usage = appendUsage(2, response);
       if (seoUsage) step2Usage[2] = [seoUsage, ...(step2Usage[2] ?? [])].slice(-50);
-      article = await saveArticleCheckpoint(article, { seoResearch, coreIdeaSuggestions: [normalized], selectedCoreIdeaId: normalized.id, coreIdeaScannedAt: new Date().toISOString(), currentStep: 3, aiUsageByStep: step2Usage, workflowRuleSnapshots:{...article.workflowRuleSnapshots,2:response.workflowRuleSnapshot} });
+      article = await saveArticleCheckpoint(article, { seoResearch, articleSpec, articleSpecFingerprint, coreIdeaSuggestions: [normalized], selectedCoreIdeaId: normalized.id, coreIdeaScannedAt: new Date().toISOString(), currentStep: 3, aiUsageByStep: step2Usage, workflowRuleSnapshots:{...article.workflowRuleSnapshots,2:response.workflowRuleSnapshot} });
     }
     if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
     if (!article.outline?.length) {
       if (!selectedArticleIdea(article)) throw new Error('Batch Step 2 did not produce a selected Core Idea; outline generation was blocked.');
       const idea = article.coreIdeaSuggestions.find((item: any) => item.id === article.selectedCoreIdeaId) ?? article.coreIdeaSuggestions[0];
       const response = await runBatchModel(article, 3, [
-        `Create a detailed SEO outline for ${article.topic}.`, `Core idea: ${JSON.stringify(idea)}`,
+        `Create a detailed outline that satisfies this immutable Article Spec: ${JSON.stringify(article.articleSpec)}.`, `Selected direction: ${JSON.stringify(idea)}`,
         `Use KB facts and workflow rules. Return only JSON: {"sections":[{"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational"}]}. Include at least ${minimumOutlineSections} sections.`,
       ].join('\n'), true, 5000);
       const parsed = parseJsonObject(response.content);
@@ -490,15 +568,18 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
       article = await saveArticleCheckpoint(article, { outline: sections, outlineScannedAt: new Date().toISOString(), currentStep: 4, aiUsageByStep: appendUsage(3, response), workflowRuleSnapshots:{...article.workflowRuleSnapshots,3:response.workflowRuleSnapshot} });
     }
     if (controller.paused) { await saveArticleCheckpoint(article, { batchStatus: 'paused' }); return; }
-    if (!article.draft?.trim()) {
+    if (!article.draft?.trim() || article.qualityReport?.status !== 'pass') {
       const draftPrerequisite = articleStepPrerequisite(article, 4);
       if (draftPrerequisite) throw new Error(draftPrerequisite);
       const budget = batchDraftBudget(article.outline ?? [], maxDraftWords, introductionPercent, conclusionPercent);
       const response = await runBatchModel(article, 4, [
         `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
+        `ARTICLE SPEC (immutable acceptance contract): ${JSON.stringify(article.articleSpec)}.`,
         `Primary keyword: ${article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
         `Outline: ${JSON.stringify(article.outline)}`,
         `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
+        `APPROVED INTERNAL LINK INVENTORY: ${JSON.stringify((runtimeConfig?.websiteInventory ?? []).filter((item: any) => item.eligibleForInternalLink && ['active', 'redirected'].includes(item.status)).map((item: any) => ({ title: item.title, url: item.redirectTarget || item.canonicalUrl || item.url, topics: item.topics, contentType: item.contentType })))}`,
+        'Never invent a URL. Use only an approved inventory URL when the Article Spec requires a relevant internal link.',
         `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
         'Follow every supplied Skill rule and use only supported KB claims.',
         'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order.',
@@ -506,9 +587,28 @@ async function runBatchArticle(initial: any, controller: { paused: boolean; runn
       if (!response.content.trim()) throw new Error('Step 4 returned an empty draft.');
       const draftResponses = [response];
       const assembledDraft = assembleBatchDraft(response.content, article);
-      const validation = batchSeoFailures(assembledDraft, article, maxDraftWords);
-      if (validation.failures.length) throw new Error(`Draft was not saved because the SEO checklist is not 100%: ${validation.failures.join('; ')}.`);
-      article = await saveArticleCheckpoint(article, { draft: assembledDraft, draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? 'unknown', item))].slice(-50) }, workflowRuleSnapshots:{...article.workflowRuleSnapshots,4:response.workflowRuleSnapshot} });
+      const internalNames = (await kvGet<any[]>('writer:files') ?? []).filter(item => item.category === 'kb' && !item.knowledgeMetadata?.approvedForExternalUse).map(item => item.name);
+      const deterministic = batchUniversalChecks(assembledDraft, article, maxDraftWords, runtimeConfig?.websiteInventory ?? [], internalNames);
+      if (deterministic.some(item => item.status !== 'pass')) {
+        const report = { version: 1, status: 'fail', checkedAt: new Date().toISOString(), articleSpecFingerprint: article.articleSpecFingerprint, checks: deterministic };
+        article = await saveArticleCheckpoint(article, { qualityReport: report });
+        throw new Error(`Draft was not saved because Universal QC failed: ${deterministic.filter(item => item.status !== 'pass').map(item => item.reason).join('; ')}`);
+      }
+      const review = await runBatchModel(article, 4, [
+        'Act only as a strict semantic publishing reviewer. Do not rewrite the draft.',
+        `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+        `DRAFT: ${assembledDraft}`,
+        'Return JSON {"checks":[...]} with exactly these IDs: intent-satisfied, reader-outcome, intro-quality, keyword-naturalness, evidence-support, brand-pov. Each item has id,label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. A publish-ready result requires every status=pass.',
+      ].join('\n'), true, 1600);
+      draftResponses.push(review);
+      const semantic = parseBatchSemanticChecks(review.content);
+      const checks = [...deterministic, ...semantic];
+      const report = { version: 1, status: checks.every(item => item.status === 'pass') ? 'pass' : checks.some(item => item.status === 'fail') ? 'fail' : 'warning', checkedAt: new Date().toISOString(), articleSpecFingerprint: article.articleSpecFingerprint, checks };
+      if (report.status !== 'pass') {
+        article = await saveArticleCheckpoint(article, { qualityReport: report, aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? 'unknown', item))].slice(-50) } });
+        throw new Error(`Draft was not saved because Universal QC is ${report.status}.`);
+      }
+      article = await saveArticleCheckpoint(article, { draft: assembledDraft, qualityReport: report, draftScannedAt: new Date().toISOString(), currentStep: 4, status: 'done', completedAt: new Date().toISOString(), batchStatus: 'completed', aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? 'unknown', item))].slice(-50) }, workflowRuleSnapshots:{...article.workflowRuleSnapshots,4:response.workflowRuleSnapshot} });
     } else if (article.batchStatus !== 'completed') {
       article = await saveArticleCheckpoint(article, { status: 'done', batchStatus: 'completed', completedAt: article.completedAt ?? new Date().toISOString() });
     }
@@ -1235,6 +1335,7 @@ app.post('/api/batches/:activityId/start', async (req, res) => {
     const activityId = req.params.activityId;
     const articles = (await loadArticles()).filter(article => article.activityId === activityId && article.activityKind === 'batch');
     if (!articles.length) return res.status(404).json({ error: 'Batch activity không tồn tại.' });
+    if (articles.some(article => article.activityType !== 'comparison-seo')) return res.status(409).json({ code: 'EDITORIAL_REQUIRES_REVIEW', error: 'Editorial / Originality is a supervised workflow. Generate one article at a time and approve its outline before drafting.' });
     const invalid = articles.filter(article => articleStepPrerequisite(article, 2));
     if (invalid.length) return workflowPrerequisiteResponse(res, `${invalid.length} batch article(s) do not have a valid Content Plan selection.`);
     void runBatch(activityId).catch(error => console.error(`[batch] ${activityId}`, error));
@@ -1381,6 +1482,17 @@ app.post('/api/config', async (req, res) => {
   try {
     const { actionSources: _removedLegacySources, ...config } = req.body ?? {};
     await kvSet('writer:config', config);
+    if (await tableAvailable('website_content_inventory')) {
+      for (const item of Array.isArray(config.websiteInventory) ? config.websiteInventory : []) {
+        await tableUpsert('website_content_inventory', {
+          id: item.id, url: item.url, canonical_url: item.canonicalUrl ?? null, title: item.title,
+          content_type: item.contentType, topics: item.topics ?? [], services: item.services ?? [], audience: item.audience ?? null,
+          status: item.status ?? 'unchecked', redirect_target: item.redirectTarget ?? null,
+          eligible_for_internal_link: Boolean(item.eligibleForInternalLink), last_checked: item.lastChecked ?? null,
+          updated_at: new Date().toISOString(),
+        }, 'id');
+      }
+    }
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1413,6 +1525,16 @@ app.post('/api/files', async (req, res) => {
       ...contentMetadata(file.content),
     }));
     await kvSet('writer:files', files);
+    if (await tableAvailable('knowledge_items')) {
+      for (const file of files.filter((item: any) => item.category === 'kb')) {
+        const meta = file.knowledgeMetadata ?? {};
+        await tableUpsert('knowledge_items', {
+          id: file.id, source_name: file.name, knowledge_type: meta.type ?? 'reference', topics: meta.topics ?? [],
+          service: meta.service ?? null, audience: meta.audience ?? null, visibility: meta.visibility ?? 'internal',
+          approved_for_external_use: Boolean(meta.approvedForExternalUse), metadata: meta, updated_at: new Date().toISOString(),
+        }, 'id');
+      }
+    }
     res.json({ ok: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

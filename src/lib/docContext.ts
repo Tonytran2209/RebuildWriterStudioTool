@@ -41,11 +41,12 @@ NGUYÊN TẮC CHUNG:
 - Nếu tài liệu không đủ để trả lời, nói rõ "Không đủ dữ liệu trong tài liệu được cấp" — không được suy đoán.
 `.trim();
 
-function formatFile(file: DocumentFile): DocRef {
+function formatFile(file: DocumentFile, index = 0): DocRef {
+  const publiclyNamed = file.category !== 'kb' || file.knowledgeMetadata?.approvedForExternalUse;
   return {
     id: file.id,
-    name: file.name,
-    meta: `${file.fileType.toUpperCase()} · ${file.size}`,
+    name: publiclyNamed ? file.name : `Internal knowledge source ${index + 1}`,
+    meta: `${file.fileType.toUpperCase()} · ${file.size}${file.knowledgeMetadata?.type ? ` · ${file.knowledgeMetadata.type}` : ''}${file.knowledgeMetadata?.topics?.length ? ` · topics: ${file.knowledgeMetadata.topics.join(', ')}` : ''}`,
     content: file.content?.trim(),
   };
 }

@@ -202,8 +202,9 @@ export default function Step3Outline({
       buildWorkflowSourceFingerprint(bundle), model.provider, model.id, "step3-audit-v6-content-plan",
       article.contentType, article.topic, article.angle, article.keywords,
       article.targetAudience, article.tone, article.wordCount, article.selectedCoreIdeaId, compiledWorkflowRules.fingerprint,
+      article.articleSpecFingerprint,
     ].join(":"),
-    [article.angle, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, model.id, model.provider],
+    [article.angle, article.articleSpecFingerprint, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, model.id, model.provider],
   );
   const outlineIsStale = Boolean(outline.length) && article.outlineSourceFingerprint !== sourceFingerprint;
 
@@ -294,6 +295,7 @@ export default function Step3Outline({
         "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Bước 2 từ Supabase.",
         "",
         "DỮ LIỆU TỪ 2 BƯỚC TRƯỚC:",
+        `- ARTICLE SPEC CONTRACT: ${JSON.stringify(article.articleSpec)}`,
         `- Loại nội dung (Step 1): ${contextBrief.contentType}`,
         `- Tiêu đề bài viết (Step 2): "${contextBrief.topic}"`,
         `- Angle: ${contextBrief.angle}`,
@@ -387,6 +389,7 @@ export default function Step3Outline({
         outlineScannedAt: generatedAt,
         step3ProcessTrace: trace,
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 3: compiledWorkflowRules.snapshot },
+        editorialApproval: article.activityType === 'editorial-originality' ? { status: 'pending' } : null,
         draft: "",
         draftSourceFingerprint: null,
         draftScannedAt: null,
@@ -433,11 +436,12 @@ export default function Step3Outline({
   const updateSection = (id: string, patch: Partial<OutlineSection>) => {
     onUpdate({
       outline: outline.map(s => (s.id === id ? { ...s, ...patch } : s)),
+      ...(article.activityType === 'editorial-originality' ? { editorialApproval: { status: 'pending' as const } } : {}),
     });
   };
 
   const removeSection = (id: string) => {
-    onUpdate({ outline: outline.filter(s => s.id !== id) });
+    onUpdate({ outline: outline.filter(s => s.id !== id), ...(article.activityType === 'editorial-originality' ? { editorialApproval: { status: 'pending' as const } } : {}) });
   };
 
   const moveSection = (id: string, dir: -1 | 1) => {
@@ -445,7 +449,7 @@ export default function Step3Outline({
     if (idx + dir < 0 || idx + dir >= outline.length) return;
     const next = [...outline];
     [next[idx], next[idx + dir]] = [next[idx + dir], next[idx]];
-    onUpdate({ outline: next });
+    onUpdate({ outline: next, ...(article.activityType === 'editorial-originality' ? { editorialApproval: { status: 'pending' as const } } : {}) });
   };
 
   const addSection = (extraKeyword?: string, headingOverride?: string) => {
@@ -457,6 +461,7 @@ export default function Step3Outline({
         ...outline,
         { id: generateId(), heading, notes: "", level: newSectionLevel, keywords: kws, evidence: [] },
       ],
+      ...(article.activityType === 'editorial-originality' ? { editorialApproval: { status: 'pending' as const } } : {}),
     });
     setNewSectionHeading("");
   };
@@ -619,13 +624,18 @@ export default function Step3Outline({
         <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all">
           {tr('Quay lại', 'Back')}
         </button>
-        <button
-          onClick={onNext}
-          disabled={!gateStepCompletion(article, 3).allowed}
-          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
-        >
-          {tr('Tiếp tục — First Draft', 'Continue — First Draft')}
-        </button>
+        <div className="flex items-center gap-2">
+          {article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved' && (
+            <button onClick={() => onUpdate({ editorialApproval: { status: 'approved', approvedAt: new Date().toISOString(), outlineFingerprint: article.outlineSourceFingerprint ?? undefined } })} disabled={!outline.length} className="rounded-2xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-40">{tr('Phê duyệt outline', 'Approve outline')}</button>
+          )}
+          <button
+            onClick={onNext}
+            disabled={!gateStepCompletion(article, 3).allowed || (article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved')}
+            className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
+          >
+            {tr('Tiếp tục — First Draft', 'Continue — First Draft')}
+          </button>
+        </div>
       </div>
     </div>
   );

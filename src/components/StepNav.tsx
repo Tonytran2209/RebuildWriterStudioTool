@@ -27,7 +27,7 @@ export default function StepNav({ currentStep, onStepChange, currentModel, syncS
   const { language, tr } = useI18n();
   const [showUsage, setShowUsage] = useState(false);
   const workflowSteps = [
-    { storageStep: 2, label: tr('Ý tưởng cốt lõi & Góc tiếp cận', 'Core Idea & Angle') },
+    { storageStep: 2, label: tr('Article Spec & Định hướng', 'Article Spec & Direction') },
     { storageStep: 3, label: tr('Dàn bài nháp', 'Draft Outline') },
     { storageStep: 4, label: tr('Bản nháp & Kiểm tra', 'First Draft & Audit') },
   ];

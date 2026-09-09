@@ -73,7 +73,7 @@ export const DEFAULT_CONFIG: AppConfig = {
 
 export const STEP_LABELS: Record<number, string> = {
   1: 'Content Type',
-  2: 'Core Idea & Angle',
+  2: 'Article Spec & Direction',
   3: 'Draft Outline',
   4: 'First Draft & Audit',
 };

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Check, CircleX, ClipboardCopy, Copy, Download, Highlighter, LoaderCircle, Sparkles } from 'lucide-react';
-import type { Article, AIModel, AppConfig, DocumentFile, EvidenceRef } from '../../types';
+import type { Article, AIModel, AppConfig, DocumentFile, EvidenceRef, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
 import { parseAIJson } from '../../lib/aiJson';
@@ -13,6 +13,7 @@ import {
 } from '../../lib/docContext';
 import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
 import { gateArticleStep } from '../../lib/workflowGuards';
+import { deterministicQualityChecks, qualityReport } from '../../lib/universalQuality';
 
 function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -75,6 +76,19 @@ function evaluateSeoChecklist(text: string, article: Article, targetWords: numbe
     { key: 'bodyKeyword', label: 'Primary keyword xuất hiện trong bài', pass: Boolean(normalizedKeyword && normalizedDraft.includes(normalizedKeyword)) },
   ];
   return { items, failed: items.filter(item => !item.pass), primaryKeyword, markdownTitle, wordCount };
+}
+
+function parseSemanticQuality(raw: string): QualityGateCheck[] {
+  const parsed = parseAIJson(raw) as { checks?: Array<Record<string, unknown>> };
+  const required = new Set(['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov']);
+  const checks = (Array.isArray(parsed.checks) ? parsed.checks : []).flatMap(item => {
+    const id = String(item.id ?? '').trim();
+    const status: QualityGateCheck['status'] = item.status === 'pass' ? 'pass' : item.status === 'warning' ? 'warning' : 'fail';
+    if (!required.has(id)) return [];
+    return [{ id, label: String(item.label ?? id), kind: 'semantic' as const, status, reason: String(item.reason ?? '').trim(), evidence: String(item.evidence ?? '').trim(), location: String(item.location ?? '').trim(), recommendedAction: String(item.recommendedAction ?? '').trim(), autoFixAllowed: Boolean(item.autoFixAllowed) }];
+  });
+  if (new Set(checks.map(item => item.id)).size !== required.size) throw new Error('Semantic quality reviewer trả thiếu tiêu chí bắt buộc.');
+  return checks;
 }
 
 function calcReadability(text: string) {
@@ -182,7 +196,17 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const draftIsStale = Boolean(draft) && article.draftSourceFingerprint !== draftSourceFingerprint;
   const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
   const seoChecklist = useMemo(() => evaluateSeoChecklist(draft, article, targetWords), [article, draft, targetWords]);
-  const seoChecklistPassed = seoChecklist.failed.length === 0;
+  const deterministicChecks = useMemo(() => deterministicQualityChecks(
+    article,
+    draft,
+    config.websiteInventory ?? [],
+    files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name),
+  ), [article, config.websiteInventory, draft, files]);
+  const savedQualityReport = article.qualityReport;
+  const displayedQualityChecks = savedQualityReport?.status === 'pass' && savedQualityReport.articleSpecFingerprint === article.articleSpecFingerprint && !draftIsStale
+    ? savedQualityReport.checks
+    : deterministicChecks;
+  const seoChecklistPassed = Boolean(draft) && displayedQualityChecks.length > 0 && displayedQualityChecks.every(item => item.status === 'pass');
 
   // Keyword density check
   const keywordList = (article.keywords || '').split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
@@ -247,6 +271,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         '',
         'THÔNG TIN BÀI VIẾT:',
         `- Chủ đề: "${article.topic}"`,
+        `- ARTICLE SPEC CONTRACT: ${JSON.stringify(article.articleSpec)}`,
         `- Angle: ${article.angle || ''}`,
         `- Độc giả: ${article.targetAudience || ''}`,
         `- Giọng văn: ${article.tone || ''}`,
@@ -255,6 +280,8 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         `- Introduction: ${wordBudget.introduction.min}–${wordBudget.introduction.max} từ`,
         `- Conclusion: ${wordBudget.conclusion.min}–${wordBudget.conclusion.max} từ`,
         `- Section budgets: ${JSON.stringify(wordBudget.sections)}`,
+        `- APPROVED INTERNAL LINK INVENTORY: ${JSON.stringify((config.websiteInventory ?? []).filter(item => item.eligibleForInternalLink && (item.status === 'active' || item.status === 'redirected')).map(item => ({ title: item.title, url: item.redirectTarget || item.canonicalUrl || item.url, topics: item.topics, contentType: item.contentType })))}`,
+        '- Never invent a URL. Use only URLs in the approved inventory, and only when the Article Spec requires a relevant internal link.',
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
         JSON.stringify(verifiedOutline),
@@ -283,8 +310,34 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
       const assembledDraft = parseStructuredDraft(res.content, article);
       const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
       if (validation.failed.length) throw new Error(`Draft chưa được lưu vì chưa đạt 100% SEO checklist: ${validation.failed.map(item => item.label).join(', ')}.`);
+      const deterministic = deterministicQualityChecks(article, assembledDraft, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name));
+      if (deterministic.some(item => item.status === 'fail')) {
+        const report = qualityReport(article, deterministic);
+        await onUpdate({ qualityReport: report });
+        throw new Error(`Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => item.label).join(', ')}.`);
+      }
+      const semanticResponse = await callAI({
+        articleId: article.id,
+        model,
+        railwayUrl,
+        stepNumber: 4,
+        bypassCache: manual,
+        maxTokens: 1400,
+        temperature: 0,
+        jsonMode: true,
+        skipDocumentContext: true,
+        systemPrompt: 'You are a strict publishing quality reviewer. Evaluate only the supplied Article Spec and draft. Return JSON only. Do not rewrite the article.',
+        prompt: [`ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`, `DRAFT: ${assembledDraft}`, 'Return {"checks":[{"id":"intent-satisfied|reader-outcome|intro-quality|keyword-naturalness|evidence-support|brand-pov","label":string,"status":"pass|warning|fail","reason":string,"evidence":string,"location":string,"recommendedAction":string,"autoFixAllowed":boolean}]}. Return exactly all six IDs. Use pass only with concrete evidence.'].join('\n\n'),
+      });
+      const semantic = parseSemanticQuality(semanticResponse.content);
+      const report = qualityReport(article, [...deterministic, ...semantic]);
+      if (report.status !== 'pass') {
+        await onUpdate({ qualityReport: report });
+        throw new Error(`Semantic Quality Gate chưa đạt: ${report.checks.filter(item => item.status !== 'pass').map(item => item.label).join(', ')}.`);
+      }
       const saved = await onUpdate({
         draft: assembledDraft,
+        qualityReport: report,
         draftSourceFingerprint,
         draftScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 4: compiledWorkflowRules.snapshot },
@@ -304,7 +357,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
       pendingDraft.current = editorRef.current.innerText;
       if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
       draftSaveTimer.current = setTimeout(() => {
-        if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current });
+        if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current, qualityReport: null, draftSourceFingerprint: null });
         pendingDraft.current = null;
         draftSaveTimer.current = null;
       }, 700);
@@ -313,7 +366,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
   useEffect(() => () => {
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
-    if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current });
+    if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current, qualityReport: null, draftSourceFingerprint: null });
   }, []);
 
   useEffect(() => {
@@ -539,16 +592,16 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
               </div>
             </section>
 
-            {/* SEO Checklist */}
+            {/* Universal Quality Gate */}
             <section className="draft-insight-panel space-y-2.5 border-b border-slate-200 p-3">
-              <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">SEO Checklist</h3><span className={`seo-score-tag rounded-full border px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'is-pass' : ''}`}>{seoChecklist.items.length - seoChecklist.failed.length}/{seoChecklist.items.length}</span></div>
+              <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">Universal QC</h3><span className={`seo-score-tag rounded-full border px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'is-pass' : ''}`}>{displayedQualityChecks.filter(item => item.status === 'pass').length}/{displayedQualityChecks.length}</span></div>
               <div className="space-y-1.5">
-                {seoChecklist.items.map(item => (
-                  <div key={item.label} className="flex items-center gap-2">
-                    {item.pass
+                {displayedQualityChecks.map(item => (
+                  <div key={item.id} className="flex items-start gap-2" title={item.reason}>
+                    {item.status === 'pass'
                       ? <span className="seo-check-icon is-pass flex h-4 w-4 shrink-0 items-center justify-center rounded-full" aria-hidden="true"><Check className="app-icon" /></span>
                       : <CircleX className="seo-check-icon app-icon shrink-0" aria-hidden="true" />}
-                    <span className={`text-[10px] leading-snug ${item.pass ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}</span>
+                    <span className={`text-[10px] leading-snug ${item.status === 'pass' ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}</span>
                   </div>
                 ))}
               </div>

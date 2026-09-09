@@ -73,6 +73,32 @@ export interface DocumentFile {
   rows?: ManualRow[];
   airtableBase?: string;
   airtableTable?: string;
+  knowledgeMetadata?: KnowledgeMetadata;
+}
+
+export interface KnowledgeMetadata {
+  type: 'usp' | 'positioning' | 'client_insight' | 'case_study' | 'framework' | 'approved_claim' | 'production_insight' | 'reference';
+  topics: string[];
+  service?: string;
+  audience?: string;
+  visibility: 'internal' | 'public';
+  approvedForExternalUse: boolean;
+  lastUpdated?: string;
+}
+
+export interface WebsiteContentRecord {
+  id: string;
+  url: string;
+  canonicalUrl?: string;
+  title: string;
+  contentType: 'blog' | 'service' | 'portfolio' | 'landing' | 'about' | 'commercial';
+  topics: string[];
+  services?: string[];
+  audience?: string;
+  status: 'active' | 'redirected' | 'broken' | 'unchecked';
+  redirectTarget?: string;
+  eligibleForInternalLink: boolean;
+  lastChecked?: string;
 }
 
 export interface StepFileAccess {
@@ -120,6 +146,7 @@ export interface AppConfig {
   stepConfigs: Record<number, StepConfig>;
   models: AIModel[];
   workflowRules?: WorkflowRuleSettings;
+  websiteInventory?: WebsiteContentRecord[];
 }
 
 export type SearchIntent = 'informational' | 'commercial' | 'transactional' | 'navigational';
@@ -238,6 +265,55 @@ export interface CoreIdeaSuggestion {
   evidence?: EvidenceRef[];
 }
 
+export interface ArticleSpec {
+  version: number;
+  topic: string;
+  primaryQuery: string;
+  secondaryQueries: string[];
+  audience: string;
+  market: string;
+  language: string;
+  primaryIntent: SearchIntent;
+  secondaryIntent?: SearchIntent;
+  expectedReaderOutcome: string;
+  winningFormat: string;
+  mustCover: string[];
+  optionalCoverage: string[];
+  thesis: string;
+  brandPov: string;
+  evidence: EvidenceRef[];
+  ctaObjective: string;
+  internalLinkRequirements: string[];
+  createdAt: string;
+}
+
+export interface QualityGateCheck {
+  id: string;
+  label: string;
+  kind: 'deterministic' | 'semantic';
+  status: 'pass' | 'warning' | 'fail';
+  reason: string;
+  evidence?: string;
+  location?: string;
+  recommendedAction?: string;
+  autoFixAllowed: boolean;
+}
+
+export interface UniversalQualityReport {
+  version: number;
+  status: 'pass' | 'warning' | 'fail';
+  checkedAt: string;
+  articleSpecFingerprint: string;
+  checks: QualityGateCheck[];
+}
+
+export interface EditorialApproval {
+  status: 'pending' | 'approved' | 'rejected';
+  approvedAt?: string;
+  note?: string;
+  outlineFingerprint?: string;
+}
+
 export interface Article {
   id: string;
   title: string;
@@ -266,6 +342,8 @@ export interface Article {
   coreIdeaSourceFingerprint?: string | null;
   coreIdeaScannedAt?: string | null;
   seoResearch?: SeoResearchResult | null;
+  articleSpec?: ArticleSpec | null;
+  articleSpecFingerprint?: string | null;
   step2ProcessTrace?: AIProcessTraceEvent[];
   // Step 3 data
   outline?: OutlineSection[];
@@ -277,6 +355,8 @@ export interface Article {
   draft?: string;
   draftSourceFingerprint?: string | null;
   draftScannedAt?: string | null;
+  qualityReport?: UniversalQualityReport | null;
+  editorialApproval?: EditorialApproval | null;
   workflowRuleSnapshots?: Partial<Record<2 | 3 | 4, WorkflowRuleSnapshot>>;
   aiUsageByStep?: Partial<Record<1 | 2 | 3 | 4, AICallUsage[]>>;
   // Activity workspace / per-run content plan
@@ -366,7 +446,7 @@ export interface ContentType {
 }
 
 export type ActiveTab = 'step-setup' | 'models' | 'knowledge-base';
-export type KbSubTab = 'kb' | 'rules';
+export type KbSubTab = 'kb' | 'rules' | 'website';
 
 // ── Knowledge/Skill source import ────────────────────────────────────────────
 

@@ -37,10 +37,10 @@ export function gateArticleStep(article: Article, step: ArticleWorkflowStep): Wo
   if (step === 2) return allowed();
 
   const idea = selectedCoreIdea(article);
-  if (!idea) {
+  if (!idea || !article.articleSpec || !article.articleSpecFingerprint) {
     return blocked(
-      "Step 2 chỉ mở sau khi Step 1 đã tạo Core Ideas và bạn đã chọn một ý tưởng.",
-      "Step 2 unlocks after Step 1 generates Core Ideas and you select one.",
+      "Step 2 chỉ mở sau khi Step 1 đã tạo Article Spec và bạn đã chọn một hướng nội dung.",
+      "Step 2 unlocks after Step 1 creates an Article Spec and you select a direction.",
     );
   }
   if (step === 3) return allowed();
@@ -51,13 +51,19 @@ export function gateArticleStep(article: Article, step: ArticleWorkflowStep): Wo
       "Step 3 unlocks after Step 2 generates and saves a valid outline.",
     );
   }
+  if (article.activityType === "editorial-originality" && article.editorialApproval?.status !== "approved") {
+    return blocked(
+      "Bài Editorial cần được phê duyệt outline trước khi tạo draft.",
+      "Editorial articles require outline approval before draft generation.",
+    );
+  }
   return allowed();
 }
 
 export function gateStepCompletion(article: Article, step: ArticleWorkflowStep): WorkflowGate {
   const access = gateArticleStep(article, step);
   if (!access.allowed) return access;
-  if (step === 2 && !selectedCoreIdea(article)) {
+  if (step === 2 && (!selectedCoreIdea(article) || !article.articleSpec)) {
     return blocked(
       "Hãy tạo Core Ideas và chọn một ý tưởng trước khi tiếp tục.",
       "Generate Core Ideas and select one before continuing.",
@@ -67,6 +73,12 @@ export function gateStepCompletion(article: Article, step: ArticleWorkflowStep):
     return blocked(
       "Hãy tạo và lưu outline hợp lệ trước khi tiếp tục.",
       "Generate and save a valid outline before continuing.",
+    );
+  }
+  if (step === 3 && article.activityType === "editorial-originality" && article.editorialApproval?.status !== "approved") {
+    return blocked(
+      "Hãy phê duyệt outline Editorial trước khi tiếp tục tạo draft.",
+      "Approve the Editorial outline before continuing to draft generation.",
     );
   }
   return allowed();

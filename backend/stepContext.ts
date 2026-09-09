@@ -11,6 +11,7 @@ interface StoredDocument {
   scanStatus?: string;
   category?: string;
   structuredSections?: StructuredSection[];
+  knowledgeMetadata?: { type?: string; topics?: string[]; service?: string; audience?: string; approvedForExternalUse?: boolean };
 }
 
 const MAX_CONTEXT_CHARS = 400_000;
@@ -25,8 +26,11 @@ function isReady(document: StoredDocument | undefined): document is StoredDocume
 }
 
 function wrapDocument(role: Role, document: StoredDocument & { content: string }): string {
+  const knowledgeMeta = role === 'KNOWLEDGE_BASE' && document.knowledgeMetadata
+    ? ` knowledge_type="${document.knowledgeMetadata.type ?? 'reference'}" topics="${(document.knowledgeMetadata.topics ?? []).join(', ')}" service="${document.knowledgeMetadata.service ?? ''}" audience="${document.knowledgeMetadata.audience ?? ''}" external_use="${Boolean(document.knowledgeMetadata.approvedForExternalUse)}"`
+    : '';
   return [
-    `<<<DOCUMENT role="${role}" id="${document.id}" name="${document.name}" hash="${document.contentHash ?? 'legacy'}">>>`,
+    `<<<DOCUMENT role="${role}" id="${document.id}" name="${document.name}" hash="${document.contentHash ?? 'legacy'}"${knowledgeMeta}>>>`,
     document.content,
     '<<<END_DOCUMENT>>>',
   ].join('\n');
@@ -161,7 +165,10 @@ async function resolveDocuments(stepNumber: number, articleId?: string) {
     throw new Error(`Article ${articleId ?? ''} chưa có Content Plan của activity. Hãy mở bài từ kết quả phân loại Content Plan.`);
   }
   const resolved: Array<{ role: Role; document: StoredDocument & { content: string } }> = [
-    ...readyFiles.filter(file => file.category === 'kb').map(document => ({ role: 'KNOWLEDGE_BASE' as Role, document })),
+    ...readyFiles.filter(file => file.category === 'kb').map((document, index) => ({ role: 'KNOWLEDGE_BASE' as Role, document: {
+      ...document,
+      name: document.knowledgeMetadata?.approvedForExternalUse ? document.name : `Internal knowledge source ${index + 1}`,
+    } })),
     { role: 'CONTENT_PLAN' as Role, document: { id: `content-plan-${articleId}`, name: 'Current activity Content Plan', content: String(article.contentPlanInput), contentHash: `article-${article.updatedAt ?? 'current'}` } },
     ...readyFiles.filter(file => file.category === 'rules').map(document => ({ role: 'RULES' as Role, document })),
   ];
