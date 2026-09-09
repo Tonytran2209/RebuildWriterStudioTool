@@ -44,15 +44,14 @@ export default function WorkflowRulesPanel({ config, files, onChange }: Props) {
     <section>
       <h2 className="text-sm font-medium text-slate-800">{tr('Pipeline behavior', 'Pipeline behavior')}</h2>
       <p className="mt-1 text-xs leading-5 text-slate-400">{tr('Bốn giai đoạn này là logic thực tế được compiler đưa vào prompt của bài đơn và batch.', 'These four phases are the actual behavior compiled into manual and batch prompts.')}</p>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        {PHASES.map(item => <button key={item.id} onClick={() => { setPhaseId(item.id); setEditingStage(null); }} className={`workflow-phase-button rounded-xl border px-4 py-3 text-left ${phaseId === item.id ? 'is-active border-slate-400 bg-slate-100' : 'border-slate-200 bg-white'}`}><span className="text-xs text-slate-400">{tr('Giai đoạn', 'Phase')} {item.number}</span><span className="mt-1 block text-sm font-medium text-slate-800">{language === 'vi' ? item.titleVi : item.titleEn}</span></button>)}
+      <div className="workflow-phase-switcher mt-4 grid overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2">
+        {PHASES.map(item => <button key={item.id} onClick={() => { setPhaseId(item.id); setEditingStage(null); }} className={`workflow-phase-button flex items-center gap-3 px-4 py-3 text-left ${phaseId === item.id ? 'is-active bg-slate-100' : 'bg-white'}`}><span className="workflow-phase-index flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs text-slate-500">{item.number}</span><span className="truncate text-sm font-medium text-slate-800">{language === 'vi' ? item.titleVi : item.titleEn}</span></button>)}
       </div>
     </section>
 
     <section>
-      <div className="mb-3">
-        <p className="text-xs text-slate-400">{tr('Giai đoạn', 'Phase')} {phase.number}</p>
-        <h3 className="mt-1 text-lg font-medium text-slate-900">{language === 'vi' ? phase.titleVi : phase.titleEn}</h3>
+      <div className="mb-4">
+        <h3 className="text-sm font-medium text-slate-900">{language === 'vi' ? phase.titleVi : phase.titleEn}</h3>
         <p className="mt-1 text-sm leading-6 text-slate-500">{language === 'vi' ? phase.descriptionVi : phase.descriptionEn}</p>
       </div>
 

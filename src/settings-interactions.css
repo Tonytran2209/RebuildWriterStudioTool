@@ -78,10 +78,19 @@
 .minimal-settings .settings-subnav button.is-active,
 .minimal-settings .settings-subnav button.is-active:hover { background: var(--settings-card) !important; color: var(--settings-text) !important; }
 
-.minimal-settings .workflow-phase-button { border-color: var(--settings-border) !important; background: var(--settings-card) !important; }
-.minimal-settings .workflow-phase-button:hover:not(.is-active) { border-color: #bebeb8 !important; background: var(--settings-card) !important; }
+.minimal-settings .workflow-phase-switcher { border-color: var(--settings-border) !important; background: var(--settings-card) !important; }
+.minimal-settings .workflow-phase-button { border: 0 !important; border-bottom: 1px solid var(--settings-border) !important; background: var(--settings-card) !important; }
+.minimal-settings .workflow-phase-button:last-child { border-bottom: 0 !important; }
+.minimal-settings .workflow-phase-button:hover:not(.is-active) { background: var(--settings-card-subtle) !important; }
 .minimal-settings .workflow-phase-button.is-active,
-.minimal-settings .workflow-phase-button.is-active:hover { border-color: #9d9d97 !important; background: var(--settings-control) !important; }
+.minimal-settings .workflow-phase-button.is-active:hover { background: var(--settings-control) !important; }
+.minimal-settings .workflow-phase-index { background: var(--settings-control) !important; }
+
+.minimal-settings .workflow-rule-group header,
+.minimal-settings .workflow-rule-group footer,
+.minimal-settings .workflow-rule-group .border-t,
+.minimal-settings .workflow-rule-group .border-b,
+.minimal-settings .workflow-rule-group .divide-y > * { border-color: var(--settings-border) !important; }
 
 .minimal-settings .knowledge-source-row { background: var(--settings-card) !important; }
 .minimal-settings .knowledge-governance-editor { border-color: var(--settings-border) !important; background: var(--settings-card-subtle) !important; }
@@ -131,9 +140,8 @@
 .codex-dark .minimal-settings .settings-search input:focus { border-color: #555558 !important; box-shadow: 0 0 0 1px #555558 !important; }
 .codex-dark .minimal-settings .settings-subnav button.is-active,
 .codex-dark .minimal-settings .settings-subnav button.is-active:hover { background: #38383a !important; }
-.codex-dark .minimal-settings .workflow-phase-button:hover:not(.is-active) { border-color: #4a4a4c !important; }
 .codex-dark .minimal-settings .workflow-phase-button.is-active,
-.codex-dark .minimal-settings .workflow-phase-button.is-active:hover { border-color: #555558 !important; background: #2a2a2c !important; }
+.codex-dark .minimal-settings .workflow-phase-button.is-active:hover { background: #2a2a2c !important; }
 .codex-dark .minimal-settings .settings-content button.bg-slate-900 { border: 1px solid #3a3a3c !important; background: #2a2a2c !important; color: var(--settings-text) !important; }
 .codex-dark .minimal-settings .settings-content button.bg-slate-900:hover { border-color: #4a4a4c !important; background: #323234 !important; }
 
@@ -143,4 +151,9 @@
   .minimal-settings .settings-nav > div > div:first-child { display: none; }
   .minimal-settings .settings-nav-item { justify-content: center; padding-inline: .5rem; }
   .minimal-settings .knowledge-governance-editor label:last-of-type { min-height: 2.75rem; height: auto; }
+}
+
+@media (min-width: 640px) {
+  .minimal-settings .workflow-phase-button:nth-child(odd) { border-right: 1px solid var(--settings-border) !important; }
+  .minimal-settings .workflow-phase-button:nth-child(3) { border-bottom: 0 !important; }
 }
