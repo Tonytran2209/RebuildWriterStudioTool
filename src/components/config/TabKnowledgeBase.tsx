@@ -71,6 +71,7 @@ export default function TabKnowledgeBase({
           <button
             key={key}
             onClick={() => setActiveSubTab(key)}
+            aria-current={activeSubTab === key ? 'page' : undefined}
             className={`shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
               activeSubTab === key
                 ? 'is-active bg-white text-slate-900'
