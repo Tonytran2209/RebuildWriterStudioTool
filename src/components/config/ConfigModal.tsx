@@ -45,7 +45,7 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
 
   return (
     <div className="minimal-settings fixed inset-0 z-50 bg-white">
-      <div className="settings-shell grid h-dvh w-full grid-cols-1 overflow-hidden bg-white md:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="settings-shell grid h-dvh w-full grid-cols-1 overflow-hidden bg-white md:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="settings-sidebar flex min-h-0 flex-col border-b border-slate-200 bg-slate-50 md:border-b-0 md:border-r">
           <div className="p-3">
             <button onClick={onClose} className="settings-back-button inline-flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100">
@@ -58,12 +58,12 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
             </label>
           </div>
 
-          <nav className="settings-nav min-h-0 space-y-1 overflow-y-auto px-2 pb-3 pt-2" aria-label={tr('Danh mục cài đặt', 'Settings categories')}>
+          <nav className="settings-nav min-h-0 space-y-0.5 overflow-y-auto px-2 pb-3 pt-2" aria-label={tr('Danh mục cài đặt', 'Settings categories')}>
             {visibleTabs.map(tab => {
               const Icon = tab.icon;
               return <div key={tab.id}>
-                <button onClick={() => setActiveTab(tab.id)} className={`settings-nav-item flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${activeTab === tab.id ? 'is-active bg-slate-200 text-slate-900' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
-                  <Icon className="app-icon shrink-0" aria-hidden="true" />
+                <button onClick={() => setActiveTab(tab.id)} className={`settings-nav-item flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-[15px] transition-colors ${activeTab === tab.id ? 'is-active bg-slate-200 text-slate-900' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                  <Icon className="h-[18px] w-[18px] shrink-0 stroke-[1.75]" aria-hidden="true" />
                   <span className="truncate">{language === 'vi' ? tab.labelVi : tab.labelEn}</span>
                 </button>
               </div>;
