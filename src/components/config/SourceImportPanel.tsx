@@ -39,10 +39,6 @@ const MODES: { id: ActionSourceType; icon: LucideIcon; label: string; hint: stri
   { id: 'airtable', icon: Plug, label: 'Airtable', hint: 'API Key + Base ID' },
 ];
 
-const SOURCE_ICONS: Record<ActionSourceType, LucideIcon> = {
-  file: FolderUp, paste: ClipboardPaste, url: Link2, gsheet: Sheet, manual: FilePenLine, supabase: Database, airtable: Plug,
-};
-
 // ── sub-forms ─────────────────────────────────────────────────────────────────
 
 function FileForm({ onAdd, railwayUrl, category }: { onAdd: (sources: ActionDataSource[]) => void; railwayUrl: string; category: FileCategory }) {
@@ -459,7 +455,7 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
           <h3 className="text-sm font-medium text-slate-800">{tr('Tài liệu Knowledge Base', 'Knowledge Base sources')}</h3>
           <p className="mt-1 text-xs leading-5 text-slate-500">{tr('Quản lý nội dung AI có thể đọc và quyền sử dụng của từng nguồn.', 'Manage what AI can read and how each source may be used.')}</p>
         </div>
-        <button onClick={() => setShowImporter(value => !value)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50">
+        <button onClick={() => setShowImporter(value => !value)} className="settings-secondary-action inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition-colors">
           <Plus className="app-icon" aria-hidden="true" />
           {showImporter ? tr('Đóng', 'Close') : tr('Thêm nguồn', 'Add source')}
         </button>
@@ -534,13 +530,11 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
           <div className="divide-y divide-slate-200">
             {sources.map(s => {
               const ready = isImportSourceReady(s);
-              const SourceIcon = SOURCE_ICONS[s.sourceType];
               const knowledgeMetadata = (s as GovernedSource).knowledgeMetadata ?? DEFAULT_KNOWLEDGE_METADATA;
               const expanded = expandedSourceId === s.id;
               return (
               <div key={s.id} className={`knowledge-source-row group bg-white transition-colors ${ready ? '' : 'bg-red-50/40'}`}>
                 <div className="flex min-h-16 items-center gap-3 px-4 py-3">
-                <SourceIcon className="app-icon shrink-0 text-slate-400" aria-hidden="true" />
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium text-slate-800">{s.name}</span>

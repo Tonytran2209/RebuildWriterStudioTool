@@ -81,7 +81,7 @@ export default function TabModels({ config, onChange }: Props) {
                 </span>
                 <button
                   onClick={() => setShowKeyFor(showKeyFor === provider ? null : provider)}
-                  className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                  className="settings-secondary-action rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors"
                 >
                   {showKeyFor === provider ? tr('Ẩn', 'Hide') : 'API Key'}
                 </button>

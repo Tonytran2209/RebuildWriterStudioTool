@@ -77,6 +77,18 @@
 .minimal-settings .settings-subnav button:hover:not(.is-active) { color: var(--settings-text) !important; }
 .minimal-settings .settings-subnav button.is-active,
 .minimal-settings .settings-subnav button.is-active:hover { background: var(--settings-card) !important; color: var(--settings-text) !important; box-shadow: 0 1px 2px rgb(0 0 0 / 8%) !important; }
+.minimal-settings .settings-secondary-action,
+.minimal-settings .workflow-stage-row button {
+  border-color: var(--settings-border) !important;
+  background: transparent !important;
+  color: var(--settings-muted) !important;
+}
+.minimal-settings .settings-secondary-action:hover,
+.minimal-settings .workflow-stage-row button:hover {
+  border-color: #c8c8c3 !important;
+  background: var(--settings-control) !important;
+  color: var(--settings-text) !important;
+}
 
 .minimal-settings .workflow-phase-switcher { border-color: var(--settings-border) !important; background: var(--settings-card) !important; }
 .minimal-settings .workflow-phase-button { border: 0 !important; border-bottom: 1px solid var(--settings-border) !important; background: var(--settings-card) !important; }
@@ -157,7 +169,11 @@
 .codex-dark .minimal-settings .settings-content select:focus,
 .codex-dark .minimal-settings .settings-search input:focus { border-color: #555558 !important; box-shadow: 0 0 0 1px #555558 !important; }
 .codex-dark .minimal-settings .settings-subnav button.is-active,
-.codex-dark .minimal-settings .settings-subnav button.is-active:hover { background: #ececec !important; color: #181818 !important; box-shadow: none !important; }
+.codex-dark .minimal-settings .settings-subnav button.is-active:hover { background: #3a3a3c !important; color: #ececec !important; box-shadow: inset 0 -2px #8e8e93 !important; }
+.codex-dark .minimal-settings .settings-secondary-action,
+.codex-dark .minimal-settings .workflow-stage-row button { border-color: #3a3a3c !important; background: transparent !important; color: #b5b5b8 !important; }
+.codex-dark .minimal-settings .settings-secondary-action:hover,
+.codex-dark .minimal-settings .workflow-stage-row button:hover { border-color: #4a4a4c !important; background: #2a2a2c !important; color: #ececec !important; }
 .codex-dark .minimal-settings .workflow-phase-button.is-active,
 .codex-dark .minimal-settings .workflow-phase-button.is-active:hover { background: #2a2a2c !important; }
 .codex-dark .minimal-settings .settings-content button.bg-slate-900 { border: 1px solid #3a3a3c !important; background: #2a2a2c !important; color: var(--settings-text) !important; }
