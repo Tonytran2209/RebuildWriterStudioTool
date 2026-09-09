@@ -2,21 +2,20 @@ import { useState } from 'react';
 import type { ActionDataSource, AppConfig, DocumentFile, FileCategory, KbSubTab, WebsiteContentRecord } from '../../types';
 import SourceImportPanel from './SourceImportPanel';
 import WorkflowRulesPanel from './WorkflowRulesPanel';
-import { useI18n } from '../../lib/i18n';
 
 const SUBTAB_META: Record<KbSubTab, { label: string; category?: FileCategory; hint: string }> = {
   kb: {
-    label: '1. Knowledge Base',
+    label: 'Knowledge Base',
     category: 'kb',
     hint: 'Kiến thức cốt lõi, sản phẩm, nghiên cứu và tài liệu tham khảo',
   },
   rules: {
-    label: '2. Skills & Rules',
+    label: 'Skills & Rules',
     category: 'rules',
     hint: 'Taxonomy, tone of voice, cấu trúc và quy tắc bắt buộc',
   },
   website: {
-    label: '3. Website Inventory',
+    label: 'Website Inventory',
     hint: 'Danh sách URL duy nhất AI được phép đề xuất làm internal link',
   },
 };
@@ -54,7 +53,6 @@ export default function TabKnowledgeBase({
   config,
   onConfigChange,
 }: Props) {
-  const { language, tr } = useI18n();
   const [activeSubTab, setActiveSubTab] = useState<KbSubTab>('kb');
   const meta = SUBTAB_META[activeSubTab];
 
@@ -67,28 +65,21 @@ export default function TabKnowledgeBase({
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex gap-1 overflow-x-auto border-b border-slate-200 pb-2">
+    <div className="space-y-7">
+      <div className="flex gap-5 overflow-x-auto border-b border-slate-200">
         {(Object.entries(SUBTAB_META) as [KbSubTab, typeof SUBTAB_META[KbSubTab]][]).map(([key, item]) => (
           <button
             key={key}
             onClick={() => setActiveSubTab(key)}
-            className={`shrink-0 rounded-lg px-3 py-1.5 text-[11px] font-normal transition-colors ${
+            className={`shrink-0 border-b-2 px-0 pb-2.5 text-sm font-medium transition-colors ${
               activeSubTab === key
-                ? 'bg-slate-100 text-slate-900'
-                : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                ? 'border-slate-900 text-slate-900'
+                : 'border-transparent text-slate-400 hover:text-slate-700'
             }`}
           >
-            {language === 'vi' ? item.label : key === 'kb' ? '1. Knowledge Base' : key === 'rules' ? '2. Skills & Rules' : '3. Website Inventory'}
+            {item.label}
           </button>
         ))}
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] leading-relaxed text-slate-600">
-        <strong>{meta.label}:</strong> {activeSubTab === 'kb'
-          ? <>{language === 'vi' ? meta.hint : 'Core knowledge, products, research, and references'}. {tr('Mọi phương thức đều được Railway xử lý và chỉ được đánh dấu sẵn sàng sau khi Supabase đã lưu nội dung thật.', 'Every import method is processed by Railway and marked ready only after Supabase stores the actual content.')}</>
-          : activeSubTab === 'rules' ? <>{tr('Hiển thị rule, luồng xử lý và cách đọc dữ liệu thực sự đang điều khiển pipeline AI. Đây là cấu hình vận hành, không phải danh sách tài liệu upload.', 'Shows the rules, processing flow, and data-reading behavior that actually control the AI pipeline. This is operational configuration, not an uploaded-document list.')}</>
-          : <>{tr(meta.hint, 'The authoritative URL list AI may use for internal linking. Broken or unchecked URLs are excluded from publish-ready output.')}</>}
       </div>
 
       {activeSubTab === 'rules' ? (
@@ -107,5 +98,5 @@ export default function TabKnowledgeBase({
 function WebsiteInventoryPanel({ records, onChange }: { records: WebsiteContentRecord[]; onChange: (records: WebsiteContentRecord[]) => void }) {
   const [url, setUrl] = useState(''); const [title, setTitle] = useState('');
   const add = () => { try { const parsed=new URL(url); if (!/^https?:$/.test(parsed.protocol) || !title.trim()) return; const record:WebsiteContentRecord={id:`url-${Date.now()}`,url:parsed.toString(),title:title.trim(),contentType:'blog',topics:[],status:'unchecked',eligibleForInternalLink:true}; onChange([record,...records]); setUrl(''); setTitle(''); } catch { /* invalid URL stays editable */ } };
-  return <div className="space-y-3"><div className="grid gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-[1fr_1fr_auto]"><input value={title} onChange={event=>setTitle(event.target.value)} placeholder="Page title" className="rounded-lg border border-slate-200 px-3 py-2 text-[10px] outline-none"/><input value={url} onChange={event=>setUrl(event.target.value)} placeholder="https://flearningstudio.com/..." className="rounded-lg border border-slate-200 px-3 py-2 text-[10px] outline-none"/><button onClick={add} className="rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-medium text-white">Add URL</button></div><div className="space-y-2">{records.map(record=><div key={record.id} className="grid items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:grid-cols-[1fr_110px_100px_auto_auto]"><div className="min-w-0"><b className="block truncate text-[10px] text-slate-800">{record.title}</b><span className="block truncate text-[9px] text-slate-400">{record.url}</span></div><select value={record.contentType} onChange={event=>onChange(records.map(item=>item.id===record.id?{...item,contentType:event.target.value as WebsiteContentRecord['contentType']}:item))} className="rounded-md border border-slate-200 p-1.5 text-[9px]"><option value="blog">Blog</option><option value="service">Service</option><option value="portfolio">Portfolio</option><option value="landing">Landing</option><option value="about">About</option><option value="commercial">Commercial</option></select><select value={record.status} onChange={event=>onChange(records.map(item=>item.id===record.id?{...item,status:event.target.value as WebsiteContentRecord['status'],lastChecked:new Date().toISOString()}:item))} className="rounded-md border border-slate-200 p-1.5 text-[9px]"><option value="unchecked">Unchecked</option><option value="active">Active</option><option value="redirected">Redirected</option><option value="broken">Broken</option></select><label className="flex items-center gap-1 text-[9px] text-slate-500"><input type="checkbox" checked={record.eligibleForInternalLink} onChange={event=>onChange(records.map(item=>item.id===record.id?{...item,eligibleForInternalLink:event.target.checked}:item))}/>Allowed</label><button onClick={()=>onChange(records.filter(item=>item.id!==record.id))} className="text-[9px] text-rose-500">Remove</button></div>)}</div></div>;
+  return <div className="space-y-7"><section><h2 className="text-sm font-medium text-slate-800">Website inventory</h2><p className="mt-1 text-xs leading-5 text-slate-400">Only active or redirected URLs can pass the internal-link Quality Gate.</p><div className="mt-4 grid gap-2 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-[1fr_1.4fr_auto]"><input value={title} onChange={event=>setTitle(event.target.value)} placeholder="Page title" className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none"/><input value={url} onChange={event=>setUrl(event.target.value)} placeholder="https://flearningstudio.com/..." className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none"/><button onClick={add} className="h-10 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white">Add URL</button></div></section><section><h3 className="mb-3 text-sm font-medium text-slate-800">Approved pages <span className="ml-1 font-normal text-slate-400">{records.length}</span></h3><div className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white">{records.length===0?<p className="px-4 py-8 text-center text-sm text-slate-400">No website pages added.</p>:records.map(record=><div key={record.id} className="website-inventory-row px-4 py-3.5"><div className="flex flex-col gap-3 lg:flex-row lg:items-center"><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-slate-800">{record.title}</p><p className="mt-0.5 truncate text-xs text-slate-400">{record.url}</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label="Content type" value={record.contentType} onChange={event=>onChange(records.map(item=>item.id===record.id?{...item,contentType:event.target.value as WebsiteContentRecord['contentType']}:item))} className="h-9 rounded-lg border border-slate-200 px-2.5 text-sm"><option value="blog">Blog</option><option value="service">Service</option><option value="portfolio">Portfolio</option><option value="landing">Landing</option><option value="about">About</option><option value="commercial">Commercial</option></select><select aria-label="URL status" value={record.status} onChange={event=>onChange(records.map(item=>item.id===record.id?{...item,status:event.target.value as WebsiteContentRecord['status'],lastChecked:new Date().toISOString()}:item))} className="h-9 rounded-lg border border-slate-200 px-2.5 text-sm"><option value="unchecked">Unchecked</option><option value="active">Active</option><option value="redirected">Redirected</option><option value="broken">Broken</option></select><label className="flex items-center gap-2 px-1 text-sm text-slate-500"><input type="checkbox" checked={record.eligibleForInternalLink} onChange={event=>onChange(records.map(item=>item.id===record.id?{...item,eligibleForInternalLink:event.target.checked}:item))}/>Allowed</label><button onClick={()=>onChange(records.filter(item=>item.id!==record.id))} className="rounded-lg px-2.5 py-2 text-xs text-red-500">Remove</button></div></div></div>)}</div></section></div>;
 }

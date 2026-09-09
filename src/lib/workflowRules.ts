@@ -13,7 +13,7 @@ export const WORKFLOW_RULE_DEFINITIONS: WorkflowRuleDefinition[] = [
     { id:'focused-retrieval', title:'Focused retrieval', titleVi:'Truy xuất tập trung', detail:'Select relevant KB sections using topic, angle, headings and keywords.', detailVi:'Chọn đoạn KB liên quan theo topic, angle, heading và keyword.' },
     { id:'evidence-boundary', title:'Evidence boundary', titleVi:'Ranh giới evidence', detail:'Do not invent facts. Preserve evidence quotes, but never expose internal filenames unless approved for external use.', detailVi:'Không bịa dữ kiện. Giữ quote evidence nhưng không lộ tên file nội bộ nếu chưa được duyệt.', locked:true },
   ]},
-  { id:'core-idea', title:'Core Idea & SEO research', titleVi:'Core Idea và nghiên cứu SEO', summary:'Researches, audits and ranks content angles.', summaryVi:'Research, đối chứng và chấm điểm góc nội dung.', steps:[2], stages:[
+  { id:'core-idea', title:'Article Spec & SEO direction', titleVi:'Article Spec và định hướng SEO', summary:'Builds the canonical Article Spec, audits search demand, and proposes the allowed content direction.', summaryVi:'Tạo Article Spec chuẩn, đối chứng nhu cầu tìm kiếm và đề xuất định hướng nội dung phù hợp.', steps:[2], stages:[
     { id:'market-research', title:'Market research', titleVi:'Nghiên cứu thị trường', detail:'Collect a sourced keyword set through OpenAI Web Search.', detailVi:'Thu thập bộ keyword có URL nguồn bằng OpenAI Web Search.', parameters:[{id:'keywordCount',label:'Keyword count',labelVi:'Số keyword',type:'number',defaultValue:10,min:5,max:20,step:1}] },
     { id:'keyword-audit', title:'Keyword audit', titleVi:'Đối chứng keyword', detail:'Accept or reject every keyword against the current plan and internal knowledge.', detailVi:'Chấp nhận hoặc loại từng keyword theo content plan và knowledge nội bộ.' },
     { id:'article-spec', title:'Article Spec contract', titleVi:'Hợp đồng Article Spec', detail:'Create one canonical contract for intent, reader outcome, must-cover topics, thesis, evidence, CTA and internal-link requirements.', detailVi:'Tạo contract chuẩn cho intent, reader outcome, nội dung bắt buộc, thesis, evidence, CTA và internal link.', locked:true },
@@ -39,7 +39,12 @@ export const WORKFLOW_RULE_DEFINITIONS: WorkflowRuleDefinition[] = [
 
 export function getWorkflowRuleSetting(config: AppConfig, id: WorkflowRuleId): WorkflowRuleSetting {
   const saved = config.workflowRules?.[id];
-  return { ...DEFAULT_WORKFLOW_RULE_SETTING, ...saved, appliesTo:{...DEFAULT_WORKFLOW_RULE_SETTING.appliesTo,...saved?.appliesTo}, stageOverrides:saved?.stageOverrides ?? {} };
+  const setting = { ...DEFAULT_WORKFLOW_RULE_SETTING, ...saved, appliesTo:{...DEFAULT_WORKFLOW_RULE_SETTING.appliesTo,...saved?.appliesTo}, stageOverrides:saved?.stageOverrides ?? {} };
+  // The quality gate is a product invariant, not optional prompt guidance.
+  // Always expose and compile it as strict for both execution paths, including
+  // older saved configurations that predate the four-phase contract.
+  if (id === 'quality-persistence') return { ...setting, enforcement:'strict', appliesTo:{ manual:true, batch:true } };
+  return setting;
 }
 
 export function getStageEffective(rule: WorkflowRuleDefinition, setting: WorkflowRuleSetting, stage: WorkflowStageDefinition) {

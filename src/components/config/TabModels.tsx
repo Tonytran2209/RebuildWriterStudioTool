@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Cpu } from 'lucide-react';
 import type { AppConfig, AIModel, AIProvider } from '../../types';
 import { PROVIDER_LABELS } from '../../lib/defaultData';
 import { useI18n } from '../../lib/i18n';
@@ -74,7 +73,6 @@ export default function TabModels({ config, onChange }: Props) {
             {/* Provider header */}
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div className="flex items-center gap-2">
-                <Cpu className="app-icon text-slate-500" aria-hidden="true" />
                 <span className="text-sm font-medium text-slate-900">{provMeta?.label || provider}</span>
               </div>
               <div className="flex items-center gap-2">
@@ -115,7 +113,7 @@ export default function TabModels({ config, onChange }: Props) {
             {/* Models grid */}
             <div className="divide-y divide-slate-200">
               {models.map(model => (
-                <div key={model.id} className="model-setting-row flex items-start gap-4 px-4 py-3.5 transition-colors hover:bg-slate-50/70">
+                <div key={model.id} className="model-setting-row flex items-start gap-4 px-4 py-3.5">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 mb-0.5">
                       <h4 className="truncate text-sm font-medium text-slate-900">{model.name}</h4>

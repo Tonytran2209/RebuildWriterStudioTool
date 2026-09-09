@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Bot, Database, FileText, Gauge } from 'lucide-react';
 import type { AppConfig, Article, DocumentFile } from '../../types';
 import { pingRailway } from '../../lib/db';
 import { isDocumentReady } from '../../lib/documentStatus';
@@ -33,17 +32,14 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
       <h2 className="mb-3 text-sm font-medium text-slate-800">{tr('Hệ thống', 'System')}</h2>
       <div className="settings-preference-group divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="flex items-center gap-3 px-4 py-3.5">
-          <Bot className="app-icon shrink-0 text-slate-400" aria-hidden="true" />
           <div className="min-w-0 flex-1"><p className="text-sm font-medium text-slate-800">{tr('AI Backend', 'AI backend')}</p><p className="mt-0.5 truncate text-xs text-slate-400">{config.railwayUrl || RAILWAY_URL}</p></div>
           <span className={`inline-flex items-center gap-1.5 text-xs ${backendOk ? 'text-emerald-600' : backendOk === false ? 'text-red-600' : 'text-slate-400'}`}><span className={`h-2 w-2 rounded-full ${backendOk ? 'bg-emerald-500' : backendOk === false ? 'bg-red-500' : 'animate-pulse bg-slate-300'}`} />{backendOk ? tr('Online', 'Online') : backendOk === false ? tr('Mất kết nối', 'Offline') : tr('Đang kiểm tra', 'Checking')}</span>
         </div>
         <div className="flex items-center gap-3 px-4 py-3.5">
-          <Database className="app-icon shrink-0 text-slate-400" aria-hidden="true" />
           <div className="min-w-0 flex-1"><p className="text-sm font-medium text-slate-800">Knowledge Base</p><p className="mt-0.5 truncate text-xs text-slate-400">{readyKb.map(file => file.name).join(', ') || tr('Chưa có dữ liệu', 'No data loaded')}</p></div>
           <span className="text-sm font-medium text-slate-600">{readyKb.length}</span>
         </div>
         <div className="flex items-center gap-3 px-4 py-3.5">
-          <FileText className="app-icon shrink-0 text-slate-400" aria-hidden="true" />
           <div className="min-w-0 flex-1"><p className="text-sm font-medium text-slate-800">Skills & Rules</p><p className="mt-0.5 truncate text-xs text-slate-400">{readySkills.map(file => file.name).join(', ') || tr('Chưa có dữ liệu', 'No data loaded')}</p></div>
           <span className="text-sm font-medium text-slate-600">{readySkills.length}</span>
         </div>
@@ -62,7 +58,7 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
             <div className="flex min-w-0 flex-1 items-center gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-medium text-slate-600">{index + 1}</span><div className="min-w-0"><p className="text-sm font-medium text-slate-800">{title}</p><p className="mt-0.5 text-xs text-slate-400">{totalTokens.toLocaleString()} tokens · {calls.length} AI calls</p></div></div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <select aria-label={`${title} model`} value={config.stepConfigs[step]?.modelId ?? ''} onChange={event => updateStepModel(step, event.target.value)} className="h-10 min-w-52 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"><option value="">— {tr('Chọn model', 'Select model')} —</option>{enabledModels.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</select>
-              {step === 4 && <label className="flex items-center gap-2"><Gauge className="app-icon shrink-0 text-slate-400" aria-hidden="true" /><span className="sr-only">{tr('Giới hạn số từ tiếng Anh', 'English word limit')}</span><input aria-label={tr('Giới hạn số từ tiếng Anh', 'English word limit')} type="number" min={800} max={10000} step={100} value={Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500)} onChange={event => updateDraftWordLimit(Number(event.target.value))} className="h-10 w-28 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700" /><span className="text-xs text-slate-400">words</span></label>}
+              {step === 4 && <label className="flex items-center gap-2"><span className="sr-only">{tr('Giới hạn số từ tiếng Anh', 'English word limit')}</span><input aria-label={tr('Giới hạn số từ tiếng Anh', 'English word limit')} type="number" min={800} max={10000} step={100} value={Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500)} onChange={event => updateDraftWordLimit(Number(event.target.value))} className="h-10 w-28 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700" /><span className="text-xs text-slate-400">words</span></label>}
             </div>
           </div>;
         })}

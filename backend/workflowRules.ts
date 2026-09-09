@@ -11,10 +11,12 @@ const DEFINITIONS:Record<string,{steps:number[];stages:Array<{id:string;instruct
 export function compileBackendWorkflowRules(config:any,stepNumber:number,executionMode:Mode){
   const rules=Object.entries(DEFINITIONS).flatMap(([id,definition])=>{
     if(!definition.steps.includes(stepNumber))return [];
-    const saved=config?.workflowRules?.[id]??{}; const applies={manual:true,batch:true,...saved.appliesTo};
+    const saved=config?.workflowRules?.[id]??{};
+    const hardContract=id==='quality-persistence';
+    const applies=hardContract?{manual:true,batch:true}:{manual:true,batch:true,...saved.appliesTo};
     if(!applies[executionMode])return [];
     const stages=definition.stages.map(stage=>{const override=saved.stageOverrides?.[stage.id]??{};return{id:stage.id,instruction:String(override.instruction??'').trim()||stage.instruction,parameters:{...(stage.parameters??{}),...(override.parameters??{})}}});
-    return[{id,enforcement:saved.enforcement==='guided'?'guided':'strict',stages,customInstruction:String(saved.customInstruction??'').trim()}];
+    return[{id,enforcement:hardContract?'strict':saved.enforcement==='guided'?'guided':'strict',stages,customInstruction:String(saved.customInstruction??'').trim()}];
   });
   const render=(rule:any)=>[`- [${rule.id}]`,...rule.stages.map((stage:any)=>`  • ${stage.id}: ${stage.instruction}${Object.keys(stage.parameters).length?` Parameters=${JSON.stringify(stage.parameters)}`:''}`),...(rule.customInstruction?[`  • User instruction: ${rule.customInstruction}`]:[])].join('\n');
   const strict=rules.filter(rule=>rule.enforcement==='strict'); const guided=rules.filter(rule=>rule.enforcement==='guided');

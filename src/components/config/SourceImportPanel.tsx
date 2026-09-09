@@ -540,7 +540,7 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
               const expanded = expandedSourceId === s.id;
               return (
               <div key={s.id} className={`knowledge-source-row group bg-white transition-colors ${ready ? '' : 'bg-red-50/40'}`}>
-                <div className="flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-slate-50/70">
+                <div className="flex min-h-16 items-center gap-3 px-4 py-3">
                 <SourceIcon className="app-icon shrink-0 text-slate-400" aria-hidden="true" />
                 <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-center gap-2">
