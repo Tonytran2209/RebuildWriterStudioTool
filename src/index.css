@@ -1921,9 +1921,9 @@ html, body, #root {
 }
 
 .draft-highlight-toggle.is-active {
-  color: #477365;
-  background: #edf4f1;
-  border-color: #cbded7;
+  color: #30302d;
+  background: #e1e1dd;
+  border-color: #c8c8c2;
 }
 
 .keyword-density-list > * {
@@ -2038,9 +2038,9 @@ html, body, #root {
 }
 
 .codex-dark .draft-highlight-toggle.is-active {
-  color: #86b8a7 !important;
-  background: #1d2b26 !important;
-  border-color: #36594d !important;
+  color: #f1f1f1 !important;
+  background: #343434 !important;
+  border-color: #484848 !important;
 }
 
 .codex-dark .keyword-density-list > * {
@@ -2278,11 +2278,11 @@ html, body, #root {
   display: inline;
   margin: 0 .04em;
   padding: .05em .22em .08em;
-  border-radius: .28em;
-  background: #23483b;
+  border-radius: .3em;
+  background: #343434;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  color: #b9e8d3;
+  color: #f1f1f1;
 }
 
 .codex-dark .continuous-step .minimal-step-shell {
@@ -2304,7 +2304,7 @@ html, body, #root {
   border-radius: 0 !important;
 }
 
-.writer-light .draft-keyword-mark { background: #d9f3e7; color: #166247; }
+.writer-light .draft-keyword-mark { background: #e1e1dd; color: #30302d; }
 .writer-light .workflow-rail-dot { background: #fff; border-color: #d8dde6; }
 .writer-light .workflow-rail-line { background: repeating-linear-gradient(to bottom, #d8dde6 0 4px, transparent 4px 9px); }
 

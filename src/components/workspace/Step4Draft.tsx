@@ -753,9 +753,12 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     if (!draft || !highlightsEnabled) return;
     const highlightStyles = document.createElement('style');
     highlightStyles.textContent = `
-      ::highlight(draft-heading){color:#e5e5e5;background-color:#292929}
-      ::highlight(draft-evidence){color:#c8c8c8;background-color:#222}
-      ::highlight(draft-attention){color:#e7c66e;background-color:#332a16}
+      ::highlight(draft-heading){color:#f1f1f1;background-color:#343434}
+      ::highlight(draft-evidence){color:#dedede;background-color:#303030}
+      ::highlight(draft-attention){color:#ffffff;background-color:#3a3a3a}
+      .writer-light ::highlight(draft-heading){color:#30302d;background-color:#deded9}
+      .writer-light ::highlight(draft-evidence){color:#444440;background-color:#e8e8e4}
+      .writer-light ::highlight(draft-attention){color:#242422;background-color:#d5d5cf}
     `;
     document.head.appendChild(highlightStyles);
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
