@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Eye, Search } from "lucide-react";
+import { Ellipsis, Search } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -691,20 +691,18 @@ export default function Step2CoreIdea({
                   {ideas.map(idea => {
                     const isSelected = selectedId === idea.id;
                     return (
-                      <div key={idea.id} className={`core-idea-card group flex min-w-0 items-start rounded-xl ${isSelected ? "is-selected" : ""}`}>
-                        <button type="button" onClick={() => handleSelect(idea)} className="core-idea-select-area flex min-w-0 flex-1 items-start gap-3 px-3 py-3.5 text-left sm:gap-4" aria-pressed={isSelected}>
-                          <div className="core-idea-score flex h-9 w-9 shrink-0 items-center justify-center rounded-full border">
-                            <span className={`core-idea-score-value text-[13px] font-semibold leading-none tracking-tight tabular-nums ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
+                      <div key={idea.id} className={`core-idea-card group flex min-w-0 items-start rounded-lg ${isSelected ? "is-selected" : ""}`}>
+                        <button type="button" onClick={() => handleSelect(idea)} className="core-idea-select-area min-w-0 flex-1 px-3 py-3 text-left" aria-pressed={isSelected}>
+                          <div className="core-idea-score flex items-baseline gap-1.5">
+                            <span className="core-idea-score-label text-[9px] font-medium uppercase tracking-wide">{tr('Điểm', 'Score')}</span>
+                            <span className={`core-idea-score-value text-[11px] font-semibold leading-none tabular-nums ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <h3 className="text-[13px] font-medium leading-snug text-slate-900">{idea.title}</h3>
-                              {isSelected && <span className="core-idea-selected-tag rounded-md px-2 py-0.5 text-[9px] font-medium">{tr('Đã chọn', 'Selected')}</span>}
-                            </div>
-                            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">{idea.mainArgument}</p>
+                          <div className="mt-1 min-w-0">
+                            <h3 className="text-[13px] font-medium leading-snug text-slate-900">{idea.title}</h3>
+                            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{idea.mainArgument}</p>
                           </div>
                         </button>
-                        <button type="button" onClick={() => setDetailIdeaId(idea.id)} className="core-idea-details-button mr-2 mt-3 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" title={tr('Xem chi tiết', 'View details')} aria-label={`${tr('Xem chi tiết', 'View details')}: ${idea.title}`}><Eye className="app-icon" aria-hidden="true" /></button>
+                        <button type="button" onClick={() => setDetailIdeaId(idea.id)} className="core-idea-details-button mr-2 mt-2.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" title={tr('Xem chi tiết', 'View details')} aria-label={`${tr('Xem chi tiết', 'View details')}: ${idea.title}`}><Ellipsis className="app-icon" aria-hidden="true" /></button>
                       </div>
                     );
                   })}
