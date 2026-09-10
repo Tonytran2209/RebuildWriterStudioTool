@@ -422,14 +422,14 @@ function WebsiteInventoryPanel({
         </div>
       </section>
       <section>
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-medium text-slate-800">
             Indexed pages{" "}
             <span className="ml-1 font-normal text-slate-400">
               {records.length}
             </span>
           </h3>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-400">
               {
                 records.filter(
@@ -456,18 +456,8 @@ function WebsiteInventoryPanel({
             </button>
           </div>
         </div>
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <div className="website-inventory-table min-w-[980px]">
-            <div className="grid grid-cols-[2fr_1.4fr_110px_1fr_1fr_100px_130px_80px] gap-3 border-b border-slate-200 px-4 py-2.5 text-xs font-medium text-slate-500">
-              <span>URL</span>
-              <span>Title</span>
-              <span>Page type</span>
-              <span>Topic</span>
-              <span>Service</span>
-              <span>Status</span>
-              <span>Last checked</span>
-              <span />
-            </div>
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="website-inventory-list divide-y divide-slate-200">
             {records.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-slate-400">
                 No website pages indexed.
@@ -476,104 +466,94 @@ function WebsiteInventoryPanel({
               records.map((record) => (
                 <div
                   key={record.id}
-                  className="website-inventory-row grid grid-cols-[2fr_1.4fr_110px_1fr_1fr_100px_130px_80px] items-center gap-3 border-b border-slate-200 px-4 py-3 last:border-b-0"
+                  className="website-inventory-row px-4 py-4 sm:px-5"
                 >
-                  <a
-                    href={
-                      record.redirectTarget || record.canonicalUrl || record.url
-                    }
-                    target="_blank"
-                    rel="noreferrer"
-                    className="truncate text-sm text-slate-700"
-                    title={record.url}
-                  >
-                    {record.url}
-                  </a>
-                  <div className="min-w-0">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0 flex-1">
                     <input
                       aria-label="Title"
                       value={record.title}
                       onChange={(event) => update(record.id, { title: event.target.value })}
-                      className="h-9 w-full min-w-0 px-2 text-sm"
+                        className="h-8 w-full min-w-0 border-0 bg-transparent px-0 text-sm font-medium text-slate-800 outline-none"
                     />
-                    {record.summary && <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-400" title={record.summary}>{record.summary}</p>}
-                    {record.summarizedAt && <p className="mt-1 text-[9px] text-slate-400">{record.summaryCacheHit ? "Cached" : record.aiModel || "AI"} · {new Date(record.summarizedAt).toLocaleDateString()}</p>}
+                      <a
+                        href={record.redirectTarget || record.canonicalUrl || record.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block truncate text-[11px] text-slate-400 hover:text-slate-600"
+                        title={record.url}
+                      >
+                        {record.url}
+                      </a>
+                    </div>
+                    <select
+                      aria-label="Status"
+                      value={record.status}
+                      disabled={record.status === "queued" || record.status === "checking"}
+                      title={record.lastError}
+                      onChange={(event) => {
+                        const status = event.target.value as WebsiteContentRecord["status"]
+                        update(record.id, {
+                          status,
+                          eligibleForInternalLink: status === "active" || status === "redirected",
+                        })
+                      }}
+                      className="h-8 w-full shrink-0 px-2 text-xs sm:w-28"
+                    >
+                      <option value="queued">Queued</option>
+                      <option value="checking">Checking</option>
+                      <option value="unchecked">Unchecked</option>
+                      <option value="active">Active</option>
+                      <option value="redirected">Redirected</option>
+                      <option value="broken">Broken</option>
+                    </select>
                   </div>
-                  <select
-                    aria-label="Page type"
-                    value={record.contentType}
-                    onChange={(event) =>
-                      update(record.id, {
-                        contentType: event.target
-                          .value as WebsiteContentRecord["contentType"],
-                      })
-                    }
-                    className="h-9 px-2 text-sm"
-                  >
-                    <option value="blog">Blog</option>
-                    <option value="service">Service</option>
-                    <option value="portfolio">Portfolio</option>
-                    <option value="landing">Landing</option>
-                    <option value="about">About</option>
-                    <option value="commercial">Commercial</option>
-                  </select>
-                  <input
-                    aria-label="Topics"
-                    value={record.topics.join(", ")}
-                    onChange={(event) =>
-                      update(record.id, {
-                        topics: event.target.value
-                          .split(",")
-                          .map((value) => value.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                    className="h-9 min-w-0 px-2 text-sm"
-                  />
-                  <input
-                    aria-label="Services"
-                    value={(record.services ?? []).join(", ")}
-                    onChange={(event) =>
-                      update(record.id, {
-                        services: event.target.value
-                          .split(",")
-                          .map((value) => value.trim())
-                          .filter(Boolean),
-                      })
-                    }
-                    className="h-9 min-w-0 px-2 text-sm"
-                  />
-                  <select
-                    aria-label="Status"
-                    value={record.status}
-                    disabled={
-                      record.status === "queued" || record.status === "checking"
-                    }
-                    title={record.lastError}
-                    onChange={(event) => {
-                      const status = event.target
-                        .value as WebsiteContentRecord["status"]
-                      update(record.id, {
-                        status,
-                        eligibleForInternalLink:
-                          status === "active" || status === "redirected",
-                      })
-                    }}
-                    className="h-9 min-w-0 px-2 text-xs"
-                  >
-                    <option value="queued">Queued</option>
-                    <option value="checking">Checking</option>
-                    <option value="unchecked">Unchecked</option>
-                    <option value="active">Active</option>
-                    <option value="redirected">Redirected</option>
-                    <option value="broken">Broken</option>
-                  </select>
-                  <span className="text-xs text-slate-400">
-                    {record.lastChecked
-                      ? new Date(record.lastChecked).toLocaleString()
-                      : "—"}
-                  </span>
-                  <div className="flex justify-end gap-1">
+
+                  {record.summary && (
+                    <p className="mt-3 text-xs leading-5 text-slate-500">{record.summary}</p>
+                  )}
+
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <label className="min-w-0 text-[10px] font-medium text-slate-400">
+                      Page type
+                      <select
+                        value={record.contentType}
+                        onChange={(event) => update(record.id, { contentType: event.target.value as WebsiteContentRecord["contentType"] })}
+                        className="mt-1 h-9 w-full px-2 text-xs"
+                      >
+                        <option value="blog">Blog</option>
+                        <option value="service">Service</option>
+                        <option value="portfolio">Portfolio</option>
+                        <option value="landing">Landing</option>
+                        <option value="about">About</option>
+                        <option value="commercial">Commercial</option>
+                      </select>
+                    </label>
+                    <label className="min-w-0 text-[10px] font-medium text-slate-400">
+                      Topics
+                      <input
+                        value={record.topics.join(", ")}
+                        onChange={(event) => update(record.id, { topics: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })}
+                        className="mt-1 h-9 w-full min-w-0 px-2 text-xs"
+                      />
+                    </label>
+                    <label className="min-w-0 text-[10px] font-medium text-slate-400">
+                      Services
+                      <input
+                        value={(record.services ?? []).join(", ")}
+                        onChange={(event) => update(record.id, { services: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })}
+                        className="mt-1 h-9 w-full min-w-0 px-2 text-xs"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 text-[10px] text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span>Checked {record.lastChecked ? new Date(record.lastChecked).toLocaleString() : "—"}</span>
+                      {record.summarizedAt && <span>{record.summaryCacheHit ? "Cached" : record.aiModel || "AI"} · {new Date(record.summarizedAt).toLocaleDateString()}</span>}
+                      {record.searchIntent && <span className="capitalize">{record.searchIntent}</span>}
+                    </div>
+                    <div className="flex items-center gap-1 self-end sm:self-auto">
                     <button
                       onClick={() => void recheck(record)}
                       className="settings-secondary-action rounded-md px-2 py-1 text-xs text-slate-500"
@@ -591,6 +571,7 @@ function WebsiteInventoryPanel({
                     >
                       ×
                     </button>
+                    </div>
                   </div>
                 </div>
               ))
