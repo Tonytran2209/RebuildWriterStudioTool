@@ -2300,13 +2300,18 @@ html, body, #root {
 
 .draft-keyword-mark {
   display: inline;
-  margin: 0 .04em;
-  padding: .05em .22em .08em;
-  border-radius: .3em;
-  background: #343434;
+  margin: 0 .025em;
+  padding: .06em .36em .1em;
+  border-radius: .42rem;
+  background: #363636;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-  color: #f1f1f1;
+  color: #f3f3f3;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: .92em;
+  font-weight: 400;
+  line-height: inherit;
+  -webkit-font-smoothing: antialiased;
 }
 
 .codex-dark .continuous-step .minimal-step-shell {
@@ -2328,7 +2333,7 @@ html, body, #root {
   border-radius: 0 !important;
 }
 
-.writer-light .draft-keyword-mark { background: #e1e1dd; color: #30302d; }
+.writer-light .draft-keyword-mark { background: #deded9; color: #30302d; }
 .writer-light .workflow-rail-marker { background: #c8c8c2; }
 .writer-light .workflow-rail-button.is-complete .workflow-rail-marker { background: #30302d; }
 .writer-light .workflow-rail-button.is-complete .workflow-rail-label { color: #30302d; }
