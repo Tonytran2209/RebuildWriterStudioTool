@@ -25,7 +25,7 @@ type StructuredDraftPayload = {
   title?: string;
   introduction?: string;
   conclusion?: string;
-  sections?: Array<{ id?: string; content?: string }>;
+  sections?: Array<{ id?: string; content?: string; usedEvidenceRefs?: string[] }>;
 };
 
 const structuredDraftSchema: Record<string, unknown> = {
@@ -40,10 +40,11 @@ const structuredDraftSchema: Record<string, unknown> = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'content'],
+        required: ['id', 'content', 'usedEvidenceRefs'],
         properties: {
           id: { type: 'string', minLength: 1 },
           content: { type: 'string', minLength: 1 },
+          usedEvidenceRefs: { type: 'array', items: { type: 'string' } },
         },
       },
     },
@@ -83,12 +84,40 @@ function mergeStructuredDraft(base: StructuredDraftPayload, repair: StructuredDr
     conclusion: base.conclusion?.trim() || repair.conclusion,
     sections: expected.map((section, index) => {
       const existing = baseById.get(section.id) ?? base.sections?.[index];
-      if (existing?.content?.trim()) return { id: section.id, content: existing.content };
+      if (existing?.content?.trim()) return { id: section.id, content: existing.content, usedEvidenceRefs: existing.usedEvidenceRefs ?? [] };
       const replacement = repairById.get(section.id) ?? repair.sections?.[index];
-      return { id: section.id, content: replacement?.content };
+      return { id: section.id, content: replacement?.content, usedEvidenceRefs: replacement?.usedEvidenceRefs ?? [] };
     }),
   };
 }
+
+const semanticQualitySchema: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['checks'],
+  properties: {
+    checks: {
+      type: 'array',
+      minItems: 6,
+      maxItems: 6,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'label', 'status', 'reason', 'evidence', 'location', 'recommendedAction', 'autoFixAllowed'],
+        properties: {
+          id: { type: 'string', enum: ['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov'] },
+          label: { type: 'string' },
+          status: { type: 'string', enum: ['pass', 'warning', 'fail'] },
+          reason: { type: 'string' },
+          evidence: { type: 'string' },
+          location: { type: 'string' },
+          recommendedAction: { type: 'string' },
+          autoFixAllowed: { type: 'boolean' },
+        },
+      },
+    },
+  },
+};
 
 function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit: number, introductionPercent = 8, conclusionPercent = 7) {
   const targetMin = Math.ceil(hardLimit * 0.92);
@@ -151,7 +180,7 @@ function parseStructuredDraft(raw: string, article: Article) {
 function getPrimaryKeyword(article: Article) {
   const selectedIdea = article.coreIdeaSuggestions?.find(idea => idea.id === article.selectedCoreIdeaId)
     ?? article.coreIdeaSuggestions?.[0];
-  return selectedIdea?.primaryKeyword?.trim() || (article.keywords || '').split(',')[0]?.trim() || article.topic?.trim() || '';
+  return article.articleSpec?.primaryQuery?.trim() || selectedIdea?.primaryKeyword?.trim() || (article.keywords || '').split(',')[0]?.trim() || article.topic?.trim() || '';
 }
 
 function evaluateSeoChecklist(text: string, article: Article, targetWords: number) {
@@ -181,6 +210,45 @@ function parseSemanticQuality(raw: string): QualityGateCheck[] {
   });
   if (new Set(checks.map(item => item.id)).size !== required.size) throw new Error('Semantic quality reviewer trả thiếu tiêu chí bắt buộc.');
   return checks;
+}
+
+function getDraftEvidenceUsage(parsed: StructuredDraftPayload, article: Article) {
+  const byId = new Map((parsed.sections ?? []).map(section => [section.id, section]));
+  return Object.fromEntries((article.outline ?? []).map((section, index) => {
+    const generated = byId.get(section.id) ?? parsed.sections?.[index];
+    return [section.id, [...new Set((generated?.usedEvidenceRefs ?? []).map(String).filter(Boolean))]];
+  }));
+}
+
+function evidenceMappingChecks(
+  article: Article,
+  usage: Record<string, string[]>,
+  verifiedOutline: ReturnType<typeof buildVerifiedOutlineContext>,
+): QualityGateCheck[] {
+  const registered = new Set(Object.keys(verifiedOutline.evidenceRegistry));
+  const mapped = new Map(verifiedOutline.sections.map(section => [section.id, new Set(section.evidenceRefs)]));
+  const invalid: string[] = [];
+  const missing: string[] = [];
+  for (const section of article.outline ?? []) {
+    const allowed = mapped.get(section.id) ?? new Set<string>();
+    const used = usage[section.id] ?? [];
+    const bad = used.filter(id => !registered.has(id) || !allowed.has(id));
+    if (bad.length) invalid.push(`${section.id}: ${bad.join(', ')}`);
+    if (allowed.size > 0 && used.length === 0) missing.push(section.id);
+  }
+  return [{
+    id: 'evidence-mapping',
+    label: 'Evidence mapped to outline sections',
+    kind: 'deterministic',
+    status: invalid.length || missing.length ? 'fail' : 'pass',
+    reason: invalid.length
+      ? `Evidence references outside their approved section: ${invalid.join('; ')}.`
+      : missing.length
+        ? `Sections with approved evidence did not declare usage: ${missing.join(', ')}.`
+        : 'Every declared evidence reference exists and belongs to its outline section.',
+    evidence: JSON.stringify(usage),
+    autoFixAllowed: true,
+  }];
 }
 
 function calcReadability(text: string) {
@@ -272,7 +340,9 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
 
-  const draft = article.draft || '';
+  const recoveryKey = `writer:draft-recovery:${article.id}`;
+  const [recoveryDraft, setRecoveryDraft] = useState(() => sessionStorage.getItem(recoveryKey) ?? '');
+  const draft = article.draft || recoveryDraft;
   const prerequisite = gateArticleStep(article, 4);
   const draftSourceFingerprint = useMemo(
     () => [
@@ -297,10 +367,20 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name),
   ), [article, config.websiteInventory, draft, files, targetWords]);
   const savedQualityReport = article.qualityReport;
-  const displayedQualityChecks = savedQualityReport?.status === 'pass' && savedQualityReport.articleSpecFingerprint === article.articleSpecFingerprint && !draftIsStale
+  const displayedQualityChecks = savedQualityReport && savedQualityReport.articleSpecFingerprint === article.articleSpecFingerprint && !draftIsStale
     ? savedQualityReport.checks
     : deterministicChecks;
   const seoChecklistPassed = Boolean(draft) && displayedQualityChecks.length > 0 && displayedQualityChecks.every(item => item.status === 'pass');
+
+  useEffect(() => {
+    if (!article.draft) return;
+    sessionStorage.removeItem(recoveryKey);
+    setRecoveryDraft('');
+  }, [article.draft, recoveryKey]);
+
+  useEffect(() => {
+    if (!article.draft) setRecoveryDraft(sessionStorage.getItem(recoveryKey) ?? '');
+  }, [article.id, article.draft, recoveryKey]);
 
   // Keyword density check
   const keywordList = (article.keywords || '').split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
@@ -362,8 +442,8 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           '- Knowledge Base là nguồn dữ liệu duy nhất cho số liệu, dẫn chứng, thông tin sản phẩm. KHÔNG bịa dữ liệu.',
           '- Content Plan hiện tại cung cấp topic, nhóm nội dung và keyword đã được tổng hợp cho article; không đọc kế hoạch legacy.',
           '- Rules & Guidelines quyết định tone of voice, từ ngữ cấm, cấu trúc câu, quy tắc SEO. PHẢI tuân thủ tuyệt đối.',
-          '- Khi dùng thông tin từ KB, nêu tự nhiên trong văn bản (không cần footnote).',
-          '- Nếu KB không có dữ liệu cho một mục, viết mục đó ở dạng khung và ghi chú "[Cần bổ sung dữ liệu]".',
+          '- Khi dùng thông tin từ KB, nêu tự nhiên trong văn bản; không cần footnote hay hiển thị mã evidence trong bài.',
+          '- Nếu không có evidence cho một claim cụ thể, bỏ claim đó hoặc viết một câu chuyển ý tổng quát không chứa dữ kiện có thể kiểm chứng. Không tạo placeholder.',
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Hoàn thiện mọi section trước khi mở rộng bất kỳ section nào. Không lặp định nghĩa, lợi ích, so sánh, evidence hoặc kết luận.',
@@ -397,8 +477,8 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         JSON.stringify(verifiedOutline),
         '',
         'SCHEMA OUTPUT:',
-        '{"title":string,"introduction":string,"sections":[{"id":string,"content":string}],"conclusion":string}',
-        'Yêu cầu: Viết đủ đúng một entry cho mọi section ID theo đúng thứ tự. Không lặp nội dung giữa các field.',
+        '{"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}',
+        'Yêu cầu: Viết đủ đúng một entry cho mọi section ID theo đúng thứ tự. usedEvidenceRefs chỉ chứa ID được cấp cho chính section đó; để [] nếu section không dùng evidence. Không lặp nội dung giữa các field.',
         compiledWorkflowRules.taskGuidance,
       ].join('\n');
 
@@ -409,7 +489,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         prompt: userPrompt,
         systemPrompt,
         stepNumber: 4,
-        bypassCache: manual,
+        bypassCache: manual || Boolean(article.qualityReport && article.qualityReport.status !== 'pass'),
         maxTokens,
         temperature: 0.2,
         jsonMode: true,
@@ -484,36 +564,126 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           facts: { repairedFields: missingParts.join(', '), remainingFields: remaining.join(', ') || 'none' },
         });
       }
-      const assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
+      let assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
+      let evidenceUsage = getDraftEvidenceUsage(parsed, article);
+      sessionStorage.setItem(recoveryKey, assembledDraft);
+      setRecoveryDraft(assembledDraft);
+      if (editorRef.current) editorRef.current.innerText = assembledDraft;
+      const checkpointSaved = await onUpdate({
+        draft: assembledDraft,
+        draftEvidenceUsage: evidenceUsage,
+        qualityReport: null,
+        draftSourceFingerprint,
+        draftScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),
+        step4ProcessTrace: processTrace,
+        step4RawResponseExcerpt: rawResponseExcerpt,
+        workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 4: compiledWorkflowRules.snapshot },
+      });
+      if (!checkpointSaved) throw new Error('Draft đã được giữ tạm trên thiết bị nhưng chưa thể lưu checkpoint vào Supabase. Hãy kiểm tra kết nối rồi thử lưu lại; không cần gọi AI lại ngay.');
       const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
-      if (validation.failed.length) throw new Error(`Draft chưa được lưu vì chưa đạt 100% SEO checklist (${validation.wordCount}/${targetWords} từ): ${validation.failed.map(item => item.label).join(', ')}.`);
-      const deterministic = deterministicQualityChecks(article, assembledDraft, targetWords, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name));
+      if (validation.failed.length) throw new Error(`Draft đã được lưu để chỉnh sửa nhưng chưa đạt 100% SEO checklist (${validation.wordCount}/${targetWords} từ): ${validation.failed.map(item => item.label).join(', ')}.`);
+      let deterministic = [
+        ...deterministicQualityChecks(article, assembledDraft, targetWords, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name)),
+        ...evidenceMappingChecks(article, evidenceUsage, verifiedOutline),
+      ];
       if (deterministic.some(item => item.status === 'fail')) {
         const report = qualityReport(article, deterministic);
         await onUpdate({ qualityReport: report });
-        throw new Error(`Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => `${item.label} — ${item.reason}`).join('; ')}.`);
+        throw new Error(`Draft đã được lưu nhưng Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => `${item.label} — ${item.reason}`).join('; ')}.`);
       }
-      const semanticResponse = await callAI({
+      const runSemanticReview = (candidate: string, candidateUsage: Record<string, string[]>) => callAI({
         articleId: article.id,
         model,
         railwayUrl,
         stepNumber: 4,
-        bypassCache: manual,
+        bypassCache: manual || Boolean(article.qualityReport && article.qualityReport.status !== 'pass'),
         maxTokens: 1400,
         temperature: 0,
         jsonMode: true,
+        jsonSchema: semanticQualitySchema,
         skipDocumentContext: true,
-        systemPrompt: 'You are a strict publishing quality reviewer. Evaluate only the supplied Article Spec and draft. Return JSON only. Do not rewrite the article.',
-        prompt: [`ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`, `DRAFT: ${assembledDraft}`, 'Return {"checks":[{"id":"intent-satisfied|reader-outcome|intro-quality|keyword-naturalness|evidence-support|brand-pov","label":string,"status":"pass|warning|fail","reason":string,"evidence":string,"location":string,"recommendedAction":string,"autoFixAllowed":boolean}]}. Return exactly all six IDs. Use pass only with concrete evidence.'].join('\n\n'),
+        systemPrompt: 'You are a strict publishing quality reviewer. Evaluate the supplied Article Spec, approved evidence registry, section-to-evidence mapping and draft. Visible citations, footnotes, filenames and evidence IDs are not required in the prose. Evidence support passes when concrete claims are supported by the supplied evidence and declared mapping; do not penalize general explanatory prose for lacking a citation. Return JSON only. Do not rewrite the article.',
+        prompt: [
+          `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+          `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+          `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
+          `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
+          `DRAFT: ${candidate}`,
+          'Return exactly all six required checks. Use warning only for a genuine publish-quality concern; use fail for a blocking unsupported claim or contract violation. Cite the relevant draft location in evidence/location.',
+        ].join('\n\n'),
       });
+      let semanticResponse = await runSemanticReview(assembledDraft, evidenceUsage);
       const semantic = parseSemanticQuality(semanticResponse.content);
-      const report = qualityReport(article, [...deterministic, ...semantic]);
+      let report = qualityReport(article, [...deterministic, ...semantic]);
+      processTrace.push({
+        id: `draft-semantic-${Date.now()}`,
+        stage: 'validation',
+        status: report.status === 'pass' ? 'completed' : 'warning',
+        title: 'Evidence-aware semantic review',
+        detail: report.status === 'pass' ? 'All semantic publishing checks passed.' : `Targeted repair required for: ${semantic.filter(item => item.status !== 'pass').map(item => item.label).join(', ')}.`,
+      });
       if (report.status !== 'pass') {
         await onUpdate({ qualityReport: report });
-        throw new Error(`Semantic Quality Gate chưa đạt: ${report.checks.filter(item => item.status !== 'pass').map(item => item.label).join(', ')}.`);
+        const failedChecks = report.checks.filter(item => item.kind === 'semantic' && item.status !== 'pass');
+        const repairResponse = await callAI({
+          articleId: article.id,
+          model,
+          railwayUrl,
+          stepNumber: 4,
+          bypassCache: true,
+          maxTokens,
+          temperature: 0.1,
+          jsonMode: true,
+          jsonSchema: structuredDraftSchema,
+          contextQuery,
+          skipDocumentContext: !bundle.totalCount,
+          systemPrompt: [systemPrompt, 'Revise only what is necessary to resolve the supplied semantic findings. Preserve every outline section ID and heading. Return the complete structured draft JSON so it can be validated deterministically.'].join('\n'),
+          prompt: [
+            `SEMANTIC FINDINGS: ${JSON.stringify(failedChecks)}`,
+            `CURRENT STRUCTURED DRAFT: ${JSON.stringify(parsed)}`,
+            `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+            `APPROVED OUTLINE AND EVIDENCE: ${JSON.stringify(verifiedOutline)}`,
+            `WORD BUDGET: ${JSON.stringify(wordBudget)}`,
+          ].join('\n\n'),
+        });
+        rawResponseExcerpt = `${rawResponseExcerpt}\n\n--- SEMANTIC REPAIR ---\n${repairResponse.content.slice(0, 8_000)}`.slice(0, 20_000);
+        parsed = parseAIJson(repairResponse.content) as StructuredDraftPayload;
+        const remainingParts = missingStructuredParts(parsed, article);
+        if (remainingParts.length) throw new Error(`Draft đã được lưu; semantic repair trả thiếu: ${remainingParts.join(', ')}.`);
+        assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
+        evidenceUsage = getDraftEvidenceUsage(parsed, article);
+        sessionStorage.setItem(recoveryKey, assembledDraft);
+        setRecoveryDraft(assembledDraft);
+        const repairedValidation = evaluateSeoChecklist(assembledDraft, article, targetWords);
+        deterministic = [
+          ...deterministicQualityChecks(article, assembledDraft, targetWords, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name)),
+          ...evidenceMappingChecks(article, evidenceUsage, verifiedOutline),
+        ];
+        const repairedSaved = await onUpdate({ draft: assembledDraft, draftEvidenceUsage: evidenceUsage, qualityReport: null, draftSourceFingerprint, step4RawResponseExcerpt: rawResponseExcerpt });
+        if (!repairedSaved) throw new Error('Semantic repair đã tạo xong nhưng chưa thể lưu vào Supabase.');
+        if (editorRef.current) editorRef.current.innerText = assembledDraft;
+        if (repairedValidation.failed.length || deterministic.some(item => item.status === 'fail')) {
+          report = qualityReport(article, deterministic);
+          await onUpdate({ qualityReport: report });
+          throw new Error(`Draft đã được lưu nhưng bản sửa semantic chưa đạt kiểm tra deterministic: ${[...repairedValidation.failed.map(item => item.label), ...deterministic.filter(item => item.status === 'fail').map(item => item.label)].join(', ')}.`);
+        }
+        semanticResponse = await runSemanticReview(assembledDraft, evidenceUsage);
+        report = qualityReport(article, [...deterministic, ...parseSemanticQuality(semanticResponse.content)]);
+        processTrace.push({
+          id: `draft-semantic-recheck-${Date.now()}`,
+          stage: 'validation',
+          status: report.status === 'pass' ? 'completed' : 'failed',
+          title: 'Semantic repair recheck',
+          detail: report.status === 'pass' ? 'The targeted repair passed all quality gates.' : 'The repaired draft was saved, but one or more semantic checks still require editorial review.',
+        });
+        if (report.status !== 'pass') {
+          await onUpdate({ qualityReport: report });
+          throw new Error(`Draft đã được lưu để review; Semantic Quality Gate còn cảnh báo: ${report.checks.filter(item => item.status !== 'pass').map(item => item.label).join(', ')}.`);
+        }
       }
       const saved = await onUpdate({
         draft: assembledDraft,
+        draftEvidenceUsage: evidenceUsage,
         qualityReport: report,
         draftSourceFingerprint,
         draftScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),

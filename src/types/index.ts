@@ -363,6 +363,7 @@ export interface Article {
   draftScannedAt?: string | null
   step4ProcessTrace?: AIProcessTraceEvent[]
   step4RawResponseExcerpt?: string | null
+  draftEvidenceUsage?: Record<string, string[]>
   qualityReport?: UniversalQualityReport | null
   editorialApproval?: EditorialApproval | null
   workflowRuleSnapshots?: Partial<Record<2 | 3 | 4, WorkflowRuleSnapshot>>
