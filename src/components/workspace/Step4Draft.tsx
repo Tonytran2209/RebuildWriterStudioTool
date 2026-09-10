@@ -119,9 +119,9 @@ const semanticQualitySchema: Record<string, unknown> = {
   },
 };
 
-function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit: number, introductionPercent = 8, conclusionPercent = 7) {
-  const targetMin = Math.ceil(hardLimit * 0.92);
-  const targetMax = Math.floor(hardLimit * 0.96);
+function buildSectionBudget(outline: NonNullable<Article['outline']>, wordTarget: number, introductionPercent = 8, conclusionPercent = 7) {
+  const targetMin = Math.ceil(wordTarget * 0.95);
+  const targetMax = Math.floor(wordTarget * 1.03);
   const introduction = { min: Math.floor(targetMin * introductionPercent / 100), max: Math.floor(targetMax * (introductionPercent + 1) / 100) };
   const conclusion = { min: Math.floor(targetMin * conclusionPercent / 100), max: Math.floor(targetMax * (conclusionPercent + 1) / 100) };
   const headingOverhead = outline.reduce((sum, section) => sum + countWords(section.heading) + 1, 10);
@@ -138,10 +138,10 @@ function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit:
       maxWords: Math.max(45, Math.floor(sectionPoolMax * weight / totalWeight)),
     };
   });
-  return { hardLimit, targetMin, targetMax, introduction, conclusion, headingOverhead, sections };
+  return { wordTarget, acceptedMin: Math.max(800, Math.ceil(wordTarget * 0.85)), acceptedMax: Math.floor(wordTarget * 1.15), targetMin, targetMax, introduction, conclusion, headingOverhead, sections };
 }
 
-function assessOutlineFeasibility(article: Article, hardLimit: number) {
+function assessOutlineFeasibility(article: Article, wordTarget: number) {
   const outline = article.outline ?? [];
   const headingWords = outline.reduce((sum, section) => sum + countWords(section.heading) + 1, 10);
   const sectionMinimum = outline.reduce((sum, section) => sum + (section.level === 'h3' ? 55 : 90), 0);
@@ -149,7 +149,7 @@ function assessOutlineFeasibility(article: Article, hardLimit: number) {
   const minimumRequired = headingWords + sectionMinimum + coverageMinimum + 130;
   return {
     minimumRequired,
-    feasible: minimumRequired <= Math.floor(hardLimit * 0.96),
+    feasible: minimumRequired <= Math.floor(wordTarget * 1.15),
   };
 }
 
@@ -192,7 +192,7 @@ function evaluateSeoChecklist(text: string, article: Article, targetWords: numbe
   const items = [
     { key: 'titleKeyword', label: 'Tiêu đề H1 có primary keyword', pass: Boolean(normalizedKeyword && markdownTitle.toLocaleLowerCase().includes(normalizedKeyword)) },
     { key: 'minimumLength', label: 'Độ dài >= 800 từ', pass: wordCount >= 800 },
-    { key: 'targetLength', label: `Không vượt hard limit ${targetWords.toLocaleString()} từ`, pass: wordCount <= targetWords },
+    { key: 'targetLength', label: `Trong khoảng mục tiêu ${Math.max(800, Math.ceil(targetWords * 0.85)).toLocaleString()}–${Math.floor(targetWords * 1.15).toLocaleString()} từ`, pass: wordCount >= Math.max(800, Math.ceil(targetWords * 0.85)) && wordCount <= Math.floor(targetWords * 1.15) },
     { key: 'headings', label: 'Có headings H2/H3', pass: /^#{2,3}\s+\S/m.test(text) },
     { key: 'bodyKeyword', label: 'Primary keyword xuất hiện trong bài', pass: Boolean(normalizedKeyword && normalizedDraft.includes(normalizedKeyword)) },
   ];
@@ -346,7 +346,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const prerequisite = gateArticleStep(article, 4);
   const draftSourceFingerprint = useMemo(
     () => [
-      buildWorkflowSourceFingerprint(bundle), model.provider, model.id, 'step4-draft-v6-effective-word-budget',
+      buildWorkflowSourceFingerprint(bundle), model.provider, model.id, 'step4-draft-v7-flexible-word-target',
       article.selectedCoreIdeaId, article.topic, article.angle,
       JSON.stringify(article.outline ?? []), article.tone, article.keywords, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, compiledWorkflowRules.fingerprint,
     ].join(':'),
@@ -407,7 +407,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     }
     const feasibility = assessOutlineFeasibility(article, targetWords);
     if (!feasibility.feasible) {
-      setError(`Outline hiện tại cần tối thiểu khoảng ${feasibility.minimumRequired} từ để bao phủ đủ section và must-cover topic, vượt giới hạn ${targetWords} từ. Hãy tăng giới hạn hoặc rút gọn outline trước khi tạo draft.`);
+      setError(`Outline hiện tại cần tối thiểu khoảng ${feasibility.minimumRequired} từ để bao phủ đủ section và must-cover topic, vượt vùng linh hoạt quanh target ${targetWords} từ. Hãy tăng target hoặc rút gọn outline trước khi tạo draft.`);
       return;
     }
     generationInFlight.current = true;
@@ -466,7 +466,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         `- Độc giả: ${article.targetAudience || ''}`,
         `- Giọng văn: ${article.tone || ''}`,
         `- Từ khóa: ${article.keywords || ''}`,
-        `- Tổng mục tiêu: ${wordBudget.targetMin}–${wordBudget.targetMax} từ tiếng Anh; hard limit ${wordBudget.hardLimit} từ`,
+        `- TARGET WORDS: ${wordBudget.wordTarget} từ tiếng Anh. Hãy chủ động viết trong vùng tối ưu ${wordBudget.targetMin}–${wordBudget.targetMax}; QC chấp nhận ${wordBudget.acceptedMin}–${wordBudget.acceptedMax}. Đây là target linh hoạt, không phải yêu cầu cắt câu hoặc bỏ kết luận.`,
         `- Introduction: ${wordBudget.introduction.min}–${wordBudget.introduction.max} từ`,
         `- Conclusion: ${wordBudget.conclusion.min}–${wordBudget.conclusion.max} từ`,
         `- Section budgets: ${JSON.stringify(wordBudget.sections)}`,
@@ -927,8 +927,8 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-500">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono font-semibold">
                   <span>{wordCount.toLocaleString()} {tr('từ tiếng Anh', 'English words')}</span>
-                  <span>Target {Math.ceil(targetWords * 0.92).toLocaleString()}–{Math.floor(targetWords * 0.96).toLocaleString()}</span>
-                  <span>Hard limit {targetWords.toLocaleString()}</span>
+                  <span>Target {targetWords.toLocaleString()}</span>
+                  <span>QC range {Math.max(800, Math.ceil(targetWords * 0.85)).toLocaleString()}–{Math.floor(targetWords * 1.15).toLocaleString()}</span>
                   <span>{draft.length.toLocaleString()} {tr('ký tự', 'characters')}</span>
                 </div>
                 <span>{progress}% {tr('hoàn thành', 'complete')}</span>

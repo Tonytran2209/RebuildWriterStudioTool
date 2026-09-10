@@ -843,12 +843,15 @@ async function runBatchModel(
 
 function batchSeoFailures(text: string, article: any, targetWords: number) {
   const words = text.trim().split(/\s+/).filter(Boolean).length
+  const acceptedMin = Math.max(800, Math.ceil(targetWords * 0.85))
+  const acceptedMax = Math.floor(targetWords * 1.15)
   const idea =
     article.coreIdeaSuggestions?.find(
       (item: any) => item.id === article.selectedCoreIdeaId,
     ) ?? article.coreIdeaSuggestions?.[0]
   const primaryKeyword = String(
-    idea?.primaryKeyword ??
+    article.articleSpec?.primaryQuery ??
+      idea?.primaryKeyword ??
       String(article.keywords ?? "").split(",")[0] ??
       article.topic ??
       "",
@@ -864,9 +867,11 @@ function batchSeoFailures(text: string, article: any, targetWords: number) {
     !normalizedKeyword || !title.toLocaleLowerCase().includes(normalizedKeyword)
       ? "H1 title must contain the exact primary keyword"
       : "",
-    words < 800 ? "article must contain at least 800 English words" : "",
-    words > targetWords
-      ? `article exceeds the configured ${targetWords}-word hard limit`
+    words < acceptedMin
+      ? `article is below the accepted ${acceptedMin}-word minimum around target ${targetWords}`
+      : "",
+    words > acceptedMax
+      ? `article exceeds the accepted ${acceptedMax}-word maximum around target ${targetWords}`
       : "",
     !/^#{2,3}\s+\S/m.test(text)
       ? "article must contain Markdown H2/H3 headings"
@@ -1051,12 +1056,12 @@ function parseBatchSemanticChecks(raw: string) {
 
 function batchDraftBudget(
   outline: any[],
-  hardLimit: number,
+  wordTarget: number,
   introductionPercent = 8,
   conclusionPercent = 7,
 ) {
-  const targetMin = Math.ceil(hardLimit * 0.92)
-  const targetMax = Math.floor(hardLimit * 0.96)
+  const targetMin = Math.ceil(wordTarget * 0.95)
+  const targetMax = Math.floor(wordTarget * 1.03)
   const introduction = {
     min: Math.floor((targetMin * introductionPercent) / 100),
     max: Math.floor((targetMax * (introductionPercent + 1)) / 100),
@@ -1084,7 +1089,9 @@ function batchDraftBudget(
       0,
     ) || 1
   return {
-    hardLimit,
+    wordTarget,
+    acceptedMin: Math.max(800, Math.ceil(wordTarget * 0.85)),
+    acceptedMax: Math.floor(wordTarget * 1.15),
     targetMin,
     targetMax,
     introduction,
@@ -1102,7 +1109,7 @@ function batchDraftBudget(
   }
 }
 
-function batchOutlineFeasibility(article: any, hardLimit: number) {
+function batchOutlineFeasibility(article: any, wordTarget: number) {
   const outline = Array.isArray(article.outline) ? article.outline : []
   const headingWords = outline.reduce(
     (sum: number, section: any) =>
@@ -1115,7 +1122,7 @@ function batchOutlineFeasibility(article: any, hardLimit: number) {
   )
   const coverageMinimum = (article.articleSpec?.mustCover?.length ?? 0) * 30
   const minimumRequired = headingWords + sectionMinimum + coverageMinimum + 130
-  return { minimumRequired, feasible: minimumRequired <= Math.floor(hardLimit * 0.96) }
+  return { minimumRequired, feasible: minimumRequired <= Math.floor(wordTarget * 1.15) }
 }
 
 const structuredDraftJsonSchema: Record<string, unknown> = {
@@ -1522,7 +1529,7 @@ async function runBatchArticle(
       const feasibility = batchOutlineFeasibility(article, maxDraftWords)
       if (!feasibility.feasible)
         throw new Error(
-          `Outline requires approximately ${feasibility.minimumRequired} words, above the configured ${maxDraftWords}-word hard limit. Increase the Step 3 limit or simplify the outline.`,
+          `Outline requires approximately ${feasibility.minimumRequired} words, above the flexible range around the configured ${maxDraftWords}-word target. Increase the Step 3 target or simplify the outline.`,
         )
       const budget = batchDraftBudget(
         article.outline ?? [],
@@ -1587,7 +1594,7 @@ async function runBatchArticle(
       ]
       if (deterministic.some((item) => item.status !== "pass")) {
         const report = {
-          version: 4,
+          version: 5,
           status: "fail",
           checkedAt: new Date().toISOString(),
           articleSpecFingerprint: article.articleSpecFingerprint,
@@ -1623,7 +1630,7 @@ async function runBatchArticle(
       const semantic = parseBatchSemanticChecks(review.content)
       const checks = [...deterministic, ...semantic]
       const report = {
-        version: 4,
+        version: 5,
         status: checks.every((item) => item.status === "pass")
           ? "pass"
           : checks.some((item) => item.status === "fail")

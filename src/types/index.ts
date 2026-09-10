@@ -118,7 +118,7 @@ export type StepCategoryPromptRules = Partial<Record<FileCategory, string>>
 export interface StepConfig {
   modelId: string
   fileAccess: StepFileAccess
-  /** Hard English-word budget for the final draft stage. */
+  /** Target English-word count for the final draft stage (legacy field name). */
   maxDraftWords?: number
   /** Legacy character setting, read once as a numeric migration fallback. */
   maxDraftCharacters?: number
