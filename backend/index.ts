@@ -865,8 +865,8 @@ function batchSeoFailures(text: string, article: any, targetWords: number) {
       ? "H1 title must contain the exact primary keyword"
       : "",
     words < 800 ? "article must contain at least 800 English words" : "",
-    words < targetWords * 0.9 || words > targetWords
-      ? `article must contain 90–100% of the ${targetWords}-word target`
+    words > targetWords
+      ? `article exceeds the configured ${targetWords}-word hard limit`
       : "",
     !/^#{2,3}\s+\S/m.test(text)
       ? "article must contain Markdown H2/H3 headings"
@@ -1039,7 +1039,7 @@ function batchDraftBudget(
   conclusionPercent = 7,
 ) {
   const targetMin = Math.ceil(hardLimit * 0.92)
-  const targetMax = Math.floor(hardLimit * 0.98)
+  const targetMax = Math.floor(hardLimit * 0.96)
   const introduction = {
     min: Math.floor((targetMin * introductionPercent) / 100),
     max: Math.floor((targetMax * (introductionPercent + 1)) / 100),
@@ -1098,7 +1098,7 @@ function batchOutlineFeasibility(article: any, hardLimit: number) {
   )
   const coverageMinimum = (article.articleSpec?.mustCover?.length ?? 0) * 30
   const minimumRequired = headingWords + sectionMinimum + coverageMinimum + 130
-  return { minimumRequired, feasible: minimumRequired <= Math.floor(hardLimit * 0.98) }
+  return { minimumRequired, feasible: minimumRequired <= Math.floor(hardLimit * 0.96) }
 }
 
 const structuredDraftJsonSchema: Record<string, unknown> = {
@@ -1471,7 +1471,7 @@ async function runBatchArticle(
       )
       if (deterministic.some((item) => item.status !== "pass")) {
         const report = {
-          version: 2,
+          version: 3,
           status: "fail",
           checkedAt: new Date().toISOString(),
           articleSpecFingerprint: article.articleSpecFingerprint,
@@ -1503,7 +1503,7 @@ async function runBatchArticle(
       const semantic = parseBatchSemanticChecks(review.content)
       const checks = [...deterministic, ...semantic]
       const report = {
-        version: 2,
+        version: 3,
         status: checks.every((item) => item.status === "pass")
           ? "pass"
           : checks.some((item) => item.status === "fail")

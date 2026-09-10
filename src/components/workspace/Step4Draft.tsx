@@ -92,7 +92,7 @@ function mergeStructuredDraft(base: StructuredDraftPayload, repair: StructuredDr
 
 function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit: number, introductionPercent = 8, conclusionPercent = 7) {
   const targetMin = Math.ceil(hardLimit * 0.92);
-  const targetMax = Math.floor(hardLimit * 0.98);
+  const targetMax = Math.floor(hardLimit * 0.96);
   const introduction = { min: Math.floor(targetMin * introductionPercent / 100), max: Math.floor(targetMax * (introductionPercent + 1) / 100) };
   const conclusion = { min: Math.floor(targetMin * conclusionPercent / 100), max: Math.floor(targetMax * (conclusionPercent + 1) / 100) };
   const headingOverhead = outline.reduce((sum, section) => sum + countWords(section.heading) + 1, 10);
@@ -120,7 +120,7 @@ function assessOutlineFeasibility(article: Article, hardLimit: number) {
   const minimumRequired = headingWords + sectionMinimum + coverageMinimum + 130;
   return {
     minimumRequired,
-    feasible: minimumRequired <= Math.floor(hardLimit * 0.98),
+    feasible: minimumRequired <= Math.floor(hardLimit * 0.96),
   };
 }
 
@@ -163,7 +163,7 @@ function evaluateSeoChecklist(text: string, article: Article, targetWords: numbe
   const items = [
     { key: 'titleKeyword', label: 'Tiêu đề H1 có primary keyword', pass: Boolean(normalizedKeyword && markdownTitle.toLocaleLowerCase().includes(normalizedKeyword)) },
     { key: 'minimumLength', label: 'Độ dài >= 800 từ', pass: wordCount >= 800 },
-    { key: 'targetLength', label: `Trong ngưỡng ${Math.ceil(targetWords * 0.9).toLocaleString()}–${targetWords.toLocaleString()} từ`, pass: wordCount >= targetWords * 0.9 && wordCount <= targetWords },
+    { key: 'targetLength', label: `Không vượt hard limit ${targetWords.toLocaleString()} từ`, pass: wordCount <= targetWords },
     { key: 'headings', label: 'Có headings H2/H3', pass: /^#{2,3}\s+\S/m.test(text) },
     { key: 'bodyKeyword', label: 'Primary keyword xuất hiện trong bài', pass: Boolean(normalizedKeyword && normalizedDraft.includes(normalizedKeyword)) },
   ];
@@ -228,7 +228,7 @@ function assessDraft(text: string, article: Article, targetWords: number): strin
   const normalized = text.toLocaleLowerCase();
   const words = countWords(text);
   const warnings: string[] = [];
-  if (words < targetWords * 0.7) warnings.push(`Draft mới đạt ${words}/${targetWords} từ mục tiêu.`);
+  if (words < targetWords * 0.9) warnings.push(`Draft có ${words}/${targetWords} từ — thấp hơn khoảng viết khuyến nghị nhưng vẫn có thể hoàn thành nếu các kiểm tra coverage và chất lượng đều đạt.`);
   const primaryKeyword = (article.keywords || '').split(',')[0]?.trim();
   if (primaryKeyword && !normalized.includes(primaryKeyword.toLocaleLowerCase())) warnings.push(`Chưa tìm thấy primary keyword “${primaryKeyword}”.`);
   const missingHeadings = (article.outline ?? []).filter(section =>
@@ -486,12 +486,12 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
       }
       const assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
       const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
-      if (validation.failed.length) throw new Error(`Draft chưa được lưu vì chưa đạt 100% SEO checklist: ${validation.failed.map(item => item.label).join(', ')}.`);
+      if (validation.failed.length) throw new Error(`Draft chưa được lưu vì chưa đạt 100% SEO checklist (${validation.wordCount}/${targetWords} từ): ${validation.failed.map(item => item.label).join(', ')}.`);
       const deterministic = deterministicQualityChecks(article, assembledDraft, targetWords, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name));
       if (deterministic.some(item => item.status === 'fail')) {
         const report = qualityReport(article, deterministic);
         await onUpdate({ qualityReport: report });
-        throw new Error(`Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => item.label).join(', ')}.`);
+        throw new Error(`Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => `${item.label} — ${item.reason}`).join('; ')}.`);
       }
       const semanticResponse = await callAI({
         articleId: article.id,
@@ -757,7 +757,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
               <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-500">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono font-semibold">
                   <span>{wordCount.toLocaleString()} {tr('từ tiếng Anh', 'English words')}</span>
-                  <span>Target {Math.ceil(targetWords * 0.92).toLocaleString()}–{Math.floor(targetWords * 0.98).toLocaleString()}</span>
+                  <span>Target {Math.ceil(targetWords * 0.92).toLocaleString()}–{Math.floor(targetWords * 0.96).toLocaleString()}</span>
                   <span>Hard limit {targetWords.toLocaleString()}</span>
                   <span>{draft.length.toLocaleString()} {tr('ký tự', 'characters')}</span>
                 </div>
