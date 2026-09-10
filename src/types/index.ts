@@ -36,6 +36,7 @@ export interface AICallUsage {
 }
 
 export type FileCategory = "kb" | "rules"
+export type LegacyFileCategory = "action" | "action-plan"
 export type FileType = "pdf" | "docx" | "csv" | "xlsx" | "txt" | "md" | "json"
 
 export interface StructuredDocumentSection {
@@ -53,7 +54,7 @@ export interface DocumentFile {
   name: string
   size: string
   uploadedAt: string
-  category: FileCategory
+  category: FileCategory | LegacyFileCategory
   fileType: FileType
   content?: string
   contentUpdatedAt?: string
@@ -382,6 +383,10 @@ export interface Article {
   contentPlanId?: string
   contentPlanVersion?: number
   contentPlanSourceItemId?: string
+  /** Runtime compatibility marker. Legacy records remain read-only until copied. */
+  legacyReadOnly?: boolean
+  legacyReason?: string
+  migratedFromArticleId?: string
 }
 
 export interface WorkflowRuleSnapshot {
@@ -464,7 +469,7 @@ export interface ContentType {
 }
 
 export type ActiveTab = "step-setup" | "models" | "knowledge-base"
-export type KbSubTab = "kb" | "rules" | "website"
+export type KbSubTab = "kb" | "rules" | "website" | "legacy-action"
 
 // ── Knowledge/Skill source import ────────────────────────────────────────────
 

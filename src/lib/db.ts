@@ -82,6 +82,14 @@ export async function deleteArticle(id: string): Promise<void> {
   })
 }
 
+export async function migrateLegacyArticle(id: string): Promise<Article> {
+  const result = await railwayRequest<{ article: Article }>(
+    `/api/articles/${encodeURIComponent(id)}/migrate-legacy`,
+    { method: "POST" },
+  )
+  return result.article
+}
+
 export async function startBatch(activityId: string): Promise<void> {
   await railwayRequest(`/api/batches/${encodeURIComponent(activityId)}/start`, {
     method: "POST",

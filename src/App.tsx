@@ -17,10 +17,12 @@ import ConfigModal from "./components/config/ConfigModal"
 import Step2CoreIdea from "./components/workspace/Step2CoreIdea"
 import Step3Outline from "./components/workspace/Step3Outline"
 import Step4Draft from "./components/workspace/Step4Draft"
+import LegacyArticleView from "./components/workspace/LegacyArticleView"
 import { useI18n } from "./lib/i18n"
 import ActivityLauncher from "./components/ActivityLauncher"
 import BatchActivity from "./components/BatchActivity"
 import { clampArticleStep, gateArticleStep, gateStepCompletion } from "./lib/workflowGuards"
+import { isLegacyArticle } from "./lib/legacyCompatibility"
 
 function generateId() {
   return `art-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -60,6 +62,7 @@ export default function App() {
   const [deletingArticleId, setDeletingArticleId] = useState<string | null>(
     null,
   )
+  const [migratingLegacyId, setMigratingLegacyId] = useState<string | null>(null)
   const [visibleWorkflowStep, setVisibleWorkflowStep] = useState<2 | 3 | 4>(2)
   const workflowStepRefs = useRef(new Map<2 | 3 | 4, HTMLElement>())
   const articleMutationQueues = useRef(new Map<string, Promise<void>>())
@@ -115,7 +118,9 @@ export default function App() {
         ])
 
         if (remoteArticles?.length) {
-          setArticles(remoteArticles.map((item) => ({ ...item, currentStep: clampArticleStep(item) })))
+          setArticles(remoteArticles.map((item) => isLegacyArticle(item)
+            ? { ...item, legacyReadOnly: true }
+            : { ...item, currentStep: clampArticleStep(item) }))
         }
         if (remoteConfig) {
           setConfig(mergeWithLatestModelCatalog(remoteConfig))
@@ -330,6 +335,24 @@ export default function App() {
     },
     [completionSavingId, enqueueArticleMutation],
   )
+
+  const handleMigrateLegacy = useCallback(async (target: Article) => {
+    if (migratingLegacyId) return
+    setMigratingLegacyId(target.id)
+    setArticleActionError(null)
+    try {
+      const copy = await db.migrateLegacyArticle(target.id)
+      setArticles((current) => [copy, ...current])
+      setActiveId(copy.id)
+      setShowBatchOverview(false)
+    } catch (error) {
+      setArticleActionError(
+        `${tr("Không tạo được bản workflow mới", "Could not create current-workflow copy")}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    } finally {
+      setMigratingLegacyId(null)
+    }
+  }, [migratingLegacyId, tr])
 
   const handleDeleteArticle = useCallback(
     async (target: Article) => {
@@ -622,7 +645,13 @@ export default function App() {
             </button>
           </div>
         )}
-        {article?.activityKind === "batch" && showBatchOverview ? (
+        {article && isLegacyArticle(article) ? (
+          <LegacyArticleView
+            article={article}
+            migrating={migratingLegacyId === article.id}
+            onMigrate={() => void handleMigrateLegacy(article)}
+          />
+        ) : article?.activityKind === "batch" && showBatchOverview ? (
           <BatchActivity
             articles={articles.filter(
               (item) => item.activityId === article.activityId,

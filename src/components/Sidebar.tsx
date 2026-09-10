@@ -1,8 +1,9 @@
 import { useState } from "react"
-import { ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
+import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
+import { isLegacyArticle } from "../lib/legacyCompatibility"
 
 interface Props {
   articles: Article[]
@@ -111,6 +112,7 @@ export default function Sidebar({
           const batchComplete = isBatch && groupArticles.every((item) => item.batchStatus === "completed" || Boolean(item.draft?.trim()))
           const batchWorking = isBatch && !batchComplete && groupArticles.some((item) => !["failed", "paused"].includes(item.batchStatus ?? "queued"))
           const singleComplete = !isBatch && (article.status === "done" || Boolean(article.completedAt))
+          const legacy = !isBatch && isLegacyArticle(article)
           const label = isBatch
             ? `${article.activityType === "editorial-originality" ? "Editorial / Originality" : "Comparison / SEO"} · ${groupArticles.length} ${tr("bài", "articles")}`
             : article.topic || article.title
@@ -127,6 +129,7 @@ export default function Sidebar({
                 onClick={() => onSelectArticle(article.id)}
                 className="flex h-9 w-full items-center px-2.5 pr-9 text-left"
               >
+                {legacy && <Archive className="app-icon mr-2 shrink-0 text-[#777]" aria-label={tr("Bài lưu trữ cũ", "Legacy archive")} />}
                 <div
                   className={`truncate text-[13px] leading-5 ${
                     active ? "font-semibold text-[#242422]" : "font-medium text-[#444440]"
@@ -137,14 +140,14 @@ export default function Sidebar({
               </button>
               {batchWorking && <LoaderCircle className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-[#aaa] transition-opacity group-hover:opacity-0" aria-label={tr("Đang tạo bài", "Generating articles")} />}
               {(batchComplete || singleComplete) && <CircleCheck className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-400 transition-opacity group-hover:opacity-0" aria-label={tr("Đã hoàn tất", "Completed")} />}
-              <button
+              {!legacy && <button
                 disabled={deletingArticleId === article.id}
                 onClick={() => onDeleteArticle(article)}
                 className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-[#8b8b85] opacity-0 transition-opacity hover:bg-white/10 hover:text-red-400 group-hover:opacity-100 focus:opacity-100"
                 aria-label={tr("Xóa bài viết", "Delete article")}
               >
                 <Trash2 className="app-icon" aria-hidden="true" />
-              </button>
+              </button>}
             </div>
           )
         })}

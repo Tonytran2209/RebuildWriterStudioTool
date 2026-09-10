@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { BookOpen, Globe2, ScrollText } from "lucide-react"
+import { Archive, BookOpen, Download, Globe2, ScrollText } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type {
   ActionDataSource,
@@ -12,6 +12,7 @@ import type {
 import SourceImportPanel from "./SourceImportPanel"
 import WorkflowRulesPanel from "./WorkflowRulesPanel"
 import { scanWebsiteUrl } from "../../lib/db"
+import { isLegacyActionPlan } from "../../lib/legacyCompatibility"
 
 const SUBTAB_META: Record<KbSubTab, {
   label: string
@@ -35,6 +36,11 @@ const SUBTAB_META: Record<KbSubTab, {
     label: "Website Inventory",
     hint: "Danh sách URL duy nhất AI được phép đề xuất làm internal link",
     icon: Globe2,
+  },
+  "legacy-action": {
+    label: "Legacy Action Plans",
+    hint: "Kho chỉ đọc cho Action Plan từ phiên bản cũ",
+    icon: Archive,
   },
 }
 
@@ -131,6 +137,8 @@ export default function TabKnowledgeBase({
             onConfigChange({ ...config, websiteInventory: records })
           }
         />
+      ) : activeSubTab === "legacy-action" ? (
+        <LegacyActionPlanArchive files={files.filter(isLegacyActionPlan)} />
       ) : (
         <div className="space-y-4">
           <SourceImportPanel
@@ -144,6 +152,44 @@ export default function TabKnowledgeBase({
         </div>
       )}
     </div>
+  )
+}
+
+function LegacyActionPlanArchive({ files }: { files: DocumentFile[] }) {
+  const download = (file: DocumentFile) => {
+    const content = file.content ?? file.preview ?? ""
+    const url = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = file.name
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+  return (
+    <section>
+      <h2 className="text-sm font-medium text-slate-800">Legacy Action Plan archive</h2>
+      <p className="mt-1 text-xs leading-5 text-slate-400">
+        Các nguồn này chỉ dùng để xem và tải lại. Chúng không được đưa vào prompt của workflow hiện tại.
+      </p>
+      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {!files.length ? (
+          <p className="px-4 py-8 text-center text-sm text-slate-400">Không tìm thấy Action Plan legacy trong kho file hiện tại.</p>
+        ) : files.map((file) => (
+          <details key={file.id} className="border-b border-slate-200 last:border-b-0">
+            <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-slate-800">{file.name}</div>
+                <div className="mt-1 text-xs text-slate-400">{file.fileType?.toUpperCase()} · {file.size} · {file.uploadedAt}</div>
+              </div>
+              <button type="button" onClick={(event) => { event.preventDefault(); download(file) }} className="settings-secondary-action rounded-md p-2 text-slate-500" aria-label={`Download ${file.name}`}>
+                <Download className="app-icon" aria-hidden="true" />
+              </button>
+            </summary>
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap border-t border-slate-100 bg-slate-50 px-4 py-4 text-xs leading-5 text-slate-600">{file.content || file.preview || "Không có nội dung preview."}</pre>
+          </details>
+        ))}
+      </div>
+    </section>
   )
 }
 

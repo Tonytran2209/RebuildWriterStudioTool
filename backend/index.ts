@@ -234,7 +234,22 @@ async function loadArticles(): Promise<any[]> {
       kvSet(`${ARTICLE_PREFIX}${article.id}`, article),
     ),
   )
-  return [...individual, ...missingLegacy].sort((a, b) =>
+  return [...individual, ...missingLegacy].map((article) => {
+    const hasPlanContract = Boolean(
+      article?.contentPlanId &&
+      (article?.contentPlanSourceItemId || article?.contentPlanItemId || article?.selectedContentTypeSuggestionId) &&
+      String(article?.contentPlanInput ?? "").trim(),
+    )
+    const hasLegacyOutput = Boolean(
+      String(article?.draft ?? "").trim() ||
+      article?.outline?.length ||
+      article?.coreIdeaSuggestions?.length ||
+      article?.contentTypeSuggestions?.length,
+    )
+    return !hasPlanContract && hasLegacyOutput
+      ? { ...article, legacyReadOnly: true, legacyReason: "missing-current-content-plan-contract" }
+      : article
+  }).sort((a, b) =>
     String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")),
   )
 }
@@ -3279,6 +3294,45 @@ app.get("/api/articles", async (_req, res) => {
   }
 })
 
+app.get("/api/legacy/inventory", async (_req, res) => {
+  try {
+    const [articles, legacyArray, articleRecords, files] = await Promise.all([
+      loadArticles(),
+      kvGet<any[]>("writer:articles"),
+      kvGetByPrefix(ARTICLE_PREFIX),
+      kvGet<any[]>("writer:files"),
+    ])
+    const relational = (await tableAvailable("writer_articles"))
+      ? await tableSelect<any>("writer_articles", (query) => query.select("id, content_plan_id"))
+      : []
+    const individualIds = new Set(articleRecords.map((record) => record.value?.id).filter(Boolean))
+    const relationalIds = new Set(relational.map((row) => row.id))
+    const legacyOnlyIds = (legacyArray ?? [])
+      .map((article) => article?.id)
+      .filter((id): id is string => Boolean(id) && !individualIds.has(id))
+    res.json({
+      checkedAt: new Date().toISOString(),
+      articles: {
+        accessible: articles.length,
+        readOnlyLegacy: articles.filter((article) => article.legacyReadOnly).length,
+        legacyArray: legacyArray?.length ?? 0,
+        individualKv: individualIds.size,
+        relational: relationalIds.size,
+        legacyOnlyIds,
+        missingFromRelational: [...individualIds].filter((id) => !relationalIds.has(id)).length,
+        missingContentPlan: articles.filter((article) => !article.contentPlanId).length,
+        missingArticleSpec: articles.filter((article) => !article.articleSpecFingerprint).length,
+      },
+      files: {
+        total: files?.length ?? 0,
+        legacyActionPlans: (files ?? []).filter((file) => ["action", "action-plan"].includes(file?.category)).length,
+      },
+    })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.get("/api/articles/:id/stages", async (req, res) => {
   try {
     const article = (await loadArticles()).find(
@@ -3312,6 +3366,126 @@ app.post("/api/articles", async (req, res) => {
     await kvSet(`${ARTICLE_PREFIX}${article.id}`, article)
     await projectArticle(article)
     res.json({ ok: true, article })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post("/api/articles/:id/migrate-legacy", async (req, res) => {
+  try {
+    const legacy = (await loadArticles()).find((item) => item.id === req.params.id)
+    if (!legacy) return res.status(404).json({ error: "Không tìm thấy bài legacy." })
+    if (!legacy.legacyReadOnly)
+      return res.status(409).json({ error: "Bài này đã sử dụng workflow hiện tại." })
+
+    const now = new Date().toISOString()
+    const title = String(legacy.topic || legacy.title || "Legacy article").trim()
+    const keywords = String(legacy.keywords ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+    const sourceText = [
+      `Legacy article: ${title}`,
+      keywords.length ? `Keywords: ${keywords.join(", ")}` : "",
+      String(legacy.angle ?? "").trim() ? `Angle: ${String(legacy.angle).trim()}` : "",
+    ].filter(Boolean).join("\n")
+    const sourceHash = crypto.createHash("sha256").update(sourceText).digest("hex")
+    let plan = await createContentPlanRecord({
+      name: `Legacy recovery — ${title}`,
+      source: {
+        sourceType: "paste",
+        name: `Recovered from ${legacy.id}`,
+        extractedContent: sourceText,
+        contentHash: sourceHash,
+        contentLength: sourceText.length,
+      },
+    })
+    const itemId = crypto.randomUUID()
+    const sourceId = plan.sources?.[0]?.id
+    plan = await saveClassifiedPlan(plan, [{
+      id: itemId,
+      title,
+      keywords,
+      type: legacy.activityType || "comparison-seo",
+      sourceLine: sourceText,
+      sourceQuote: sourceText,
+      sourceId,
+      confidence: 1,
+      classificationReason: "Explicitly recovered from a legacy Writer Studio article.",
+    }], "legacy-compatibility-adapter")
+
+    const ideas = Array.isArray(legacy.coreIdeaSuggestions) && legacy.coreIdeaSuggestions.length
+      ? legacy.coreIdeaSuggestions
+      : [{
+          id: "legacy-recovered-idea",
+          title,
+          angleLabel: "Recovered direction",
+          angleDescription: String(legacy.angle || "Recovered from the legacy article snapshot."),
+          mainArgument: String(legacy.angle || title),
+          primaryKeyword: keywords[0] || title,
+          secondaryKeywords: keywords.slice(1),
+          targetAudience: String(legacy.targetAudience || "Existing audience"),
+          recommendedTone: String(legacy.tone || "Informational"),
+          recommendedWordCount: Number(legacy.wordCount || 1500),
+          rating: { overall: 0, seoPotential: 0, audienceFit: 0, docSupport: 0, uniqueness: 0 },
+          ratingRationale: "Recovered legacy output; not re-scored.",
+          matchedDocs: [], ruleRefs: [], evidence: [],
+        }]
+    const selectedIdeaId = ideas.some((idea: any) => idea.id === legacy.selectedCoreIdeaId)
+      ? legacy.selectedCoreIdeaId
+      : ideas[0].id
+    const spec = legacy.articleSpec ?? {
+      version: 1,
+      topic: title,
+      primaryQuery: keywords[0] || title,
+      secondaryQueries: keywords.slice(1),
+      audience: String(legacy.targetAudience || "Existing audience"),
+      market: "legacy-unspecified",
+      language: "English",
+      primaryIntent: "informational",
+      expectedReaderOutcome: String(legacy.angle || `Understand ${title}`),
+      winningFormat: String(legacy.contentType || "Article"),
+      mustCover: (legacy.outline ?? []).map((section: any) => String(section.heading || "")).filter(Boolean),
+      optionalCoverage: [],
+      thesis: String(legacy.angle || title),
+      brandPov: "Recovered legacy snapshot",
+      evidence: [],
+      ctaObjective: "Preserve the original article outcome",
+      internalLinkRequirements: [],
+      createdAt: now,
+    }
+    const specFingerprint = legacy.articleSpecFingerprint || snapshotFingerprint(spec)
+    const newId = `art-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`
+    const article = {
+      ...legacy,
+      id: newId,
+      legacyReadOnly: false,
+      legacyReason: undefined,
+      migratedFromArticleId: legacy.id,
+      title,
+      topic: title,
+      contentPlanId: plan.id,
+      contentPlanVersion: plan.version,
+      contentPlanInput: sourceText,
+      contentPlanSourceItemId: itemId,
+      contentPlanItemId: itemId,
+      selectedContentTypeSuggestionId: itemId,
+      contentType: legacy.contentType || "Comparison / SEO",
+      coreIdeaSuggestions: ideas,
+      selectedCoreIdeaId: selectedIdeaId,
+      articleSpec: spec,
+      articleSpecFingerprint: specFingerprint,
+      activityKind: "single",
+      activityId: `legacy-recovery-${legacy.id}-${Date.now()}`,
+      currentStep: Array.isArray(legacy.outline) && legacy.outline.length ? 4 : 3,
+      status: legacy.draft?.trim() ? "review" : "in_progress",
+      createdAt: now,
+      updatedAt: now,
+      completedAt: null,
+    }
+    await kvSet(`${ARTICLE_PREFIX}${newId}`, article)
+    await projectArticle(article)
+    res.status(201).json({ ok: true, article, sourceArticleId: legacy.id })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
