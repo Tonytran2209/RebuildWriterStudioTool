@@ -1,4 +1,3 @@
-import { Check } from 'lucide-react';
 import type { Article } from '../types';
 import { useI18n } from '../lib/i18n';
 
@@ -10,10 +9,11 @@ interface Props {
 
 export default function VerticalWorkflowRail({ article, activeStep, onNavigate }: Props) {
   const { tr } = useI18n();
+  const workflowComplete = article.status === 'done' || Boolean(article.completedAt);
   const steps = [
-    { step: 2 as const, label: tr('Article Spec', 'Article Spec'), available: true, complete: Boolean(article.selectedCoreIdeaId) },
-    { step: 3 as const, label: tr('Dàn bài', 'Outline'), available: Boolean(article.selectedCoreIdeaId), complete: Boolean(article.outline?.length) },
-    { step: 4 as const, label: tr('Bản nháp', 'Draft'), available: Boolean(article.outline?.length), complete: article.status === 'done', warning: Boolean(article.draft && article.qualityReport?.status !== 'pass') },
+    { step: 2 as const, number: 1, label: tr('Article Spec', 'Article Spec'), available: true, complete: workflowComplete || Boolean(article.selectedCoreIdeaId) },
+    { step: 3 as const, number: 2, label: tr('Dàn bài', 'Outline'), available: workflowComplete || Boolean(article.selectedCoreIdeaId), complete: workflowComplete || Boolean(article.outline?.length) },
+    { step: 4 as const, number: 3, label: tr('Bản nháp', 'Draft'), available: workflowComplete || Boolean(article.outline?.length), complete: workflowComplete, warning: !workflowComplete && Boolean(article.draft && article.qualityReport?.status !== 'pass') },
   ];
 
   return (
@@ -31,7 +31,7 @@ export default function VerticalWorkflowRail({ article, activeStep, onNavigate }
             >
               <span className="workflow-rail-marker" aria-hidden="true" />
               <span className="workflow-rail-label">{item.label}</span>
-              {item.complete && <Check className="workflow-rail-check" aria-hidden="true" />}
+              <span className="workflow-rail-number" aria-hidden="true">{item.number}</span>
             </button>
             {index < steps.length - 1 && (
               <span className="workflow-rail-ticks" aria-hidden="true">

@@ -2230,8 +2230,8 @@ html, body, #root {
   width: 100%;
   min-height: 1.75rem;
   align-items: center;
-  gap: .4rem;
-  padding: .25rem .3rem;
+  gap: .25rem;
+  padding: .25rem .15rem;
   border-radius: .4rem;
   border: 0;
   background: transparent;
@@ -2260,13 +2260,22 @@ html, body, #root {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.workflow-rail-check { display: none; width: .5rem; height: .5rem; flex: 0 0 .5rem; color: #d8d8d8; stroke-width: 2.35; }
+.workflow-rail-number {
+  display: block;
+  width: .55rem;
+  flex: 0 0 .55rem;
+  color: #666;
+  font-size: .6rem;
+  line-height: 1;
+  text-align: center;
+}
 .workflow-rail-button.is-active { background: #242424; color: #f2f2f2; }
 .workflow-rail-button.is-active .workflow-rail-marker { background: #f0f0f0; box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
 .workflow-rail-button.is-active .workflow-rail-label { color: #f2f2f2; font-weight: 500; }
+.workflow-rail-button.is-active .workflow-rail-number { color: #f2f2f2; font-weight: 600; }
 .workflow-rail-button.is-complete .workflow-rail-marker { background: #e7e7e7; }
 .workflow-rail-button.is-complete .workflow-rail-label { color: #e7e7e7; }
-.workflow-rail-button.is-complete .workflow-rail-check { display: block; }
+.workflow-rail-button.is-complete .workflow-rail-number { color: #d8d8d8; }
 .workflow-rail-button.is-active.is-complete .workflow-rail-marker { background: #f0f0f0; }
 .workflow-rail-button.has-warning .workflow-rail-marker { background: #777; }
 
@@ -2320,11 +2329,10 @@ html, body, #root {
 .writer-light .workflow-rail-marker { background: #c8c8c2; }
 .writer-light .workflow-rail-button.is-complete .workflow-rail-marker { background: #30302d; }
 .writer-light .workflow-rail-button.is-complete .workflow-rail-label { color: #30302d; }
-.writer-light .workflow-rail-button.is-complete .workflow-rail-check { color: #30302d; }
 .writer-light .workflow-rail-button.is-active { background: #e9e9e5; }
 .writer-light .workflow-rail-button.is-active .workflow-rail-label { color: #242422; }
 .writer-light .workflow-rail-button.is-active .workflow-rail-marker { background: #30302d; }
-.writer-light .workflow-rail-button.is-active .workflow-rail-check { color: #fff; }
+.writer-light .workflow-rail-button.is-active .workflow-rail-number { color: #242422; }
 .writer-light .workflow-rail-ticks i { background: #d8d8d2; }
 
 .continuous-step > .minimal-step-shell {
@@ -2386,7 +2394,7 @@ html, body, #root {
 .writer-light .draft-insight-tab.is-active { background: #e8e8e4; color: #242422; }
 
 @media (min-width: 1024px) {
-  .workflow-rail { width: 7.25rem; }
+  .workflow-rail { width: 6.5rem; }
   .workflow-rail-label { display: block; flex: 1 1 auto; }
-  .workflow-rail-check { flex: 0 0 auto; }
+  .workflow-rail-number { display: none; }
 }
