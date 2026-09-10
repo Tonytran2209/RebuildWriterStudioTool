@@ -17,7 +17,7 @@ export default function VerticalWorkflowRail({ article, activeStep, onNavigate }
   ];
 
   return (
-    <nav className="workflow-rail sticky top-4 self-start" aria-label={tr('Tiến trình bài viết', 'Article progress')}>
+    <nav className="workflow-rail self-start" aria-label={tr('Tiến trình bài viết', 'Article progress')}>
       <ol>
         {steps.map((item, index) => (
           <li key={item.step} className="workflow-rail-item relative">

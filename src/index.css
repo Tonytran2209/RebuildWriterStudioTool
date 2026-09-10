@@ -2215,6 +2215,9 @@ html, body, #root {
 }
 
 .workflow-rail {
+  position: sticky;
+  top: 50%;
+  transform: translateY(-50%);
   width: 2.25rem;
   padding-top: .15rem;
 }
