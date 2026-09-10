@@ -2216,33 +2216,20 @@ html, body, #root {
 
 .workflow-rail {
   width: 3rem;
-  padding-top: .25rem;
+  padding-top: .15rem;
 }
 
 .workflow-rail-item {
-  min-height: 8.5rem;
+  min-height: 5.25rem;
 }
 
-.workflow-rail-item:last-child { min-height: 3rem; }
-
-.workflow-rail-line {
-  position: absolute;
-  left: 1rem;
-  top: 2.35rem;
-  bottom: .15rem;
-  width: 1px;
-  background: repeating-linear-gradient(to bottom, #3a3a3a 0 4px, transparent 4px 9px);
-}
-
-.workflow-rail-line.is-complete {
-  background: repeating-linear-gradient(to bottom, #777 0 4px, transparent 4px 9px);
-}
+.workflow-rail-item:last-child { min-height: 1.5rem; }
 
 .workflow-rail-button {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: .5rem;
+  gap: .35rem;
   border: 0;
   background: transparent;
   color: #777;
@@ -2251,28 +2238,38 @@ html, body, #root {
 
 .workflow-rail-button:disabled { opacity: .35; cursor: default; }
 
-.workflow-rail-dot {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  flex: 0 0 2rem;
-  place-items: center;
-  border: 1px solid #383838;
-  border-radius: 50%;
-  background: #191919;
-  color: #8d8d8d;
-  font-size: .7rem;
-  font-variant-numeric: tabular-nums;
+.workflow-rail-marker {
+  width: 1.45rem;
+  height: 2px;
+  flex: 0 0 1.45rem;
+  border-radius: 999px;
+  background: #444;
 }
 
-.workflow-rail-dot svg { width: .8rem; height: .8rem; }
-.workflow-rail-label { display: none; max-width: 2.5rem; font-size: .62rem; line-height: 1.25; }
-.workflow-rail-button.is-active .workflow-rail-dot { border-color: #777; background: #292929; color: #f1f1f1; }
-.workflow-rail-button.is-active .workflow-rail-label { color: #d6d6d6; }
-.workflow-rail-button.is-complete .workflow-rail-dot { border-color: #666; color: #e7e7e7; }
-.workflow-rail-button.has-warning .workflow-rail-dot { border-style: dashed; border-color: #777; color: #e7e7e7; }
+.workflow-rail-label { display: none; max-width: 3rem; color: #666; font-size: .58rem; line-height: 1.15; }
+.workflow-rail-check { display: none; width: .65rem; height: .65rem; color: #f5f5f5; stroke-width: 2.25; }
+.workflow-rail-button.is-active .workflow-rail-marker { background: #888; }
+.workflow-rail-button.is-active .workflow-rail-label { color: #aaa; }
+.workflow-rail-button.is-complete .workflow-rail-marker { background: #e7e7e7; }
+.workflow-rail-button.is-complete .workflow-rail-label { color: #e7e7e7; }
+.workflow-rail-button.is-complete .workflow-rail-check { display: block; }
+.workflow-rail-button.has-warning .workflow-rail-marker { background: #777; }
+
+.workflow-rail-ticks {
+  display: flex;
+  height: 3.55rem;
+  flex-direction: column;
+  justify-content: space-evenly;
+  padding-left: .15rem;
+}
+
+.workflow-rail-ticks i {
+  display: block;
+  width: .48rem;
+  height: 2px;
+  border-radius: 999px;
+  background: #3f3f3f;
+}
 
 .draft-keyword-mark {
   display: inline;
@@ -2305,8 +2302,11 @@ html, body, #root {
 }
 
 .writer-light .draft-keyword-mark { background: #e1e1dd; color: #30302d; }
-.writer-light .workflow-rail-dot { background: #fff; border-color: #d8dde6; }
-.writer-light .workflow-rail-line { background: repeating-linear-gradient(to bottom, #d8dde6 0 4px, transparent 4px 9px); }
+.writer-light .workflow-rail-marker { background: #c8c8c2; }
+.writer-light .workflow-rail-button.is-complete .workflow-rail-marker { background: #30302d; }
+.writer-light .workflow-rail-button.is-complete .workflow-rail-label { color: #30302d; }
+.writer-light .workflow-rail-button.is-complete .workflow-rail-check { color: #30302d; }
+.writer-light .workflow-rail-ticks i { background: #d8d8d2; }
 
 .continuous-step > .minimal-step-shell {
   border: 0 !important;
@@ -2369,4 +2369,5 @@ html, body, #root {
 @media (min-width: 1024px) {
   .workflow-rail { width: 5rem; }
   .workflow-rail-label { display: inline; }
+  .workflow-rail-check { flex: 0 0 auto; }
 }

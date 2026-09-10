@@ -21,7 +21,6 @@ export default function VerticalWorkflowRail({ article, activeStep, onNavigate }
       <ol>
         {steps.map((item, index) => (
           <li key={item.step} className="workflow-rail-item relative">
-            {index < steps.length - 1 && <span className={`workflow-rail-line ${item.complete ? 'is-complete' : ''}`} aria-hidden="true" />}
             <button
               type="button"
               disabled={!item.available}
@@ -30,9 +29,15 @@ export default function VerticalWorkflowRail({ article, activeStep, onNavigate }
               title={item.label}
               aria-label={`${item.step - 1}. ${item.label}`}
             >
-              <span className="workflow-rail-dot">{item.complete ? <Check aria-hidden="true" /> : item.step - 1}</span>
+              <span className="workflow-rail-marker" aria-hidden="true" />
               <span className="workflow-rail-label">{item.label}</span>
+              {item.complete && <Check className="workflow-rail-check" aria-hidden="true" />}
             </button>
+            {index < steps.length - 1 && (
+              <span className="workflow-rail-ticks" aria-hidden="true">
+                {[0, 1, 2, 3, 4].map(tick => <i key={tick} />)}
+              </span>
+            )}
           </li>
         ))}
       </ol>
