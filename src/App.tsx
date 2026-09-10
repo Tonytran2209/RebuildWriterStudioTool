@@ -364,7 +364,9 @@ export default function App() {
       const confirmed = window.confirm(
         targets.length > 1
           ? `Xoá vĩnh viễn batch gồm ${targets.length} bài khỏi Supabase? Thao tác này không thể hoàn tác.`
-          : `Xoá vĩnh viễn bài viết “${target.title}” khỏi Supabase? Thao tác này không thể hoàn tác.`,
+          : isLegacyArticle(target)
+            ? `Xoá vĩnh viễn bài legacy “${target.title || target.topic}” khỏi cả kho lưu trữ cũ và Supabase? Thao tác này không thể hoàn tác.`
+            : `Xoá vĩnh viễn bài viết “${target.title}” khỏi Supabase? Thao tác này không thể hoàn tác.`,
       )
       if (!confirmed) return
 

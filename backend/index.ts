@@ -225,16 +225,36 @@ async function loadArticles(): Promise<any[]> {
   const records = await kvGetByPrefix(ARTICLE_PREFIX)
   const individual = records.map((record) => record.value).filter(Boolean)
   const legacy = (await kvGet<any[]>("writer:articles")) ?? []
-  const individualIds = new Set(individual.map((article) => article.id))
+  const relationalRows = (await tableAvailable("writer_articles"))
+    ? await tableSelect<any>("writer_articles", (query) =>
+        query.select("id, title, status, current_step, payload, draft, created_at, updated_at, completed_at"),
+      )
+    : []
+  const relational = relationalRows.map((row) => ({
+    ...(row.payload && typeof row.payload === "object" ? row.payload : {}),
+    id: row.id,
+    title: row.payload?.title || row.title,
+    status: row.payload?.status || row.status,
+    currentStep: row.payload?.currentStep ?? row.current_step,
+    draft: row.payload?.draft ?? row.draft,
+    createdAt: row.payload?.createdAt || row.created_at,
+    updatedAt: row.payload?.updatedAt || row.updated_at,
+    completedAt: row.payload?.completedAt ?? row.completed_at,
+  }))
+  const individualIds = new Set(individual.map((article) => article.id).filter(Boolean))
   const missingLegacy = legacy.filter(
     (article) => article?.id && !individualIds.has(article.id),
   )
+  const knownIds = new Set([...individualIds, ...missingLegacy.map((article) => article.id)])
+  const missingRelational = relational.filter(
+    (article) => article?.id && !knownIds.has(article.id),
+  )
   await Promise.all(
-    missingLegacy.map((article) =>
+    [...missingLegacy, ...missingRelational].map((article) =>
       kvSet(`${ARTICLE_PREFIX}${article.id}`, article),
     ),
   )
-  return [...individual, ...missingLegacy].map((article) => {
+  return [...individual, ...missingLegacy, ...missingRelational].map((article) => {
     const hasPlanContract = Boolean(
       article?.contentPlanId &&
       (article?.contentPlanSourceItemId || article?.contentPlanItemId || article?.selectedContentTypeSuggestionId) &&
