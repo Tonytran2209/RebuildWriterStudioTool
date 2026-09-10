@@ -2243,13 +2243,9 @@ html, body, #root {
 .workflow-rail-button:disabled { opacity: .35; cursor: default; }
 
 .workflow-rail-marker {
-  position: relative;
-  display: flex;
   width: 1.1rem;
   height: 2px;
   flex: 0 0 1.1rem;
-  align-items: center;
-  justify-content: center;
   border-radius: 999px;
   background: #444;
 }
@@ -2264,14 +2260,14 @@ html, body, #root {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.workflow-rail-check { display: none; width: .58rem; height: .58rem; color: #f5f5f5; stroke-width: 2.5; }
+.workflow-rail-check { display: none; width: .5rem; height: .5rem; flex: 0 0 .5rem; color: #d8d8d8; stroke-width: 2.35; }
 .workflow-rail-button.is-active { background: #242424; color: #f2f2f2; }
 .workflow-rail-button.is-active .workflow-rail-marker { background: #f0f0f0; box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
 .workflow-rail-button.is-active .workflow-rail-label { color: #f2f2f2; font-weight: 500; }
-.workflow-rail-button.is-complete .workflow-rail-marker { height: .85rem; background: #383838; }
+.workflow-rail-button.is-complete .workflow-rail-marker { background: #e7e7e7; }
 .workflow-rail-button.is-complete .workflow-rail-label { color: #e7e7e7; }
 .workflow-rail-button.is-complete .workflow-rail-check { display: block; }
-.workflow-rail-button.is-active.is-complete .workflow-rail-marker { background: #4a4a4a; }
+.workflow-rail-button.is-active.is-complete .workflow-rail-marker { background: #f0f0f0; }
 .workflow-rail-button.has-warning .workflow-rail-marker { background: #777; }
 
 .workflow-rail-ticks {

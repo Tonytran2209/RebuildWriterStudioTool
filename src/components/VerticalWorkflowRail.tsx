@@ -29,10 +29,9 @@ export default function VerticalWorkflowRail({ article, activeStep, onNavigate }
               title={item.label}
               aria-label={`${item.step - 1}. ${item.label}`}
             >
-              <span className="workflow-rail-marker" aria-hidden="true">
-                {item.complete && <Check className="workflow-rail-check" />}
-              </span>
+              <span className="workflow-rail-marker" aria-hidden="true" />
               <span className="workflow-rail-label">{item.label}</span>
+              {item.complete && <Check className="workflow-rail-check" aria-hidden="true" />}
             </button>
             {index < steps.length - 1 && (
               <span className="workflow-rail-ticks" aria-hidden="true">
