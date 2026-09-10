@@ -3569,7 +3569,10 @@ app.delete("/api/articles/:id", async (req, res) => {
       !existing &&
       !(await loadArticles()).some((article) => article.id === id)
     ) {
-      res.status(404).json({ error: "Bài viết không tồn tại trong Supabase." })
+      // DELETE is idempotent. This also lets the client clear a stale Recents
+      // item after an older server version deleted the record but failed during
+      // non-critical Content Plan projection cleanup.
+      res.json({ ok: true, deletedId: id, alreadyDeleted: true })
       return
     }
     await kvDelete(`${ARTICLE_PREFIX}${id}`)
@@ -3593,13 +3596,19 @@ app.delete("/api/articles/:id", async (req, res) => {
     }
     if (existing?.contentPlanId) {
       if (await relationalPlansAvailable()) {
-        const projected = await tableSelect<any>("writer_articles", (query) =>
-          query.select("id").eq("content_plan_id", existing.contentPlanId),
-        )
-        await tableUpdate("content_plans", existing.contentPlanId, {
-          total_articles: projected.length,
-          updated_at: new Date().toISOString(),
-        })
+        // Legacy articles may retain a contentPlanId after the related plan was
+        // removed. Article deletion is authoritative; missing plan projections
+        // must not turn a successful delete into a 500 response.
+        const plan = await getContentPlan(existing.contentPlanId)
+        if (plan) {
+          const projected = await tableSelect<any>("writer_articles", (query) =>
+            query.select("id").eq("content_plan_id", existing.contentPlanId),
+          )
+          await tableUpdate("content_plans", existing.contentPlanId, {
+            total_articles: projected.length,
+            updated_at: new Date().toISOString(),
+          })
+        }
       } else {
         const plan = await kvGet<any>(
           `${CONTENT_PLAN_PREFIX}${existing.contentPlanId}`,

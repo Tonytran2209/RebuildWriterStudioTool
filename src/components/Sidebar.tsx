@@ -143,7 +143,7 @@ export default function Sidebar({
               <button
                 disabled={deletingArticleId === article.id}
                 onClick={(event) => { event.stopPropagation(); onDeleteArticle(article) }}
-                className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-[#737373] opacity-70 transition-colors hover:bg-white/10 hover:text-red-400 focus:opacity-100 disabled:opacity-30"
+                className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-[#8b8b85] opacity-0 transition-all hover:bg-white/10 hover:text-red-400 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 disabled:opacity-30"
                 aria-label={tr("Xóa bài viết", "Delete article")}
               >
                 <Trash2 className="app-icon" aria-hidden="true" />
