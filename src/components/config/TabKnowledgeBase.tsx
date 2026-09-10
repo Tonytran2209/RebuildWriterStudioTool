@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Archive, BookOpen, Download, Globe2, ScrollText } from "lucide-react"
+import { Archive, BookOpen, Download, Globe2, RefreshCw, ScrollText, Search, X } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type {
   ActionDataSource,
@@ -526,7 +526,7 @@ function WebsiteInventoryPanel({
                       aria-label="Title"
                       value={record.title}
                       onChange={(event) => update(record.id, { title: event.target.value })}
-                        className="h-8 w-full min-w-0 border-0 bg-transparent px-0 text-sm font-medium text-slate-800 outline-none"
+                      className="website-inventory-title h-8 w-full min-w-0 border-0 bg-transparent px-0 text-sm font-medium text-slate-800 outline-none"
                     />
                       <a
                         href={record.redirectTarget || record.canonicalUrl || record.url}
@@ -560,8 +560,15 @@ function WebsiteInventoryPanel({
                       <option value="redirected">Redirected</option>
                       <option value="broken">Broken</option>
                     </select>
-                      <button type="button" onClick={() => toggleExpanded(record.id)} className="settings-secondary-action h-8 rounded-md px-2.5 text-xs text-slate-500" aria-expanded={expandedIds.has(record.id)}>
-                        {expandedIds.has(record.id) ? "Close" : "Details"}
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(record.id)}
+                        className="settings-secondary-action inline-flex size-8 items-center justify-center rounded-md text-slate-500"
+                        aria-expanded={expandedIds.has(record.id)}
+                        aria-label={expandedIds.has(record.id) ? "Close details" : "View details"}
+                        title={expandedIds.has(record.id) ? "Close details" : "View details"}
+                      >
+                        {expandedIds.has(record.id) ? <X size={15} /> : <Search size={15} />}
                       </button>
                     </div>
                   </div>
@@ -614,23 +621,28 @@ function WebsiteInventoryPanel({
                       {record.searchIntent && <span className="capitalize">{record.searchIntent}</span>}
                     </div>
                     <div className="flex items-center gap-1 self-end sm:self-auto">
-                    <button
-                      onClick={() => void recheck(record)}
-                      className="settings-secondary-action rounded-md px-2 py-1 text-xs text-slate-500"
-                    >
-                      Check
-                    </button>
-                    <button
-                      onClick={() =>
-                        onChange(
-                          records.filter((item) => item.id !== record.id),
-                        )
-                      }
-                      className="rounded-md px-1 py-1 text-xs text-red-500"
-                      aria-label="Remove URL"
-                    >
-                      ×
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => void recheck(record)}
+                        className="settings-secondary-action inline-flex size-8 items-center justify-center rounded-md text-slate-500"
+                        aria-label="Recheck URL"
+                        title="Recheck URL"
+                      >
+                        <RefreshCw size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onChange(
+                            records.filter((item) => item.id !== record.id),
+                          )
+                        }
+                        className="settings-secondary-action inventory-remove-action inline-flex size-8 items-center justify-center rounded-md"
+                        aria-label="Remove URL"
+                        title="Remove URL"
+                      >
+                        <X size={15} />
+                      </button>
                     </div>
                   </div>
                 </div>

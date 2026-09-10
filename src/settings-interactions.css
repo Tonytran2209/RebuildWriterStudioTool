@@ -45,6 +45,13 @@
 .minimal-settings .settings-content textarea:focus,
 .minimal-settings .settings-content select:focus,
 .minimal-settings .settings-search input:focus { border-color: #a9a9a3 !important; box-shadow: 0 0 0 1px #a9a9a3 !important; }
+.minimal-settings .settings-content .website-inventory-title,
+.minimal-settings .settings-content .website-inventory-title:focus {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
 
 .minimal-settings .settings-preference-group,
 .minimal-settings .model-provider-group,
@@ -88,6 +95,12 @@
   border-color: #c8c8c3 !important;
   background: var(--settings-control) !important;
   color: var(--settings-text) !important;
+}
+.minimal-settings .inventory-remove-action { color: var(--settings-danger) !important; }
+.minimal-settings .inventory-remove-action:hover {
+  border-color: color-mix(in srgb, var(--settings-danger) 35%, transparent) !important;
+  background: var(--settings-danger-bg) !important;
+  color: var(--settings-danger) !important;
 }
 
 .minimal-settings .workflow-phase-switcher { border-color: var(--settings-border) !important; background: var(--settings-card) !important; }
