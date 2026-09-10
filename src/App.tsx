@@ -12,6 +12,7 @@ import * as db from "./lib/db"
 import Sidebar from "./components/Sidebar"
 import BrandMark from "./components/BrandMark"
 import StepNav from "./components/StepNav"
+import VerticalWorkflowRail from "./components/VerticalWorkflowRail"
 import ConfigModal from "./components/config/ConfigModal"
 import Step2CoreIdea from "./components/workspace/Step2CoreIdea"
 import Step3Outline from "./components/workspace/Step3Outline"
@@ -59,12 +60,25 @@ export default function App() {
   const [deletingArticleId, setDeletingArticleId] = useState<string | null>(
     null,
   )
+  const [visibleWorkflowStep, setVisibleWorkflowStep] = useState<2 | 3 | 4>(2)
+  const workflowStepRefs = useRef(new Map<2 | 3 | 4, HTMLElement>())
   const articleMutationQueues = useRef(new Map<string, Promise<void>>())
   const failedArticleMutations = useRef(new Set<string>())
   const articlesRef = useRef<Article[]>([])
   const activeIdRef = useRef<string | null>(null)
   articlesRef.current = articles
   activeIdRef.current = activeId
+
+  const scrollToWorkflowStep = useCallback((step: 2 | 3 | 4) => {
+    const target = workflowStepRefs.current.get(step)
+    if (!target) return
+    setVisibleWorkflowStep(step)
+    target.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [])
+
+  useEffect(() => {
+    setVisibleWorkflowStep(2)
+  }, [activeId])
 
   const enqueueArticleMutation = useCallback(
     (articleId: string, operation: () => Promise<Article>): Promise<Article> => {
@@ -402,6 +416,18 @@ export default function App() {
   const article = activeId
     ? (articles.find((a) => a.id === activeId) ?? null)
     : null
+
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top))[0]
+      const step = Number((visible?.target as HTMLElement | undefined)?.dataset.workflowStep)
+      if (step >= 2 && step <= 4) setVisibleWorkflowStep(step as 2 | 3 | 4)
+    }, { rootMargin: "-15% 0px -65% 0px", threshold: 0 })
+    workflowStepRefs.current.forEach((node) => observer.observe(node))
+    return () => observer.disconnect()
+  }, [article?.id, article?.selectedCoreIdeaId, article?.outline?.length])
   const activeBatchIds = Array.from(new Set(
     articles
       .filter((item) => item.activityKind === "batch" && item.activityId && !["completed", "failed"].includes(item.batchStatus ?? "queued"))
@@ -624,8 +650,9 @@ export default function App() {
         ) : article ? (
           <>
             <StepNav
-              currentStep={article.currentStep}
+              currentStep={visibleWorkflowStep}
               onStepChange={handleStepChange}
+              articleTitle={article.title || article.topic}
               currentModel={currentModel}
               syncStatus={syncStatus}
               canAccessStep={(step) => {
@@ -634,51 +661,60 @@ export default function App() {
               }}
               usage={
                 article.aiUsageByStep?.[
-                  (article.currentStep as 1 | 2 | 3 | 4)
+                  (visibleWorkflowStep as 1 | 2 | 3 | 4)
                 ] ?? []
               }
             />
-            <main className="flex-1 min-h-0 overflow-hidden p-2.5 md:p-5">
-              {article.currentStep === 2 && (
-                <Step2CoreIdea
-                  article={article}
-                  config={config}
-                  files={files}
-                  model={currentModel || config.models[0]}
-                  railwayUrl={config.railwayUrl}
-                  onUpdate={(u) => handleUpdateArticle(article.id, u)}
-                  onNext={handleNext}
-                  onPrev={() => {
-                    setActiveId(null)
-                    setLauncherHistoryOpen(true)
-                  }}
-                />
-              )}
-              {article.currentStep === 3 && (
-                <Step3Outline
-                  article={article}
-                  config={config}
-                  files={files}
-                  model={currentModel || config.models[0]}
-                  railwayUrl={config.railwayUrl}
-                  onUpdate={(u) => handleUpdateArticle(article.id, u)}
-                  onNext={handleNext}
-                  onPrev={handlePrev}
-                />
-              )}
-              {article.currentStep === 4 && (
-                <Step4Draft
-                  article={article}
-                  config={config}
-                  files={files}
-                  model={currentModel || config.models[0]}
-                  railwayUrl={config.railwayUrl}
-                  onUpdate={(u) => handleUpdateArticle(article.id, u)}
-                  onPrev={handlePrev}
-                  onToggleComplete={() => handleToggleComplete(article)}
-                  completionSaving={completionSavingId === article.id}
-                />
-              )}
+            <main className="continuous-workspace flex-1 min-h-0 overflow-y-auto p-2.5 md:p-5">
+              <div className="mx-auto grid w-full max-w-6xl grid-cols-[3rem_minmax(0,1fr)] gap-2 sm:grid-cols-[3.5rem_minmax(0,1fr)] sm:gap-3 lg:grid-cols-[5rem_minmax(0,1fr)] lg:gap-5">
+                <VerticalWorkflowRail article={article} activeStep={visibleWorkflowStep} onNavigate={scrollToWorkflowStep} />
+                <div className="min-w-0 space-y-6">
+                  <section ref={(node) => { if (node) workflowStepRefs.current.set(2, node); else workflowStepRefs.current.delete(2) }} data-workflow-step="2" className="workflow-section scroll-mt-4">
+                    <Step2CoreIdea
+                      embedded
+                      article={article}
+                      config={config}
+                      files={files}
+                      model={currentModel || config.models[0]}
+                      railwayUrl={config.railwayUrl}
+                      onUpdate={(u) => handleUpdateArticle(article.id, u)}
+                      onNext={async () => { await handleStepChange(3); window.setTimeout(() => scrollToWorkflowStep(3), 80) }}
+                      onPrev={() => { setActiveId(null); setLauncherHistoryOpen(true) }}
+                    />
+                  </section>
+                  {gateArticleStep(article, 3).allowed && (
+                    <section ref={(node) => { if (node) workflowStepRefs.current.set(3, node); else workflowStepRefs.current.delete(3) }} data-workflow-step="3" className="workflow-section scroll-mt-4">
+                      <Step3Outline
+                        embedded
+                        article={article}
+                        config={config}
+                        files={files}
+                        model={currentModel || config.models[0]}
+                        railwayUrl={config.railwayUrl}
+                        onUpdate={(u) => handleUpdateArticle(article.id, u)}
+                        onNext={async () => { await handleStepChange(4); window.setTimeout(() => scrollToWorkflowStep(4), 80) }}
+                        onPrev={() => scrollToWorkflowStep(2)}
+                      />
+                    </section>
+                  )}
+                  {gateArticleStep(article, 4).allowed && (
+                    <section ref={(node) => { if (node) workflowStepRefs.current.set(4, node); else workflowStepRefs.current.delete(4) }} data-workflow-step="4" className="workflow-section scroll-mt-4">
+                      <Step4Draft
+                        embedded
+                        article={article}
+                        config={config}
+                        files={files}
+                        model={currentModel || config.models[0]}
+                        railwayUrl={config.railwayUrl}
+                        onUpdate={(u) => handleUpdateArticle(article.id, u)}
+                        onPrev={() => scrollToWorkflowStep(3)}
+                        onToggleComplete={() => handleToggleComplete(article)}
+                        completionSaving={completionSavingId === article.id}
+                      />
+                    </section>
+                  )}
+                </div>
+              </div>
             </main>
           </>
         ) : (

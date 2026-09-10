@@ -154,6 +154,7 @@ function targetSectionCount(wordCount: number): number {
 }
 
 interface Props {
+  embedded?: boolean;
   article: Article;
   config: AppConfig;
   files: DocumentFile[];
@@ -165,6 +166,7 @@ interface Props {
 }
 
 export default function Step3Outline({
+  embedded = false,
   article,
   config,
   files,
@@ -478,9 +480,9 @@ export default function Step3Outline({
   const h3Count = outline.filter(s => s.level === "h3").length;
 
   return (
-    <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
-      <div className="outline-workspace-shell minimal-step-shell flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6">
+    <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
+      <div className={`outline-workspace-shell minimal-step-shell flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white ${embedded ? '' : 'min-h-0 flex-1'}`}>
+        <div className={`${embedded ? '' : 'flex-1 overflow-y-auto'} p-3.5 sm:p-5 md:p-6`}>
           <div className="mx-auto max-w-4xl space-y-5">
 
             {/* Header */}
@@ -620,10 +622,12 @@ export default function Step3Outline({
         </div>
       </div>
 
-      <div className="flex justify-between gap-2 shrink-0">
+      <div className={`flex gap-2 shrink-0 ${embedded ? 'justify-end px-1' : 'justify-between'}`}>
+        {!embedded && (
         <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all">
           {tr('Quay lại', 'Back')}
         </button>
+        )}
         <div className="flex items-center gap-2">
           {article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved' && (
             <button onClick={() => onUpdate({ editorialApproval: { status: 'approved', approvedAt: new Date().toISOString(), outlineFingerprint: article.outlineSourceFingerprint ?? undefined } })} disabled={!outline.length} className="rounded-2xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-40">{tr('Phê duyệt outline', 'Approve outline')}</button>

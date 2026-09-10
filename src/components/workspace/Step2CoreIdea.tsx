@@ -31,6 +31,7 @@ import { gateArticleStep, gateStepCompletion } from '../../lib/workflowGuards';
 import { articleSpecFingerprint, normalizeArticleSpec } from '../../lib/articleSpec';
 
 interface Props {
+  embedded?: boolean;
   article: Article;
   config: AppConfig;
   files: DocumentFile[];
@@ -265,6 +266,7 @@ function RatingCircle({ label, score }: { label: string; score: number }) {
 }
 
 export default function Step2CoreIdea({
+  embedded = false,
   article,
   config,
   files,
@@ -615,9 +617,9 @@ export default function Step2CoreIdea({
   };
 
   return (
-    <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
-      <div className="minimal-step-shell bg-white rounded-2xl border border-slate-200 flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div className="p-3.5 sm:p-5 md:p-6 flex-1 overflow-y-auto">
+    <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
+      <div className={`minimal-step-shell bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden ${embedded ? '' : 'flex-1 min-h-0'}`}>
+        <div className={`p-3.5 sm:p-5 md:p-6 ${embedded ? '' : 'flex-1 overflow-y-auto'}`}>
           <div className="max-w-4xl mx-auto space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div>
@@ -772,13 +774,15 @@ export default function Step2CoreIdea({
 
       {auditIdeaId && (() => { const idea = ideas.find(item => item.id === auditIdeaId); if (!idea) return null; return <ProcessTraceModal title={idea.title} events={article.step2ProcessTrace} onClose={() => setAuditIdeaId(null)}><div className="space-y-4"><div><h4 className="text-xs font-bold text-slate-800">SEO Research Top 10</h4><div className="space-y-2 mt-2">{article.seoResearch?.keywords.map((keyword, index) => <div key={keyword.keyword} className="rounded-lg border border-cyan-100 bg-cyan-50/50 p-3 text-[10px]"><div className="flex flex-wrap gap-2"><span className="font-mono text-cyan-700">#{index + 1}</span><b>{keyword.keyword}</b><span>{keyword.intent ?? 'intent n/a'}</span></div>{keyword.marketEvidence && <p className="mt-1 text-slate-600">{keyword.marketEvidence}</p>}<div className="flex gap-2 mt-1">{keyword.sources?.map((url, i) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-cyan-700 underline">Source {i + 1}</a>)}</div></div>)}</div></div><div><h4 className="text-xs font-bold text-slate-800">{tr('Đối chứng keyword của lựa chọn', 'Keyword validation for this idea')}</h4><div className="divide-y divide-slate-100 rounded-lg border border-slate-200 mt-2">{idea.keywordAudit?.map(item => <div key={item.keyword} className="p-3 text-[10px]"><div className="flex gap-2"><span className={`font-bold ${item.decision === 'accepted' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.decision}</span><b>{item.keyword}</b></div><p className="mt-1">{item.reason}</p><p className="mt-1 text-amber-700"><b>Rules:</b> {item.ruleReason}</p><p className="mt-1 text-indigo-700"><b>KB/Action:</b> {item.kbReason}</p></div>)}</div></div></div></ProcessTraceModal>; })()}
 
-      <div className="flex justify-between gap-2 shrink-0">
+      <div className={`flex gap-2 shrink-0 ${embedded ? 'justify-end px-1' : 'justify-between'}`}>
+        {!embedded && (
         <button
           onClick={onPrev}
           className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all"
         >
           {tr('Quay lại', 'Back')}
         </button>
+        )}
         <button
           onClick={onNext}
           disabled={!gateStepCompletion({ ...article, selectedCoreIdeaId: selectedId ?? undefined }, 2).allowed || scanIsStale}

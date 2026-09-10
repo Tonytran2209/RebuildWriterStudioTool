@@ -12,6 +12,7 @@ interface Props {
   syncStatus?: SyncStatus;
   usage?: AICallUsage[];
   canAccessStep?: (step: 2 | 3 | 4) => { allowed: boolean; reason: string };
+  articleTitle?: string;
 }
 
 const SYNC_INDICATOR: Record<string, { dot: string; label: string }> = {
@@ -21,45 +22,16 @@ const SYNC_INDICATOR: Record<string, { dot: string; label: string }> = {
   loading: { dot: 'bg-blue-400 animate-pulse', label: 'Đang tải...' },
 };
 
-export default function StepNav({ currentStep, onStepChange, currentModel, syncStatus = 'idle', usage = [], canAccessStep }: Props) {
+export default function StepNav({ currentStep, currentModel, syncStatus = 'idle', usage = [], articleTitle }: Props) {
   const sync = SYNC_INDICATOR[syncStatus];
   const latestUsage = usage.at(-1);
   const { language, tr } = useI18n();
   const [showUsage, setShowUsage] = useState(false);
-  const workflowSteps = [
-    { storageStep: 2, label: tr('Article Spec & Định hướng', 'Article Spec & Direction') },
-    { storageStep: 3, label: tr('Dàn bài nháp', 'Draft Outline') },
-    { storageStep: 4, label: tr('Bản nháp & Kiểm tra', 'First Draft & Audit') },
-  ];
   return (
     <header className="minimal-step-nav relative bg-white border-b border-slate-200/80 px-2.5 md:px-5 py-2 md:py-3 flex items-center justify-between gap-2 shrink-0 z-10">
-      {/* Step tabs */}
-      <div className="bg-[#eaedf3] p-1 rounded-xl md:rounded-2xl flex items-center gap-0.5 md:space-x-1 shadow-sm min-w-0">
-        {workflowSteps.map(({ storageStep, label }, index) => {
-          const active = currentStep === storageStep;
-          const access = canAccessStep?.(storageStep as 2 | 3 | 4) ?? { allowed: true, reason: '' };
-          return (
-            <button
-              key={storageStep}
-              onClick={() => onStepChange(storageStep)}
-              disabled={!access.allowed}
-              title={!access.allowed ? access.reason : undefined}
-              aria-disabled={!access.allowed}
-              className={`px-1.5 sm:px-2 md:px-3.5 py-1.5 md:py-2 text-xs font-semibold rounded-lg md:rounded-xl transition-all flex items-center space-x-2 ${
-                active
-                  ? 'bg-white text-slate-900 shadow-sm'
-                  : access.allowed ? 'text-slate-400 hover:text-slate-700' : 'cursor-not-allowed text-slate-300 opacity-50'
-              }`}
-            >
-              <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold transition-all ${
-                active ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-500'
-              }`}>
-                {index + 1}
-              </span>
-              <span className="hidden sm:block">{label}</span>
-            </button>
-          );
-        })}
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium text-slate-800">{articleTitle || tr('Bài viết mới', 'New article')}</div>
+        <div className="text-[10px] text-slate-400">{tr('Article workspace', 'Article workspace')}</div>
       </div>
 
       {/* Right status */}

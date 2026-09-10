@@ -21,6 +21,17 @@ function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+function renderKeywordMarks(text: string, keywords: string[]) {
+  const terms = [...new Set(keywords.map(item => item.trim()).filter(item => item.length >= 3))]
+    .sort((a, b) => b.length - a.length);
+  if (!terms.length) return text;
+  const escaped = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const matcher = new RegExp(`(${escaped.join('|')})`, 'gi');
+  return text.split(matcher).map((part, index) => terms.some(term => term.toLocaleLowerCase() === part.toLocaleLowerCase())
+    ? <span key={`${index}-${part}`} className="draft-keyword-mark">{part}</span>
+    : part);
+}
+
 type StructuredDraftPayload = {
   title?: string;
   introduction?: string;
@@ -307,6 +318,7 @@ function assessDraft(text: string, article: Article, targetWords: number): strin
 }
 
 interface Props {
+  embedded?: boolean;
   article: Article;
   config: AppConfig;
   files: DocumentFile[];
@@ -318,7 +330,7 @@ interface Props {
   completionSaving: boolean;
 }
 
-export default function Step4Draft({ article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
+export default function Step4Draft({ embedded = false, article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
   const bundle = useMemo(() => collectStepDocs(4, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(4, config, files), [config, files]);
@@ -741,7 +753,6 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     const highlightStyles = document.createElement('style');
     highlightStyles.textContent = `
       ::highlight(draft-heading){color:#e5e5e5;background-color:#292929}
-      ::highlight(draft-keyword){color:#9fd3c0;background-color:transparent;text-decoration:underline;text-decoration-color:#426f5f;text-underline-offset:3px}
       ::highlight(draft-evidence){color:#c8c8c8;background-color:#222}
       ::highlight(draft-attention){color:#e7c66e;background-color:#332a16}
     `;
@@ -769,11 +780,8 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     const evidenceMatches = regexMatches(/^>\s+.+$/gm);
     const attentionMatches = regexMatches(/\[Cần bổ sung dữ liệu\]/gi);
     const reserved = [...headingMatches, ...evidenceMatches, ...attentionMatches];
-    const keywords = [...new Set([getPrimaryKeyword(article), ...(article.keywords || '').split(',')].map(item => item.trim()).filter(item => item.length >= 3))];
-    const keywordMatches = keywords.flatMap(keyword => regexMatches(new RegExp(keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'))).filter(match => !reserved.some(item => match.start < item.end && match.end > item.start));
     const groups = {
       'draft-heading': rangesFor(headingMatches),
-      'draft-keyword': rangesFor(keywordMatches),
       'draft-evidence': rangesFor(evidenceMatches),
       'draft-attention': rangesFor(attentionMatches),
     };
@@ -822,12 +830,12 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   };
 
   return (
-    <div className="minimal-step h-full flex flex-col gap-4 animate-fade-in-up">
-      <div className="draft-workspace-shell minimal-step-shell flex min-h-0 flex-1 flex-col">
-        <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-3 overflow-y-auto p-2 sm:p-3 lg:flex-row lg:overflow-hidden">
+    <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
+      <div className={`draft-workspace-shell minimal-step-shell flex flex-col ${embedded ? '' : 'min-h-0 flex-1'}`}>
+        <div className={`mx-auto flex w-full max-w-4xl flex-col gap-3 p-2 sm:p-3 ${embedded ? '' : 'min-h-0 flex-1 overflow-y-auto lg:flex-row lg:overflow-hidden'}`}>
 
           {/* Editor panel */}
-          <div className="draft-editor flex min-h-[55dvh] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:min-h-0">
+          <div className={`draft-editor flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white ${embedded ? 'min-h-[60dvh]' : 'min-h-[55dvh] lg:min-h-0'}`}>
             {/* Editor toolbar */}
             <div className="draft-toolbar flex flex-col justify-between gap-2 border-b border-slate-100 px-3 py-2.5 sm:flex-row sm:items-center sm:px-4">
               <div className="min-w-0">
@@ -917,7 +925,9 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
                   data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
                   className="draft-prose prose-editor min-h-full whitespace-pre-wrap"
                 >
-                  {draft || ''}
+                  {highlightsEnabled
+                    ? renderKeywordMarks(draft, [getPrimaryKeyword(article), ...(article.keywords || '').split(',')])
+                    : draft || ''}
                 </div>
               )}
             </div>
@@ -943,7 +953,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
           </div>
 
           {/* Audit panel */}
-          <aside className="draft-insights grid w-full shrink-0 grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 lg:flex lg:min-h-0 lg:w-[236px] lg:flex-col lg:overflow-y-auto lg:overscroll-contain">
+          <aside className={`draft-insights grid w-full shrink-0 grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 ${embedded ? 'xl:grid-cols-4' : 'lg:flex lg:min-h-0 lg:w-[236px] lg:flex-col lg:overflow-y-auto lg:overscroll-contain'}`}>
             {/* Readability */}
             <section className="draft-insight-panel space-y-3 border-b border-slate-200 p-3 sm:border-r lg:border-r-0">
               <h3 className="text-[11px] font-medium text-slate-800">{tr('Phân tích nội dung', 'Content analysis')}</h3>
@@ -1042,10 +1052,12 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
         </div>
       </div>
 
-      <div className="flex justify-between gap-2 shrink-0">
+      <div className={`flex gap-2 shrink-0 ${embedded ? 'justify-end px-1' : 'justify-between'}`}>
+        {!embedded && (
         <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all">
           {tr('← Quay lại Outline', '← Back to Outline')}
         </button>
+        )}
         <button
           onClick={onToggleComplete}
           disabled={!draft || completionSaving || (article.status !== 'done' && !seoChecklistPassed)}
