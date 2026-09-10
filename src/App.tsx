@@ -443,15 +443,32 @@ export default function App() {
     : null
 
   useEffect(() => {
-    const observer = new IntersectionObserver((entries) => {
-      const visible = entries
-        .filter((entry) => entry.isIntersecting)
-        .sort((a, b) => Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top))[0]
-      const step = Number((visible?.target as HTMLElement | undefined)?.dataset.workflowStep)
-      if (step >= 2 && step <= 4) setVisibleWorkflowStep(step as 2 | 3 | 4)
-    }, { rootMargin: "-15% 0px -65% 0px", threshold: 0 })
-    workflowStepRefs.current.forEach((node) => observer.observe(node))
-    return () => observer.disconnect()
+    const workspace = document.querySelector<HTMLElement>(".continuous-workspace")
+    if (!workspace) return
+    let frame = 0
+    const updateActiveStep = () => {
+      frame = 0
+      const anchor = workspace.getBoundingClientRect().top + Math.min(180, workspace.clientHeight * 0.24)
+      const sections = [...workflowStepRefs.current.entries()]
+        .filter(([, node]) => node.isConnected)
+        .sort(([, left], [, right]) => left.offsetTop - right.offsetTop)
+      if (!sections.length) return
+      const current = sections.reduce((selected, candidate) =>
+        candidate[1].getBoundingClientRect().top <= anchor ? candidate : selected,
+      sections[0])
+      setVisibleWorkflowStep(current[0])
+    }
+    const onScroll = () => {
+      if (!frame) frame = window.requestAnimationFrame(updateActiveStep)
+    }
+    updateActiveStep()
+    workspace.addEventListener("scroll", onScroll, { passive: true })
+    window.addEventListener("resize", onScroll)
+    return () => {
+      workspace.removeEventListener("scroll", onScroll)
+      window.removeEventListener("resize", onScroll)
+      if (frame) window.cancelAnimationFrame(frame)
+    }
   }, [article?.id, article?.selectedCoreIdeaId, article?.outline?.length])
   const activeBatchIds = Array.from(new Set(
     articles
@@ -697,7 +714,7 @@ export default function App() {
               }
             />
             <main className="continuous-workspace flex-1 min-h-0 overflow-y-auto p-2.5 md:p-5">
-              <div className="mx-auto grid w-full max-w-6xl grid-cols-[3rem_minmax(0,1fr)] gap-2 sm:grid-cols-[3.5rem_minmax(0,1fr)] sm:gap-3 lg:grid-cols-[8.5rem_minmax(0,1fr)] lg:gap-5">
+              <div className="mx-auto grid w-full max-w-6xl grid-cols-[2.25rem_minmax(0,1fr)] gap-2 sm:grid-cols-[2.5rem_minmax(0,1fr)] sm:gap-3 lg:grid-cols-[7.25rem_minmax(0,1fr)] lg:gap-4">
                 <VerticalWorkflowRail article={article} activeStep={visibleWorkflowStep} onNavigate={scrollToWorkflowStep} />
                 <div className="min-w-0 space-y-6">
                   <section ref={(node) => { if (node) workflowStepRefs.current.set(2, node); else workflowStepRefs.current.delete(2) }} data-workflow-step="2" className="workflow-section scroll-mt-4">
