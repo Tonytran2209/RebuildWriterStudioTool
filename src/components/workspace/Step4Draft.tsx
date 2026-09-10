@@ -344,7 +344,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const [formatCopying, setFormatCopying] = useState(false);
   const [formatCopied, setFormatCopied] = useState(false);
   const [highlightsEnabled, setHighlightsEnabled] = useState(true);
-  const [insightPanel, setInsightPanel] = useState<'analysis' | 'quality' | 'keywords' | 'export'>('quality');
+  const [insightPanel, setInsightPanel] = useState<'analysis' | 'quality' | 'keywords'>('quality');
   const [showAudit, setShowAudit] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const generationInFlight = useRef(false);
@@ -960,7 +960,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 ['analysis', tr('Phân tích', 'Analysis')],
                 ['quality', 'QC'],
                 ['keywords', tr('Từ khóa', 'Keywords')],
-                ['export', tr('Xuất', 'Export')],
               ] as const).map(([key, label]) => (
                 <button key={key} type="button" onClick={() => setInsightPanel(key)} className={`draft-insight-tab ${insightPanel === key ? 'is-active' : ''}`}>{label}</button>
               ))}
@@ -1019,46 +1018,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               </section>
             )}
 
-            {/* Export */}
-            {insightPanel === 'export' && <section className="draft-insight-panel space-y-1.5 p-3">
-              <h3 className="mb-2 text-[11px] font-medium text-slate-800">{tr('Xuất bài viết', 'Export article')}</h3>
-              <button
-                onClick={handleCopy}
-                disabled={!draft}
-                className="draft-export-primary flex h-9 w-full items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40"
-              >
-                {copied ? <Check className="app-icon" aria-hidden="true" /> : <Copy className="app-icon" aria-hidden="true" />}
-                <span>{copied ? tr('Đã copy', 'Copied') : tr('Copy toàn bộ nội dung', 'Copy all content')}</span>
-              </button>
-              <button
-                onClick={handleCopyGoogleDocs}
-                disabled={!draft || formatCopying}
-                className="draft-export-secondary flex h-9 w-full items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40"
-              >
-                {formatCopying ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : formatCopied ? <Check className="app-icon" aria-hidden="true" /> : <ClipboardCopy className="app-icon" aria-hidden="true" />}
-                <span>{formatCopying
-                  ? tr('Đang chuẩn hóa heading…', 'Formatting headings…')
-                  : formatCopied
-                    ? tr('Đã copy chuẩn Google Docs', 'Copied for Google Docs')
-                    : 'Copy formated content'}</span>
-              </button>
-              <button
-                disabled={!draft}
-                onClick={() => {
-                  const blob = new Blob([draft], { type: 'text/plain' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `${(article.title || 'bai-viet').replace(/\s+/g, '-')}.txt`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-                className="draft-export-secondary flex h-9 w-full items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40"
-              >
-                <Download className="app-icon" aria-hidden="true" />
-                <span>{tr('Tải xuống .txt', 'Download .txt')}</span>
-              </button>
-            </section>}
           </aside>
         </div>
       </div>
@@ -1069,6 +1028,27 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           {tr('← Quay lại Outline', '← Back to Outline')}
         </button>
         )}
+        <div className="draft-footer-actions flex flex-1 flex-wrap items-center gap-2">
+          <button onClick={handleCopy} disabled={!draft} className="draft-export-secondary inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40">
+            {copied ? <Check className="app-icon" aria-hidden="true" /> : <Copy className="app-icon" aria-hidden="true" />}
+            <span>{copied ? tr('Đã copy', 'Copied') : tr('Copy nội dung', 'Copy content')}</span>
+          </button>
+          <button onClick={handleCopyGoogleDocs} disabled={!draft || formatCopying} className="draft-export-secondary inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40">
+            {formatCopying ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : formatCopied ? <Check className="app-icon" aria-hidden="true" /> : <ClipboardCopy className="app-icon" aria-hidden="true" />}
+            <span>{formatCopying ? tr('Đang định dạng…', 'Formatting…') : formatCopied ? tr('Đã copy', 'Copied') : 'Copy formated content'}</span>
+          </button>
+          <button disabled={!draft} onClick={() => {
+            const blob = new Blob([draft], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${(article.title || 'bai-viet').replace(/\s+/g, '-')}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }} className="draft-export-secondary inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40">
+            <Download className="app-icon" aria-hidden="true" />
+            <span>{tr('Tải .txt', 'Download .txt')}</span>
+          </button>
         <button
           onClick={onToggleComplete}
           disabled={!draft || completionSaving || (article.status !== 'done' && !seoChecklistPassed)}
@@ -1077,6 +1057,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         >
           {completionSaving ? tr('Đang lưu...', 'Saving...') : article.status === 'done' ? tr('↺ Mở lại bài viết', '↺ Reopen article') : !seoChecklistPassed ? `SEO ${seoChecklist.items.length - seoChecklist.failed.length}/${seoChecklist.items.length}` : tr('✓ Đánh dấu hoàn thành', '✓ Mark complete')}
         </button>
+        </div>
       </div>
       {showAudit && (
         <ProcessTraceModal
