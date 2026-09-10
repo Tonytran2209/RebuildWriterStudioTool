@@ -102,10 +102,20 @@ export interface WebsiteContentRecord {
   lastChecked?: string
   description?: string
   httpStatus?: number
-  crawlStatus?: "queued" | "checking" | "complete" | "failed"
+  crawlStatus?: "queued" | "checking" | "summarizing" | "complete" | "failed"
   lastError?: string
   classificationConfidence?: number
   contentFingerprint?: string
+  summary?: string
+  primaryTopic?: string
+  searchIntent?: SearchIntent
+  internalLinkAnchors?: string[]
+  keyClaims?: string[]
+  language?: string
+  aiModel?: string
+  aiSummaryVersion?: string
+  summarizedAt?: string
+  summaryCacheHit?: boolean
 }
 
 export interface StepFileAccess {

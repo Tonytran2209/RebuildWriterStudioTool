@@ -103,6 +103,24 @@ function canonical(html: string) {
   )
 }
 
+function mainContent(html: string) {
+  const withoutNoise = html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<(nav|footer|header|aside|form)\b[\s\S]*?<\/\1>/gi, " ")
+  const main = withoutNoise.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1]
+    ?? withoutNoise.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1]
+    ?? withoutNoise.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1]
+    ?? withoutNoise
+  return decode(main
+    .replace(/<(br|\/p|\/li|\/h[1-6]|\/div|\/section)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n+/g, "\n"))
+    .slice(0, 30_000)
+}
+
 function classify(
   url: URL,
   title: string,
@@ -209,6 +227,7 @@ export async function scanWebsiteUrl(raw: string) {
   const declared = Number(response.headers.get("content-length") ?? 0)
   if (declared > MAX_HTML_BYTES) throw new Error("HTML response is too large.")
   const html = await readLimitedHtml(response)
+  const extractedContent = mainContent(html)
   const title =
     textOf(html, "title") ||
     meta(html, "og:title") ||
@@ -244,8 +263,9 @@ export async function scanWebsiteUrl(raw: string) {
     classificationConfidence: detected.confidence,
     contentFingerprint: crypto
       .createHash("sha256")
-      .update(`${title}\n${description}\n${headings.join("\n")}`)
+      .update(extractedContent || `${title}\n${description}\n${headings.join("\n")}`)
       .digest("hex"),
+    extractedContent,
   }
 }
 
@@ -279,20 +299,17 @@ export function selectWebsiteCandidates(
         ["active", "redirected"].includes(item.status),
     )
     .map((item) => {
-      const overlap = candidateTerms(
-        [
-          item.title,
-          item.description,
-          item.contentType,
-          ...(item.topics ?? []),
-          ...(item.services ?? []),
-          item.audience,
-        ].join(" "),
-      ).filter((term) => query.has(term)).length
+      const overlap = (value: unknown) => candidateTerms(value).filter((term) => query.has(term)).length
+      const semanticScore =
+        overlap(`${item.title} ${item.primaryTopic}`) * 5 +
+        overlap((item.topics ?? []).join(" ")) * 4 +
+        overlap((item.services ?? []).join(" ")) * 4 +
+        overlap((item.internalLinkAnchors ?? []).join(" ")) * 3 +
+        overlap(`${item.summary ?? ""} ${item.description ?? ""} ${item.audience ?? ""}`)
       return {
         item,
         score:
-          overlap * 3 +
+          semanticScore +
           (["service", "portfolio"].includes(item.contentType) ? 1 : 0),
       }
     })
@@ -309,6 +326,9 @@ export function selectWebsiteCandidates(
       pageType: item.contentType,
       topics: item.topics ?? [],
       services: item.services ?? [],
+      summary: item.summary,
+      searchIntent: item.searchIntent,
+      suggestedAnchors: item.internalLinkAnchors ?? [],
       relevanceScore: score,
     }))
 }

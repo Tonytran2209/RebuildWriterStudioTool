@@ -3674,6 +3674,15 @@ app.post("/api/config", async (req, res) => {
               last_error: item.lastError ?? null,
               classification_confidence: item.classificationConfidence ?? null,
               content_fingerprint: item.contentFingerprint ?? null,
+              summary: item.summary ?? null,
+              primary_topic: item.primaryTopic ?? null,
+              search_intent: item.searchIntent ?? null,
+              internal_link_anchors: item.internalLinkAnchors ?? [],
+              key_claims: item.keyClaims ?? [],
+              language: item.language ?? null,
+              ai_model: item.aiModel ?? null,
+              ai_summary_version: item.aiSummaryVersion ?? null,
+              summarized_at: item.summarizedAt ?? null,
             },
             "id",
           )
@@ -3702,28 +3711,107 @@ app.post("/api/config", async (req, res) => {
   }
 })
 
+const WEBSITE_SUMMARY_VERSION = "website-summary-v1"
+
+async function reserveWebsiteSummaryBudget() {
+  const date = new Date().toISOString().slice(0, 10)
+  const key = `writer:website-summary-budget:${date}`
+  const limit = Math.max(1, Number(process.env.WEBSITE_SUMMARY_DAILY_LIMIT || 100))
+  return serializeByKey(aiBudgetQueues, key, async () => {
+    const current = await kvGet<{ used?: number }>(key)
+    const used = Number(current?.used ?? 0)
+    if (used >= limit) throw new Error(`Website AI summary đã đạt giới hạn ${limit} URL hôm nay.`)
+    await kvSet(key, { used: used + 1, limit, updatedAt: new Date().toISOString() })
+    return { used: used + 1, limit }
+  })
+}
+
+async function persistWebsiteInventoryRecord(record: any) {
+  const config = (await kvGet<any>("writer:config")) ?? {}
+  const inventory = Array.isArray(config.websiteInventory) ? config.websiteInventory : []
+  const nextInventory = [
+    record,
+    ...inventory.filter((item: any) => item.id !== record.id && item.url !== record.url),
+  ]
+  await kvSet("writer:config", { ...config, websiteInventory: nextInventory })
+  if (!(await tableAvailable("website_content_inventory"))) return
+  const base = {
+    id: record.id,
+    url: record.url,
+    canonical_url: record.canonicalUrl ?? null,
+    title: record.title,
+    content_type: record.contentType,
+    topics: record.topics ?? [],
+    services: record.services ?? [],
+    audience: record.audience ?? null,
+    status: record.status,
+    redirect_target: record.redirectTarget ?? null,
+    eligible_for_internal_link: Boolean(record.eligibleForInternalLink),
+    last_checked: record.lastChecked ?? null,
+    description: record.description ?? null,
+    http_status: record.httpStatus ?? null,
+    crawl_status: record.crawlStatus ?? "complete",
+    last_error: record.lastError ?? null,
+    classification_confidence: record.classificationConfidence ?? null,
+    content_fingerprint: record.contentFingerprint ?? null,
+    updated_at: new Date().toISOString(),
+  }
+  try {
+    await tableUpsert("website_content_inventory", {
+      ...base,
+      summary: record.summary ?? null,
+      primary_topic: record.primaryTopic ?? null,
+      search_intent: record.searchIntent ?? null,
+      internal_link_anchors: record.internalLinkAnchors ?? [],
+      key_claims: record.keyClaims ?? [],
+      language: record.language ?? null,
+      ai_model: record.aiModel ?? null,
+      ai_summary_version: record.aiSummaryVersion ?? null,
+      summarized_at: record.summarizedAt ?? null,
+    }, "id")
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!/column|schema cache/i.test(message)) throw error
+    await tableUpsert("website_content_inventory", base, "id")
+  }
+}
+
 app.post("/api/website-inventory/scan", async (req, res) => {
   try {
     const url = String(req.body?.url ?? "").trim()
     if (!url) return res.status(400).json({ error: "URL is required." })
     let record: any = await scanWebsiteUrl(url)
-    if (
-      record.status !== "broken" &&
-      Number(record.classificationConfidence ?? 0) < 0.7 &&
-      getAvailableProviders().openai
-    ) {
+    const extractedContent = String(record.extractedContent ?? "")
+    delete record.extractedContent
+    const summarize = req.body?.aiSummary !== false
+    if (record.status !== "broken" && summarize && getAvailableProviders().openai) {
       try {
-        const result = await generate({
+        const cacheKey = `writer:website-summary:${WEBSITE_SUMMARY_VERSION}:${record.contentFingerprint}`
+        const cached = await kvGet<any>(cacheKey)
+        let classified: any
+        let model = cached?.model
+        if (cached?.summary) {
+          classified = cached.summary
+        } else {
+          await reserveWebsiteSummaryBudget()
+          const result = await generate({
           provider: "openai",
-          modelId: process.env.WEBSITE_CLASSIFIER_MODEL || "gpt-4o-mini",
-          maxTokens: 300,
+          modelId: process.env.WEBSITE_SUMMARY_MODEL || process.env.WEBSITE_CLASSIFIER_MODEL || "gpt-4o-mini",
+          maxTokens: 650,
           temperature: 0,
           jsonMode: true,
           systemPrompt:
-            "Classify one website page for an internal-link inventory. Return JSON only. Do not invent facts.",
-          prompt: `PAGE: ${JSON.stringify({ url: record.redirectTarget || record.url, title: record.title, description: record.description })}\nReturn {"contentType":"blog|service|portfolio|landing|about|commercial","topics":[string],"services":[string],"audience":string}. Use short taxonomy labels.`,
-        })
-        const classified = parseJsonObject(result.content)
+            "Summarize and classify one web page for an internal-link inventory. Use only supplied page content. Return JSON only; never invent claims.",
+          prompt: [
+            `PAGE METADATA: ${JSON.stringify({ url: record.redirectTarget || record.url, title: record.title, description: record.description })}`,
+            `CLEAN PAGE CONTENT:\n${extractedContent}`,
+            'Return {"summary":string,"contentType":"blog|service|portfolio|landing|about|commercial","primaryTopic":string,"topics":[string],"services":[string],"audience":string,"searchIntent":"informational|commercial|transactional|navigational","internalLinkAnchors":[string],"keyClaims":[string],"language":string,"confidence":number}. Summary must be 40-90 words. Keep taxonomy and anchors concise.',
+          ].join("\n\n"),
+          })
+          classified = parseJsonObject(result.content)
+          model = result.model
+          await kvSet(cacheKey, { summary: classified, model, usage: result.usage, createdAt: new Date().toISOString() })
+        }
         const allowed = new Set([
           "blog",
           "service",
@@ -3732,19 +3820,31 @@ app.post("/api/website-inventory/scan", async (req, res) => {
           "about",
           "commercial",
         ])
+        const intents = new Set(["informational", "commercial", "transactional", "navigational"])
+        const list = (value: any, limit: number) => Array.isArray(value)
+          ? [...new Set(value.map(String).map((item) => item.trim()).filter(Boolean))].slice(0, limit)
+          : []
+        const summaryWords = String(classified.summary ?? "").trim().split(/\s+/).filter(Boolean)
+        const normalizedSummary = summaryWords.slice(0, 90).join(" ")
         record = {
           ...record,
           contentType: allowed.has(classified.contentType)
             ? classified.contentType
             : record.contentType,
-          topics: Array.isArray(classified.topics)
-            ? classified.topics.map(String).slice(0, 5)
-            : record.topics,
-          services: Array.isArray(classified.services)
-            ? classified.services.map(String).slice(0, 4)
-            : record.services,
+          summary: normalizedSummary || record.description,
+          primaryTopic: String(classified.primaryTopic ?? "").trim() || undefined,
+          topics: list(classified.topics, 6).length ? list(classified.topics, 6) : record.topics,
+          services: list(classified.services, 5).length ? list(classified.services, 5) : record.services,
           audience: String(classified.audience ?? "").trim() || undefined,
-          classificationConfidence: 0.85,
+          searchIntent: intents.has(classified.searchIntent) ? classified.searchIntent : "informational",
+          internalLinkAnchors: list(classified.internalLinkAnchors, 8),
+          keyClaims: list(classified.keyClaims, 6),
+          language: String(classified.language ?? "").trim() || undefined,
+          classificationConfidence: Math.max(0, Math.min(1, Number(classified.confidence ?? 0.85))),
+          aiModel: model,
+          aiSummaryVersion: WEBSITE_SUMMARY_VERSION,
+          summarizedAt: new Date().toISOString(),
+          summaryCacheHit: Boolean(cached),
         }
       } catch (error) {
         console.warn(
@@ -3753,12 +3853,13 @@ app.post("/api/website-inventory/scan", async (req, res) => {
         )
       }
     }
-    res.json({
-      record: {
-        id: `url-${crypto.createHash("sha256").update(record.url).digest("hex").slice(0, 16)}`,
-        ...record,
-      },
-    })
+    record = {
+      id: `url-${crypto.createHash("sha256").update(record.url).digest("hex").slice(0, 16)}`,
+      ...record,
+      crawlStatus: record.status === "broken" ? "failed" : "complete",
+    }
+    await persistWebsiteInventoryRecord(record)
+    res.json({ record })
   } catch (error) {
     res
       .status(422)

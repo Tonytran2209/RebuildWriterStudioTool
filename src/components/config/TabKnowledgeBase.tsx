@@ -204,6 +204,7 @@ function WebsiteInventoryPanel({
 }) {
   const [input, setInput] = useState("")
   const [scanning, setScanning] = useState(false)
+  const [includeAiSummary, setIncludeAiSummary] = useState(true)
   const [scanProgress, setScanProgress] = useState({ done: 0, total: 0 })
   const update = (id: string, patch: Partial<WebsiteContentRecord>) =>
     onChange(
@@ -253,7 +254,7 @@ function WebsiteInventoryPanel({
         )
         onChange(current)
         try {
-          const result = await scanWebsiteUrl(item.url, railwayUrl)
+          const result = await scanWebsiteUrl(item.url, railwayUrl, includeAiSummary)
           current = current.map((record) =>
             record.id === item.id ? result : record,
           )
@@ -283,7 +284,7 @@ function WebsiteInventoryPanel({
   const recheck = async (record: WebsiteContentRecord) => {
     update(record.id, { status: "checking", crawlStatus: "checking" })
     try {
-      const result = await scanWebsiteUrl(record.url, railwayUrl)
+      const result = await scanWebsiteUrl(record.url, railwayUrl, true)
       onChange(
         records.map((item) =>
           item.id === record.id ? { ...result, id: record.id } : item,
@@ -319,7 +320,7 @@ function WebsiteInventoryPanel({
         )
         onChange(current)
         try {
-          const result = await scanWebsiteUrl(original.url, railwayUrl)
+          const result = await scanWebsiteUrl(original.url, railwayUrl, true)
           current = current.map((item) =>
             item.id === original.id ? { ...result, id: original.id } : item,
           )
@@ -347,6 +348,37 @@ function WebsiteInventoryPanel({
     )
     setScanning(false)
   }
+  const summarizeMissing = async () => {
+    const pending = records.filter((record) => !record.summary && record.status !== "broken")
+    if (scanning || !pending.length) return
+    setScanning(true)
+    setScanProgress({ done: 0, total: pending.length })
+    let current = records
+    let cursor = 0
+    const worker = async () => {
+      while (cursor < pending.length) {
+        const original = pending[cursor++]
+        current = current.map((item) => item.id === original.id
+          ? { ...item, crawlStatus: "summarizing" }
+          : item)
+        onChange(current)
+        try {
+          const result = await scanWebsiteUrl(original.url, railwayUrl, true)
+          current = current.map((item) => item.id === original.id ? { ...result, id: original.id } : item)
+        } catch (error) {
+          current = current.map((item) => item.id === original.id ? {
+            ...item,
+            crawlStatus: "failed",
+            lastError: error instanceof Error ? error.message : String(error),
+          } : item)
+        }
+        onChange(current)
+        setScanProgress((progress) => ({ ...progress, done: progress.done + 1 }))
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(2, pending.length) }, worker))
+    setScanning(false)
+  }
   return (
     <div className="space-y-7">
       <section>
@@ -368,17 +400,23 @@ function WebsiteInventoryPanel({
             className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2.5 text-sm"
           />
           <div className="mt-3 flex items-center justify-between gap-3">
-            <p className="text-xs text-slate-400">
+            <div>
+              <label className="flex items-center gap-2 text-xs text-slate-500">
+                <input type="checkbox" checked={includeAiSummary} onChange={(event) => setIncludeAiSummary(event.target.checked)} />
+                AI summary và semantic classification
+              </label>
+              <p className="mt-1 text-xs text-slate-400">
               {scanning
                 ? `Scanning ${scanProgress.done}/${scanProgress.total} pages…`
                 : "Private-network URLs and non-HTML files are blocked."}
-            </p>
+              </p>
+            </div>
             <button
               disabled={scanning || !input.trim()}
               onClick={() => void scan()}
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
             >
-              Import & scan
+              {includeAiSummary ? "Import, scan & summarize" : "Import metadata only"}
             </button>
           </div>
         </div>
@@ -402,6 +440,13 @@ function WebsiteInventoryPanel({
               }{" "}
               approved
             </span>
+            <button
+              disabled={scanning || !records.some((item) => !item.summary && item.status !== "broken")}
+              onClick={() => void summarizeMissing()}
+              className="settings-secondary-action rounded-md px-2.5 py-1.5 text-xs text-slate-600 disabled:opacity-40"
+            >
+              Summarize missing
+            </button>
             <button
               disabled={scanning || !records.length}
               onClick={() => void recheckAll()}
@@ -444,14 +489,16 @@ function WebsiteInventoryPanel({
                   >
                     {record.url}
                   </a>
-                  <input
-                    aria-label="Title"
-                    value={record.title}
-                    onChange={(event) =>
-                      update(record.id, { title: event.target.value })
-                    }
-                    className="h-9 min-w-0 px-2 text-sm"
-                  />
+                  <div className="min-w-0">
+                    <input
+                      aria-label="Title"
+                      value={record.title}
+                      onChange={(event) => update(record.id, { title: event.target.value })}
+                      className="h-9 w-full min-w-0 px-2 text-sm"
+                    />
+                    {record.summary && <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-slate-400" title={record.summary}>{record.summary}</p>}
+                    {record.summarizedAt && <p className="mt-1 text-[9px] text-slate-400">{record.summaryCacheHit ? "Cached" : record.aiModel || "AI"} · {new Date(record.summarizedAt).toLocaleDateString()}</p>}
+                  </div>
                   <select
                     aria-label="Page type"
                     value={record.contentType}

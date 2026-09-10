@@ -31,22 +31,18 @@ export function selectInternalLinkCandidates(
         (item.status === "active" || item.status === "redirected"),
     )
     .map((item) => {
-      const haystack = terms(
-        [
-          item.title,
-          item.description,
-          item.contentType,
-          ...(item.topics ?? []),
-          ...(item.services ?? []),
-          item.audience,
-        ].join(" "),
-      )
-      const overlap = haystack.filter((term) => query.has(term)).length
+      const overlap = (value: unknown) => terms(value).filter((term) => query.has(term)).length
+      const semanticScore =
+        overlap(`${item.title} ${item.primaryTopic}`) * 5 +
+        overlap((item.topics ?? []).join(" ")) * 4 +
+        overlap((item.services ?? []).join(" ")) * 4 +
+        overlap((item.internalLinkAnchors ?? []).join(" ")) * 3 +
+        overlap(`${item.summary ?? ""} ${item.description ?? ""} ${item.audience ?? ""}`)
       const typeBoost =
         item.contentType === "service" || item.contentType === "portfolio"
           ? 1
           : 0
-      return { item, score: overlap * 3 + typeBoost }
+      return { item, score: semanticScore + typeBoost }
     })
     .filter(({ score }) => score > 0)
     .sort(
@@ -59,6 +55,9 @@ export function selectInternalLinkCandidates(
       pageType: item.contentType,
       topics: item.topics,
       services: item.services ?? [],
+      summary: item.summary,
+      searchIntent: item.searchIntent,
+      suggestedAnchors: item.internalLinkAnchors ?? [],
       relevanceScore: score,
     }))
 }

@@ -135,10 +135,11 @@ export async function saveConfig(config: AppConfig): Promise<void> {
 export async function scanWebsiteUrl(
   url: string,
   railwayUrl?: string,
+  aiSummary = true,
 ): Promise<import("../types").WebsiteContentRecord> {
   const result = await railwayRequest<{
     record: import("../types").WebsiteContentRecord
-  }>("/api/website-inventory/scan", jsonRequest("POST", { url }), railwayUrl)
+  }>("/api/website-inventory/scan", jsonRequest("POST", { url, aiSummary }), railwayUrl)
   return result.record
 }
 
