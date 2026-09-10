@@ -29,10 +29,10 @@ export default function StepNav({ currentStep, currentModel, syncStatus = 'idle'
   const [showUsage, setShowUsage] = useState(false);
   return (
     <header className="minimal-step-nav relative bg-white border-b border-slate-200/80 px-2.5 md:px-5 py-2 md:py-3 flex items-center justify-between gap-2 shrink-0 z-10">
-      <div className="min-w-0">
+      <section className="article-header-title min-w-0">
         <div className="truncate text-sm font-medium text-slate-800">{articleTitle || tr('Bài viết mới', 'New article')}</div>
         <div className="text-[10px] text-slate-400">{tr('Article workspace', 'Article workspace')}</div>
-      </div>
+      </section>
 
       {/* Right status */}
       <div className="flex items-center gap-2 md:space-x-3 text-xs shrink-0">

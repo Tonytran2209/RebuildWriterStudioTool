@@ -344,6 +344,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const [formatCopying, setFormatCopying] = useState(false);
   const [formatCopied, setFormatCopied] = useState(false);
   const [highlightsEnabled, setHighlightsEnabled] = useState(true);
+  const [insightPanel, setInsightPanel] = useState<'analysis' | 'quality' | 'keywords' | 'export'>('quality');
   const [showAudit, setShowAudit] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const generationInFlight = useRef(false);
@@ -953,9 +954,19 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           </div>
 
           {/* Audit panel */}
-          <aside className={`draft-insights grid w-full shrink-0 grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-2 ${embedded ? 'xl:grid-cols-4' : 'lg:flex lg:min-h-0 lg:w-[236px] lg:flex-col lg:overflow-y-auto lg:overscroll-contain'}`}>
+          <aside className={`draft-insights grid w-full shrink-0 grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white ${embedded ? '' : 'lg:min-h-0 lg:w-[236px] lg:overflow-y-auto lg:overscroll-contain'}`}>
+            <nav className="draft-insight-tabs" aria-label={tr('Thông tin kiểm tra draft', 'Draft inspector')}>
+              {([
+                ['analysis', tr('Phân tích', 'Analysis')],
+                ['quality', 'QC'],
+                ['keywords', tr('Từ khóa', 'Keywords')],
+                ['export', tr('Xuất', 'Export')],
+              ] as const).map(([key, label]) => (
+                <button key={key} type="button" onClick={() => setInsightPanel(key)} className={`draft-insight-tab ${insightPanel === key ? 'is-active' : ''}`}>{label}</button>
+              ))}
+            </nav>
             {/* Readability */}
-            <section className="draft-insight-panel space-y-3 border-b border-slate-200 p-3 sm:border-r lg:border-r-0">
+            {insightPanel === 'analysis' && <section className="draft-insight-panel space-y-3 p-3">
               <h3 className="text-[11px] font-medium text-slate-800">{tr('Phân tích nội dung', 'Content analysis')}</h3>
               <div className="space-y-2">
                 <div>
@@ -976,10 +987,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   <div className="flex items-center justify-between py-1 text-[10px]"><span className="text-slate-500">{tr('Số ký tự', 'Characters')}</span><b className="font-mono font-medium text-slate-700">{draft.length.toLocaleString()}</b></div>
                 </div>
               </div>
-            </section>
+            </section>}
 
             {/* Universal Quality Gate */}
-            <section className="draft-insight-panel space-y-2.5 border-b border-slate-200 p-3">
+            {insightPanel === 'quality' && <section className="draft-insight-panel space-y-2.5 p-3">
               <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">Universal QC</h3><span className={`seo-score-tag rounded-full border px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'is-pass' : ''}`}>{displayedQualityChecks.filter(item => item.status === 'pass').length}/{displayedQualityChecks.length}</span></div>
               <div className="space-y-1.5">
                 {displayedQualityChecks.map(item => (
@@ -991,11 +1002,11 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   </div>
                 ))}
               </div>
-            </section>
+            </section>}
 
             {/* Keyword density */}
-            {keywordStats.length > 0 && (
-              <section className="draft-insight-panel space-y-2.5 border-b border-slate-200 p-3 sm:border-r lg:border-r-0">
+            {insightPanel === 'keywords' && keywordStats.length > 0 && (
+              <section className="draft-insight-panel space-y-2.5 p-3">
                 <h3 className="text-[11px] font-medium text-slate-800">{tr('Mật độ từ khóa', 'Keyword density')}</h3>
                 <div className="keyword-density-list divide-y divide-slate-100">
                   {keywordStats.map(kw => (
@@ -1009,7 +1020,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             )}
 
             {/* Export */}
-            <section className="draft-insight-panel space-y-1.5 p-3">
+            {insightPanel === 'export' && <section className="draft-insight-panel space-y-1.5 p-3">
               <h3 className="mb-2 text-[11px] font-medium text-slate-800">{tr('Xuất bài viết', 'Export article')}</h3>
               <button
                 onClick={handleCopy}
@@ -1047,7 +1058,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 <Download className="app-icon" aria-hidden="true" />
                 <span>{tr('Tải xuống .txt', 'Download .txt')}</span>
               </button>
-            </section>
+            </section>}
           </aside>
         </div>
       </div>

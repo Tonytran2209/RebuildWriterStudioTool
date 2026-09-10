@@ -313,3 +313,16 @@
   .codex-dark .settings-content { padding: .875rem !important; }
   .codex-dark .minimal-step-shell > div { padding: .875rem !important; }
 }
+.codex-dark .continuous-step > .minimal-step-shell {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.codex-dark .continuous-step > .minimal-step-shell > div {
+  background: transparent !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
