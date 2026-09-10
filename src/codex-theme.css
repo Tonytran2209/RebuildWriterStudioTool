@@ -326,3 +326,11 @@
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
+
+.codex-dark .continuous-step .minimal-step-shell > div > div[class*='max-w-'],
+.codex-dark .continuous-step .draft-workspace-shell > div[class*='max-w-'] {
+  width: 100% !important;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}

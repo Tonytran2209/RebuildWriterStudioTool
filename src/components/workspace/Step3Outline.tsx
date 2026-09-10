@@ -622,7 +622,7 @@ export default function Step3Outline({
         </div>
       </div>
 
-      <div className={`flex gap-2 shrink-0 ${embedded ? 'justify-end px-1' : 'justify-between'}`}>
+      <div className={`flex gap-2 shrink-0 ${embedded ? 'continuous-step-action justify-start' : 'justify-between'}`}>
         {!embedded && (
         <button onClick={onPrev} className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-3 sm:px-5 rounded-2xl shadow-sm transition-all">
           {tr('Quay lại', 'Back')}

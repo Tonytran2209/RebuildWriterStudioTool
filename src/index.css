@@ -2210,6 +2210,8 @@ html, body, #root {
 
 .workflow-section {
   position: relative;
+  width: 100%;
+  min-width: 0;
 }
 
 .workflow-rail {
@@ -2316,6 +2318,28 @@ html, body, #root {
 .continuous-step > .minimal-step-shell > div {
   padding-left: 0 !important;
   padding-right: 0 !important;
+}
+
+.continuous-step .minimal-step-shell > div > div[class*='max-w-'],
+.continuous-step .draft-workspace-shell > div[class*='max-w-'] {
+  width: 100% !important;
+  max-width: none !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.continuous-step-action {
+  width: 100%;
+  margin-top: .25rem;
+  padding: .85rem 0 .1rem;
+  border-top: 1px solid #2a2a2a;
+}
+
+.writer-light .continuous-step-action { border-color: #e5e5e1; }
+
+.continuous-step-action > button {
+  min-width: 11rem;
+  justify-content: center;
 }
 
 .draft-insight-tabs {
