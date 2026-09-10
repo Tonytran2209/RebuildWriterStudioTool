@@ -522,12 +522,9 @@ function WebsiteInventoryPanel({
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
-                    <input
-                      aria-label="Title"
-                      value={record.title}
-                      onChange={(event) => update(record.id, { title: event.target.value })}
-                      className="website-inventory-title h-8 w-full min-w-0 border-0 bg-transparent px-0 text-sm font-medium text-slate-800 outline-none"
-                    />
+                      <h4 className="truncate text-sm font-medium leading-8 text-slate-800" title={record.title}>
+                        {record.title || "Untitled page"}
+                      </h4>
                       <a
                         href={record.redirectTarget || record.canonicalUrl || record.url}
                         target="_blank"
