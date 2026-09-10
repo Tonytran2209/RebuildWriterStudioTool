@@ -1331,7 +1331,10 @@ async function runBatchArticle(
     article.activityType === "editorial-originality"
       ? "Editorial/Originality"
       : "Comparison/SEO"
-  const runtimeConfig = await kvGet<any>("writer:config")
+  const runtimeConfig = {
+    ...((await kvGet<any>("writer:config")) ?? {}),
+    websiteInventory: await loadWebsiteInventory(),
+  }
   const maxDraftWords = Math.min(
     10000,
     Math.max(
@@ -3632,8 +3635,9 @@ app.delete("/api/articles/:id", async (req, res) => {
 
 app.get("/api/config", async (_req, res) => {
   try {
-    const config = await kvGet("writer:config")
-    res.json(config ?? null)
+    const config = (await kvGet<any>("writer:config")) ?? {}
+    const websiteInventory = await loadWebsiteInventory()
+    res.json({ ...config, websiteInventory })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
@@ -3641,70 +3645,17 @@ app.get("/api/config", async (_req, res) => {
 
 app.post("/api/config", async (req, res) => {
   try {
-    const { actionSources: _removedLegacySources, ...config } = req.body ?? {}
+    const {
+      actionSources: _removedLegacySources,
+      websiteInventory,
+      ...config
+    } = req.body ?? {}
+    // Inventory is an independent relational dataset. Keeping hundreds of
+    // records inside writer:config made every settings save rewrite the whole
+    // collection and allowed concurrent scans to overwrite one another.
     await kvSet("writer:config", config)
-    if (await tableAvailable("website_content_inventory")) {
-      const inventory = Array.isArray(config.websiteInventory)
-        ? config.websiteInventory
-        : []
-      for (const item of inventory) {
-        const baseRecord = {
-          id: item.id,
-          url: item.url,
-          canonical_url: item.canonicalUrl ?? null,
-          title: item.title,
-          content_type: item.contentType,
-          topics: item.topics ?? [],
-          services: item.services ?? [],
-          audience: item.audience ?? null,
-          status: item.status ?? "unchecked",
-          redirect_target: item.redirectTarget ?? null,
-          eligible_for_internal_link: Boolean(item.eligibleForInternalLink),
-          last_checked: item.lastChecked ?? null,
-          updated_at: new Date().toISOString(),
-        }
-        try {
-          await tableUpsert(
-            "website_content_inventory",
-            {
-              ...baseRecord,
-              description: item.description ?? null,
-              http_status: item.httpStatus ?? null,
-              crawl_status: item.crawlStatus ?? "queued",
-              last_error: item.lastError ?? null,
-              classification_confidence: item.classificationConfidence ?? null,
-              content_fingerprint: item.contentFingerprint ?? null,
-              summary: item.summary ?? null,
-              primary_topic: item.primaryTopic ?? null,
-              search_intent: item.searchIntent ?? null,
-              internal_link_anchors: item.internalLinkAnchors ?? [],
-              key_claims: item.keyClaims ?? [],
-              language: item.language ?? null,
-              ai_model: item.aiModel ?? null,
-              ai_summary_version: item.aiSummaryVersion ?? null,
-              summarized_at: item.summarizedAt ?? null,
-            },
-            "id",
-          )
-        } catch (error) {
-          // Keep config saves compatible while migration 005 is being rolled out.
-          const message = error instanceof Error ? error.message : String(error)
-          if (!/column|schema cache/i.test(message)) throw error
-          await tableUpsert("website_content_inventory", baseRecord, "id")
-        }
-      }
-      if (Array.isArray(config.websiteInventory)) {
-        const configuredIds = new Set(inventory.map((item: any) => item.id))
-        const persisted = await tableSelect<{ id: string }>(
-          "website_content_inventory",
-        )
-        for (const row of persisted) {
-          if (!configuredIds.has(row.id)) {
-            await tableDeleteWhere("website_content_inventory", "id", row.id)
-          }
-        }
-      }
-    }
+    if (!(await hasWebsiteInventoryTable()) && Array.isArray(websiteInventory))
+      await kvSet("writer:website-inventory:fallback", websiteInventory)
     res.json({ ok: true })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
@@ -3712,11 +3663,63 @@ app.post("/api/config", async (req, res) => {
 })
 
 const WEBSITE_SUMMARY_VERSION = "website-summary-v1"
+const WEBSITE_JOB_PREFIX = "writer:website-inventory-job:"
+const websiteJobQueues = new Map<string, Promise<unknown>>()
+const activeWebsiteJobs = new Set<string>()
+let websiteInventoryTableReady: boolean | undefined
+
+async function hasWebsiteInventoryTable() {
+  if (websiteInventoryTableReady === undefined)
+    websiteInventoryTableReady = await tableAvailable("website_content_inventory")
+  return websiteInventoryTableReady
+}
+
+function websiteRowToRecord(row: any) {
+  return {
+    id: row.id,
+    url: row.url,
+    canonicalUrl: row.canonical_url ?? undefined,
+    title: row.title,
+    contentType: row.content_type,
+    topics: row.topics ?? [],
+    services: row.services ?? [],
+    audience: row.audience ?? undefined,
+    status: row.status,
+    redirectTarget: row.redirect_target ?? undefined,
+    eligibleForInternalLink: Boolean(row.eligible_for_internal_link),
+    lastChecked: row.last_checked ?? undefined,
+    description: row.description ?? undefined,
+    httpStatus: row.http_status ?? undefined,
+    crawlStatus: row.crawl_status ?? undefined,
+    lastError: row.last_error ?? undefined,
+    classificationConfidence: row.classification_confidence == null ? undefined : Number(row.classification_confidence),
+    contentFingerprint: row.content_fingerprint ?? undefined,
+    summary: row.summary ?? undefined,
+    primaryTopic: row.primary_topic ?? undefined,
+    searchIntent: row.search_intent ?? undefined,
+    internalLinkAnchors: row.internal_link_anchors ?? [],
+    keyClaims: row.key_claims ?? [],
+    language: row.language ?? undefined,
+    aiModel: row.ai_model ?? undefined,
+    aiSummaryVersion: row.ai_summary_version ?? undefined,
+    summarizedAt: row.summarized_at ?? undefined,
+  }
+}
+
+async function loadWebsiteInventory(): Promise<any[]> {
+  if (await hasWebsiteInventoryTable()) {
+    const rows = await tableSelect<any>("website_content_inventory", (query) =>
+      query.order("last_checked", { ascending: false }).limit(2000),
+    )
+    return rows.map(websiteRowToRecord)
+  }
+  return (await kvGet<any[]>("writer:website-inventory:fallback")) ?? []
+}
 
 async function reserveWebsiteSummaryBudget() {
   const date = new Date().toISOString().slice(0, 10)
   const key = `writer:website-summary-budget:${date}`
-  const limit = Math.max(1, Number(process.env.WEBSITE_SUMMARY_DAILY_LIMIT || 100))
+  const limit = Math.max(1, Number(process.env.WEBSITE_SUMMARY_DAILY_LIMIT || 500))
   return serializeByKey(aiBudgetQueues, key, async () => {
     const current = await kvGet<{ used?: number }>(key)
     const used = Number(current?.used ?? 0)
@@ -3727,14 +3730,16 @@ async function reserveWebsiteSummaryBudget() {
 }
 
 async function persistWebsiteInventoryRecord(record: any) {
-  const config = (await kvGet<any>("writer:config")) ?? {}
-  const inventory = Array.isArray(config.websiteInventory) ? config.websiteInventory : []
-  const nextInventory = [
-    record,
-    ...inventory.filter((item: any) => item.id !== record.id && item.url !== record.url),
-  ]
-  await kvSet("writer:config", { ...config, websiteInventory: nextInventory })
-  if (!(await tableAvailable("website_content_inventory"))) return
+  if (!(await hasWebsiteInventoryTable())) {
+    await serializeByKey(websiteJobQueues, "fallback-inventory", async () => {
+      const inventory = (await kvGet<any[]>("writer:website-inventory:fallback")) ?? []
+      await kvSet("writer:website-inventory:fallback", [
+        record,
+        ...inventory.filter((item: any) => item.id !== record.id && item.url !== record.url),
+      ])
+    })
+    return
+  }
   const base = {
     id: record.id,
     url: record.url,
@@ -3776,14 +3781,37 @@ async function persistWebsiteInventoryRecord(record: any) {
   }
 }
 
-app.post("/api/website-inventory/scan", async (req, res) => {
+async function scanWebsiteUrlWithRetry(url: string) {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await scanWebsiteUrl(url)
+    } catch (error) {
+      lastError = error
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 750))
+    }
+  }
+  throw lastError
+}
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message: string) {
+  let timer: NodeJS.Timeout | undefined
   try {
-    const url = String(req.body?.url ?? "").trim()
-    if (!url) return res.status(400).json({ error: "URL is required." })
-    let record: any = await scanWebsiteUrl(url)
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+async function processWebsiteInventoryUrl(url: string, summarize = true) {
+    let record: any = await scanWebsiteUrlWithRetry(url)
     const extractedContent = String(record.extractedContent ?? "")
     delete record.extractedContent
-    const summarize = req.body?.aiSummary !== false
     if (record.status !== "broken" && summarize && getAvailableProviders().openai) {
       try {
         const cacheKey = `writer:website-summary:${WEBSITE_SUMMARY_VERSION}:${record.contentFingerprint}`
@@ -3794,20 +3822,24 @@ app.post("/api/website-inventory/scan", async (req, res) => {
           classified = cached.summary
         } else {
           await reserveWebsiteSummaryBudget()
-          const result = await generate({
-          provider: "openai",
-          modelId: process.env.WEBSITE_SUMMARY_MODEL || process.env.WEBSITE_CLASSIFIER_MODEL || "gpt-4o-mini",
-          maxTokens: 650,
-          temperature: 0,
-          jsonMode: true,
-          systemPrompt:
-            "Summarize and classify one web page for an internal-link inventory. Use only supplied page content. Return JSON only; never invent claims.",
-          prompt: [
-            `PAGE METADATA: ${JSON.stringify({ url: record.redirectTarget || record.url, title: record.title, description: record.description })}`,
-            `CLEAN PAGE CONTENT:\n${extractedContent}`,
-            'Return {"summary":string,"contentType":"blog|service|portfolio|landing|about|commercial","primaryTopic":string,"topics":[string],"services":[string],"audience":string,"searchIntent":"informational|commercial|transactional|navigational","internalLinkAnchors":[string],"keyClaims":[string],"language":string,"confidence":number}. Summary must be 40-90 words. Keep taxonomy and anchors concise.',
-          ].join("\n\n"),
-          })
+          const result = await withTimeout(
+            generate({
+              provider: "openai",
+              modelId: process.env.WEBSITE_SUMMARY_MODEL || process.env.WEBSITE_CLASSIFIER_MODEL || "gpt-4o-mini",
+              maxTokens: 650,
+              temperature: 0,
+              jsonMode: true,
+              systemPrompt:
+                "Summarize and classify one web page for an internal-link inventory. Use only supplied page content. Return JSON only; never invent claims.",
+              prompt: [
+                `PAGE METADATA: ${JSON.stringify({ url: record.redirectTarget || record.url, title: record.title, description: record.description })}`,
+                `CLEAN PAGE CONTENT:\n${extractedContent}`,
+                'Return {"summary":string,"contentType":"blog|service|portfolio|landing|about|commercial","primaryTopic":string,"topics":[string],"services":[string],"audience":string,"searchIntent":"informational|commercial|transactional|navigational","internalLinkAnchors":[string],"keyClaims":[string],"language":string,"confidence":number}. Summary must be 40-90 words. Keep taxonomy and anchors concise.',
+              ].join("\n\n"),
+            }),
+            45_000,
+            "Website AI summary timed out after 45 seconds.",
+          )
           classified = parseJsonObject(result.content)
           model = result.model
           await kvSet(cacheKey, { summary: classified, model, usage: result.usage, createdAt: new Date().toISOString() })
@@ -3859,11 +3891,211 @@ app.post("/api/website-inventory/scan", async (req, res) => {
       crawlStatus: record.status === "broken" ? "failed" : "complete",
     }
     await persistWebsiteInventoryRecord(record)
+    return record
+}
+
+app.post("/api/website-inventory/scan", async (req, res) => {
+  try {
+    const url = String(req.body?.url ?? "").trim()
+    if (!url) return res.status(400).json({ error: "URL is required." })
+    const record = await processWebsiteInventoryUrl(url, req.body?.aiSummary !== false)
     res.json({ record })
   } catch (error) {
     res
       .status(422)
       .json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+type WebsiteInventoryJob = {
+  id: string
+  status: "queued" | "running" | "complete" | "failed"
+  urls: string[]
+  aiSummary: boolean
+  total: number
+  done: number
+  failed: number
+  completedUrls: string[]
+  recentRecords: any[]
+  createdAt: string
+  updatedAt: string
+  error?: string
+}
+
+async function updateWebsiteJob(
+  jobId: string,
+  update: (job: WebsiteInventoryJob) => WebsiteInventoryJob,
+) {
+  return serializeByKey(websiteJobQueues, jobId, async () => {
+    const current = await kvGet<WebsiteInventoryJob>(`${WEBSITE_JOB_PREFIX}${jobId}`)
+    if (!current) throw new Error("Website inventory batch not found.")
+    const next = update(current)
+    await kvSet(`${WEBSITE_JOB_PREFIX}${jobId}`, next)
+    return next
+  })
+}
+
+async function runWebsiteInventoryJob(jobId: string) {
+  if (activeWebsiteJobs.has(jobId)) return
+  activeWebsiteJobs.add(jobId)
+  try {
+    let job = await updateWebsiteJob(jobId, (current) => ({
+      ...current,
+      status: "running",
+      updatedAt: new Date().toISOString(),
+      error: undefined,
+    }))
+    const completed = new Set(job.completedUrls)
+    const remaining = job.urls.filter((url) => !completed.has(url))
+    let cursor = 0
+    const worker = async () => {
+      while (cursor < remaining.length) {
+        const url = remaining[cursor++]
+        let record: any
+        try {
+          record = await processWebsiteInventoryUrl(url, job.aiSummary)
+        } catch (error) {
+          record = {
+            id: `url-${crypto.createHash("sha256").update(url).digest("hex").slice(0, 16)}`,
+            url,
+            title: new URL(url).hostname,
+            contentType: "blog",
+            topics: [],
+            services: [],
+            status: "broken",
+            crawlStatus: "failed",
+            eligibleForInternalLink: false,
+            lastChecked: new Date().toISOString(),
+            lastError: error instanceof Error ? error.message : String(error),
+          }
+          await persistWebsiteInventoryRecord(record)
+        }
+        job = await updateWebsiteJob(jobId, (current) => {
+          const completedUrls = [...new Set([...current.completedUrls, record.url])]
+          return {
+            ...current,
+            completedUrls,
+            recentRecords: [record, ...current.recentRecords.filter((item) => item.url !== record.url)].slice(0, 12),
+            done: completedUrls.length,
+            failed: current.failed + (record.crawlStatus === "failed" ? 1 : 0),
+            status: completedUrls.length >= current.total ? "complete" : "running",
+            updatedAt: new Date().toISOString(),
+          }
+        })
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(2, remaining.length) }, worker))
+    await updateWebsiteJob(jobId, (current) => ({
+      ...current,
+      status: "complete",
+      updatedAt: new Date().toISOString(),
+    }))
+  } catch (error) {
+    await updateWebsiteJob(jobId, (current) => ({
+      ...current,
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+      updatedAt: new Date().toISOString(),
+    })).catch(() => undefined)
+  } finally {
+    activeWebsiteJobs.delete(jobId)
+  }
+}
+
+app.post("/api/website-inventory/batches", async (req, res) => {
+  try {
+    const urls = [...new Set((Array.isArray(req.body?.urls) ? req.body.urls : [])
+      .map((value: unknown) => String(value).trim())
+      .filter((value: string) => {
+        try {
+          return ["http:", "https:"].includes(new URL(value).protocol)
+        } catch {
+          return false
+        }
+      }))].slice(0, 2000) as string[]
+    if (!urls.length) return res.status(400).json({ error: "At least one valid URL is required." })
+    const id = crypto.randomUUID()
+    const now = new Date().toISOString()
+    const job: WebsiteInventoryJob = {
+      id,
+      status: "queued",
+      urls,
+      aiSummary: req.body?.aiSummary !== false,
+      total: urls.length,
+      done: 0,
+      failed: 0,
+      completedUrls: [],
+      recentRecords: [],
+      createdAt: now,
+      updatedAt: now,
+    }
+    await kvSet(`${WEBSITE_JOB_PREFIX}${id}`, job)
+    void runWebsiteInventoryJob(id)
+    res.status(202).json({ job })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.get("/api/website-inventory/batches/:id", async (req, res) => {
+  try {
+    const job = await kvGet<WebsiteInventoryJob>(`${WEBSITE_JOB_PREFIX}${req.params.id}`)
+    if (!job) return res.status(404).json({ error: "Website inventory batch not found." })
+    if (["queued", "running", "failed"].includes(job.status) && job.done < job.total)
+      void runWebsiteInventoryJob(job.id)
+    res.json({ job })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.get("/api/website-inventory", async (_req, res) => {
+  try {
+    res.json({ records: await loadWebsiteInventory() })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.patch("/api/website-inventory/:id", async (req, res) => {
+  try {
+    const allowed: Record<string, string> = {
+      contentType: "content_type",
+      topics: "topics",
+      services: "services",
+      audience: "audience",
+      status: "status",
+      eligibleForInternalLink: "eligible_for_internal_link",
+    }
+    const updates = Object.fromEntries(Object.entries(req.body ?? {})
+      .filter(([key]) => allowed[key])
+      .map(([key, value]) => [allowed[key], value]))
+    if (!Object.keys(updates).length) return res.status(400).json({ error: "No supported inventory fields supplied." })
+    if (await hasWebsiteInventoryTable()) {
+      const row = await tableUpdate("website_content_inventory", req.params.id, {
+        ...updates,
+        updated_at: new Date().toISOString(),
+      })
+      return res.json({ record: websiteRowToRecord(row) })
+    }
+    const inventory = await loadWebsiteInventory()
+    const next = inventory.map((item) => item.id === req.params.id ? { ...item, ...req.body } : item)
+    await kvSet("writer:website-inventory:fallback", next)
+    res.json({ record: next.find((item) => item.id === req.params.id) })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.delete("/api/website-inventory/:id", async (req, res) => {
+  try {
+    if (await hasWebsiteInventoryTable())
+      await tableDeleteWhere("website_content_inventory", "id", req.params.id)
+    else
+      await kvSet("writer:website-inventory:fallback", (await loadWebsiteInventory()).filter((item) => item.id !== req.params.id))
+    res.json({ ok: true })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
   }
 })
 

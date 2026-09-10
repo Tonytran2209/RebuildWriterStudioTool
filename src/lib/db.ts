@@ -1,4 +1,4 @@
-import type { Article, AppConfig, DocumentFile } from "../types"
+import type { Article, AppConfig, DocumentFile, WebsiteContentRecord } from "../types"
 
 function resolveRailwayUrl(explicitUrl?: string): string {
   const saved =
@@ -141,6 +141,74 @@ export async function scanWebsiteUrl(
     record: import("../types").WebsiteContentRecord
   }>("/api/website-inventory/scan", jsonRequest("POST", { url, aiSummary }), railwayUrl)
   return result.record
+}
+
+export interface WebsiteInventoryBatchJob {
+  id: string
+  status: "queued" | "running" | "complete" | "failed"
+  total: number
+  done: number
+  failed: number
+  recentRecords: WebsiteContentRecord[]
+  error?: string
+}
+
+export async function startWebsiteInventoryBatch(
+  urls: string[],
+  railwayUrl?: string,
+  aiSummary = true,
+): Promise<WebsiteInventoryBatchJob> {
+  const result = await railwayRequest<{ job: WebsiteInventoryBatchJob }>(
+    "/api/website-inventory/batches",
+    jsonRequest("POST", { urls, aiSummary }),
+    railwayUrl,
+  )
+  return result.job
+}
+
+export async function fetchWebsiteInventoryBatch(
+  id: string,
+  railwayUrl?: string,
+): Promise<WebsiteInventoryBatchJob> {
+  const result = await railwayRequest<{ job: WebsiteInventoryBatchJob }>(
+    `/api/website-inventory/batches/${encodeURIComponent(id)}`,
+    undefined,
+    railwayUrl,
+  )
+  return result.job
+}
+
+export async function fetchWebsiteInventory(
+  railwayUrl?: string,
+): Promise<WebsiteContentRecord[]> {
+  const result = await railwayRequest<{ records: WebsiteContentRecord[] }>(
+    "/api/website-inventory",
+    undefined,
+    railwayUrl,
+  )
+  return result.records
+}
+
+export async function updateWebsiteInventoryRecord(
+  id: string,
+  updates: Partial<WebsiteContentRecord>,
+  railwayUrl?: string,
+): Promise<WebsiteContentRecord> {
+  const result = await railwayRequest<{ record: WebsiteContentRecord }>(
+    `/api/website-inventory/${encodeURIComponent(id)}`,
+    jsonRequest("PATCH", updates),
+    railwayUrl,
+  )
+  return result.record
+}
+
+export async function deleteWebsiteInventoryRecord(
+  id: string,
+  railwayUrl?: string,
+): Promise<void> {
+  await railwayRequest(`/api/website-inventory/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  }, railwayUrl)
 }
 
 // ── Files ─────────────────────────────────────────────────────────────────────

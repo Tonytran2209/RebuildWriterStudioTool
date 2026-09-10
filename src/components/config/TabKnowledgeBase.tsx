@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Archive, BookOpen, Download, Globe2, RefreshCw, ScrollText, Search, X } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type {
@@ -11,7 +11,14 @@ import type {
 } from "../../types"
 import SourceImportPanel from "./SourceImportPanel"
 import WorkflowRulesPanel from "./WorkflowRulesPanel"
-import { scanWebsiteUrl } from "../../lib/db"
+import {
+  deleteWebsiteInventoryRecord,
+  fetchWebsiteInventory,
+  fetchWebsiteInventoryBatch,
+  scanWebsiteUrl,
+  startWebsiteInventoryBatch,
+  updateWebsiteInventoryRecord,
+} from "../../lib/db"
 import { isLegacyActionPlan } from "../../lib/legacyCompatibility"
 
 const SUBTAB_META: Record<KbSubTab, {
@@ -211,6 +218,7 @@ function WebsiteInventoryPanel({
   const [typeFilter, setTypeFilter] = useState("all")
   const [page, setPage] = useState(1)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
+  const resumeStarted = useRef(false)
   const pageSize = 25
   const filteredRecords = useMemo(() => {
     const query = inventoryQuery.trim().toLocaleLowerCase()
@@ -232,10 +240,57 @@ function WebsiteInventoryPanel({
     else next.add(id)
     return next
   })
+  const mergeBatchRecords = (
+    baseRecords: WebsiteContentRecord[],
+    completed: WebsiteContentRecord[],
+  ) => {
+    const byUrl = new Map(completed.map((record) => [record.url, record]))
+    const merged = baseRecords.map((record) => byUrl.get(record.url) ?? record)
+    const known = new Set(merged.map((record) => record.url))
+    return [...completed.filter((record) => !known.has(record.url)), ...merged]
+  }
+  const monitorBatch = async (
+    jobId: string,
+    baseRecords: WebsiteContentRecord[],
+    cancelled: () => boolean = () => false,
+  ) => {
+    let mergedRecords = baseRecords
+    while (!cancelled()) {
+      const job = await fetchWebsiteInventoryBatch(jobId, railwayUrl)
+      if (cancelled()) return
+      setScanProgress({ done: job.done, total: job.total })
+      mergedRecords = mergeBatchRecords(mergedRecords, job.recentRecords)
+      onChange(mergedRecords)
+      if (job.status === "complete") {
+        onChange(await fetchWebsiteInventory(railwayUrl))
+        localStorage.removeItem("writer:website-inventory-active-job")
+        setScanning(false)
+        return
+      }
+      if (job.status === "failed" && job.done >= job.total) {
+        localStorage.removeItem("writer:website-inventory-active-job")
+        setScanning(false)
+        throw new Error(job.error || "Website inventory batch failed.")
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+    }
+  }
+  useEffect(() => {
+    if (resumeStarted.current) return
+    resumeStarted.current = true
+    const jobId = localStorage.getItem("writer:website-inventory-active-job")
+    if (!jobId) return
+    let cancelled = false
+    setScanning(true)
+    void monitorBatch(jobId, records, () => cancelled).catch(() => setScanning(false))
+    return () => { cancelled = true }
+  }, [])
   const update = (id: string, patch: Partial<WebsiteContentRecord>) =>
     onChange(
       records.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     )
+  const persistUpdate = (id: string, patch: Partial<WebsiteContentRecord>) =>
+    updateWebsiteInventoryRecord(id, patch, railwayUrl).catch(() => undefined)
   const scan = async () => {
     const urls = [...new Set(input.split(/[\n,]+/).flatMap((value) => {
           try {
@@ -264,48 +319,22 @@ function WebsiteInventoryPanel({
           eligibleForInternalLink: false,
         }),
       )
-    let current = [...pending, ...records]
+    const current = [...pending, ...records]
     onChange(current)
     setInput("")
     setScanning(true)
     setScanProgress({ done: 0, total: pending.length })
-    let cursor = 0
-    const worker = async () => {
-      while (cursor < pending.length) {
-        const item = pending[cursor++]
-        current = current.map((record) =>
-          record.id === item.id
-            ? { ...record, status: "checking", crawlStatus: "checking" }
-            : record,
-        )
-        onChange(current)
-        try {
-          const result = await scanWebsiteUrl(item.url, railwayUrl, includeAiSummary)
-          current = current.map((record) =>
-            record.id === item.id ? result : record,
-          )
-        } catch (error) {
-          current = current.map((record) =>
-            record.id === item.id
-              ? {
-                  ...record,
-                  status: "broken",
-                  crawlStatus: "failed",
-                  lastChecked: new Date().toISOString(),
-                  lastError:
-                    error instanceof Error ? error.message : String(error),
-                }
-              : record,
-          )
-        }
-        onChange(current)
-        setScanProgress((progress) => ({ ...progress, done: progress.done + 1 }))
-      }
+    try {
+      const job = await startWebsiteInventoryBatch(
+        pending.map((item) => item.url),
+        railwayUrl,
+        includeAiSummary,
+      )
+      localStorage.setItem("writer:website-inventory-active-job", job.id)
+      await monitorBatch(job.id, current)
+    } catch {
+      setScanning(false)
     }
-    await Promise.all(
-      Array.from({ length: Math.min(3, pending.length) }, worker),
-    )
-    setScanning(false)
   }
   const recheck = async (record: WebsiteContentRecord) => {
     update(record.id, { status: "checking", crawlStatus: "checking" })
@@ -329,81 +358,36 @@ function WebsiteInventoryPanel({
     if (scanning || !records.length) return
     setScanning(true)
     setScanProgress({ done: 0, total: records.length })
-    let current: WebsiteContentRecord[] = records.map((item) => ({
+    const current: WebsiteContentRecord[] = records.map((item) => ({
       ...item,
       status: "queued" as const,
       crawlStatus: "queued" as const,
     }))
     onChange(current)
-    let cursor = 0
-    const worker = async () => {
-      while (cursor < records.length) {
-        const original = records[cursor++]
-        current = current.map((item) =>
-          item.id === original.id
-            ? { ...item, status: "checking", crawlStatus: "checking" }
-            : item,
-        )
-        onChange(current)
-        try {
-          const result = await scanWebsiteUrl(original.url, railwayUrl, true)
-          current = current.map((item) =>
-            item.id === original.id ? { ...result, id: original.id } : item,
-          )
-        } catch (error) {
-          current = current.map((item) =>
-            item.id === original.id
-              ? {
-                  ...item,
-                  status: "broken",
-                  crawlStatus: "failed",
-                  eligibleForInternalLink: false,
-                  lastChecked: new Date().toISOString(),
-                  lastError:
-                    error instanceof Error ? error.message : String(error),
-                }
-              : item,
-          )
-        }
-        onChange(current)
-        setScanProgress((progress) => ({ ...progress, done: progress.done + 1 }))
-      }
+    try {
+      const job = await startWebsiteInventoryBatch(records.map((item) => item.url), railwayUrl, true)
+      localStorage.setItem("writer:website-inventory-active-job", job.id)
+      await monitorBatch(job.id, current)
+    } catch {
+      setScanning(false)
     }
-    await Promise.all(
-      Array.from({ length: Math.min(3, records.length) }, worker),
-    )
-    setScanning(false)
   }
   const summarizeMissing = async () => {
     const pending = records.filter((record) => !record.summary && record.status !== "broken")
     if (scanning || !pending.length) return
     setScanning(true)
     setScanProgress({ done: 0, total: pending.length })
-    let current = records
-    let cursor = 0
-    const worker = async () => {
-      while (cursor < pending.length) {
-        const original = pending[cursor++]
-        current = current.map((item) => item.id === original.id
-          ? { ...item, crawlStatus: "summarizing" }
-          : item)
-        onChange(current)
-        try {
-          const result = await scanWebsiteUrl(original.url, railwayUrl, true)
-          current = current.map((item) => item.id === original.id ? { ...result, id: original.id } : item)
-        } catch (error) {
-          current = current.map((item) => item.id === original.id ? {
-            ...item,
-            crawlStatus: "failed",
-            lastError: error instanceof Error ? error.message : String(error),
-          } : item)
-        }
-        onChange(current)
-        setScanProgress((progress) => ({ ...progress, done: progress.done + 1 }))
-      }
+    const current = records.map((item) => pending.some((record) => record.id === item.id)
+      ? { ...item, crawlStatus: "summarizing" as const }
+      : item)
+    onChange(current)
+    try {
+      const job = await startWebsiteInventoryBatch(pending.map((item) => item.url), railwayUrl, true)
+      localStorage.setItem("writer:website-inventory-active-job", job.id)
+      await monitorBatch(job.id, current)
+    } catch {
+      setScanning(false)
     }
-    await Promise.all(Array.from({ length: Math.min(2, pending.length) }, worker))
-    setScanning(false)
   }
   return (
     <div className="space-y-7">
@@ -543,10 +527,12 @@ function WebsiteInventoryPanel({
                       title={record.lastError}
                       onChange={(event) => {
                         const status = event.target.value as WebsiteContentRecord["status"]
-                        update(record.id, {
+                        const patch = {
                           status,
                           eligibleForInternalLink: status === "active" || status === "redirected",
-                        })
+                        }
+                        update(record.id, patch)
+                        void persistUpdate(record.id, patch)
                       }}
                       className="h-8 w-full shrink-0 px-2 text-xs sm:w-28"
                     >
@@ -581,7 +567,11 @@ function WebsiteInventoryPanel({
                       Page type
                       <select
                         value={record.contentType}
-                        onChange={(event) => update(record.id, { contentType: event.target.value as WebsiteContentRecord["contentType"] })}
+                        onChange={(event) => {
+                          const patch = { contentType: event.target.value as WebsiteContentRecord["contentType"] }
+                          update(record.id, patch)
+                          void persistUpdate(record.id, patch)
+                        }}
                         className="mt-1 h-9 w-full px-2 text-xs"
                       >
                         <option value="blog">Blog</option>
@@ -597,6 +587,7 @@ function WebsiteInventoryPanel({
                       <input
                         value={record.topics.join(", ")}
                         onChange={(event) => update(record.id, { topics: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })}
+                        onBlur={(event) => void persistUpdate(record.id, { topics: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })}
                         className="mt-1 h-9 w-full min-w-0 px-2 text-xs"
                       />
                     </label>
@@ -605,6 +596,7 @@ function WebsiteInventoryPanel({
                       <input
                         value={(record.services ?? []).join(", ")}
                         onChange={(event) => update(record.id, { services: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })}
+                        onBlur={(event) => void persistUpdate(record.id, { services: event.target.value.split(",").map((value) => value.trim()).filter(Boolean) })}
                         className="mt-1 h-9 w-full min-w-0 px-2 text-xs"
                       />
                     </label>
@@ -629,11 +621,8 @@ function WebsiteInventoryPanel({
                       </button>
                       <button
                         type="button"
-                        onClick={() =>
-                          onChange(
-                            records.filter((item) => item.id !== record.id),
-                          )
-                        }
+                        onClick={() => void deleteWebsiteInventoryRecord(record.id, railwayUrl)
+                          .then(() => onChange(records.filter((item) => item.id !== record.id)))}
                         className="settings-secondary-action inventory-remove-action inline-flex size-8 items-center justify-center rounded-md"
                         aria-label="Remove URL"
                         title="Remove URL"
