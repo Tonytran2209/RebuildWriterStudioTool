@@ -1038,19 +1038,29 @@ function batchDraftBudget(
   introductionPercent = 8,
   conclusionPercent = 7,
 ) {
-  const targetMax = Math.min(
-    hardLimit,
-    Math.max(800, Math.floor(hardLimit * 0.92)),
-  )
+  const targetMin = Math.ceil(hardLimit * 0.92)
+  const targetMax = Math.floor(hardLimit * 0.98)
   const introduction = {
-    min: Math.floor((targetMax * introductionPercent) / 100),
+    min: Math.floor((targetMin * introductionPercent) / 100),
     max: Math.floor((targetMax * (introductionPercent + 1)) / 100),
   }
   const conclusion = {
-    min: Math.floor((targetMax * conclusionPercent) / 100),
+    min: Math.floor((targetMin * conclusionPercent) / 100),
     max: Math.floor((targetMax * (conclusionPercent + 1)) / 100),
   }
-  const pool = targetMax - introduction.max - conclusion.max - 20
+  const headingOverhead = outline.reduce(
+    (sum, section) =>
+      sum + String(section.heading ?? "").trim().split(/\s+/).filter(Boolean).length + 1,
+    10,
+  )
+  const minimumPool = Math.max(
+    0,
+    targetMin - introduction.min - conclusion.min - headingOverhead,
+  )
+  const maximumPool = Math.max(
+    minimumPool,
+    targetMax - introduction.max - conclusion.max - headingOverhead,
+  )
   const totalWeight =
     outline.reduce(
       (sum, section) => sum + (section.level === "h3" ? 0.65 : 1),
@@ -1058,24 +1068,37 @@ function batchDraftBudget(
     ) || 1
   return {
     hardLimit,
-    targetMin: Math.min(hardLimit, Math.max(800, Math.ceil(hardLimit * 0.9))),
+    targetMin,
     targetMax,
     introduction,
     conclusion,
     sections: outline.map((section) => {
-      const allocation = Math.max(
-        35,
-        Math.floor((pool * (section.level === "h3" ? 0.65 : 1)) / totalWeight),
-      )
+      const weight = section.level === "h3" ? 0.65 : 1
       return {
         id: section.id,
         heading: section.heading,
         level: section.level,
-        minWords: Math.floor(allocation * 0.9),
-        maxWords: allocation,
+        minWords: Math.max(35, Math.floor((minimumPool * weight) / totalWeight)),
+        maxWords: Math.max(45, Math.floor((maximumPool * weight) / totalWeight)),
       }
     }),
   }
+}
+
+function batchOutlineFeasibility(article: any, hardLimit: number) {
+  const outline = Array.isArray(article.outline) ? article.outline : []
+  const headingWords = outline.reduce(
+    (sum: number, section: any) =>
+      sum + String(section.heading ?? "").trim().split(/\s+/).filter(Boolean).length + 1,
+    10,
+  )
+  const sectionMinimum = outline.reduce(
+    (sum: number, section: any) => sum + (section.level === "h3" ? 55 : 90),
+    0,
+  )
+  const coverageMinimum = (article.articleSpec?.mustCover?.length ?? 0) * 30
+  const minimumRequired = headingWords + sectionMinimum + coverageMinimum + 130
+  return { minimumRequired, feasible: minimumRequired <= Math.floor(hardLimit * 0.98) }
 }
 
 const structuredDraftJsonSchema: Record<string, unknown> = {
@@ -1398,6 +1421,11 @@ async function runBatchArticle(
     if (!article.draft?.trim() || article.qualityReport?.status !== "pass") {
       const draftPrerequisite = articleStepPrerequisite(article, 4)
       if (draftPrerequisite) throw new Error(draftPrerequisite)
+      const feasibility = batchOutlineFeasibility(article, maxDraftWords)
+      if (!feasibility.feasible)
+        throw new Error(
+          `Outline requires approximately ${feasibility.minimumRequired} words, above the configured ${maxDraftWords}-word hard limit. Increase the Step 3 limit or simplify the outline.`,
+        )
       const budget = batchDraftBudget(
         article.outline ?? [],
         maxDraftWords,
@@ -1443,7 +1471,7 @@ async function runBatchArticle(
       )
       if (deterministic.some((item) => item.status !== "pass")) {
         const report = {
-          version: 1,
+          version: 2,
           status: "fail",
           checkedAt: new Date().toISOString(),
           articleSpecFingerprint: article.articleSpecFingerprint,
@@ -1475,7 +1503,7 @@ async function runBatchArticle(
       const semantic = parseBatchSemanticChecks(review.content)
       const checks = [...deterministic, ...semantic]
       const report = {
-        version: 1,
+        version: 2,
         status: checks.every((item) => item.status === "pass")
           ? "pass"
           : checks.some((item) => item.status === "fail")

@@ -91,16 +91,37 @@ function mergeStructuredDraft(base: StructuredDraftPayload, repair: StructuredDr
 }
 
 function buildSectionBudget(outline: NonNullable<Article['outline']>, hardLimit: number, introductionPercent = 8, conclusionPercent = 7) {
-  const target = Math.min(hardLimit, Math.max(800, Math.floor(hardLimit * 0.92)));
-  const introduction = { min: Math.floor(target * introductionPercent / 100), max: Math.floor(target * (introductionPercent + 1) / 100) };
-  const conclusion = { min: Math.floor(target * conclusionPercent / 100), max: Math.floor(target * (conclusionPercent + 1) / 100) };
-  const sectionPool = target - introduction.max - conclusion.max - 20;
+  const targetMin = Math.ceil(hardLimit * 0.92);
+  const targetMax = Math.floor(hardLimit * 0.98);
+  const introduction = { min: Math.floor(targetMin * introductionPercent / 100), max: Math.floor(targetMax * (introductionPercent + 1) / 100) };
+  const conclusion = { min: Math.floor(targetMin * conclusionPercent / 100), max: Math.floor(targetMax * (conclusionPercent + 1) / 100) };
+  const headingOverhead = outline.reduce((sum, section) => sum + countWords(section.heading) + 1, 10);
+  const sectionPoolMin = Math.max(0, targetMin - introduction.min - conclusion.min - headingOverhead);
+  const sectionPoolMax = Math.max(sectionPoolMin, targetMax - introduction.max - conclusion.max - headingOverhead);
   const totalWeight = outline.reduce((sum, section) => sum + (section.level === 'h3' ? 0.65 : 1), 0) || 1;
   const sections = outline.map(section => {
-    const allocation = Math.max(35, Math.floor(sectionPool * (section.level === 'h3' ? 0.65 : 1) / totalWeight));
-    return { id: section.id, heading: section.heading, level: section.level, minWords: Math.floor(allocation * 0.9), maxWords: allocation };
+    const weight = section.level === 'h3' ? 0.65 : 1;
+    return {
+      id: section.id,
+      heading: section.heading,
+      level: section.level,
+      minWords: Math.max(35, Math.floor(sectionPoolMin * weight / totalWeight)),
+      maxWords: Math.max(45, Math.floor(sectionPoolMax * weight / totalWeight)),
+    };
   });
-  return { hardLimit, targetMin: Math.min(hardLimit, Math.max(800, Math.ceil(hardLimit * 0.9))), targetMax: target, introduction, conclusion, sections };
+  return { hardLimit, targetMin, targetMax, introduction, conclusion, headingOverhead, sections };
+}
+
+function assessOutlineFeasibility(article: Article, hardLimit: number) {
+  const outline = article.outline ?? [];
+  const headingWords = outline.reduce((sum, section) => sum + countWords(section.heading) + 1, 10);
+  const sectionMinimum = outline.reduce((sum, section) => sum + (section.level === 'h3' ? 55 : 90), 0);
+  const coverageMinimum = (article.articleSpec?.mustCover?.length ?? 0) * 30;
+  const minimumRequired = headingWords + sectionMinimum + coverageMinimum + 130;
+  return {
+    minimumRequired,
+    feasible: minimumRequired <= Math.floor(hardLimit * 0.98),
+  };
 }
 
 function parseStructuredDraft(raw: string, article: Article) {
@@ -142,7 +163,7 @@ function evaluateSeoChecklist(text: string, article: Article, targetWords: numbe
   const items = [
     { key: 'titleKeyword', label: 'Tiêu đề H1 có primary keyword', pass: Boolean(normalizedKeyword && markdownTitle.toLocaleLowerCase().includes(normalizedKeyword)) },
     { key: 'minimumLength', label: 'Độ dài >= 800 từ', pass: wordCount >= 800 },
-    { key: 'targetLength', label: 'Đạt 90–100% mục tiêu từ', pass: wordCount >= targetWords * 0.9 && wordCount <= targetWords },
+    { key: 'targetLength', label: `Trong ngưỡng ${Math.ceil(targetWords * 0.9).toLocaleString()}–${targetWords.toLocaleString()} từ`, pass: wordCount >= targetWords * 0.9 && wordCount <= targetWords },
     { key: 'headings', label: 'Có headings H2/H3', pass: /^#{2,3}\s+\S/m.test(text) },
     { key: 'bodyKeyword', label: 'Primary keyword xuất hiện trong bài', pass: Boolean(normalizedKeyword && normalizedDraft.includes(normalizedKeyword)) },
   ];
@@ -255,11 +276,11 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const prerequisite = gateArticleStep(article, 4);
   const draftSourceFingerprint = useMemo(
     () => [
-      buildWorkflowSourceFingerprint(bundle), model.provider, model.id, 'step4-draft-v5-section-budget-json',
+      buildWorkflowSourceFingerprint(bundle), model.provider, model.id, 'step4-draft-v6-effective-word-budget',
       article.selectedCoreIdeaId, article.topic, article.angle,
-      JSON.stringify(article.outline ?? []), article.tone, article.keywords, article.wordCount, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, compiledWorkflowRules.fingerprint,
+      JSON.stringify(article.outline ?? []), article.tone, article.keywords, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, compiledWorkflowRules.fingerprint,
     ].join(':'),
-    [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, config.stepConfigs, model.id, model.provider],
+    [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, bundle, compiledWorkflowRules.fingerprint, config.stepConfigs, model.id, model.provider],
   );
   const wordCount = countWords(draft);
   const targetWords = Math.min(10000, Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500));
@@ -271,9 +292,10 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
   const deterministicChecks = useMemo(() => deterministicQualityChecks(
     article,
     draft,
+    targetWords,
     config.websiteInventory ?? [],
     files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name),
-  ), [article, config.websiteInventory, draft, files]);
+  ), [article, config.websiteInventory, draft, files, targetWords]);
   const savedQualityReport = article.qualityReport;
   const displayedQualityChecks = savedQualityReport?.status === 'pass' && savedQualityReport.articleSpecFingerprint === article.articleSpecFingerprint && !draftIsStale
     ? savedQualityReport.checks
@@ -301,6 +323,11 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
     }
     if (!(article.outline && article.outline.length)) {
       setError('Bước 3 cần outline đã lưu từ Bước 2. Vui lòng quay lại Bước 2 và tạo hoặc lưu ít nhất một section.');
+      return;
+    }
+    const feasibility = assessOutlineFeasibility(article, targetWords);
+    if (!feasibility.feasible) {
+      setError(`Outline hiện tại cần tối thiểu khoảng ${feasibility.minimumRequired} từ để bao phủ đủ section và must-cover topic, vượt giới hạn ${targetWords} từ. Hãy tăng giới hạn hoặc rút gọn outline trước khi tạo draft.`);
       return;
     }
     generationInFlight.current = true;
@@ -460,7 +487,7 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
       const assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
       const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
       if (validation.failed.length) throw new Error(`Draft chưa được lưu vì chưa đạt 100% SEO checklist: ${validation.failed.map(item => item.label).join(', ')}.`);
-      const deterministic = deterministicQualityChecks(article, assembledDraft, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name));
+      const deterministic = deterministicQualityChecks(article, assembledDraft, targetWords, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name));
       if (deterministic.some(item => item.status === 'fail')) {
         const report = qualityReport(article, deterministic);
         await onUpdate({ qualityReport: report });
@@ -727,8 +754,13 @@ export default function Step4Draft({ article, config, files, model, railwayUrl, 
 
             {/* Word count bar */}
             <div className="px-5 py-2.5 border-t border-slate-100">
-              <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1.5">
-                <span className="font-mono font-semibold">{wordCount.toLocaleString()} / {targetWords.toLocaleString()} {tr('từ tiếng Anh', 'English words')} · {draft.length.toLocaleString()} {tr('ký tự', 'characters')}</span>
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono font-semibold">
+                  <span>{wordCount.toLocaleString()} {tr('từ tiếng Anh', 'English words')}</span>
+                  <span>Target {Math.ceil(targetWords * 0.92).toLocaleString()}–{Math.floor(targetWords * 0.98).toLocaleString()}</span>
+                  <span>Hard limit {targetWords.toLocaleString()}</span>
+                  <span>{draft.length.toLocaleString()} {tr('ký tự', 'characters')}</span>
+                </div>
                 <span>{progress}% {tr('hoàn thành', 'complete')}</span>
               </div>
               <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
