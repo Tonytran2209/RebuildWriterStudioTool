@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Archive, BookOpen, Download, Globe2, ScrollText } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type {
@@ -206,6 +206,32 @@ function WebsiteInventoryPanel({
   const [scanning, setScanning] = useState(false)
   const [includeAiSummary, setIncludeAiSummary] = useState(true)
   const [scanProgress, setScanProgress] = useState({ done: 0, total: 0 })
+  const [inventoryQuery, setInventoryQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [typeFilter, setTypeFilter] = useState("all")
+  const [page, setPage] = useState(1)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
+  const pageSize = 25
+  const filteredRecords = useMemo(() => {
+    const query = inventoryQuery.trim().toLocaleLowerCase()
+    return records
+      .filter((record) => statusFilter === "all" || record.status === statusFilter)
+      .filter((record) => typeFilter === "all" || record.contentType === typeFilter)
+      .filter((record) => !query || [
+        record.url, record.title, record.summary, record.primaryTopic,
+        ...(record.topics ?? []), ...(record.services ?? []), ...(record.internalLinkAnchors ?? []),
+      ].some((value) => String(value ?? "").toLocaleLowerCase().includes(query)))
+      .sort((left, right) => String(right.lastChecked ?? "").localeCompare(String(left.lastChecked ?? "")))
+  }, [inventoryQuery, records, statusFilter, typeFilter])
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize))
+  const visibleRecords = filteredRecords.slice((page - 1) * pageSize, page * pageSize)
+  useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages])
+  const toggleExpanded = (id: string) => setExpandedIds((current) => {
+    const next = new Set(current)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
   const update = (id: string, patch: Partial<WebsiteContentRecord>) =>
     onChange(
       records.map((item) => (item.id === id ? { ...item, ...patch } : item)),
@@ -456,14 +482,40 @@ function WebsiteInventoryPanel({
             </button>
           </div>
         </div>
+        <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_140px_140px]">
+          <input
+            value={inventoryQuery}
+            onChange={(event) => { setInventoryQuery(event.target.value); setPage(1) }}
+            placeholder="Search URL, title, topic or service…"
+            className="h-9 w-full px-3 text-xs"
+          />
+          <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }} className="h-9 px-2 text-xs">
+            <option value="all">All statuses</option>
+            <option value="active">Active</option>
+            <option value="redirected">Redirected</option>
+            <option value="broken">Broken</option>
+            <option value="unchecked">Unchecked</option>
+            <option value="queued">Queued</option>
+            <option value="checking">Checking</option>
+          </select>
+          <select value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value); setPage(1) }} className="h-9 px-2 text-xs">
+            <option value="all">All page types</option>
+            <option value="blog">Blog</option>
+            <option value="service">Service</option>
+            <option value="portfolio">Portfolio</option>
+            <option value="landing">Landing</option>
+            <option value="about">About</option>
+            <option value="commercial">Commercial</option>
+          </select>
+        </div>
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="website-inventory-list divide-y divide-slate-200">
-            {records.length === 0 ? (
+            {filteredRecords.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-slate-400">
-                No website pages indexed.
+                {records.length ? "No pages match the current filters." : "No website pages indexed."}
               </p>
             ) : (
-              records.map((record) => (
+              visibleRecords.map((record) => (
                 <div
                   key={record.id}
                   className="website-inventory-row px-4 py-4 sm:px-5"
@@ -486,6 +538,7 @@ function WebsiteInventoryPanel({
                         {record.url}
                       </a>
                     </div>
+                    <div className="flex shrink-0 items-center gap-2">
                     <select
                       aria-label="Status"
                       value={record.status}
@@ -507,12 +560,18 @@ function WebsiteInventoryPanel({
                       <option value="redirected">Redirected</option>
                       <option value="broken">Broken</option>
                     </select>
+                      <button type="button" onClick={() => toggleExpanded(record.id)} className="settings-secondary-action h-8 rounded-md px-2.5 text-xs text-slate-500" aria-expanded={expandedIds.has(record.id)}>
+                        {expandedIds.has(record.id) ? "Close" : "Details"}
+                      </button>
+                    </div>
                   </div>
 
-                  {record.summary && (
-                    <p className="mt-3 text-xs leading-5 text-slate-500">{record.summary}</p>
+                  {record.summary && !expandedIds.has(record.id) && (
+                    <p className="mt-2 truncate text-[11px] leading-5 text-slate-400" title={record.summary}>{record.summary}</p>
                   )}
 
+                  {expandedIds.has(record.id) && <>
+                  {record.summary && <p className="mt-3 text-xs leading-5 text-slate-500">{record.summary}</p>}
                   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <label className="min-w-0 text-[10px] font-medium text-slate-400">
                       Page type
@@ -546,6 +605,7 @@ function WebsiteInventoryPanel({
                       />
                     </label>
                   </div>
+                  </>}
 
                   <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 text-[10px] text-slate-400 sm:flex-row sm:items-center sm:justify-between">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -578,6 +638,16 @@ function WebsiteInventoryPanel({
             )}
           </div>
         </div>
+        {filteredRecords.length > pageSize && (
+          <div className="mt-3 flex flex-col gap-2 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+            <span>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredRecords.length)} of {filteredRecords.length}</span>
+            <div className="flex items-center gap-2">
+              <button disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="settings-secondary-action rounded-md px-3 py-1.5 disabled:opacity-40">Previous</button>
+              <span>Page {page} / {totalPages}</span>
+              <button disabled={page === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="settings-secondary-action rounded-md px-3 py-1.5 disabled:opacity-40">Next</button>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   )
