@@ -666,7 +666,7 @@ export default function App() {
               }
             />
             <main className="continuous-workspace flex-1 min-h-0 overflow-y-auto p-2.5 md:p-5">
-              <div className="mx-auto grid w-full max-w-6xl grid-cols-[3rem_minmax(0,1fr)] gap-2 sm:grid-cols-[3.5rem_minmax(0,1fr)] sm:gap-3 lg:grid-cols-[5rem_minmax(0,1fr)] lg:gap-5">
+              <div className="mx-auto grid w-full max-w-6xl grid-cols-[3rem_minmax(0,1fr)] gap-2 sm:grid-cols-[3.5rem_minmax(0,1fr)] sm:gap-3 lg:grid-cols-[8.5rem_minmax(0,1fr)] lg:gap-5">
                 <VerticalWorkflowRail article={article} activeStep={visibleWorkflowStep} onNavigate={scrollToWorkflowStep} />
                 <div className="min-w-0 space-y-6">
                   <section ref={(node) => { if (node) workflowStepRefs.current.set(2, node); else workflowStepRefs.current.delete(2) }} data-workflow-step="2" className="workflow-section scroll-mt-4">
