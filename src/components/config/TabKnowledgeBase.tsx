@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Archive, BookOpen, Download, Globe2, RefreshCw, ScrollText, Search, X } from "lucide-react"
+import { Archive, BookOpen, Download, Globe2, RefreshCw, ScrollText, Search, Square, X } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type {
   ActionDataSource,
@@ -12,6 +12,7 @@ import type {
 import SourceImportPanel from "./SourceImportPanel"
 import WorkflowRulesPanel from "./WorkflowRulesPanel"
 import {
+  cancelAllWebsiteInventoryBatches,
   deleteWebsiteInventoryRecord,
   fetchWebsiteInventory,
   fetchWebsiteInventoryBatch,
@@ -211,6 +212,8 @@ function WebsiteInventoryPanel({
 }) {
   const [input, setInput] = useState("")
   const [scanning, setScanning] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [includeAiSummary, setIncludeAiSummary] = useState(true)
   const [scanProgress, setScanProgress] = useState({ done: 0, total: 0 })
   const [inventoryQuery, setInventoryQuery] = useState("")
@@ -264,6 +267,14 @@ function WebsiteInventoryPanel({
       if (job.status === "complete") {
         onChange(await fetchWebsiteInventory(railwayUrl))
         localStorage.removeItem("writer:website-inventory-active-job")
+        setActiveJobId(null)
+        setScanning(false)
+        return
+      }
+      if (job.status === "cancelled") {
+        onChange(await fetchWebsiteInventory(railwayUrl))
+        localStorage.removeItem("writer:website-inventory-active-job")
+        setActiveJobId(null)
         setScanning(false)
         return
       }
@@ -281,6 +292,7 @@ function WebsiteInventoryPanel({
     const jobId = localStorage.getItem("writer:website-inventory-active-job")
     if (!jobId) return
     let cancelled = false
+    setActiveJobId(jobId)
     setScanning(true)
     void monitorBatch(jobId, records, () => cancelled).catch(() => setScanning(false))
     return () => { cancelled = true }
@@ -331,6 +343,7 @@ function WebsiteInventoryPanel({
         includeAiSummary,
       )
       localStorage.setItem("writer:website-inventory-active-job", job.id)
+      setActiveJobId(job.id)
       await monitorBatch(job.id, current)
     } catch {
       setScanning(false)
@@ -367,6 +380,7 @@ function WebsiteInventoryPanel({
     try {
       const job = await startWebsiteInventoryBatch(records.map((item) => item.url), railwayUrl, true)
       localStorage.setItem("writer:website-inventory-active-job", job.id)
+      setActiveJobId(job.id)
       await monitorBatch(job.id, current)
     } catch {
       setScanning(false)
@@ -384,9 +398,23 @@ function WebsiteInventoryPanel({
     try {
       const job = await startWebsiteInventoryBatch(pending.map((item) => item.url), railwayUrl, true)
       localStorage.setItem("writer:website-inventory-active-job", job.id)
+      setActiveJobId(job.id)
       await monitorBatch(job.id, current)
     } catch {
       setScanning(false)
+    }
+  }
+  const cancelScan = async () => {
+    if (!activeJobId || cancelling) return
+    setCancelling(true)
+    try {
+      await cancelAllWebsiteInventoryBatches(railwayUrl)
+      localStorage.removeItem("writer:website-inventory-active-job")
+      setActiveJobId(null)
+      setScanning(false)
+      onChange(await fetchWebsiteInventory(railwayUrl))
+    } finally {
+      setCancelling(false)
     }
   }
   return (
@@ -421,13 +449,26 @@ function WebsiteInventoryPanel({
                 : "Private-network URLs and non-HTML files are blocked."}
               </p>
             </div>
-            <button
-              disabled={scanning || !input.trim()}
-              onClick={() => void scan()}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-            >
-              {includeAiSummary ? "Import, scan & summarize" : "Import metadata only"}
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {scanning && activeJobId && (
+                <button
+                  type="button"
+                  disabled={cancelling}
+                  onClick={() => void cancelScan()}
+                  className="settings-secondary-action inventory-remove-action inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium disabled:opacity-40"
+                >
+                  <Square size={13} fill="currentColor" aria-hidden="true" />
+                  {cancelling ? "Đang dừng…" : "Dừng scan"}
+                </button>
+              )}
+              <button
+                disabled={scanning || !input.trim()}
+                onClick={() => void scan()}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              >
+                {includeAiSummary ? "Import, scan & summarize" : "Import metadata only"}
+              </button>
+            </div>
           </div>
         </div>
       </section>

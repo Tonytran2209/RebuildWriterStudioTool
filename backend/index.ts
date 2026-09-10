@@ -3666,6 +3666,7 @@ const WEBSITE_SUMMARY_VERSION = "website-summary-v1"
 const WEBSITE_JOB_PREFIX = "writer:website-inventory-job:"
 const websiteJobQueues = new Map<string, Promise<unknown>>()
 const activeWebsiteJobs = new Set<string>()
+const cancelledWebsiteJobs = new Set<string>()
 let websiteInventoryTableReady: boolean | undefined
 
 async function hasWebsiteInventoryTable() {
@@ -3909,7 +3910,7 @@ app.post("/api/website-inventory/scan", async (req, res) => {
 
 type WebsiteInventoryJob = {
   id: string
-  status: "queued" | "running" | "complete" | "failed"
+  status: "queued" | "running" | "complete" | "failed" | "cancelled"
   urls: string[]
   aiSummary: boolean
   total: number
@@ -3950,6 +3951,7 @@ async function runWebsiteInventoryJob(jobId: string) {
     let cursor = 0
     const worker = async () => {
       while (cursor < remaining.length) {
+        if (cancelledWebsiteJobs.has(jobId)) return
         const url = remaining[cursor++]
         let record: any
         try {
@@ -3971,6 +3973,7 @@ async function runWebsiteInventoryJob(jobId: string) {
           await persistWebsiteInventoryRecord(record)
         }
         job = await updateWebsiteJob(jobId, (current) => {
+          if (current.status === "cancelled") return current
           const completedUrls = [...new Set([...current.completedUrls, record.url])]
           return {
             ...current,
@@ -3987,7 +3990,7 @@ async function runWebsiteInventoryJob(jobId: string) {
     await Promise.all(Array.from({ length: Math.min(2, remaining.length) }, worker))
     await updateWebsiteJob(jobId, (current) => ({
       ...current,
-      status: "complete",
+      status: current.status === "cancelled" ? "cancelled" : "complete",
       updatedAt: new Date().toISOString(),
     }))
   } catch (error) {
@@ -3999,6 +4002,7 @@ async function runWebsiteInventoryJob(jobId: string) {
     })).catch(() => undefined)
   } finally {
     activeWebsiteJobs.delete(jobId)
+    cancelledWebsiteJobs.delete(jobId)
   }
 }
 
@@ -4046,6 +4050,43 @@ app.get("/api/website-inventory/batches/:id", async (req, res) => {
     res.json({ job })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.delete("/api/website-inventory/batches", async (_req, res) => {
+  try {
+    const entries = await kvGetByPrefix(WEBSITE_JOB_PREFIX)
+    const running = entries
+      .map((entry) => entry.value as WebsiteInventoryJob)
+      .filter((job) => job && ["queued", "running", "failed"].includes(job.status) && job.done < job.total)
+    const jobs = await Promise.all(running.map(async (job) => {
+      cancelledWebsiteJobs.add(job.id)
+      return updateWebsiteJob(job.id, (current) => ({
+        ...current,
+        status: "cancelled",
+        updatedAt: new Date().toISOString(),
+        error: undefined,
+      }))
+    }))
+    res.json({ cancelled: jobs.length, jobs })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+app.delete("/api/website-inventory/batches/:id", async (req, res) => {
+  try {
+    const jobId = req.params.id
+    cancelledWebsiteJobs.add(jobId)
+    const job = await updateWebsiteJob(jobId, (current) => ({
+      ...current,
+      status: "cancelled",
+      updatedAt: new Date().toISOString(),
+      error: undefined,
+    }))
+    res.json({ job })
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : String(error) })
   }
 })
 

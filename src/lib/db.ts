@@ -145,7 +145,7 @@ export async function scanWebsiteUrl(
 
 export interface WebsiteInventoryBatchJob {
   id: string
-  status: "queued" | "running" | "complete" | "failed"
+  status: "queued" | "running" | "complete" | "failed" | "cancelled"
   total: number
   done: number
   failed: number
@@ -176,6 +176,29 @@ export async function fetchWebsiteInventoryBatch(
     railwayUrl,
   )
   return result.job
+}
+
+export async function cancelWebsiteInventoryBatch(
+  id: string,
+  railwayUrl?: string,
+): Promise<WebsiteInventoryBatchJob> {
+  const result = await railwayRequest<{ job: WebsiteInventoryBatchJob }>(
+    `/api/website-inventory/batches/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+    railwayUrl,
+  )
+  return result.job
+}
+
+export async function cancelAllWebsiteInventoryBatches(
+  railwayUrl?: string,
+): Promise<number> {
+  const result = await railwayRequest<{ cancelled: number }>(
+    "/api/website-inventory/batches",
+    { method: "DELETE" },
+    railwayUrl,
+  )
+  return result.cancelled
 }
 
 export async function fetchWebsiteInventory(
