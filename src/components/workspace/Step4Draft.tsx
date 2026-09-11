@@ -261,11 +261,13 @@ function evaluateSeoChecklist(text: string, article: Article, targetWords: numbe
   const normalizedKeyword = primaryKeyword.toLocaleLowerCase();
   const normalizedDraft = text.toLocaleLowerCase();
   const markdownTitle = text.split('\n').find(line => /^#\s+\S/.test(line.trim()))?.replace(/^#\s+/, '').trim() || '';
+  const conclusionCount = [...text.matchAll(/^##\s+conclusion\s*$/gim)].length;
   const items = [
     { key: 'titleKeyword', label: 'Tiêu đề H1 có primary keyword', pass: Boolean(normalizedKeyword && markdownTitle.toLocaleLowerCase().includes(normalizedKeyword)) },
     { key: 'minimumLength', label: 'Độ dài >= 800 từ', pass: wordCount >= 800 },
     { key: 'targetLength', label: `Trong khoảng mục tiêu ${Math.max(800, Math.ceil(targetWords * 0.85)).toLocaleString()}–${Math.floor(targetWords * 1.15).toLocaleString()} từ`, pass: wordCount >= Math.max(800, Math.ceil(targetWords * 0.85)) && wordCount <= Math.floor(targetWords * 1.15) },
     { key: 'headings', label: 'Có headings H2/H3', pass: /^#{2,3}\s+\S/m.test(text) },
+    { key: 'conclusion', label: 'Có đúng một phần Conclusion', pass: conclusionCount === 1 },
     { key: 'bodyKeyword', label: 'Primary keyword xuất hiện trong bài', pass: Boolean(normalizedKeyword && normalizedDraft.includes(normalizedKeyword)) },
   ];
   return { items, failed: items.filter(item => !item.pass), primaryKeyword, markdownTitle, wordCount };

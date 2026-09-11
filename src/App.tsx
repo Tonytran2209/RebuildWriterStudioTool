@@ -698,7 +698,11 @@ export default function App() {
             }
             onRetry={(id) =>
               article.activityId
-                ? db.retryBatchArticle(article.activityId, id)
+                ? db.retryBatchArticle(article.activityId, id).then((queued) => {
+                    setArticles((current) =>
+                      current.map((item) => item.id === queued.id ? queued : item),
+                    )
+                  })
                 : Promise.resolve()
             }
           />

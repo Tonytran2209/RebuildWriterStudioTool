@@ -111,11 +111,12 @@ export async function pauseBatch(activityId: string): Promise<void> {
 export async function retryBatchArticle(
   activityId: string,
   articleId: string,
-): Promise<void> {
-  await railwayRequest(
+): Promise<Article> {
+  const result = await railwayRequest<{ article: Article }>(
     `/api/batches/${encodeURIComponent(activityId)}/retry/${encodeURIComponent(articleId)}`,
     { method: "POST" },
   )
+  return result.article
 }
 
 export async function fetchBatch(

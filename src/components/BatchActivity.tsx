@@ -3,6 +3,7 @@ import { CircleAlert, CircleCheck, Download, LoaderCircle, Pause, Play } from "l
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import { buildBatchZip } from "../lib/zipExport"
+import { notifyWorkspace } from "./workspace/WorkspaceNotification"
 
 interface Props { articles: Article[]; onOpen: (id: string) => void; onStart: () => Promise<void>; onPause: () => Promise<void>; onRetry: (id: string) => Promise<void> }
 
@@ -42,7 +43,19 @@ export default function BatchActivity({ articles, onOpen, onStart, onPause, onRe
   const totalTokens = usage.reduce((sum, call) => sum + call.totalTokens, 0)
   const knownCost = usage.reduce((sum, call) => sum + Number(call.costUsd ?? 0), 0)
   const hasUnknownCost = usage.some((call) => call.costUsd == null)
-  const act = async (name: string, callback: () => Promise<void>) => { setAction(name); try { await callback() } finally { setAction(null) } }
+  const act = async (name: string, callback: () => Promise<void>) => {
+    setAction(name)
+    try {
+      await callback()
+    } catch (error) {
+      notifyWorkspace(
+        error instanceof Error ? error.message : String(error),
+        "error",
+      )
+    } finally {
+      setAction(null)
+    }
+  }
   const downloadAll = () => { const blob = buildBatchZip(articles); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `comparison-seo-${articles[0]?.activityId ?? "batch"}.zip`; anchor.click(); URL.revokeObjectURL(url) }
 
   return (
