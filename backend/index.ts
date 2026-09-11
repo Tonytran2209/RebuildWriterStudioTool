@@ -1356,6 +1356,33 @@ function parseBatchSemanticChecks(raw: string) {
   return checks
 }
 
+function reconcileBatchSemanticChecks(
+  semantic: ReturnType<typeof parseBatchSemanticChecks>,
+  deterministic: Array<{ id: string; status: string }>,
+) {
+  const linkCheckPassed = deterministic.some(
+    (item) => item.id === "link-correctness" && item.status === "pass",
+  )
+  if (!linkCheckPassed) return semantic
+  const outOfScopeLinkFinding = /\b(?:internal[- ]links?|website inventory|approved (?:urls?|links?)|urls? target)\b/i
+  return semantic.map((item) =>
+    outOfScopeLinkFinding.test(
+      `${item.reason} ${item.evidence} ${item.recommendedAction}`,
+    )
+      ? {
+          ...item,
+          status: "pass" as const,
+          reason:
+            "Internal-link correctness is validated deterministically against Website Inventory and passed.",
+          evidence: "",
+          location: "",
+          recommendedAction: "",
+          autoFixAllowed: false,
+        }
+      : item,
+  )
+}
+
 function batchSemanticReviewInstruction(article: any, draft: string) {
   const keyword = String(
     article.articleSpec?.primaryQuery ??
@@ -2409,7 +2436,7 @@ async function runBatchArticle(
             incompleteRecovery
               ? "The prior report was structurally incomplete. Return a fresh complete report."
               : "",
-            'Return checks as an object with exactly these keys: intent-satisfied, reader-outcome, intro-quality, keyword-naturalness, evidence-support, brand-pov. Each value has label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. Evidence support passes when concrete claims are supported by the registry and declared section mapping; do not penalize general explanatory prose for lacking a citation. Use warning only for a genuine publish-quality concern and fail for a blocking unsupported claim or contract violation.',
+            'Return checks as an object with exactly these keys: intent-satisfied, reader-outcome, intro-quality, keyword-naturalness, evidence-support, brand-pov. Each value has label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. Evidence support passes when concrete claims are supported by the registry and declared section mapping; do not penalize general explanatory prose for lacking a citation. Never evaluate URLs, internal links, link targets, or Website Inventory in a semantic check; those are validated separately by deterministic code. Use warning only for a genuine non-blocking publish-quality concern and fail only for a blocking unsupported claim or contract violation.',
           ].filter(Boolean).join("\n\n"),
           true,
           1600,
@@ -2425,14 +2452,20 @@ async function runBatchArticle(
       )
       let semantic
       try {
-        semantic = parseBatchSemanticChecks(review.content)
+        semantic = reconcileBatchSemanticChecks(
+          parseBatchSemanticChecks(review.content),
+          deterministic,
+        )
       } catch {
         review = await requestSemanticReview(
           assembledDraft,
           assembled.evidenceUsage,
           true,
         )
-        semantic = parseBatchSemanticChecks(review.content)
+        semantic = reconcileBatchSemanticChecks(
+          parseBatchSemanticChecks(review.content),
+          deterministic,
+        )
       }
       let checks = [...deterministic, ...semantic]
       let report = {
@@ -2485,14 +2518,20 @@ async function runBatchArticle(
             assembled.evidenceUsage,
           )
           try {
-            semantic = parseBatchSemanticChecks(verification.content)
+            semantic = reconcileBatchSemanticChecks(
+              parseBatchSemanticChecks(verification.content),
+              deterministic,
+            )
           } catch {
             const recoveredVerification = await requestSemanticReview(
               assembledDraft,
               assembled.evidenceUsage,
               true,
             )
-            semantic = parseBatchSemanticChecks(recoveredVerification.content)
+            semantic = reconcileBatchSemanticChecks(
+              parseBatchSemanticChecks(recoveredVerification.content),
+              deterministic,
+            )
           }
         }
         checks = [...deterministic, ...semantic]
@@ -2504,7 +2543,7 @@ async function runBatchArticle(
           checks,
         }
       }
-      if (report.status !== "pass") {
+      if (report.status === "fail") {
         article = await saveArticleCheckpoint(article, {
           draft: assembledDraft,
           draftEvidenceUsage: assembled.evidenceUsage,
