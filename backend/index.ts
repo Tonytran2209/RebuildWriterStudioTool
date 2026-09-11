@@ -1389,9 +1389,17 @@ function batchDraftBudget(
     min: Math.floor((targetMin * introductionPercent) / 100),
     max: Math.floor((targetMax * (introductionPercent + 1)) / 100),
   }
+  const introductionAccepted = {
+    min: Math.max(1, Math.floor(introduction.min * 0.85)),
+    max: Math.ceil(introduction.max * 1.15),
+  }
   const conclusion = {
     min: Math.floor((targetMin * conclusionPercent) / 100),
     max: Math.floor((targetMax * (conclusionPercent + 1)) / 100),
+  }
+  const conclusionAccepted = {
+    min: Math.max(1, Math.floor(conclusion.min * 0.85)),
+    max: Math.ceil(conclusion.max * 1.15),
   }
   const headingOverhead = outline.reduce(
     (sum, section) =>
@@ -1417,8 +1425,14 @@ function batchDraftBudget(
     acceptedMax: Math.floor(wordTarget * 1.15),
     targetMin,
     targetMax,
-    introduction,
-    conclusion,
+    introduction: { ...introduction,
+      acceptedMin: introductionAccepted.min,
+      acceptedMax: introductionAccepted.max,
+    },
+    conclusion: { ...conclusion,
+      acceptedMin: conclusionAccepted.min,
+      acceptedMax: conclusionAccepted.max,
+    },
     sections: outline.map((section) => {
       const weight = section.level === "h3" ? 0.65 : 1
       return {
@@ -1456,11 +1470,11 @@ function batchFieldBudgetChecks(
       label: "Introduction word budget",
       kind: "deterministic",
       status:
-        introductionWords >= budget.introduction.min &&
-        introductionWords <= budget.introduction.max
+        introductionWords >= budget.introduction.acceptedMin &&
+        introductionWords <= budget.introduction.acceptedMax
           ? "pass"
           : "fail",
-      reason: `${introductionWords} English words; required ${budget.introduction.min}-${budget.introduction.max}.`,
+      reason: `${introductionWords} English words; preferred ${budget.introduction.min}-${budget.introduction.max}, accepted ${budget.introduction.acceptedMin}-${budget.introduction.acceptedMax}.`,
       autoFixAllowed: true,
     },
     {
@@ -1468,11 +1482,11 @@ function batchFieldBudgetChecks(
       label: "Conclusion word budget",
       kind: "deterministic",
       status:
-        conclusionWords >= budget.conclusion.min &&
-        conclusionWords <= budget.conclusion.max
+        conclusionWords >= budget.conclusion.acceptedMin &&
+        conclusionWords <= budget.conclusion.acceptedMax
           ? "pass"
           : "fail",
-      reason: `${conclusionWords} English words; required ${budget.conclusion.min}-${budget.conclusion.max}.`,
+      reason: `${conclusionWords} English words; preferred ${budget.conclusion.min}-${budget.conclusion.max}, accepted ${budget.conclusion.acceptedMin}-${budget.conclusion.acceptedMax}.`,
       autoFixAllowed: true,
     },
   ]
@@ -2389,7 +2403,7 @@ async function runBatchArticle(
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
             `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map((section: any) => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
-            `INTRODUCTION WORD BUDGET: ${budget.introduction.min}-${budget.introduction.max} words. There is no fixed character-count requirement; never invent one.`,
+            `INTRODUCTION LENGTH: prefer ${budget.introduction.min}-${budget.introduction.max} words; accept ${budget.introduction.acceptedMin}-${budget.introduction.acceptedMax} words. Length inside the accepted range must not produce a warning or failure. There is no fixed character-count requirement; never invent one.`,
             `DRAFT: ${candidate}`,
             batchSemanticReviewInstruction(article, candidate),
             incompleteRecovery
