@@ -940,12 +940,87 @@ function batchOutlineHasEvidence(outline: any[]) {
   )
 }
 
+function canonicalEvidenceText(value: string) {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase()
+    .replace(/\u00ad/g, "")
+    .replace(/[“”„‟]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function batchContextDocuments(contextDocs: string[]) {
+  return contextDocs.flatMap((value) => {
+    const match = value.match(
+      /^<<<DOCUMENT role="([^"]+)" id="([^"]+)" name="([^"]+)"[^>]*>>>\n([\s\S]*?)\n<<<END_DOCUMENT>>>$/,
+    )
+    if (!match) return []
+    const role =
+      match[1] === "RULES"
+        ? "rules"
+        : match[1] === "CONTENT_PLAN"
+          ? "content_plan"
+          : "kb"
+    return [{ role, id: match[2], name: match[3], content: match[4] }]
+  })
+}
+
+function batchDeterministicEvidence(contextDocs: string[], query: string) {
+  const documents = batchContextDocuments(contextDocs)
+  const terms = [...new Set(
+    canonicalEvidenceText(query)
+      .split(/[^a-z0-9]+/)
+      .filter((term) => term.length >= 3),
+  )].slice(0, 30)
+  const best = (roles: string[]) =>
+    documents
+      .filter((document) => roles.includes(document.role))
+      .flatMap((document) =>
+        document.content
+          .split(/\n\s*\n|\r?\n/)
+          .map((text) => text.replace(/\s+/g, " ").trim())
+          .filter((text) => text.length >= 40)
+          .map((quote) => ({
+            source: document.name,
+            role: document.role,
+            quote: quote.slice(0, 800),
+            note: "Deterministically selected and verified source excerpt.",
+            score: terms.reduce(
+              (sum, term) =>
+                sum + (canonicalEvidenceText(quote).includes(term) ? 1 : 0),
+              0,
+            ),
+          })),
+      )
+      .sort((left, right) => right.score - left.score || right.quote.length - left.quote.length)[0]
+  return [best(["kb", "content_plan"]), best(["rules"])]
+    .filter(Boolean)
+    .map(({ score: _score, ...item }: any) => item)
+}
+
+function quoteExistsInDocument(content: string, quote: string) {
+  const source = canonicalEvidenceText(content)
+  const target = canonicalEvidenceText(quote)
+  if (!target) return false
+  if (source.includes(target)) return true
+  return quote
+    .split(/\r?\n|\.{3}|…|(?<=[.!?。])\s+/)
+    .map(canonicalEvidenceText)
+    .filter((part) => part.length >= 24)
+    .some((part) => source.includes(part))
+}
+
 function normalizeBatchOutlinePayload(parsed: any, contextDocs: string[]) {
   const registry =
     parsed?.evidenceRegistry && typeof parsed.evidenceRegistry === "object"
       ? parsed.evidenceRegistry
       : {}
-  const searchableContext = contextDocs.join("\n")
+  const documents = batchContextDocuments(contextDocs)
+  const hasResearchDocs = documents.some((item) => item.role !== "rules")
+  const hasRuleDocs = documents.some((item) => item.role === "rules")
   return (Array.isArray(parsed?.sections) ? parsed.sections : []).map(
     (section: any, index: number) => {
       const evidence = (Array.isArray(section?.evidenceRefs)
@@ -953,18 +1028,40 @@ function normalizeBatchOutlinePayload(parsed: any, contextDocs: string[]) {
         : []
       )
         .map((id: any) => registry[String(id)])
-        .filter((item: any) => {
+        .flatMap((item: any) => {
           const quote = String(item?.quote ?? "").trim()
-          return quote.length >= 12 && searchableContext.includes(quote)
+          const source = canonicalEvidenceText(String(item?.source ?? ""))
+          const named = documents.filter(
+            (doc) =>
+              canonicalEvidenceText(doc.name) === source ||
+              canonicalEvidenceText(doc.id) === source,
+          )
+          const candidates = named.length ? named : documents
+          const match = candidates.find(
+            (doc) => quote.length >= 12 && quoteExistsInDocument(doc.content, quote),
+          )
+          return match
+            ? [{
+                source: match.name,
+                note: String(item.note ?? ""),
+                quote,
+                role: match.role,
+              }]
+            : []
         })
-        .map((item: any) => ({
-          source: String(item.source ?? "Reference source"),
-          note: String(item.note ?? ""),
-          quote: String(item.quote).trim(),
-          role: ["kb", "content_plan", "rules"].includes(item.role)
-            ? item.role
-            : "kb",
-        }))
+        .filter(
+          (item: any, itemIndex: number, all: any[]) =>
+            all.findIndex(
+              (candidate) =>
+                candidate.source === item.source &&
+                candidate.role === item.role &&
+                candidate.quote === item.quote,
+            ) === itemIndex,
+        )
+      const hasRequiredEvidence =
+        (!hasResearchDocs || evidence.some((item: any) => item.role !== "rules")) &&
+        (!hasRuleDocs || evidence.some((item: any) => item.role === "rules"))
+      if (!hasRequiredEvidence) return null
       return {
         id: String(section?.id ?? `batch-section-${index + 1}`),
         heading: String(section?.heading ?? "").trim(),
@@ -988,7 +1085,89 @@ function normalizeBatchOutlinePayload(parsed: any, contextDocs: string[]) {
           : [],
       }
     },
+  ).filter(Boolean)
+}
+
+function repairBatchInternalLinks(
+  draft: string,
+  article: any,
+  inventory: any[],
+) {
+  const canonicalUrl = (value: string) => {
+    try {
+      const url = new URL(value)
+      url.hash = ""
+      url.search = ""
+      url.hostname = url.hostname.toLocaleLowerCase().replace(/^www\./, "")
+      url.protocol = "https:"
+      if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, "")
+      return url.toString()
+    } catch {
+      return value.trim()
+    }
+  }
+  const approved = new Set(
+    inventory
+      .filter(
+        (item) =>
+          item.eligibleForInternalLink &&
+          ["active", "redirected"].includes(item.status),
+      )
+      .flatMap((item) =>
+        [item.url, item.canonicalUrl, item.redirectTarget].filter(Boolean),
+      )
+      .map((value) => canonicalUrl(String(value))),
   )
+  const internalHosts = new Set(
+    [...approved].flatMap((value) => {
+      try {
+        return [new URL(value).hostname.replace(/^www\./, "")]
+      } catch {
+        return []
+      }
+    }),
+  )
+  const candidates = selectWebsiteCandidates(article, inventory, 6)
+  const replacement = candidates[0]
+  let next = draft
+  const urls = [...draft.matchAll(/https?:\/\/[^\s)\]}>"']+/gi)].map(
+    (match) => match[0].replace(/[.,;:!?]+$/, ""),
+  )
+  for (const value of urls) {
+    try {
+      const host = new URL(value).hostname.toLocaleLowerCase().replace(/^www\./, "")
+      if (
+        internalHosts.has(host) &&
+        !approved.has(canonicalUrl(value)) &&
+        replacement?.url
+      )
+        next = next.split(value).join(replacement.url)
+    } catch {
+      // Ignore malformed non-link text; deterministic QC reports it later.
+    }
+  }
+  const repairedUrls = [...next.matchAll(/https?:\/\/[^\s)\]}>"']+/gi)].map(
+    (match) => canonicalUrl(match[0].replace(/[.,;:!?]+$/, "")),
+  )
+  const requiresInternalLink = Boolean(
+    article.articleSpec?.internalLinkRequirements?.length,
+  )
+  if (
+    requiresInternalLink &&
+    replacement?.url &&
+    !repairedUrls.some((value) => approved.has(value))
+  ) {
+    const anchor = String(
+      replacement.suggestedAnchors?.[0] ?? replacement.title ?? "related guidance",
+    ).replace(/[\[\]]/g, "")
+    const addition = `For related guidance, see [${anchor}](${replacement.url}).`
+    const conclusionIndex = next.search(/^##\s+Conclusion\s*$/mi)
+    next =
+      conclusionIndex >= 0
+        ? `${next.slice(0, conclusionIndex).trimEnd()}\n\n${addition}\n\n${next.slice(conclusionIndex)}`
+        : `${next.trimEnd()}\n\n${addition}`
+  }
+  return next
 }
 
 function batchUniversalChecks(
@@ -1251,6 +1430,52 @@ function batchDraftBudget(
       }
     }),
   }
+}
+
+function batchFieldBudgetChecks(
+  draft: string,
+  budget: ReturnType<typeof batchDraftBudget>,
+) {
+  const lines = draft.split("\n")
+  const firstH2 = lines.findIndex((line) => /^##\s+\S/.test(line.trim()))
+  const conclusionIndex = lines.findIndex((line) =>
+    /^##\s+conclusion\s*$/i.test(line.trim()),
+  )
+  const count = (value: string) =>
+    value.trim().split(/\s+/).filter(Boolean).length
+  const introductionWords = count(
+    lines.slice(1, firstH2 >= 0 ? firstH2 : lines.length).join(" "),
+  )
+  const conclusionWords =
+    conclusionIndex >= 0
+      ? count(lines.slice(conclusionIndex + 1).join(" "))
+      : 0
+  return [
+    {
+      id: "introduction-word-budget",
+      label: "Introduction word budget",
+      kind: "deterministic",
+      status:
+        introductionWords >= budget.introduction.min &&
+        introductionWords <= budget.introduction.max
+          ? "pass"
+          : "fail",
+      reason: `${introductionWords} English words; required ${budget.introduction.min}-${budget.introduction.max}.`,
+      autoFixAllowed: true,
+    },
+    {
+      id: "conclusion-word-budget",
+      label: "Conclusion word budget",
+      kind: "deterministic",
+      status:
+        conclusionWords >= budget.conclusion.min &&
+        conclusionWords <= budget.conclusion.max
+          ? "pass"
+          : "fail",
+      reason: `${conclusionWords} English words; required ${budget.conclusion.min}-${budget.conclusion.max}.`,
+      autoFixAllowed: true,
+    },
+  ]
 }
 
 function batchOutlineFeasibility(article: any, wordTarget: number) {
@@ -1527,6 +1752,13 @@ async function runBatchArticle(
       workflowParam("core-idea", "market-research", "keywordCount", 10),
     ),
   )
+  const batchIdeaCount = Math.min(
+    6,
+    Math.max(
+      2,
+      workflowParam("core-idea", "idea-generation", "ideaCount", 3),
+    ),
+  )
   const introductionPercent = Math.min(
     15,
     Math.max(
@@ -1581,6 +1813,7 @@ async function runBatchArticle(
     }
     if (
       !article.coreIdeaSuggestions?.length ||
+      article.coreIdeaSuggestions.length < batchIdeaCount ||
       !article.articleSpec ||
       !article.articleSpecFingerprint
     ) {
@@ -1631,32 +1864,104 @@ async function runBatchArticle(
         article,
         2,
         [
-          `Create one canonical Article Spec and the strongest evidence-grounded ${contentMode} direction for: ${article.topic}.`,
+          `Build one canonical Article Spec, then propose exactly ${batchIdeaCount} distinct evidence-grounded ${contentMode} directions for: ${article.topic}.`,
           `SEO research: ${JSON.stringify(seoResearch.keywords)}`,
           "articleSpec.mustCover must contain only reader-facing subject-matter topics, never writing instructions about keyword placement, title, introduction, headings, body, or conclusion.",
+          "Every idea must use a primary keyword from the supplied SEO research and include separate 0-10 ratings for overall, SEO potential, audience fit, document support and uniqueness.",
+          "The batch runner will select the idea with the highest overall rating, using document support, audience fit and SEO potential as tie-breakers. Do not pre-select an idea.",
           "Use the supplied Knowledge Base and Skills. Return only JSON:",
-          '{"articleSpec":{"topic":string,"primaryQuery":string,"secondaryQueries":string[],"audience":string,"market":"Global / USA","language":"English","primaryIntent":"informational|commercial|transactional|navigational","secondaryIntent":"informational|commercial|transactional|navigational","expectedReaderOutcome":string,"winningFormat":string,"mustCover":string[],"optionalCoverage":string[],"thesis":string,"brandPov":string,"evidence":[],"ctaObjective":string,"internalLinkRequirements":string[]},"idea":{"title":string,"angleLabel":string,"angleDescription":string,"mainArgument":string,"primaryKeyword":string,"secondaryKeywords":string[],"targetAudience":string,"recommendedTone":string,"recommendedWordCount":number,"rating":{"overall":number,"seoPotential":number,"audienceFit":number,"docSupport":number,"uniqueness":number},"ratingRationale":string}}',
+          '{"articleSpec":{"topic":string,"primaryQuery":string,"secondaryQueries":string[],"audience":string,"market":"Global / USA","language":"English","primaryIntent":"informational|commercial|transactional|navigational","secondaryIntent":"informational|commercial|transactional|navigational","expectedReaderOutcome":string,"winningFormat":string,"mustCover":string[],"optionalCoverage":string[],"thesis":string,"brandPov":string,"evidence":[],"ctaObjective":string,"internalLinkRequirements":string[]},"ideas":[{"title":string,"angleLabel":string,"angleDescription":string,"mainArgument":string,"primaryKeyword":string,"secondaryKeywords":string[],"targetAudience":string,"recommendedTone":string,"recommendedWordCount":number,"rating":{"overall":number,"seoPotential":number,"audienceFit":number,"docSupport":number,"uniqueness":number},"ratingRationale":string}]}',
         ].join("\n"),
         true,
-        3500,
+        Math.min(6000, 2200 + batchIdeaCount * 700),
       )
       const payload = parseJsonObject(response.content)
-      const idea =
-        payload.idea && typeof payload.idea === "object"
-          ? payload.idea
-          : payload
-      const normalized = {
-        id: `batch-idea-${article.id}`,
-        matchedDocs: [],
-        ruleRefs: [],
-        evidence: [],
-        ...idea,
-      }
-      const articleSpec = normalizeBatchArticleSpec(
+      const coreIdeaContext = await resolveStepContext(
+        2,
+        `${article.topic ?? ""} ${article.keywords ?? ""}`,
+        article.id,
+      )
+      const trustedIdeaEvidence = batchDeterministicEvidence(
+        coreIdeaContext.contextDocs,
+        `${article.topic ?? ""} ${article.keywords ?? ""}`,
+      )
+      const researchedKeywords = new Set(
+        (seoResearch.keywords ?? []).map((item: any) =>
+          String(item.keyword ?? item).trim().toLocaleLowerCase(),
+        ),
+      )
+      const normalizedIdeas = (Array.isArray(payload.ideas)
+        ? payload.ideas
+        : payload.idea
+          ? [payload.idea]
+          : []
+      )
+        .map((idea: any, index: number) => {
+          const primaryKeyword = String(
+            idea?.primaryKeyword ?? idea?.seoKeywords?.primary ?? "",
+          ).trim()
+          return {
+            id: `batch-idea-${article.id}-${index + 1}`,
+            ...idea,
+            primaryKeyword,
+            secondaryKeywords: Array.isArray(idea?.secondaryKeywords)
+              ? idea.secondaryKeywords.map(String).filter(Boolean)
+              : Array.isArray(idea?.seoKeywords?.secondary)
+                ? idea.seoKeywords.secondary.map(String).filter(Boolean)
+                : [],
+            matchedDocs: [...new Set(
+              trustedIdeaEvidence
+                .filter((item: any) => item.role !== "rules")
+                .map((item: any) => item.source),
+            )],
+            ruleRefs: [...new Set(
+              trustedIdeaEvidence
+                .filter((item: any) => item.role === "rules")
+                .map((item: any) => item.source),
+            )],
+            evidence: trustedIdeaEvidence,
+          }
+        })
+        .filter(
+          (idea: any) =>
+            idea.title &&
+            idea.mainArgument &&
+            idea.primaryKeyword &&
+            researchedKeywords.has(idea.primaryKeyword.toLocaleLowerCase()),
+        )
+      if (normalizedIdeas.length < batchIdeaCount)
+        throw new Error(
+          `Batch Step 1 returned only ${normalizedIdeas.length}/${batchIdeaCount} valid rated Core Ideas.`,
+        )
+      const score = (idea: any) => [
+        Number(idea.rating?.overall ?? 0),
+        Number(idea.rating?.docSupport ?? 0),
+        Number(idea.rating?.audienceFit ?? 0),
+        Number(idea.rating?.seoPotential ?? 0),
+        Number(idea.rating?.uniqueness ?? 0),
+      ]
+      const normalized = [...normalizedIdeas].sort((left, right) => {
+        const leftScore = score(left)
+        const rightScore = score(right)
+        for (let index = 0; index < leftScore.length; index += 1) {
+          if (leftScore[index] !== rightScore[index])
+            return rightScore[index] - leftScore[index]
+        }
+        return String(left.title).localeCompare(String(right.title))
+      })[0]
+      const baseArticleSpec = normalizeBatchArticleSpec(
         payload.articleSpec,
         article,
         normalized,
       )
+      const articleSpec = {
+        ...baseArticleSpec,
+        primaryQuery: normalized.primaryKeyword,
+        secondaryQueries: normalized.secondaryKeywords,
+        thesis: normalized.mainArgument,
+        audience: normalized.targetAudience || baseArticleSpec.audience,
+        evidence: trustedIdeaEvidence,
+      }
       const articleSpecFingerprint = snapshotFingerprint(articleSpec)
       const step2Usage = appendUsage(2, response)
       if (seoUsage)
@@ -1665,7 +1970,7 @@ async function runBatchArticle(
         seoResearch,
         articleSpec,
         articleSpecFingerprint,
-        coreIdeaSuggestions: [normalized],
+        coreIdeaSuggestions: normalizedIdeas,
         selectedCoreIdeaId: normalized.id,
         title: normalized.title,
         topic: normalized.title,
@@ -1676,6 +1981,10 @@ async function runBatchArticle(
         targetAudience: normalized.targetAudience || articleSpec.audience,
         tone: normalized.recommendedTone,
         wordCount: normalized.recommendedWordCount,
+        outline: [],
+        draft: "",
+        draftEvidenceUsage: {},
+        qualityReport: null,
         coreIdeaScannedAt: new Date().toISOString(),
         currentStep: 3,
         aiUsageByStep: step2Usage,
@@ -1723,7 +2032,8 @@ async function runBatchArticle(
             : `Create a detailed outline that satisfies this immutable Article Spec: ${JSON.stringify(article.articleSpec)}.`,
           `Selected direction: ${JSON.stringify(idea)}`,
           "Use only exact quotes copied from the supplied reference documents. Never invent or paraphrase evidence quotes.",
-          `Return only JSON: {"evidenceRegistry":{"ev-1":{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}},"sections":[{"id":string,"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational","evidenceRefs":string[],"ruleRefs":string[]}]}. ${existingOutline.length ? "Return every existing section." : `Create approximately ${desiredOutlineSections} sections and never fewer than ${minimumOutlineSections}.`} Map at least one verified evidence quote to every section where the source set supports a concrete claim.`,
+          "For every section, include at least one evidence quote from Knowledge Base or the current Content Plan when those sources are available, plus at least one Rules quote when Rules sources are available.",
+          `Return only JSON: {"evidenceRegistry":{"ev-1":{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}},"sections":[{"id":string,"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational","evidenceRefs":string[],"ruleRefs":string[]}]}. ${existingOutline.length ? "Return every existing section." : `Create approximately ${desiredOutlineSections} sections and never fewer than ${minimumOutlineSections}.`} Map verified evidence to every section.`,
         ].join("\n"),
         true,
         5000,
@@ -1877,7 +2187,11 @@ async function runBatchArticle(
         }
       }
       const draftResponses = [...initialDraftResponses]
-      let assembledDraft = assembled.draft
+      let assembledDraft = repairBatchInternalLinks(
+        assembled.draft,
+        article,
+        runtimeConfig?.websiteInventory ?? [],
+      )
       article = await saveArticleCheckpoint(article, {
         draft: assembledDraft,
         draftEvidenceUsage: assembled.evidenceUsage,
@@ -1916,6 +2230,7 @@ async function runBatchArticle(
           runtimeConfig?.websiteInventory ?? [],
           internalNames,
         ),
+        ...batchFieldBudgetChecks(assembledDraft, budget),
         batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
       ]
       if (deterministic.some((item) => item.status !== "pass")) {
@@ -1924,7 +2239,10 @@ async function runBatchArticle(
         )
         const needsStructuredRecovery = deterministicFailures.some(
           (item) =>
-            item.id === "seo-contract" || item.id === "evidence-mapping",
+            item.id === "seo-contract" ||
+            item.id === "evidence-mapping" ||
+            item.id === "introduction-word-budget" ||
+            item.id === "conclusion-word-budget",
         )
         const repair = await runBatchModel(
           article,
@@ -1960,12 +2278,17 @@ async function runBatchArticle(
         draftResponses.push(repair)
         if (needsStructuredRecovery) {
           assembled = assembleBatchDraft(repair.content, article)
-          assembledDraft = assembled.draft
+          assembledDraft = repairBatchInternalLinks(
+            assembled.draft,
+            article,
+            runtimeConfig?.websiteInventory ?? [],
+          )
         } else {
           assembledDraft = applyBatchDraftRepair(assembledDraft, repair.content)
         }
         deterministic = [
           ...batchUniversalChecks(assembledDraft, article, effectiveDraftWords, runtimeConfig?.websiteInventory ?? [], internalNames),
+          ...batchFieldBudgetChecks(assembledDraft, budget),
           batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
         ]
         const report = {
@@ -2012,7 +2335,7 @@ async function runBatchArticle(
             incompleteRecovery
               ? "The prior report was structurally incomplete. Return a fresh complete report."
               : "",
-            'Return checks as an object with exactly these keys: intent-satisfied, reader-outcome, intro-quality, keyword-naturalness, evidence-support, brand-pov. Each value has label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. Evidence support passes when concrete claims are supported by the registry and declared section mapping. Use warning only for a genuine publish-quality concern and fail for a blocking unsupported claim or contract violation.',
+            'Return checks as an object with exactly these keys: intent-satisfied, reader-outcome, intro-quality, keyword-naturalness, evidence-support, brand-pov. Each value has label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. Evidence support passes when concrete claims are supported by the registry and declared section mapping; do not penalize general explanatory prose for lacking a citation. Use warning only for a genuine publish-quality concern and fail for a blocking unsupported claim or contract violation.',
           ].filter(Boolean).join("\n\n"),
           true,
           1600,
@@ -2072,9 +2395,14 @@ async function runBatchArticle(
         )
         draftResponses.push(semanticRepair)
         assembled = assembleBatchDraft(semanticRepair.content, article)
-        assembledDraft = assembled.draft
+        assembledDraft = repairBatchInternalLinks(
+          assembled.draft,
+          article,
+          runtimeConfig?.websiteInventory ?? [],
+        )
         deterministic = [
           ...batchUniversalChecks(assembledDraft, article, effectiveDraftWords, runtimeConfig?.websiteInventory ?? [], internalNames),
+          ...batchFieldBudgetChecks(assembledDraft, budget),
           batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
         ]
         if (deterministic.every((item) => item.status === "pass")) {
