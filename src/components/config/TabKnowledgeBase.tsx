@@ -216,6 +216,7 @@ function WebsiteInventoryPanel({
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [includeAiSummary, setIncludeAiSummary] = useState(true)
   const [scanProgress, setScanProgress] = useState({ done: 0, total: 0 })
+  const [summaryLimitReached, setSummaryLimitReached] = useState(false)
   const [inventoryQuery, setInventoryQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [typeFilter, setTypeFilter] = useState("all")
@@ -262,6 +263,7 @@ function WebsiteInventoryPanel({
       const job = await fetchWebsiteInventoryBatch(jobId, railwayUrl)
       if (cancelled()) return
       setScanProgress({ done: job.done, total: job.total })
+      if (job.summaryLimitReached) setSummaryLimitReached(true)
       mergedRecords = mergeBatchRecords(mergedRecords, job.recentRecords)
       onChange(mergedRecords)
       if (job.status === "complete") {
@@ -294,6 +296,7 @@ function WebsiteInventoryPanel({
     let cancelled = false
     setActiveJobId(jobId)
     setScanning(true)
+    setSummaryLimitReached(false)
     void monitorBatch(jobId, records, () => cancelled).catch(() => setScanning(false))
     return () => { cancelled = true }
   }, [])
@@ -334,6 +337,7 @@ function WebsiteInventoryPanel({
     const current = [...pending, ...records]
     onChange(current)
     setInput("")
+    setSummaryLimitReached(false)
     setScanning(true)
     setScanProgress({ done: 0, total: pending.length })
     try {
@@ -369,6 +373,7 @@ function WebsiteInventoryPanel({
   }
   const recheckAll = async () => {
     if (scanning || !records.length) return
+    setSummaryLimitReached(false)
     setScanning(true)
     setScanProgress({ done: 0, total: records.length })
     const current: WebsiteContentRecord[] = records.map((item) => ({
@@ -389,6 +394,7 @@ function WebsiteInventoryPanel({
   const summarizeMissing = async () => {
     const pending = records.filter((record) => !record.summary && record.status !== "broken")
     if (scanning || !pending.length) return
+    setSummaryLimitReached(false)
     setScanning(true)
     setScanProgress({ done: 0, total: pending.length })
     const current = records.map((item) => pending.some((record) => record.id === item.id)
@@ -444,9 +450,11 @@ function WebsiteInventoryPanel({
                 AI summary và semantic classification
               </label>
               <p className="mt-1 text-xs text-slate-400">
-              {scanning
-                ? `Scanning ${scanProgress.done}/${scanProgress.total} pages…`
-                : "Private-network URLs and non-HTML files are blocked."}
+              {summaryLimitReached
+                ? `Đã hết lượt AI summary hôm nay. Metadata vẫn tiếp tục scan (${scanProgress.done}/${scanProgress.total}).`
+                : scanning
+                  ? `Scanning ${scanProgress.done}/${scanProgress.total} pages…`
+                  : "Private-network URLs and non-HTML files are blocked."}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">

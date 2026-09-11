@@ -214,9 +214,13 @@ function serializeByKey<T>(
 ): Promise<T> {
   const previous = queues.get(key) ?? Promise.resolve()
   const result = previous.then(operation, operation)
-  const queued = result.finally(() => {
-    if (queues.get(key) === queued) queues.delete(key)
-  })
+  // The queue tail must always resolve. A rejected promise created by
+  // `finally()` remains unhandled even when the caller catches `result`, and
+  // Node 22 terminates the process for that rejection.
+  const queued = result.then(
+    () => { if (queues.get(key) === queued) queues.delete(key) },
+    () => { if (queues.get(key) === queued) queues.delete(key) },
+  )
   queues.set(key, queued)
   return result
 }
@@ -3668,6 +3672,7 @@ const websiteJobQueues = new Map<string, Promise<unknown>>()
 const activeWebsiteJobs = new Set<string>()
 const cancelledWebsiteJobs = new Set<string>()
 let websiteInventoryTableReady: boolean | undefined
+let exhaustedWebsiteSummaryBudgetDate: string | undefined
 
 async function hasWebsiteInventoryTable() {
   if (websiteInventoryTableReady === undefined)
@@ -3721,12 +3726,17 @@ async function reserveWebsiteSummaryBudget() {
   const date = new Date().toISOString().slice(0, 10)
   const key = `writer:website-summary-budget:${date}`
   const limit = Math.max(1, Number(process.env.WEBSITE_SUMMARY_DAILY_LIMIT || 500))
+  if (exhaustedWebsiteSummaryBudgetDate === date)
+    return { allowed: false, used: limit, limit }
   return serializeByKey(aiBudgetQueues, key, async () => {
     const current = await kvGet<{ used?: number }>(key)
     const used = Number(current?.used ?? 0)
-    if (used >= limit) throw new Error(`Website AI summary đã đạt giới hạn ${limit} URL hôm nay.`)
+    if (used >= limit) {
+      exhaustedWebsiteSummaryBudgetDate = date
+      return { allowed: false, used, limit }
+    }
     await kvSet(key, { used: used + 1, limit, updatedAt: new Date().toISOString() })
-    return { used: used + 1, limit }
+    return { allowed: true, used: used + 1, limit }
   })
 }
 
@@ -3822,62 +3832,68 @@ async function processWebsiteInventoryUrl(url: string, summarize = true) {
         if (cached?.summary) {
           classified = cached.summary
         } else {
-          await reserveWebsiteSummaryBudget()
-          const result = await withTimeout(
-            generate({
-              provider: "openai",
-              modelId: process.env.WEBSITE_SUMMARY_MODEL || process.env.WEBSITE_CLASSIFIER_MODEL || "gpt-4o-mini",
-              maxTokens: 650,
-              temperature: 0,
-              jsonMode: true,
-              systemPrompt:
-                "Summarize and classify one web page for an internal-link inventory. Use only supplied page content. Return JSON only; never invent claims.",
-              prompt: [
-                `PAGE METADATA: ${JSON.stringify({ url: record.redirectTarget || record.url, title: record.title, description: record.description })}`,
-                `CLEAN PAGE CONTENT:\n${extractedContent}`,
-                'Return {"summary":string,"contentType":"blog|service|portfolio|landing|about|commercial","primaryTopic":string,"topics":[string],"services":[string],"audience":string,"searchIntent":"informational|commercial|transactional|navigational","internalLinkAnchors":[string],"keyClaims":[string],"language":string,"confidence":number}. Summary must be 40-90 words. Keep taxonomy and anchors concise.',
-              ].join("\n\n"),
-            }),
-            45_000,
-            "Website AI summary timed out after 45 seconds.",
-          )
-          classified = parseJsonObject(result.content)
-          model = result.model
-          await kvSet(cacheKey, { summary: classified, model, usage: result.usage, createdAt: new Date().toISOString() })
+          const budget = await reserveWebsiteSummaryBudget()
+          if (budget.allowed) {
+            const result = await withTimeout(
+              generate({
+                provider: "openai",
+                modelId: process.env.WEBSITE_SUMMARY_MODEL || process.env.WEBSITE_CLASSIFIER_MODEL || "gpt-4o-mini",
+                maxTokens: 650,
+                temperature: 0,
+                jsonMode: true,
+                systemPrompt:
+                  "Summarize and classify one web page for an internal-link inventory. Use only supplied page content. Return JSON only; never invent claims.",
+                prompt: [
+                  `PAGE METADATA: ${JSON.stringify({ url: record.redirectTarget || record.url, title: record.title, description: record.description })}`,
+                  `CLEAN PAGE CONTENT:\n${extractedContent}`,
+                  'Return {"summary":string,"contentType":"blog|service|portfolio|landing|about|commercial","primaryTopic":string,"topics":[string],"services":[string],"audience":string,"searchIntent":"informational|commercial|transactional|navigational","internalLinkAnchors":[string],"keyClaims":[string],"language":string,"confidence":number}. Summary must be 40-90 words. Keep taxonomy and anchors concise.',
+                ].join("\n\n"),
+              }),
+              45_000,
+              "Website AI summary timed out after 45 seconds.",
+            )
+            classified = parseJsonObject(result.content)
+            model = result.model
+            await kvSet(cacheKey, { summary: classified, model, usage: result.usage, createdAt: new Date().toISOString() })
+          } else {
+            record.aiSummarySkippedReason = "daily-limit"
+          }
         }
-        const allowed = new Set([
-          "blog",
-          "service",
-          "portfolio",
-          "landing",
-          "about",
-          "commercial",
-        ])
-        const intents = new Set(["informational", "commercial", "transactional", "navigational"])
-        const list = (value: any, limit: number) => Array.isArray(value)
-          ? [...new Set(value.map(String).map((item) => item.trim()).filter(Boolean))].slice(0, limit)
-          : []
-        const summaryWords = String(classified.summary ?? "").trim().split(/\s+/).filter(Boolean)
-        const normalizedSummary = summaryWords.slice(0, 90).join(" ")
-        record = {
-          ...record,
-          contentType: allowed.has(classified.contentType)
-            ? classified.contentType
-            : record.contentType,
-          summary: normalizedSummary || record.description,
-          primaryTopic: String(classified.primaryTopic ?? "").trim() || undefined,
-          topics: list(classified.topics, 6).length ? list(classified.topics, 6) : record.topics,
-          services: list(classified.services, 5).length ? list(classified.services, 5) : record.services,
-          audience: String(classified.audience ?? "").trim() || undefined,
-          searchIntent: intents.has(classified.searchIntent) ? classified.searchIntent : "informational",
-          internalLinkAnchors: list(classified.internalLinkAnchors, 8),
-          keyClaims: list(classified.keyClaims, 6),
-          language: String(classified.language ?? "").trim() || undefined,
-          classificationConfidence: Math.max(0, Math.min(1, Number(classified.confidence ?? 0.85))),
-          aiModel: model,
-          aiSummaryVersion: WEBSITE_SUMMARY_VERSION,
-          summarizedAt: new Date().toISOString(),
-          summaryCacheHit: Boolean(cached),
+        if (classified) {
+          const allowed = new Set([
+            "blog",
+            "service",
+            "portfolio",
+            "landing",
+            "about",
+            "commercial",
+          ])
+          const intents = new Set(["informational", "commercial", "transactional", "navigational"])
+          const list = (value: any, limit: number) => Array.isArray(value)
+            ? [...new Set(value.map(String).map((item) => item.trim()).filter(Boolean))].slice(0, limit)
+            : []
+          const summaryWords = String(classified.summary ?? "").trim().split(/\s+/).filter(Boolean)
+          const normalizedSummary = summaryWords.slice(0, 90).join(" ")
+          record = {
+            ...record,
+            contentType: allowed.has(classified.contentType)
+              ? classified.contentType
+              : record.contentType,
+            summary: normalizedSummary || record.description,
+            primaryTopic: String(classified.primaryTopic ?? "").trim() || undefined,
+            topics: list(classified.topics, 6).length ? list(classified.topics, 6) : record.topics,
+            services: list(classified.services, 5).length ? list(classified.services, 5) : record.services,
+            audience: String(classified.audience ?? "").trim() || undefined,
+            searchIntent: intents.has(classified.searchIntent) ? classified.searchIntent : "informational",
+            internalLinkAnchors: list(classified.internalLinkAnchors, 8),
+            keyClaims: list(classified.keyClaims, 6),
+            language: String(classified.language ?? "").trim() || undefined,
+            classificationConfidence: Math.max(0, Math.min(1, Number(classified.confidence ?? 0.85))),
+            aiModel: model,
+            aiSummaryVersion: WEBSITE_SUMMARY_VERSION,
+            summarizedAt: new Date().toISOString(),
+            summaryCacheHit: Boolean(cached),
+          }
         }
       } catch (error) {
         console.warn(
@@ -3916,6 +3932,7 @@ type WebsiteInventoryJob = {
   total: number
   done: number
   failed: number
+  summaryLimitReached: boolean
   completedUrls: string[]
   recentRecords: any[]
   createdAt: string
@@ -3981,6 +3998,7 @@ async function runWebsiteInventoryJob(jobId: string) {
             recentRecords: [record, ...current.recentRecords.filter((item) => item.url !== record.url)].slice(0, 12),
             done: completedUrls.length,
             failed: current.failed + (record.crawlStatus === "failed" ? 1 : 0),
+            summaryLimitReached: current.summaryLimitReached || record.aiSummarySkippedReason === "daily-limit",
             status: completedUrls.length >= current.total ? "complete" : "running",
             updatedAt: new Date().toISOString(),
           }
@@ -4028,6 +4046,7 @@ app.post("/api/website-inventory/batches", async (req, res) => {
       total: urls.length,
       done: 0,
       failed: 0,
+      summaryLimitReached: false,
       completedUrls: [],
       recentRecords: [],
       createdAt: now,

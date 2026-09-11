@@ -116,6 +116,7 @@ export interface WebsiteContentRecord {
   aiSummaryVersion?: string
   summarizedAt?: string
   summaryCacheHit?: boolean
+  aiSummarySkippedReason?: "daily-limit"
 }
 
 export interface StepFileAccess {

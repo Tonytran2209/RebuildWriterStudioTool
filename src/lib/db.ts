@@ -149,6 +149,7 @@ export interface WebsiteInventoryBatchJob {
   total: number
   done: number
   failed: number
+  summaryLimitReached: boolean
   recentRecords: WebsiteContentRecord[]
   error?: string
 }
