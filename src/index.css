@@ -1896,22 +1896,35 @@ html, body, #root {
   stroke-width: 2.25;
 }
 
-.draft-highlight-toggle {
+.draft-toolbar-action {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #deded9;
+  border-radius: 0.5rem;
   color: #666660;
   background: transparent;
-  border-color: #deded9;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
 }
 
-.draft-highlight-toggle:hover {
+.draft-toolbar-action:hover:not(:disabled) {
   color: #242422;
   background: #f1f1ee;
   border-color: #c8c8c2;
 }
 
-.draft-highlight-toggle.is-active {
+.draft-toolbar-action.is-active {
   color: #30302d;
   background: #e1e1dd;
   border-color: #c8c8c2;
+}
+
+.draft-toolbar-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .keyword-density-list > * {
@@ -2013,19 +2026,19 @@ html, body, #root {
   box-shadow: inset 0 0 0 1px #42423f !important;
 }
 
-.codex-dark .draft-highlight-toggle {
+.codex-dark .draft-toolbar-action {
   color: #9ca3af !important;
   background: transparent !important;
   border-color: #303030 !important;
 }
 
-.codex-dark .minimal-step-shell .draft-highlight-toggle:hover {
+.codex-dark .minimal-step-shell .draft-toolbar-action:hover:not(:disabled) {
   color: #e5e7eb !important;
   background: #222 !important;
   border-color: #3a3a3a !important;
 }
 
-.codex-dark .draft-highlight-toggle.is-active {
+.codex-dark .draft-toolbar-action.is-active {
   color: #f1f1f1 !important;
   background: #343434 !important;
   border-color: #484848 !important;

@@ -107,6 +107,19 @@ function applyTargetedDraftRepair(draft: string, repair: TargetedDraftRepair) {
   return next;
 }
 
+function semanticReviewInstruction(article: Article, draft: string) {
+  const keyword = getPrimaryKeyword(article);
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const exactMatches = keyword ? draft.match(new RegExp(escaped, 'gi'))?.length ?? 0 : 0;
+  const density = keyword ? (exactMatches / Math.max(countWords(draft), 1)) * 100 : 0;
+  return [
+    'For keyword-naturalness, pass when the primary query is present in the H1/body and reads grammatically in context.',
+    'Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.',
+    'Fail only for material keyword stuffing that blocks publication.',
+    `PRIMARY KEYWORD METRICS: ${JSON.stringify({ keyword, exactMatches, approximateDensityPercent: Number(density.toFixed(2)) })}`,
+  ].join('\n');
+}
+
 function missingStructuredParts(parsed: StructuredDraftPayload, article: Article) {
   const missing: Array<'title' | 'introduction' | 'sections' | 'conclusion'> = [];
   if (!parsed.title?.trim()) missing.push('title');
@@ -478,11 +491,11 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     generationInFlight.current = true;
     setGenerating(true);
     setError('');
-    const processTrace: AIProcessTraceEvent[] = [{
+    const processTrace: AIProcessTraceEvent[] = [...(article.step4ProcessTrace ?? []), {
       id: `draft-request-${Date.now()}`,
       stage: 'generation',
       status: 'completed',
-      title: 'Structured draft request',
+      title: manual && draft ? 'Rewrite requested' : 'Structured draft request',
       detail: `Requested title, introduction, ${article.outline?.length ?? 0} outline sections and conclusion with provider JSON enforcement.`,
       facts: { model: model.id, provider: model.provider, targetWords },
     }];
@@ -675,6 +688,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
             `DRAFT: ${candidate}`,
+            semanticReviewInstruction(article, candidate),
             recovery ? 'The prior reviewer report was structurally incomplete. Return a fresh complete report.' : '',
             `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}. Use warning only for a genuine publish-quality concern; use fail for a blocking unsupported claim or contract violation.`,
           ].join('\n\n'),
@@ -793,6 +807,14 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     generationInFlight.current = true;
     setRepairing(true);
     setError('');
+    const processTrace: AIProcessTraceEvent[] = [...(article.step4ProcessTrace ?? []), {
+      id: `draft-recheck-request-${Date.now()}`,
+      stage: 're-check',
+      status: 'completed',
+      title: 'Re-check & Fix requested',
+      detail: 'Started deterministic audit, targeted repair and semantic verification without rewriting the full draft.',
+      facts: { model: model.id, provider: model.provider, targetWords },
+    }];
     try {
       const inventory = config.websiteInventory ?? [];
       const candidates = selectInternalLinkCandidates(article, inventory, 6);
@@ -829,6 +851,14 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         ...seo.failed.map(item => ({ label: item.label, reason: item.label })),
         ...deterministic.filter(item => item.status === 'fail').map(item => ({ label: item.label, reason: item.reason })),
       ];
+      processTrace.push({
+        id: `draft-recheck-audit-${Date.now()}`,
+        stage: 'validation',
+        status: findings.length ? 'warning' : 'completed',
+        title: 'Deterministic audit',
+        detail: findings.length ? `Found: ${findings.map(item => item.label).join(', ')}.` : 'SEO, structure, evidence mapping and approved-link checks passed.',
+        facts: { failedChecks: findings.length, approvedLinks: auditInternalLinks(article, candidateDraft, inventory).approvedDraftUrls.length },
+      });
 
       if (findings.length) {
         const unresolvedLinkOnly = findings.every(item => item.label === 'Approved internal links') && !candidates.length;
@@ -858,7 +888,16 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             'Return at most 8 minimal find/replace edits. Use appendBeforeConclusion only when adding a short missing passage. Preserve headings and all unaffected prose.',
           ].join('\n\n'),
         });
+        const beforeRepair = candidateDraft;
         candidateDraft = applyTargetedDraftRepair(candidateDraft, parseAIJson(repairResponse.content) as TargetedDraftRepair);
+        processTrace.push({
+          id: `draft-recheck-deterministic-repair-${Date.now()}`,
+          stage: 'repair',
+          status: candidateDraft === beforeRepair ? 'failed' : 'completed',
+          title: 'Targeted deterministic repair',
+          detail: candidateDraft === beforeRepair ? 'The returned patch did not match any exact draft text.' : 'Applied a local patch only to failed deterministic checks.',
+          facts: { draftChanged: candidateDraft !== beforeRepair },
+        });
         deterministic = check(candidateDraft);
         seo = evaluateSeoChecklist(candidateDraft, article, targetWords);
         findings = [
@@ -891,6 +930,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(article.draftEvidenceUsage ?? {})}`,
             `DRAFT: ${value}`,
+            semanticReviewInstruction(article, value),
             recovery ? 'The prior reviewer report was structurally incomplete. Return a fresh report using every required object key exactly once.' : '',
             `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}.`,
           ].join('\n\n'),
@@ -908,6 +948,16 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       const semanticFindings = semantic
         .filter(item => item.status !== 'pass')
         .map(item => ({ label: item.label, reason: item.reason, location: item.location, recommendedAction: item.recommendedAction }));
+      processTrace.push({
+        id: `draft-recheck-semantic-${Date.now()}`,
+        stage: 'validation',
+        status: semanticFindings.length ? 'warning' : 'completed',
+        title: 'Semantic quality audit',
+        detail: semanticFindings.length
+          ? semanticFindings.map(item => `${item.label}: ${item.reason}${item.location ? ` (${item.location})` : ''}`).join('\n')
+          : 'All six semantic publishing checks passed.',
+        facts: { failedOrWarningChecks: semanticFindings.length },
+      });
 
       if (semanticFindings.length) {
         const repairResponse = await callAI({
@@ -931,7 +981,22 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             'Return at most 8 minimal operations that directly resolve the findings.',
           ].join('\n\n'),
         });
+        const beforeSemanticRepair = candidateDraft;
         candidateDraft = applyTargetedDraftRepair(candidateDraft, parseAIJson(repairResponse.content) as TargetedDraftRepair);
+        const semanticDraftChanged = candidateDraft !== beforeSemanticRepair;
+        processTrace.push({
+          id: `draft-recheck-semantic-repair-${Date.now()}`,
+          stage: 'repair',
+          status: semanticDraftChanged ? 'completed' : 'failed',
+          title: 'Targeted semantic repair',
+          detail: semanticDraftChanged ? `Applied focused edits for: ${semanticFindings.map(item => item.label).join(', ')}.` : 'The reviewer identified issues, but the repair response produced no applicable exact-text edits.',
+          facts: { draftChanged: semanticDraftChanged, targetedChecks: semanticFindings.length },
+        });
+        if (!semanticDraftChanged) {
+          const report = qualityReport(article, [...deterministic, ...semantic]);
+          await onUpdate({ qualityReport: report, step4ProcessTrace: processTrace });
+          throw new Error(`Không áp dụng được bản sửa cục bộ. Hãy xem AI log để kiểm tra vị trí và đề xuất của: ${semanticFindings.map(item => item.label).join(', ')}.`);
+        }
         deterministic = check(candidateDraft);
         seo = evaluateSeoChecklist(candidateDraft, article, targetWords);
         const remainingDeterministic = [
@@ -945,14 +1010,43 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           throw new Error(`Bản sửa semantic đã được lưu nhưng tạo ra lỗi cần xử lý: ${remainingDeterministic.join(', ')}.`);
         }
         semantic = await reviewSemantic(candidateDraft);
+        const remainingSemantic = semantic.filter(item => item.status !== 'pass');
+        processTrace.push({
+          id: `draft-recheck-verification-${Date.now()}`,
+          stage: 'verification',
+          status: remainingSemantic.length ? 'warning' : 'completed',
+          title: 'Post-repair verification',
+          detail: remainingSemantic.length
+            ? remainingSemantic.map(item => `${item.label}: ${item.reason}${item.recommendedAction ? ` Action: ${item.recommendedAction}` : ''}`).join('\n')
+            : 'The repaired draft passed deterministic and semantic verification.',
+          facts: { remainingChecks: remainingSemantic.length },
+        });
       }
 
       const report = qualityReport(article, [...deterministic, ...semantic]);
-      await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint });
+      processTrace.push({
+        id: `draft-recheck-result-${Date.now()}`,
+        stage: 're-check',
+        status: report.status === 'pass' ? 'completed' : 'warning',
+        title: 'Re-check & Fix completed',
+        detail: report.status === 'pass'
+          ? 'The draft passed every deterministic and semantic check.'
+          : report.checks.filter(item => item.status !== 'pass').map(item => `${item.label}: ${item.reason}${item.recommendedAction ? ` Action: ${item.recommendedAction}` : ''}`).join('\n'),
+        facts: { result: report.status, passedChecks: report.checks.filter(item => item.status === 'pass').length, totalChecks: report.checks.length },
+      });
+      await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace });
       if (editorRef.current) editorRef.current.innerText = candidateDraft;
       if (report.status !== 'pass')
-        throw new Error(`Re-check hoàn tất nhưng còn mục cần review: ${report.checks.filter(item => item.status !== 'pass').map(item => item.label).join(', ')}.`);
+        throw new Error(`Re-check hoàn tất nhưng còn mục cần review: ${report.checks.filter(item => item.status !== 'pass').map(item => `${item.label} — ${item.reason}${item.recommendedAction ? `; đề xuất: ${item.recommendedAction}` : ''}`).join(' | ')}.`);
     } catch (err) {
+      processTrace.push({
+        id: `draft-recheck-result-${Date.now()}`,
+        stage: 're-check',
+        status: 'failed',
+        title: 'Re-check requires attention',
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      try { await onUpdate({ step4ProcessTrace: processTrace }); } catch { /* Preserve the original error. */ }
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       generationInFlight.current = false;
@@ -1086,7 +1180,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   onClick={() => setShowAudit(true)}
                   disabled={!article.step4ProcessTrace?.length}
                   title={tr('Xem nhật ký AI', 'View AI log')}
-                  className="ai-log-button flex h-8 w-8 items-center justify-center rounded-lg border disabled:opacity-40"
+                  className="draft-toolbar-action"
+                  aria-label={tr('Xem nhật ký AI', 'View AI log')}
                 >
                   <Eye className="app-icon" aria-hidden="true" />
                   <span className="sr-only">{tr('Xem nhật ký AI', 'View AI log')}</span>
@@ -1097,7 +1192,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   disabled={!draft || generating || repairing}
                   aria-pressed={highlightsEnabled}
                   title={tr(highlightsEnabled ? 'Ẩn điểm nhấn trong bài' : 'Hiện điểm nhấn trong bài', highlightsEnabled ? 'Hide article highlights' : 'Show article highlights')}
-                  className={`draft-highlight-toggle flex h-8 w-8 items-center justify-center rounded-lg border transition-colors disabled:opacity-40 ${highlightsEnabled ? 'is-active' : ''}`}
+                  className={`draft-toolbar-action ${highlightsEnabled ? 'is-active' : ''}`}
                 >
                   <Highlighter className="app-icon" aria-hidden="true" />
                   <span className="sr-only">{tr('Bật hoặc tắt điểm nhấn', 'Toggle highlights')}</span>
@@ -1107,30 +1202,33 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   onClick={() => void handleRecheckAndFix()}
                   disabled={!draft || generating || repairing}
                   title={tr('Kiểm tra lại và chỉ sửa các mục chưa đạt', 'Re-check and fix only failed checks')}
-                  className="draft-export-secondary inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-medium transition-colors disabled:opacity-40"
+                  className="draft-toolbar-action"
+                  aria-label={tr('Kiểm tra lại và sửa', 'Re-check and fix')}
                 >
                   <RefreshCw className={`app-icon ${repairing ? 'animate-spin' : ''}`} aria-hidden="true" />
-                  <span>{repairing ? tr('Đang sửa…', 'Fixing…') : tr('Re-check & Fix', 'Re-check & Fix')}</span>
+                  <span className="sr-only">{repairing ? tr('Đang sửa…', 'Fixing…') : tr('Kiểm tra lại và sửa', 'Re-check and fix')}</span>
                 </button>
                 <button
                   onClick={() => handleGenerate(Boolean(draft))}
                   disabled={generating || repairing || !prerequisite.allowed}
-                  title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : undefined}
-                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all flex items-center space-x-1.5"
+                  title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : draft ? tr('Viết lại toàn bộ draft', 'Rewrite the full draft') : tr('AI viết draft', 'Generate draft with AI')}
+                  className="draft-toolbar-action"
+                  aria-label={draft ? tr('Viết lại toàn bộ draft', 'Rewrite the full draft') : tr('AI viết draft', 'Generate draft with AI')}
                 >
                   {generating ? (
-                    <>
-                      <LoaderCircle className="app-icon animate-spin" aria-hidden="true" />
-                      <span>{tr('Đang viết...', 'Writing...')}</span>
-                    </>
-                    ) : <><Sparkles className="app-icon" aria-hidden="true" /><span>{draft ? tr('Viết lại', 'Rewrite') : tr('AI Viết Draft', 'AI Draft')}</span></>}
+                    <LoaderCircle className="app-icon animate-spin" aria-hidden="true" />
+                    ) : <Sparkles className="app-icon" aria-hidden="true" />}
+                  <span className="sr-only">{generating ? tr('Đang viết...', 'Writing...') : draft ? tr('Viết lại', 'Rewrite') : tr('AI viết draft', 'AI draft')}</span>
                 </button>
                 <button
                   onClick={handleCopy}
                   disabled={!draft}
-                  className="bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all"
+                  title={copied ? tr('Đã sao chép', 'Copied') : tr('Sao chép draft', 'Copy draft')}
+                  aria-label={copied ? tr('Đã sao chép', 'Copied') : tr('Sao chép draft', 'Copy draft')}
+                  className="draft-toolbar-action"
                 >
-                  {copied ? tr('✓ Đã copy', '✓ Copied') : 'Copy'}
+                  {copied ? <Check className="app-icon" aria-hidden="true" /> : <Copy className="app-icon" aria-hidden="true" />}
+                  <span className="sr-only">{copied ? tr('Đã sao chép', 'Copied') : tr('Sao chép draft', 'Copy draft')}</span>
                 </button>
               </div>
             </div>
