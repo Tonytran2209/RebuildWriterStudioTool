@@ -2023,31 +2023,83 @@ async function runBatchArticle(
             searchIntent: section.searchIntent,
           }))
         : []
+      const outlinePrompt = [
+        existingOutline.length
+          ? `Enrich this approved outline with verified evidence without changing section IDs, headings, order, or level: ${JSON.stringify(existingOutline)}.`
+          : `Create a detailed outline that satisfies this immutable Article Spec: ${JSON.stringify(article.articleSpec)}.`,
+        `Selected direction: ${JSON.stringify(idea)}`,
+        "Use only exact quotes copied from the supplied reference documents. Never invent or paraphrase evidence quotes.",
+        "For every section, include at least one evidence quote from Knowledge Base or the current Content Plan when those sources are available, plus at least one Rules quote when Rules sources are available.",
+        `Return only JSON: {"evidenceRegistry":{"ev-1":{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}},"sections":[{"id":string,"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational","evidenceRefs":string[],"ruleRefs":string[]}]}. ${existingOutline.length ? "Return every existing section." : `Create approximately ${desiredOutlineSections} sections and never fewer than ${minimumOutlineSections}.`} Map verified evidence to every section.`,
+      ].join("\n")
       const response = await runBatchModel(
         article,
         3,
-        [
-          existingOutline.length
-            ? `Enrich this approved outline with verified evidence without changing section IDs, headings, order, or level: ${JSON.stringify(existingOutline)}.`
-            : `Create a detailed outline that satisfies this immutable Article Spec: ${JSON.stringify(article.articleSpec)}.`,
-          `Selected direction: ${JSON.stringify(idea)}`,
-          "Use only exact quotes copied from the supplied reference documents. Never invent or paraphrase evidence quotes.",
-          "For every section, include at least one evidence quote from Knowledge Base or the current Content Plan when those sources are available, plus at least one Rules quote when Rules sources are available.",
-          `Return only JSON: {"evidenceRegistry":{"ev-1":{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}},"sections":[{"id":string,"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational","evidenceRefs":string[],"ruleRefs":string[]}]}. ${existingOutline.length ? "Return every existing section." : `Create approximately ${desiredOutlineSections} sections and never fewer than ${minimumOutlineSections}.`} Map verified evidence to every section.`,
-        ].join("\n"),
+        outlinePrompt,
         true,
         5000,
         undefined,
         existingOutline.length ? "recovery" : "generation",
       )
       const parsed = parseJsonObject(response.content)
-      const sections = normalizeBatchOutlinePayload(
+      let sections = normalizeBatchOutlinePayload(
         parsed,
         outlineContext.contextDocs,
       ).filter((section: any) => section.heading)
+      const outlineResponses = [response]
+      if (sections.length < minimumOutlineSections) {
+        const rawHeadings = (Array.isArray(parsed.sections) ? parsed.sections : [])
+          .map((section: any) => String(section?.heading ?? "").trim())
+          .filter(Boolean)
+        const acceptedHeadings = new Set(
+          sections.map((section: any) => section.heading.toLocaleLowerCase()),
+        )
+        const rejectedHeadings = rawHeadings.filter(
+          (heading: string) => !acceptedHeadings.has(heading.toLocaleLowerCase()),
+        )
+        const missingCount = Math.max(
+          minimumOutlineSections - sections.length,
+          desiredOutlineSections - sections.length,
+        )
+        const correction = await runBatchModel(
+          article,
+          3,
+          [
+            outlinePrompt,
+            `The first response produced only ${sections.length}/${minimumOutlineSections} sections that passed deterministic evidence verification.`,
+            `Return exactly ${missingCount} replacement sections only. Do not repeat accepted headings: ${JSON.stringify([...acceptedHeadings])}.`,
+            `Rejected headings that may be rebuilt with valid evidence: ${JSON.stringify(rejectedHeadings)}.`,
+            "Each replacement must include valid evidenceRefs for every available source category. Copy source names and quotes exactly from the supplied documents.",
+            'Return only {"evidenceRegistry":{...},"sections":[...]}.',
+          ].join("\n\n"),
+          true,
+          Math.min(5000, 1200 + missingCount * 450),
+          undefined,
+          "recovery",
+        )
+        outlineResponses.push(correction)
+        const additions = normalizeBatchOutlinePayload(
+          parseJsonObject(correction.content),
+          outlineContext.contextDocs,
+        ).filter((section: any) => section.heading)
+        sections = [...sections, ...additions]
+          .filter(
+            (section: any, index: number, all: any[]) =>
+              all.findIndex(
+                (candidate) =>
+                  candidate.heading.toLocaleLowerCase() ===
+                  section.heading.toLocaleLowerCase(),
+              ) === index,
+          )
+          .slice(0, desiredOutlineSections)
+          .map((section: any, index: number) => ({
+            ...section,
+            id: `batch-section-${index + 1}`,
+          }))
+      }
       if (sections.length < minimumOutlineSections)
         throw new Error(
-          `Step 3 returned only ${sections.length}/${minimumOutlineSections} usable sections.`,
+          `Step 2 outline validation returned only ${sections.length}/${minimumOutlineSections} usable sections after one targeted evidence correction.`,
         )
       if (!batchOutlineHasEvidence(sections))
         throw new Error(
@@ -2057,7 +2109,15 @@ async function runBatchArticle(
         outline: sections,
         outlineScannedAt: new Date().toISOString(),
         currentStep: 4,
-        aiUsageByStep: appendUsage(3, response),
+        aiUsageByStep: {
+          ...article.aiUsageByStep,
+          3: [
+            ...(article.aiUsageByStep?.[3] ?? []),
+            ...outlineResponses.map((item) =>
+              batchUsage(3, item.provider ?? "unknown", item),
+            ),
+          ].slice(-50),
+        },
         workflowRuleSnapshots: {
           ...article.workflowRuleSnapshots,
           3: response.workflowRuleSnapshot,

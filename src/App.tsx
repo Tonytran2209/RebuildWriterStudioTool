@@ -696,15 +696,32 @@ export default function App() {
                 ? db.pauseBatch(article.activityId)
                 : Promise.resolve()
             }
-            onRetry={(id) =>
-              article.activityId
-                ? db.retryBatchArticle(article.activityId, id).then((queued) => {
-                    setArticles((current) =>
-                      current.map((item) => item.id === queued.id ? queued : item),
-                    )
-                  })
-                : Promise.resolve()
-            }
+            onRetry={async (id) => {
+              if (!article.activityId) return
+              const previous = articlesRef.current.find((item) => item.id === id)
+              setArticles((current) =>
+                current.map((item) => item.id === id
+                  ? {
+                      ...item,
+                      batchStatus: "queued",
+                      batchError: null,
+                      updatedAt: new Date().toISOString(),
+                    }
+                  : item),
+              )
+              try {
+                const queued = await db.retryBatchArticle(article.activityId, id)
+                setArticles((current) =>
+                  current.map((item) => item.id === queued.id ? queued : item),
+                )
+              } catch (error) {
+                if (previous)
+                  setArticles((current) =>
+                    current.map((item) => item.id === id ? previous : item),
+                  )
+                throw error
+              }
+            }}
           />
         ) : article ? (
           <>

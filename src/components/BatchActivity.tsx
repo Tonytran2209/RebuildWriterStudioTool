@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { CircleAlert, CircleCheck, Download, LoaderCircle, Pause, Play } from "lucide-react"
+import { CircleAlert, CircleCheck, Download, LoaderCircle, Pause, Play, RefreshCw } from "lucide-react"
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import { buildBatchZip } from "../lib/zipExport"
@@ -82,7 +82,7 @@ export default function BatchActivity({ articles, onOpen, onStart, onPause, onRe
           </div>
           <div className="mt-4 h-1 overflow-hidden rounded-full bg-[#292929]"><div className="h-full bg-[#aaa] transition-[width] duration-500" style={{ width: `${itemProgress}%` }} /></div>
           {article.batchError && <div className="mt-3 rounded-lg border border-red-900/50 bg-red-950/20 p-2 text-[10px] text-red-300">{article.batchError}</div>}
-          <div className="mt-4 flex gap-2"><button onClick={() => onOpen(article.id)} className="flex-1 rounded-lg bg-[#dedede] px-3 py-2 text-[11px] font-medium text-[#171717] hover:bg-white">{tr("Mở pipeline", "Open pipeline")}</button>{status === "failed" && <button disabled={Boolean(action)} onClick={() => act(article.id, () => onRetry(article.id))} className="rounded-lg border border-red-900/60 px-3 py-2 text-[11px] text-red-300">{tr("Thử lại", "Retry")}</button>}<button disabled={!article.draft?.trim()} onClick={() => download(article)} className="rounded-lg border border-[#343434] px-3 py-2 text-[11px] text-[#aaa] hover:bg-[#252525] disabled:opacity-30">{tr("Tải bài", "Download")}</button></div>
+          <div className="mt-4 flex gap-2"><button onClick={() => onOpen(article.id)} className="flex-1 rounded-lg bg-[#dedede] px-3 py-2 text-[11px] font-medium text-[#171717] hover:bg-white">{tr("Mở pipeline", "Open pipeline")}</button>{(status === "failed" || action === article.id) && <button type="button" disabled={Boolean(action)} onClick={() => act(article.id, () => onRetry(article.id))} title={tr("Thử lại bài này", "Retry this article")} aria-label={tr("Thử lại bài này", "Retry this article")} className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#343434] text-[#aaa] transition-colors hover:bg-[#252525] hover:text-[#e5e5e5] disabled:cursor-wait disabled:opacity-50">{action === article.id ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : <RefreshCw className="app-icon" aria-hidden="true" />}</button>}<button disabled={!article.draft?.trim()} onClick={() => download(article)} className="rounded-lg border border-[#343434] px-3 py-2 text-[11px] text-[#aaa] hover:bg-[#252525] disabled:opacity-30">{tr("Tải bài", "Download")}</button></div>
         </article>
       })}</div>
     </div></main>
