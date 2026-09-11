@@ -960,9 +960,10 @@ function batchUniversalChecks(
     try {
       const url = new URL(value)
       url.hash = ""
-      url.hostname = url.hostname.toLocaleLowerCase()
+      url.search = ""
+      url.hostname = url.hostname.toLocaleLowerCase().replace(/^www\./, "")
+      url.protocol = "https:"
       if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, "")
-      url.searchParams.sort()
       return url.toString()
     } catch {
       return value.trim()
@@ -983,7 +984,7 @@ function batchUniversalChecks(
   const inventoryHosts = new Set(
     [...approved].flatMap((value: any) => {
       try {
-        return [new URL(String(value)).hostname]
+        return [new URL(String(value)).hostname.replace(/^www\./, "")]
       } catch {
         return []
       }
@@ -991,11 +992,14 @@ function batchUniversalChecks(
   )
   const internalUrls = urls.filter((value) => {
     try {
-      return inventoryHosts.has(new URL(value).hostname)
+      return inventoryHosts.has(new URL(value).hostname.toLocaleLowerCase().replace(/^www\./, ""))
     } catch {
       return false
     }
   })
+  const approvedInternalUrls = internalUrls.filter((url) => approved.has(canonicalUrl(url)))
+  const unapprovedInternalUrls = internalUrls.filter((url) => !approved.has(canonicalUrl(url)))
+  const internalLinkRequired = Boolean(article.articleSpec?.internalLinkRequirements?.length)
   const leaked = sourceNames.filter(
     (name) =>
       /\.[a-z0-9]{1,8}$/i.test(String(name).trim()) &&
@@ -1048,11 +1052,15 @@ function batchUniversalChecks(
       id: "link-correctness",
       label: "Approved internal links",
       kind: "deterministic",
-      status: internalUrls.every((url) => approved.has(canonicalUrl(url))) ? "pass" : "fail",
-      reason: internalUrls.length
-        ? "Every URL must exist in the active website inventory."
-        : "No unapproved URL detected.",
-      autoFixAllowed: false,
+      status: !unapprovedInternalUrls.length && (!internalLinkRequired || approvedInternalUrls.length > 0) ? "pass" : "fail",
+      reason: unapprovedInternalUrls.length
+        ? `Not approved in Website Inventory: ${unapprovedInternalUrls.join(", ")}`
+        : internalLinkRequired && !approvedInternalUrls.length
+          ? "Article Spec requires an internal link, but the draft does not contain an approved URL."
+          : approvedInternalUrls.length
+            ? "Every internal URL matches an approved Website Inventory entry."
+            : "No internal link is required by the Article Spec.",
+      autoFixAllowed: true,
     },
   ]
   return checks

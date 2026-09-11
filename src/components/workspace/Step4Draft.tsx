@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, LoaderCircle, Sparkles } from 'lucide-react';
+import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
@@ -14,7 +14,7 @@ import {
 import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
 import { selectInternalLinkCandidates } from '../../lib/internalLinkInventory';
 import { gateArticleStep } from '../../lib/workflowGuards';
-import { deterministicQualityChecks, qualityReport } from '../../lib/universalQuality';
+import { auditInternalLinks, deterministicQualityChecks, qualityReport } from '../../lib/universalQuality';
 import { ProcessTraceModal } from './ProcessTrace';
 
 function countWords(text: string) {
@@ -62,6 +62,50 @@ const structuredDraftSchema: Record<string, unknown> = {
     conclusion: { type: 'string', minLength: 1 },
   },
 };
+
+type TargetedDraftRepair = {
+  edits?: Array<{ find?: string; replace?: string }>;
+  appendBeforeConclusion?: string;
+};
+
+const targetedDraftRepairSchema: Record<string, unknown> = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['edits', 'appendBeforeConclusion'],
+  properties: {
+    edits: {
+      type: 'array',
+      maxItems: 8,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['find', 'replace'],
+        properties: {
+          find: { type: 'string' },
+          replace: { type: 'string' },
+        },
+      },
+    },
+    appendBeforeConclusion: { type: 'string' },
+  },
+};
+
+function applyTargetedDraftRepair(draft: string, repair: TargetedDraftRepair) {
+  let next = draft;
+  for (const edit of repair.edits ?? []) {
+    const find = String(edit.find ?? '');
+    const replace = String(edit.replace ?? '');
+    if (find && next.includes(find)) next = next.replace(find, replace);
+  }
+  const addition = String(repair.appendBeforeConclusion ?? '').trim();
+  if (addition) {
+    const conclusionIndex = next.search(/^##\s+Conclusion\s*$/mi);
+    next = conclusionIndex >= 0
+      ? `${next.slice(0, conclusionIndex).trimEnd()}\n\n${addition}\n\n${next.slice(conclusionIndex)}`
+      : `${next.trimEnd()}\n\n${addition}`;
+  }
+  return next;
+}
 
 function missingStructuredParts(parsed: StructuredDraftPayload, article: Article) {
   const missing: Array<'title' | 'introduction' | 'sections' | 'conclusion'> = [];
@@ -339,6 +383,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const conclusionPercent = Number(getWorkflowParameter(config, 'draft', 'word-allocation', 'conclusionPercent') ?? 7);
   const maxSentencesPerParagraph = Number(getWorkflowParameter(config, 'draft', 'structured-assembly', 'maxSentencesPerParagraph') ?? 5);
   const [generating, setGenerating] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [formatCopying, setFormatCopying] = useState(false);
@@ -726,6 +771,129 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     }
   };
 
+  const handleRecheckAndFix = async () => {
+    if (!draft.trim() || generationInFlight.current) return;
+    generationInFlight.current = true;
+    setRepairing(true);
+    setError('');
+    try {
+      const inventory = config.websiteInventory ?? [];
+      const candidates = selectInternalLinkCandidates(article, inventory, 6);
+      let candidateDraft = draft;
+      let linkAudit = auditInternalLinks(article, candidateDraft, inventory);
+
+      // URL-only failures can be repaired deterministically without spending AI
+      // credits: normalize an invalid same-site target to the best approved
+      // candidate, or add one relevant approved link when the spec requires it.
+      if (candidates.length) {
+        for (const invalidUrl of linkAudit.unapprovedUrls)
+          candidateDraft = candidateDraft.split(invalidUrl).join(candidates[0].url);
+        linkAudit = auditInternalLinks(article, candidateDraft, inventory);
+        if (linkAudit.required && !linkAudit.approvedDraftUrls.length) {
+          const selected = candidates[0];
+          const anchor = selected.suggestedAnchors?.[0] || selected.title;
+          const safeAnchor = anchor.replace(/[\[\]]/g, '');
+          candidateDraft = applyTargetedDraftRepair(candidateDraft, {
+            appendBeforeConclusion: `For related guidance, see [${safeAnchor}](${selected.url}).`,
+          });
+        }
+      }
+
+      const verifiedOutline = buildVerifiedOutlineContext(article.outline || []);
+      const sourceNames = files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name);
+      const check = (value: string) => [
+        ...deterministicQualityChecks(article, value, targetWords, inventory, sourceNames),
+        ...evidenceMappingChecks(article, article.draftEvidenceUsage ?? {}, verifiedOutline),
+      ];
+      let deterministic = check(candidateDraft);
+      let seo = evaluateSeoChecklist(candidateDraft, article, targetWords);
+      const priorSemantic = (article.qualityReport?.checks ?? []).filter(item => item.kind === 'semantic');
+      let findings = [
+        ...seo.failed.map(item => ({ label: item.label, reason: item.label })),
+        ...deterministic.filter(item => item.status === 'fail').map(item => ({ label: item.label, reason: item.reason })),
+        ...priorSemantic.filter(item => item.status !== 'pass').map(item => ({ label: item.label, reason: item.reason, recommendedAction: item.recommendedAction })),
+      ];
+
+      if (findings.length) {
+        const unresolvedLinkOnly = findings.every(item => item.label === 'Approved internal links') && !candidates.length;
+        if (unresolvedLinkOnly) {
+          const report = qualityReport(article, [...deterministic, ...priorSemantic]);
+          await onUpdate({ draft: candidateDraft, qualityReport: report });
+          throw new Error('Không có URL phù hợp đang được approved trong Website Inventory để sửa internal link.');
+        }
+        const repairResponse = await callAI({
+          articleId: article.id,
+          model,
+          railwayUrl,
+          stepNumber: 4,
+          bypassCache: true,
+          maxTokens: 1800,
+          temperature: 0,
+          jsonMode: true,
+          jsonSchema: targetedDraftRepairSchema,
+          skipDocumentContext: true,
+          systemPrompt: 'You are a surgical draft editor. Fix only the supplied failed checks. Return compact exact-text replacement operations, not a rewritten article. Every find value must be copied verbatim from the current draft. Never invent URLs; use only approved candidates supplied by the user.',
+          prompt: [
+            `FAILED CHECKS: ${JSON.stringify(findings)}`,
+            `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+            `APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(candidates)}`,
+            `TARGET WORDS: ${targetWords}`,
+            `CURRENT DRAFT:\n${candidateDraft}`,
+            'Return at most 8 minimal find/replace edits. Use appendBeforeConclusion only when adding a short missing passage. Preserve headings and all unaffected prose.',
+          ].join('\n\n'),
+        });
+        candidateDraft = applyTargetedDraftRepair(candidateDraft, parseAIJson(repairResponse.content) as TargetedDraftRepair);
+        deterministic = check(candidateDraft);
+        seo = evaluateSeoChecklist(candidateDraft, article, targetWords);
+        findings = [
+          ...seo.failed.map(item => ({ label: item.label, reason: item.label })),
+          ...deterministic.filter(item => item.status === 'fail').map(item => ({ label: item.label, reason: item.reason })),
+        ];
+        if (findings.length) {
+          const report = qualityReport(article, deterministic);
+          await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint });
+          if (editorRef.current) editorRef.current.innerText = candidateDraft;
+          throw new Error(`Bản sửa cục bộ đã được lưu nhưng còn lỗi: ${findings.map(item => item.label).join(', ')}.`);
+        }
+      }
+
+      let semantic = priorSemantic;
+      if (!semantic.length || semantic.some(item => item.status !== 'pass') || candidateDraft !== draft) {
+        const semanticResponse = await callAI({
+          articleId: article.id,
+          model,
+          railwayUrl,
+          stepNumber: 4,
+          bypassCache: true,
+          maxTokens: 1400,
+          temperature: 0,
+          jsonMode: true,
+          jsonSchema: semanticQualitySchema,
+          skipDocumentContext: true,
+          systemPrompt: 'You are a strict publishing quality reviewer. Re-check the repaired draft against the Article Spec and evidence mapping. Return JSON only; do not rewrite the article.',
+          prompt: [
+            `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+            `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+            `DRAFT EVIDENCE USAGE: ${JSON.stringify(article.draftEvidenceUsage ?? {})}`,
+            `DRAFT: ${candidateDraft}`,
+            'Return exactly all six required semantic checks.',
+          ].join('\n\n'),
+        });
+        semantic = parseSemanticQuality(semanticResponse.content);
+      }
+      const report = qualityReport(article, [...deterministic, ...semantic]);
+      await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint });
+      if (editorRef.current) editorRef.current.innerText = candidateDraft;
+      if (report.status !== 'pass')
+        throw new Error(`Re-check hoàn tất nhưng còn mục cần review: ${report.checks.filter(item => item.status !== 'pass').map(item => item.label).join(', ')}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      generationInFlight.current = false;
+      setRepairing(false);
+    }
+  };
+
   const handleEditorInput = () => {
     if (editorRef.current) {
       pendingDraft.current = editorRef.current.innerText;
@@ -860,7 +1028,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 <button
                   type="button"
                   onClick={() => setHighlightsEnabled(enabled => !enabled)}
-                  disabled={!draft || generating}
+                  disabled={!draft || generating || repairing}
                   aria-pressed={highlightsEnabled}
                   title={tr(highlightsEnabled ? 'Ẩn điểm nhấn trong bài' : 'Hiện điểm nhấn trong bài', highlightsEnabled ? 'Hide article highlights' : 'Show article highlights')}
                   className={`draft-highlight-toggle flex h-8 w-8 items-center justify-center rounded-lg border transition-colors disabled:opacity-40 ${highlightsEnabled ? 'is-active' : ''}`}
@@ -869,8 +1037,18 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   <span className="sr-only">{tr('Bật hoặc tắt điểm nhấn', 'Toggle highlights')}</span>
                 </button>
                 <button
+                  type="button"
+                  onClick={() => void handleRecheckAndFix()}
+                  disabled={!draft || generating || repairing}
+                  title={tr('Kiểm tra lại và chỉ sửa các mục chưa đạt', 'Re-check and fix only failed checks')}
+                  className="draft-export-secondary inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-medium transition-colors disabled:opacity-40"
+                >
+                  <RefreshCw className={`app-icon ${repairing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                  <span>{repairing ? tr('Đang sửa…', 'Fixing…') : tr('Re-check & Fix', 'Re-check & Fix')}</span>
+                </button>
+                <button
                   onClick={() => handleGenerate(Boolean(draft))}
-                  disabled={generating || !prerequisite.allowed}
+                  disabled={generating || repairing || !prerequisite.allowed}
                   title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : undefined}
                   className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all flex items-center space-x-1.5"
                 >
