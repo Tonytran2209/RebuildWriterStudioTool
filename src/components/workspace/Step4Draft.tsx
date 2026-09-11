@@ -16,6 +16,7 @@ import { selectInternalLinkCandidates } from '../../lib/internalLinkInventory';
 import { gateArticleStep } from '../../lib/workflowGuards';
 import { auditInternalLinks, deterministicQualityChecks, qualityReport } from '../../lib/universalQuality';
 import { ProcessTraceModal } from './ProcessTrace';
+import { notifyWorkspace } from './WorkspaceNotification';
 
 function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -435,6 +436,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const readability = calcReadability(draft);
   const progress = Math.min(Math.round((wordCount / targetWords) * 100), 100);
   const draftIsStale = Boolean(draft) && article.draftSourceFingerprint !== draftSourceFingerprint;
+  useEffect(() => {
+    if (draftIsStale && !generating) notifyWorkspace('Outline, tài liệu, prompting rules hoặc model đã thay đổi. Draft đã lưu vẫn được giữ nguyên cho đến khi viết lại.', 'warning');
+  }, [draftIsStale, generating]);
   const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
   const seoChecklist = useMemo(() => evaluateSeoChecklist(draft, article, targetWords), [article, draft, targetWords]);
   const deterministicChecks = useMemo(() => deterministicQualityChecks(
@@ -468,6 +472,11 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     count: (draftLower.match(new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length,
     density: draft ? `${(((draftLower.match(new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length / Math.max(wordCount, 1)) * 100).toFixed(1)}%` : '0%',
   }));
+
+  useEffect(() => { if (error) notifyWorkspace(error, 'error'); }, [error]);
+  useEffect(() => {
+    if (draftWarnings.length) notifyWorkspace(draftWarnings.join(' '), 'warning');
+  }, [draftWarnings]);
 
   const handleGenerate = async (manual = false) => {
     if (generationInFlight.current) return;
@@ -782,6 +791,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       });
       if (!saved) throw new Error('Draft Bước 3 chưa được lưu vào Supabase.');
       if (editorRef.current) editorRef.current.innerText = assembledDraft;
+      notifyWorkspace(manual && draft ? 'Đã viết lại, kiểm tra và lưu draft.' : 'Đã tạo, kiểm tra và lưu draft.', 'success');
     } catch (err) {
       processTrace.push({
         id: `draft-failure-${Date.now()}`,
@@ -1039,6 +1049,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       });
       await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace });
       if (editorRef.current) editorRef.current.innerText = candidateDraft;
+      if (report.status === 'pass') notifyWorkspace('Re-check & Fix hoàn tất. Draft đã vượt qua toàn bộ checklist.', 'success');
       if (report.status !== 'pass')
         throw new Error(`Re-check hoàn tất nhưng còn mục cần review: ${report.checks.filter(item => item.status !== 'pass').map(item => `${item.label} — ${item.reason}${item.recommendedAction ? `; đề xuất: ${item.recommendedAction}` : ''}`).join(' | ')}.`);
     } catch (err) {
@@ -1236,27 +1247,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               </div>
             </div>
 
-            {error && (
-              <div className="mx-3 sm:mx-4 mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {error}
-              </div>
-            )}
-
-            {draftIsStale && !generating && (
-              <div className="draft-stale-notice mx-3 mt-3 rounded-lg border px-3 py-2 text-[10px] leading-relaxed sm:mx-4">
-                Outline, tài liệu, prompting rules hoặc model đã thay đổi. Draft đã lưu vẫn được giữ nguyên; chỉ cập nhật khi bạn nhấn “Viết lại”.
-              </div>
-            )}
-
-            {draftWarnings.length > 0 && !generating && (
-              <div className="mx-3 sm:mx-4 mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
-                <div className="font-semibold mb-1">Kiểm tra nhanh — draft vẫn đã được lưu:</div>
-                <ul className="list-disc pl-4 space-y-0.5">
-                  {draftWarnings.map(warning => <li key={warning}>{warning}</li>)}
-                </ul>
-              </div>
-            )}
-
             {/* Draft editor */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-5">
               {generating ? (
@@ -1401,9 +1391,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           onClick={onToggleComplete}
           disabled={!draft || completionSaving || (article.status !== 'done' && !seoChecklistPassed)}
           title={!seoChecklistPassed && article.status !== 'done' ? tr('Cần đạt 100% SEO checklist trước khi hoàn thành', 'The SEO checklist must reach 100% before completion') : undefined}
-          className={`${article.status === 'done' ? 'bg-white hover:bg-slate-50 border border-emerald-300 text-emerald-700' : 'bg-emerald-600 hover:bg-emerald-700 text-white'} disabled:opacity-40 disabled:cursor-not-allowed font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all`}
+          className={`workflow-endpoint-button ${article.status === 'done' ? 'is-complete' : ''}`}
         >
-          {completionSaving ? tr('Đang lưu...', 'Saving...') : article.status === 'done' ? tr('↺ Mở lại bài viết', '↺ Reopen article') : !seoChecklistPassed ? `SEO ${seoChecklist.items.length - seoChecklist.failed.length}/${seoChecklist.items.length}` : tr('✓ Đánh dấu hoàn thành', '✓ Mark complete')}
+          {completionSaving ? <><LoaderCircle className="app-icon animate-spin" aria-hidden="true" /><span>{tr('Đang lưu...', 'Saving...')}</span></> : article.status === 'done' ? <><RefreshCw className="app-icon" aria-hidden="true" /><span>{tr('Mở lại bài viết', 'Reopen article')}</span></> : !seoChecklistPassed ? <span>SEO {seoChecklist.items.length - seoChecklist.failed.length}/{seoChecklist.items.length}</span> : <><Check className="app-icon" aria-hidden="true" /><span>{tr('Đánh dấu hoàn thành', 'Mark complete')}</span></>}
         </button>
         </div>
       </div>

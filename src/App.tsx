@@ -17,6 +17,7 @@ import ConfigModal from "./components/config/ConfigModal"
 import Step2CoreIdea from "./components/workspace/Step2CoreIdea"
 import Step3Outline from "./components/workspace/Step3Outline"
 import Step4Draft from "./components/workspace/Step4Draft"
+import WorkspaceNotificationHost, { notifyWorkspace } from "./components/workspace/WorkspaceNotification"
 import LegacyArticleView from "./components/workspace/LegacyArticleView"
 import { useI18n } from "./lib/i18n"
 import ActivityLauncher from "./components/ActivityLauncher"
@@ -56,6 +57,9 @@ export default function App() {
   const [articleActionError, setArticleActionError] = useState<string | null>(
     null,
   )
+  useEffect(() => {
+    if (articleActionError) notifyWorkspace(articleActionError, "error")
+  }, [articleActionError])
   const [completionSavingId, setCompletionSavingId] = useState<string | null>(
     null,
   )
@@ -322,6 +326,7 @@ export default function App() {
           prev.map((item) => (item.id === target.id ? savedArticle : item)),
         )
         setSyncStatus("idle")
+        notifyWorkspace(isDone ? "Đã mở lại bài viết." : "Đã đánh dấu bài viết hoàn thành.", "success")
       } catch (error: unknown) {
         setArticleActionError(
           `Không lưu được trạng thái bài viết vào Supabase: ${
@@ -651,19 +656,7 @@ export default function App() {
       />
 
       <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden">
-        {articleActionError && (
-          <div className="mx-2 md:mx-5 mt-2 md:mt-3 rounded-xl border border-red-200 bg-red-50 px-3 md:px-4 py-2 text-xs text-red-700 flex items-center justify-between gap-3">
-            <span>{articleActionError}</span>
-            <button
-              type="button"
-              onClick={() => setArticleActionError(null)}
-              className="font-bold text-red-500 hover:text-red-700"
-              aria-label="Đóng thông báo"
-            >
-              ×
-            </button>
-          </div>
-        )}
+        <WorkspaceNotificationHost />
         {article && isLegacyArticle(article) ? (
           <LegacyArticleView
             article={article}

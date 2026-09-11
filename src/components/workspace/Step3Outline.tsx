@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Ellipsis, Eye, LoaderCircle, PanelTopOpen, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, Ellipsis, Eye, LoaderCircle, PanelTopOpen, Plus, Sparkles, Trash2 } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -11,6 +11,7 @@ import type {
 } from "../../types";
 import { callAI } from "../../lib/aiService";
 import { useI18n } from "../../lib/i18n";
+import { notifyWorkspace } from "./WorkspaceNotification";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
@@ -188,6 +189,9 @@ export default function Step3Outline({
   const outline = article.outline || [];
   const prerequisite = gateArticleStep(article, 3);
 
+  useEffect(() => { if (error) notifyWorkspace(error, 'error'); }, [error]);
+  useEffect(() => { if (warning) notifyWorkspace(warning, 'warning'); }, [warning]);
+
   const bundle = useMemo(() => collectStepDocs(3, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(3, config, files), [config, files]);
   const compiledWorkflowRules = useMemo(() => compileWorkflowRules(config, 3, 'manual'), [config]);
@@ -209,6 +213,9 @@ export default function Step3Outline({
     [article.angle, article.articleSpecFingerprint, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, model.id, model.provider],
   );
   const outlineIsStale = Boolean(outline.length) && article.outlineSourceFingerprint !== sourceFingerprint;
+  useEffect(() => {
+    if (outlineIsStale) notifyWorkspace('Nguồn hoặc model đã thay đổi. Outline đã lưu vẫn được giữ nguyên cho đến khi tạo lại.', 'warning');
+  }, [outlineIsStale]);
 
   const contextBrief = useMemo(() => {
     const kws = (article.keywords || "").split(",").map(k => k.trim()).filter(Boolean);
@@ -399,6 +406,8 @@ export default function Step3Outline({
       if (!saved) throw new Error('Outline Bước 2 chưa được lưu vào Supabase.');
       if (partialResult) {
         setWarning(`Đã lưu ${sections.length}/${minimumSections} section tối thiểu vượt qua kiểm chứng. Bạn có thể chỉnh sửa thủ công hoặc nhấn “Tạo lại” để thử bổ sung.`);
+      } else {
+        notifyWorkspace('Đã tạo, kiểm tra và lưu outline.', 'success');
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -496,22 +505,14 @@ export default function Step3Outline({
               <button
                 onClick={() => handleGenerate(Boolean(outline.length))}
                 disabled={generating || !prerequisite.allowed}
-                title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : undefined}
-                className="outline-generate-button flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium transition-colors disabled:opacity-40"
+                title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : outline.length ? tr('Tạo lại outline', 'Regenerate outline') : tr('Tạo outline', 'Generate outline')}
+                aria-label={outline.length ? tr('Tạo lại outline', 'Regenerate outline') : tr('Tạo outline', 'Generate outline')}
+                className="draft-toolbar-action"
               >
                 {generating ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : <Sparkles className="app-icon" aria-hidden="true" />}
-                <span>{generating ? tr('Đang dựng...', 'Generating...') : outline.length ? tr('Tạo lại', 'Regenerate') : tr('Tạo outline', 'Generate outline')}</span>
+                <span className="sr-only">{generating ? tr('Đang dựng...', 'Generating...') : outline.length ? tr('Tạo lại', 'Regenerate') : tr('Tạo outline', 'Generate outline')}</span>
               </button>
             </div>
-
-            {outlineIsStale && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                Nguồn hoặc model đã thay đổi — vẫn dùng outline đã lưu trong Supabase. Chỉ cập nhật khi bạn nhấn “Tạo lại”.
-              </div>
-            )}
-
-            {error && <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>}
-            {warning && <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">{warning}</div>}
 
             {generating && (
               <div className="space-y-2">
@@ -635,9 +636,9 @@ export default function Step3Outline({
           <button
             onClick={onNext}
             disabled={!gateStepCompletion(article, 3).allowed || (article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved')}
-            className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
+            className="workflow-endpoint-button"
           >
-            {tr('Tiếp tục — First Draft', 'Continue — First Draft')}
+            <span>{tr('Tiếp tục — First Draft', 'Continue — First Draft')}</span><ArrowRight className="app-icon" aria-hidden="true" />
           </button>
         </div>
       </div>

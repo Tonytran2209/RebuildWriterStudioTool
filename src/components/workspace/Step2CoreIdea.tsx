@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Ellipsis, Search } from "lucide-react";
+import { ArrowRight, Ellipsis, LoaderCircle, Search, Sparkles } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -16,6 +16,7 @@ import type {
 } from "../../types";
 import { callAI, researchSeoKeywords } from "../../lib/aiService";
 import { useI18n } from "../../lib/i18n";
+import { notifyWorkspace } from "./WorkspaceNotification";
 import {
   collectStepDocs,
   buildRoleSystemPrompt,
@@ -287,6 +288,9 @@ export default function Step2CoreIdea({
   const { tr, canonicalAIOutputInstruction } = useI18n();
   const prerequisite = gateArticleStep(article, 2);
 
+  useEffect(() => { if (error) notifyWorkspace(error, 'error'); }, [error]);
+  useEffect(() => { if (warning) notifyWorkspace(warning, 'warning'); }, [warning]);
+
   useEffect(() => {
     if (!detailIdeaId) return;
     const closeOnEscape = (event: KeyboardEvent) => event.key === "Escape" && setDetailIdeaId(null);
@@ -343,6 +347,9 @@ export default function Step2CoreIdea({
     [bundle, compiledWorkflowRules.fingerprint, model.id, model.provider, selectedSnapshotSignature],
   );
   const scanIsStale = Boolean(storedIdeas.length) && article.coreIdeaSourceFingerprint !== sourceFingerprint;
+  useEffect(() => {
+    if (scanIsStale) notifyWorkspace(tr('Nguồn hoặc model đã thay đổi. Kết quả Article Spec đã lưu vẫn được giữ nguyên cho đến khi tạo lại.', 'Sources or model changed. The saved Article Spec remains active until regenerated.'), 'warning');
+  }, [scanIsStale, tr]);
   // Saved Supabase results remain authoritative until the Step 1 selection
   // changes (which clears them) or the user explicitly regenerates.
   const ideas = storedIdeas;
@@ -578,6 +585,8 @@ export default function Step2CoreIdea({
       if (!saved) throw new Error('Kết quả Bước 1 chưa được lưu vào Supabase.');
       if (partialResult) {
         setWarning(`Đã lưu ${result.ideas.length}/${requestedIdeaCount} core idea vượt qua đầy đủ kiểm chứng. Bạn có thể tiếp tục với kết quả hợp lệ hoặc nhấn “Đề xuất lại” để thử bổ sung.`);
+      } else {
+        notifyWorkspace('Đã tạo, kiểm tra và lưu Article Spec cùng các Core Idea.', 'success');
       }
       setSelectedId(autoSelectedIdea?.id ?? null);
     } catch (err) {
@@ -631,26 +640,14 @@ export default function Step2CoreIdea({
               <button
                 onClick={() => fetchIdeas(true)}
                 disabled={loading || !prerequisite.allowed || !bundle.totalCount}
-                title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : undefined}
-                className="shrink-0 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-xl transition-all whitespace-nowrap"
+                title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : ideas.length ? tr('Đề xuất lại', 'Regenerate ideas') : tr('Lấy đề xuất', 'Generate ideas')}
+                aria-label={ideas.length ? tr('Đề xuất lại', 'Regenerate ideas') : tr('Lấy đề xuất', 'Generate ideas')}
+                className="draft-toolbar-action"
               >
-                {loading ? tr('Đang phân tích...', 'Analyzing...') : ideas.length ? tr('Đề xuất lại', 'Regenerate') : tr('Lấy đề xuất', 'Generate ideas')}
+                {loading ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : <Sparkles className="app-icon" aria-hidden="true" />}
+                <span className="sr-only">{loading ? tr('Đang phân tích...', 'Analyzing...') : ideas.length ? tr('Đề xuất lại', 'Regenerate') : tr('Lấy đề xuất', 'Generate ideas')}</span>
               </button>
             </div>
-
-            {scanIsStale && ideas.length > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                {tr('Nguồn hoặc model đã thay đổi — vẫn dùng kết quả Bước 1 đã lưu trong Supabase. Chỉ tạo lại khi bạn nhấn “Đề xuất lại”.', 'Sources or model changed — the Step 1 result saved in Supabase remains active. It only changes when you click “Regenerate”.')}
-              </div>
-            )}
-
-            {error && (
-              <div className="bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-xs text-rose-700">{error}</div>
-            )}
-
-            {warning && (
-              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-700">{warning}</div>
-            )}
 
             {!loading && article.articleSpec && (
               <section className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
@@ -784,9 +781,9 @@ export default function Step2CoreIdea({
         <button
           onClick={onNext}
           disabled={!gateStepCompletion({ ...article, selectedCoreIdeaId: selectedId ?? undefined }, 2).allowed || scanIsStale}
-          className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold text-xs py-2.5 px-3 sm:px-6 rounded-2xl shadow-sm transition-all"
+          className="workflow-endpoint-button"
         >
-          {tr('Tiếp tục — Draft Outline', 'Continue — Draft Outline')}
+          <span>{tr('Tiếp tục — Draft Outline', 'Continue — Draft Outline')}</span><ArrowRight className="app-icon" aria-hidden="true" />
         </button>
       </div>
     </div>

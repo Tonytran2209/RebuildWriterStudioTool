@@ -1927,6 +1927,73 @@ html, body, #root {
   opacity: 0.4;
 }
 
+.workspace-notification {
+  position: fixed;
+  z-index: 120;
+  right: 1rem;
+  bottom: 1rem;
+  left: 1rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.625rem;
+  width: min(42rem, calc(100vw - 2rem));
+  margin-left: auto;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid #d5d5cf;
+  border-radius: 0.75rem;
+  color: #30302d;
+  background: rgba(248, 248, 245, 0.96);
+  box-shadow: 0 12px 32px rgba(20, 20, 18, 0.14);
+  backdrop-filter: blur(14px);
+}
+
+.workspace-notification p { margin: 0; font-size: 0.75rem; line-height: 1.45; }
+.workspace-notification-status,
+.workspace-notification > button { display: inline-flex; width: 1.75rem; height: 1.75rem; align-items: center; justify-content: center; border-radius: 0.45rem; }
+.workspace-notification-status { color: #555550; background: #e8e8e3; }
+.workspace-notification-status.is-error { color: #4a4141; background: #e8e2e1; }
+.workspace-notification-status.is-warning { color: #4c4940; background: #e9e6dc; }
+.workspace-notification > button { color: #777772; transition: color 150ms ease, background-color 150ms ease; }
+.workspace-notification > button:hover { color: #282825; background: #e8e8e3; }
+
+.workflow-endpoint-button {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border: 1px solid #30302d;
+  border-radius: 0.75rem;
+  color: #f7f7f4;
+  background: #30302d;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+.workflow-endpoint-button:hover:not(:disabled) { background: #444440; border-color: #444440; }
+.workflow-endpoint-button:disabled { cursor: not-allowed; opacity: 0.38; }
+.workflow-endpoint-button.is-complete { color: #3f3f3b; background: #efefeb; border-color: #d5d5cf; }
+.workflow-endpoint-button.is-complete:hover:not(:disabled) { background: #e5e5e0; border-color: #c8c8c2; }
+
+.codex-dark .workspace-notification {
+  color: #e4e4e0;
+  background: rgba(31, 31, 30, 0.96);
+  border-color: #3c3c39;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.38);
+}
+.codex-dark .workspace-notification-status { color: #e1e1dd; background: #353532; }
+.codex-dark .workspace-notification-status.is-error { color: #ded5d3; background: #403635; }
+.codex-dark .workspace-notification-status.is-warning { color: #dedbd2; background: #403e36; }
+.codex-dark .workspace-notification > button { color: #a3a39e; }
+.codex-dark .workspace-notification > button:hover { color: #f1f1ed; background: #353532; }
+.codex-dark .workflow-endpoint-button { color: #1e1e1c; background: #e4e4e0; border-color: #e4e4e0; }
+.codex-dark .workflow-endpoint-button:hover:not(:disabled) { background: #f2f2ee; border-color: #f2f2ee; }
+.codex-dark .workflow-endpoint-button.is-complete { color: #d2d2ce; background: #292927; border-color: #41413e; }
+.codex-dark .workflow-endpoint-button.is-complete:hover:not(:disabled) { background: #333330; border-color: #4a4a46; }
+
 .keyword-density-list > * {
   border-color: #e5e5e1;
 }
