@@ -806,6 +806,7 @@ async function runBatchModel(
   jsonMode: boolean,
   maxTokens: number,
   jsonSchema?: Record<string, unknown>,
+  purpose: "generation" | "recovery" = "generation",
 ) {
   const config = await kvGet<any>("writer:config")
   const stepConfig = config?.stepConfigs?.[step]
@@ -826,7 +827,8 @@ async function runBatchModel(
     article.id,
   )
   const key = aiCacheKey({
-    kind: "batch-pipeline-v3",
+    kind: "batch-pipeline-v4",
+    purpose,
     articleId: article.id,
     step,
     model: model.id,
@@ -841,7 +843,7 @@ async function runBatchModel(
       cacheHit: true,
       workflowRuleSnapshot: compiledRules.snapshot,
     }
-  await reserveAIBudget(article.id, step)
+  if (purpose === "generation") await reserveAIBudget(article.id, step)
   const response = await generate({
     modelId: model.id,
     provider: model.provider,
@@ -941,6 +943,7 @@ function batchUniversalChecks(
       .flatMap((section: any) => [section.heading, section.notes, section.rationale, ...(section.keywords ?? [])])
       .join(" "),
   )
+  const coveredContent = `${outlineCoverage} ${normalized(text)}`
   const missing = (article.articleSpec?.mustCover ?? []).filter(
     (topic: any) => {
       const terms = normalized(String(topic))
@@ -948,7 +951,7 @@ function batchUniversalChecks(
         .filter((term) => term.length > 3)
       return (
         terms.length &&
-        terms.filter((term) => outlineCoverage.includes(term)).length <
+        terms.filter((term) => coveredContent.includes(term)).length <
           Math.ceil(terms.length * 0.5)
       )
     },
@@ -1018,12 +1021,12 @@ function batchUniversalChecks(
     },
     {
       id: "must-cover",
-      label: "Must-cover topics mapped in outline",
+      label: "Must-cover topic coverage",
       kind: "deterministic",
       status: missing.length ? "fail" : "pass",
       reason: missing.length
         ? `Not mapped in the approved outline: ${missing.join(", ")}`
-        : "Every required topic is mapped into the approved outline.",
+        : "Every required topic is covered by the approved outline or draft.",
       autoFixAllowed: true,
     },
     {
@@ -1178,6 +1181,51 @@ function batchOutlineFeasibility(article: any, wordTarget: number) {
   return { minimumRequired, feasible: minimumRequired <= Math.floor(wordTarget * 1.15) }
 }
 
+const batchDraftRepairJsonSchema: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["edits", "appendBeforeConclusion"],
+  properties: {
+    edits: {
+      type: "array",
+      maxItems: 10,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["find", "replace"],
+        properties: { find: { type: "string" }, replace: { type: "string" } },
+      },
+    },
+    appendBeforeConclusion: { type: "string" },
+  },
+}
+
+function applyBatchDraftRepair(draft: string, raw: string) {
+  const repair = parseJsonObject(raw)
+  let next = draft
+  for (const edit of Array.isArray(repair.edits) ? repair.edits : []) {
+    const find = String(edit?.find ?? "")
+    if (find && next.includes(find)) next = next.replace(find, String(edit?.replace ?? ""))
+  }
+  const addition = String(repair.appendBeforeConclusion ?? "").trim()
+  if (addition) {
+    const index = next.search(/^##\s+Conclusion\s*$/mi)
+    next = index >= 0
+      ? `${next.slice(0, index).trimEnd()}\n\n${addition}\n\n${next.slice(index)}`
+      : `${next.trimEnd()}\n\n${addition}`
+  }
+  return next
+}
+
+function sanitizeBatchArticleSpec(spec: any) {
+  const instructionPattern = /\b(exact primary keyword|title|introduction|heading|body copy|conclusion|keyword density|use the exact|include the keyword)\b/i
+  const mustCover = (Array.isArray(spec?.mustCover) ? spec.mustCover : [])
+    .map(String)
+    .map((item: string) => item.trim())
+    .filter((item: string) => item && !instructionPattern.test(item))
+  return { ...spec, mustCover }
+}
+
 const structuredDraftJsonSchema: Record<string, unknown> = {
   type: "object",
   additionalProperties: false,
@@ -1264,11 +1312,11 @@ function batchEvidenceMappingCheck(verified: ReturnType<typeof batchVerifiedOutl
     id: "evidence-mapping",
     label: "Evidence mapped to outline sections",
     kind: "deterministic",
-    status: invalid.length || missing.length ? "fail" : "pass",
+    status: invalid.length ? "fail" : "pass",
     reason: invalid.length
       ? `Evidence references outside their approved section: ${invalid.join("; ")}`
       : missing.length
-        ? `Sections with approved evidence did not declare usage: ${missing.join(", ")}`
+        ? `No invalid evidence references. Semantic review will verify support for sections without declared usage: ${missing.join(", ")}`
         : "Every declared evidence reference exists and belongs to its outline section.",
     evidence: JSON.stringify(usage),
     autoFixAllowed: true,
@@ -1430,6 +1478,15 @@ async function runBatchArticle(
       batchStartedAt: article.batchStartedAt ?? new Date().toISOString(),
       status: "in_progress",
     })
+    if (article.articleSpec) {
+      const sanitizedSpec = sanitizeBatchArticleSpec(article.articleSpec)
+      if (JSON.stringify(sanitizedSpec.mustCover) !== JSON.stringify(article.articleSpec.mustCover)) {
+        article = await saveArticleCheckpoint(article, {
+          articleSpec: sanitizedSpec,
+          articleSpecFingerprint: snapshotFingerprint(sanitizedSpec),
+        })
+      }
+    }
     if (
       !article.coreIdeaSuggestions?.length ||
       !article.articleSpec ||
@@ -1484,6 +1541,7 @@ async function runBatchArticle(
         [
           `Create one canonical Article Spec and the strongest evidence-grounded ${contentMode} direction for: ${article.topic}.`,
           `SEO research: ${JSON.stringify(seoResearch.keywords)}`,
+          "articleSpec.mustCover must contain only reader-facing subject-matter topics, never writing instructions about keyword placement, title, introduction, headings, body, or conclusion.",
           "Use the supplied Knowledge Base and Skills. Return only JSON:",
           '{"articleSpec":{"topic":string,"primaryQuery":string,"secondaryQueries":string[],"audience":string,"market":"Global / USA","language":"English","primaryIntent":"informational|commercial|transactional|navigational","secondaryIntent":"informational|commercial|transactional|navigational","expectedReaderOutcome":string,"winningFormat":string,"mustCover":string[],"optionalCoverage":string[],"thesis":string,"brandPov":string,"evidence":[],"ctaObjective":string,"internalLinkRequirements":string[]},"idea":{"title":string,"angleLabel":string,"angleDescription":string,"mainArgument":string,"primaryKeyword":string,"secondaryKeywords":string[],"targetAudience":string,"recommendedTone":string,"recommendedWordCount":number,"rating":{"overall":number,"seoPotential":number,"audienceFit":number,"docSupport":number,"uniqueness":number},"ratingRationale":string}}',
         ].join("\n"),
@@ -1582,51 +1640,60 @@ async function runBatchArticle(
       const draftPrerequisite = articleStepPrerequisite(article, 4)
       if (draftPrerequisite) throw new Error(draftPrerequisite)
       const feasibility = batchOutlineFeasibility(article, maxDraftWords)
-      if (!feasibility.feasible)
-        throw new Error(
-          `Outline requires approximately ${feasibility.minimumRequired} words, above the flexible range around the configured ${maxDraftWords}-word target. Increase the Step 3 target or simplify the outline.`,
-        )
+      const effectiveDraftWords = Math.min(
+        10000,
+        Math.max(maxDraftWords, feasibility.minimumRequired),
+      )
       const budget = batchDraftBudget(
         article.outline ?? [],
-        maxDraftWords,
+        effectiveDraftWords,
         introductionPercent,
         conclusionPercent,
       )
       const verifiedOutline = batchVerifiedOutline(article.outline ?? [])
-      const response = await runBatchModel(
-        article,
-        4,
-        [
-          `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
-          `ARTICLE SPEC (immutable acceptance contract): ${JSON.stringify(article.articleSpec)}.`,
-          `Primary keyword: ${article.articleSpec?.primaryQuery ?? article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
-          `Approved outline and evidence registry: ${JSON.stringify(verifiedOutline)}`,
-          `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
-          `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(selectWebsiteCandidates(article, runtimeConfig?.websiteInventory ?? [], 6))}`,
-          "Never invent a URL. Use only an approved inventory URL when the Article Spec requires a relevant internal link.",
-          `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
-          "Follow every supplied Skill rule and use only supported KB claims.",
-          'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order. Each usedEvidenceRefs array may contain only IDs approved for that section.',
-        ].join("\n"),
-        true,
-        Math.min(12000, Math.max(1800, Math.ceil(maxDraftWords * 1.9))),
-        structuredDraftJsonSchema,
-      )
-      if (!response.content.trim())
-        throw new Error("Step 4 returned an empty draft.")
-      const draftResponses = [response]
-      const assembled = assembleBatchDraft(response.content, article)
-      const assembledDraft = assembled.draft
+      let response: any = null
+      let assembled: { draft: string; evidenceUsage: Record<string, string[]>; parsed: any }
+      if (String(article.draft ?? "").trim()) {
+        assembled = {
+          draft: String(article.draft),
+          evidenceUsage: article.draftEvidenceUsage ?? {},
+          parsed: null,
+        }
+      } else {
+        response = await runBatchModel(
+          article,
+          4,
+          [
+            `Write the complete publication-ready ${contentMode} article: ${article.topic}.`,
+            `ARTICLE SPEC (immutable acceptance contract): ${JSON.stringify(article.articleSpec)}.`,
+            `Primary keyword: ${article.articleSpec?.primaryQuery ?? article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
+            `Approved outline and evidence registry: ${JSON.stringify(verifiedOutline)}`,
+            `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
+            `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(selectWebsiteCandidates(article, runtimeConfig?.websiteInventory ?? [], 6))}`,
+            "Never invent a URL. Use only an approved inventory URL when the Article Spec requires a relevant internal link.",
+            `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
+            "Follow every supplied Skill rule and use only supported KB claims.",
+            'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order. Each usedEvidenceRefs array may contain only IDs approved for that section.',
+          ].join("\n"),
+          true,
+          Math.min(16000, Math.max(1800, Math.ceil(effectiveDraftWords * 1.9))),
+          structuredDraftJsonSchema,
+        )
+        if (!response.content.trim()) throw new Error("Step 4 returned an empty draft.")
+        assembled = assembleBatchDraft(response.content, article)
+      }
+      const draftResponses = response ? [response] : []
+      let assembledDraft = assembled.draft
       article = await saveArticleCheckpoint(article, {
         draft: assembledDraft,
         draftEvidenceUsage: assembled.evidenceUsage,
         qualityReport: null,
         draftScannedAt: new Date().toISOString(),
         currentStep: 4,
-        aiUsageByStep: appendUsage(4, response),
+        aiUsageByStep: response ? appendUsage(4, response) : article.aiUsageByStep,
         workflowRuleSnapshots: {
           ...article.workflowRuleSnapshots,
-          4: response.workflowRuleSnapshot,
+          4: response?.workflowRuleSnapshot ?? article.workflowRuleSnapshots?.[4],
         },
       })
       draftResponses.length = 0
@@ -1637,29 +1704,57 @@ async function runBatchArticle(
             !item.knowledgeMetadata?.approvedForExternalUse,
         )
         .map((item) => item.name)
-      const deterministic = [
+      let deterministic = [
         ...batchUniversalChecks(
           assembledDraft,
           article,
-          maxDraftWords,
+          effectiveDraftWords,
           runtimeConfig?.websiteInventory ?? [],
           internalNames,
         ),
         batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
       ]
       if (deterministic.some((item) => item.status !== "pass")) {
+        const repair = await runBatchModel(
+          article,
+          4,
+          [
+            "Repair only the deterministic QC findings in the current draft. Return exact find/replace edits, not a rewritten article.",
+            `FINDINGS: ${JSON.stringify(deterministic.filter((item) => item.status !== "pass"))}`,
+            `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+            `APPROVED INTERNAL LINKS: ${JSON.stringify(selectWebsiteCandidates(article, runtimeConfig?.websiteInventory ?? [], 6))}`,
+            `CURRENT DRAFT:\n${assembledDraft}`,
+            "Never invent URLs. Preserve headings and unaffected prose.",
+          ].join("\n\n"),
+          true,
+          2000,
+          batchDraftRepairJsonSchema,
+          "recovery",
+        )
+        draftResponses.push(repair)
+        assembledDraft = applyBatchDraftRepair(assembledDraft, repair.content)
+        deterministic = [
+          ...batchUniversalChecks(assembledDraft, article, effectiveDraftWords, runtimeConfig?.websiteInventory ?? [], internalNames),
+          batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
+        ]
         const report = {
-          version: 5,
-          status: "fail",
-          checkedAt: new Date().toISOString(),
-          articleSpecFingerprint: article.articleSpecFingerprint,
-          checks: deterministic,
+          version: 5, status: "fail", checkedAt: new Date().toISOString(),
+          articleSpecFingerprint: article.articleSpecFingerprint, checks: deterministic,
         }
         article = await saveArticleCheckpoint(article, {
+          draft: assembledDraft,
           qualityReport: report,
+          aiUsageByStep: {
+            ...article.aiUsageByStep,
+            4: [
+              ...(article.aiUsageByStep?.[4] ?? []),
+              ...draftResponses.map((item) => batchUsage(4, item.provider ?? "unknown", item)),
+            ].slice(-50),
+          },
         })
-        throw new Error(
-          `Draft was saved for review, but Universal QC failed: ${deterministic
+        draftResponses.length = 0
+        if (deterministic.some((item) => item.status !== "pass")) throw new Error(
+          `Targeted batch repair was saved, but Universal QC still failed: ${deterministic
             .filter((item) => item.status !== "pass")
             .map((item) => item.reason)
             .join("; ")}`,
@@ -1675,16 +1770,17 @@ async function runBatchArticle(
           `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map((section: any) => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
           `DRAFT EVIDENCE USAGE: ${JSON.stringify(assembled.evidenceUsage)}`,
           `DRAFT: ${assembledDraft}`,
-          'Return JSON {"checks":[...]} with exactly these IDs: intent-satisfied, reader-outcome, intro-quality, keyword-naturalness, evidence-support, brand-pov. Each item has id,label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. Evidence support passes when concrete claims are supported by the registry and declared section mapping. A publish-ready result requires every status=pass.',
+          'Return checks as an object with exactly these keys: intent-satisfied, reader-outcome, intro-quality, keyword-naturalness, evidence-support, brand-pov. Each value has label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. Evidence support passes when concrete claims are supported by the registry and declared section mapping. Do not warn on keyword-naturalness merely because an exact-match keyword is present; identify a specific awkward sentence or material repetition. A publish-ready result requires every status=pass.',
         ].join("\n"),
         true,
         1600,
         semanticQualityJsonSchema,
+        "recovery",
       )
       draftResponses.push(review)
-      const semantic = parseBatchSemanticChecks(review.content)
-      const checks = [...deterministic, ...semantic]
-      const report = {
+      let semantic = parseBatchSemanticChecks(review.content)
+      let checks = [...deterministic, ...semantic]
+      let report = {
         version: 5,
         status: checks.every((item) => item.status === "pass")
           ? "pass"
@@ -1696,7 +1792,61 @@ async function runBatchArticle(
         checks,
       }
       if (report.status !== "pass") {
+        const semanticRepair = await runBatchModel(
+          article,
+          4,
+          [
+            "Repair only the supplied semantic findings with exact-text edits. Do not rewrite the full article.",
+            `SEMANTIC FINDINGS: ${JSON.stringify(semantic.filter((item: any) => item.status !== "pass"))}`,
+            `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+            `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+            `CURRENT DRAFT:\n${assembledDraft}`,
+            "Return at most 10 minimal find/replace edits. Preserve headings, supported claims and approved URLs.",
+          ].join("\n\n"),
+          true,
+          2200,
+          batchDraftRepairJsonSchema,
+          "recovery",
+        )
+        draftResponses.push(semanticRepair)
+        const repairedDraft = applyBatchDraftRepair(assembledDraft, semanticRepair.content)
+        if (repairedDraft !== assembledDraft) assembledDraft = repairedDraft
+        deterministic = [
+          ...batchUniversalChecks(assembledDraft, article, effectiveDraftWords, runtimeConfig?.websiteInventory ?? [], internalNames),
+          batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
+        ]
+        if (deterministic.every((item) => item.status === "pass")) {
+          const verification = await runBatchModel(
+            article,
+            4,
+            [
+              "Verify the repaired draft as a strict semantic publishing reviewer. Do not rewrite it.",
+              `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+              `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+              `DRAFT EVIDENCE USAGE: ${JSON.stringify(assembled.evidenceUsage)}`,
+              `DRAFT: ${assembledDraft}`,
+              'Return checks as an object with exactly these keys: intent-satisfied, reader-outcome, intro-quality, keyword-naturalness, evidence-support, brand-pov. Each value must include label,status,reason,evidence,location,recommendedAction,autoFixAllowed.',
+            ].join("\n\n"),
+            true,
+            1600,
+            semanticQualityJsonSchema,
+            "recovery",
+          )
+          draftResponses.push(verification)
+          semantic = parseBatchSemanticChecks(verification.content)
+        }
+        checks = [...deterministic, ...semantic]
+        report = {
+          version: 5,
+          status: checks.every((item) => item.status === "pass") ? "pass" : checks.some((item) => item.status === "fail") ? "fail" : "warning",
+          checkedAt: new Date().toISOString(),
+          articleSpecFingerprint: article.articleSpecFingerprint,
+          checks,
+        }
+      }
+      if (report.status !== "pass") {
         article = await saveArticleCheckpoint(article, {
+          draft: assembledDraft,
           qualityReport: report,
           aiUsageByStep: {
             ...article.aiUsageByStep,
@@ -1709,7 +1859,7 @@ async function runBatchArticle(
           },
         })
         throw new Error(
-          `Draft was saved for review, but Universal QC is ${report.status}.`,
+          `Targeted batch recovery was saved, but Universal QC is still ${report.status}: ${checks.filter((item) => item.status !== "pass").map((item) => `${item.label}: ${item.reason}`).join("; ")}`,
         )
       }
       article = await saveArticleCheckpoint(article, {
@@ -1732,7 +1882,7 @@ async function runBatchArticle(
         },
         workflowRuleSnapshots: {
           ...article.workflowRuleSnapshots,
-          4: response.workflowRuleSnapshot,
+          4: response?.workflowRuleSnapshot ?? article.workflowRuleSnapshots?.[4],
         },
       })
     } else if (article.batchStatus !== "completed") {

@@ -7,7 +7,8 @@ import { buildBatchZip } from "../lib/zipExport"
 interface Props { articles: Article[]; onOpen: (id: string) => void; onStart: () => Promise<void>; onPause: () => Promise<void>; onRetry: (id: string) => Promise<void> }
 
 function completedStages(article: Article) {
-  if (article.draft?.trim() || article.batchStatus === "completed") return 3
+  if (article.batchStatus === "completed" || article.status === "done") return 3
+  if (article.draft?.trim()) return 2
   if (article.outline?.length) return 2
   if (article.coreIdeaSuggestions?.length) return 1
   return 0
@@ -32,7 +33,7 @@ function download(article: Article) {
 export default function BatchActivity({ articles, onOpen, onStart, onPause, onRetry }: Props) {
   const { tr } = useI18n()
   const [action, setAction] = useState<string | null>(null)
-  const complete = articles.filter((article) => article.batchStatus === "completed" || article.draft?.trim()).length
+  const complete = articles.filter((article) => article.batchStatus === "completed" || article.status === "done").length
   const failed = articles.filter((article) => article.batchStatus === "failed").length
   const running = articles.some((article) => article.batchStatus === "running")
   const paused = !running && articles.some((article) => article.batchStatus === "paused")
@@ -60,11 +61,11 @@ export default function BatchActivity({ articles, onOpen, onStart, onPause, onRe
 
       <div className="grid gap-3 sm:grid-cols-2">{articles.map((article, index) => {
         const status = article.batchStatus ?? "queued"
-        const stage = Math.min(3, Math.max(1, completedStages(article) + (status === "running" ? 1 : 0)))
+        const stage = article.draft?.trim() ? 3 : Math.min(3, Math.max(1, completedStages(article) + (status === "running" ? 1 : 0)))
         const itemProgress = articleProgress(article)
         return <article key={article.id} className="rounded-xl border border-[#2b2b2b] bg-[#1b1b1b] p-4">
           <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-[10px] font-medium uppercase tracking-[.08em] text-[#858585]">#{index + 1} · {status} · Step {stage}/3</div><h2 className="mt-2 line-clamp-2 text-sm font-medium text-[#dedede]">{article.topic || article.title}</h2></div>
-            {status === "completed" || article.draft?.trim() ? <CircleCheck className="app-icon shrink-0 text-emerald-400" aria-label={tr("Hoàn tất", "Completed")} /> : status === "failed" ? <CircleAlert className="app-icon shrink-0 text-red-400" aria-label={tr("Lỗi", "Failed")} /> : status === "running" ? <LoaderCircle className="app-icon shrink-0 animate-spin text-[#c8c8c8]" aria-label={tr("Đang tạo", "Generating")} /> : <span className="h-4 w-4 shrink-0 rounded-full border border-[#555]" aria-label={tr("Đang chờ", "Queued")} />}
+            {status === "completed" || article.status === "done" ? <CircleCheck className="app-icon shrink-0 text-emerald-400" aria-label={tr("Hoàn tất", "Completed")} /> : status === "failed" ? <CircleAlert className="app-icon shrink-0 text-red-400" aria-label={tr("Lỗi", "Failed")} /> : status === "running" ? <LoaderCircle className="app-icon shrink-0 animate-spin text-[#c8c8c8]" aria-label={tr("Đang tạo", "Generating")} /> : <span className="h-4 w-4 shrink-0 rounded-full border border-[#555]" aria-label={tr("Đang chờ", "Queued")} />}
           </div>
           <div className="mt-4 h-1 overflow-hidden rounded-full bg-[#292929]"><div className="h-full bg-[#aaa] transition-[width] duration-500" style={{ width: `${itemProgress}%` }} /></div>
           {article.batchError && <div className="mt-3 rounded-lg border border-red-900/50 bg-red-950/20 p-2 text-[10px] text-red-300">{article.batchError}</div>}
