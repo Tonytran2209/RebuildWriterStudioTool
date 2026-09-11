@@ -56,6 +56,7 @@ const ARTICLE_PREFIX = "writer:article:"
 const articleMutationQueues = new Map<string, Promise<unknown>>()
 const aiBudgetQueues = new Map<string, Promise<unknown>>()
 const batchControllers = new Map<string, { paused: boolean; running: boolean }>()
+const deletedBatchIds = new Set<string>()
 const DAILY_AI_LIMITS: Record<number, number> = { 1: 12, 2: 12, 3: 10, 4: 6 }
 
 function hasArticlePlanSelection(article: any) {
@@ -426,6 +427,7 @@ async function saveArticleCheckpoint(
   updates: Record<string, any>,
 ) {
   const next = { ...article, ...updates, updatedAt: new Date().toISOString() }
+  if (article.activityKind === "batch" && article.activityId && deletedBatchIds.has(article.activityId)) return next
   await kvSet(`${ARTICLE_PREFIX}${article.id}`, next)
   await projectArticle(next)
   return next
@@ -3456,6 +3458,57 @@ app.post("/api/batches/:activityId/pause", async (req, res) => {
   }
 })
 
+app.delete("/api/batches/:activityId", async (req, res) => {
+  const activityId = req.params.activityId
+  try {
+    const articles = (await loadArticles()).filter(
+      (article) => article.activityId === activityId && article.activityKind === "batch",
+    )
+    const controller = batchControllers.get(activityId)
+    if (controller) controller.paused = true
+    deletedBatchIds.add(activityId)
+
+    const planIds = [...new Set(articles.map((article) => article.contentPlanId).filter(Boolean))] as string[]
+    if (await tableAvailable("batch_jobs"))
+      await tableDeleteWhere("batch_jobs", "id", activityId)
+    if (await tableAvailable("writer_articles"))
+      await tableDeleteWhere("writer_articles", "activity_id", activityId)
+
+    await Promise.all([
+      ...articles.map((article) => kvDelete(`${ARTICLE_PREFIX}${article.id}`)),
+      kvDelete(`writer:batch:${activityId}`),
+    ])
+
+    const planItemIds = [...new Set(articles.map((article) => article.contentPlanSourceItemId).filter(Boolean))] as string[]
+    if (await tableAvailable("content_plan_items"))
+      await Promise.all(planItemIds.map((id) => tableUpdate("content_plan_items", id, {
+        status: "not_started",
+        updated_at: new Date().toISOString(),
+      })))
+
+    const legacy = (await kvGet<any[]>("writer:articles")) ?? []
+    if (legacy.some((article) => article?.activityId === activityId))
+      await kvSet("writer:articles", legacy.filter((article) => article?.activityId !== activityId))
+
+    for (const planId of planIds) {
+      const plan = await getContentPlan(planId)
+      if (!plan) continue
+      const remaining = (await loadArticles()).filter((article) => article.contentPlanId === planId).length
+      if (await relationalPlansAvailable())
+        await tableUpdate("content_plans", planId, { total_articles: remaining, updated_at: new Date().toISOString() })
+      else {
+        plan.totalArticles = remaining
+        plan.updatedAt = new Date().toISOString()
+        await kvSet(`${CONTENT_PLAN_PREFIX}${planId}`, plan)
+      }
+    }
+    batchControllers.delete(activityId)
+    res.json({ ok: true, activityId, deletedIds: articles.map((article) => article.id) })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.post("/api/batches/:activityId/retry/:articleId", async (req, res) => {
   try {
     const key = `${ARTICLE_PREFIX}${req.params.articleId}`
@@ -3557,8 +3610,32 @@ app.post("/api/articles", async (req, res) => {
     if (!article.id)
       return res.status(400).json({ error: "Article id là bắt buộc." })
     article.currentStep = clampStoredArticleStep(article)
+    if (article.contentPlanId && article.contentPlanSourceItemId && await tableAvailable("writer_articles")) {
+      const conflicts = await tableSelect<any>("writer_articles", (query) =>
+        query
+          .select("id, activity_id")
+          .eq("content_plan_id", article.contentPlanId)
+          .eq("content_plan_item_id", article.contentPlanSourceItemId)
+          .neq("id", article.id)
+          .limit(1),
+      )
+      if (conflicts.length)
+        return res.status(409).json({
+          code: "CONTENT_PLAN_ITEM_ALREADY_USED",
+          error: `Content Plan item đã thuộc một activity khác (${conflicts[0].activity_id ?? conflicts[0].id}). Hãy mở hoặc xóa activity hiện tại trước khi tạo lại.`,
+          existingArticleId: conflicts[0].id,
+          existingActivityId: conflicts[0].activity_id,
+        })
+    }
     await kvSet(`${ARTICLE_PREFIX}${article.id}`, article)
-    await projectArticle(article)
+    try {
+      await projectArticle(article)
+    } catch (projectionError) {
+      await kvDelete(`${ARTICLE_PREFIX}${article.id}`).catch(() => undefined)
+      if (await tableAvailable("writer_articles"))
+        await tableDeleteWhere("writer_articles", "id", article.id).catch(() => undefined)
+      throw projectionError
+    }
     res.json({ ok: true, article })
   } catch (err: any) {
     res.status(500).json({ error: err.message })

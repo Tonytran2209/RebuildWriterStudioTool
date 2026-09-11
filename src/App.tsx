@@ -244,6 +244,7 @@ export default function App() {
     const isBatch = items.length > 1
     setArticleActionError(null)
     setSyncStatus("saving")
+    const saved: Article[] = []
     try {
       const records = items.map((item, index): Article => {
         const snapshot = {
@@ -285,7 +286,6 @@ export default function App() {
           currentStep: 2,
         }
       })
-      const saved: Article[] = []
       for (const record of records)
         saved.push(await enqueueArticleMutation(record.id, () => db.saveArticle(record)))
       setArticles((current) => [...saved, ...current])
@@ -294,6 +294,13 @@ export default function App() {
       if (isBatch) await db.startBatch(activityId)
       setSyncStatus("idle")
     } catch (error: unknown) {
+      if (saved.length) {
+        const createdActivityId = saved[0]?.activityId
+        if (createdActivityId && saved[0]?.activityKind === "batch")
+          await db.deleteBatch(createdActivityId).catch(() => undefined)
+        else
+          await Promise.allSettled(saved.map((item) => db.deleteArticle(item.id)))
+      }
       setArticleActionError(
         `Không tạo được activity trong Supabase: ${
           error instanceof Error ? error.message : String(error)
@@ -378,17 +385,24 @@ export default function App() {
       setArticleActionError(null)
       setDeletingArticleId(target.id)
       setSyncStatus("saving")
+      const previousArticles = articles
+      const previousActiveId = activeId
+      const targetIds = new Set(targets.map((item) => item.id))
+      const remaining = articles.filter((item) => !targetIds.has(item.id))
+      setArticles(remaining)
+      if (activeId && targetIds.has(activeId)) setActiveId(remaining[0]?.id ?? null)
       try {
         // Finish any content save already queued before deleting the database record.
         await Promise.all(targets.map((item) => waitForArticleMutations(item.id)))
-        for (const item of targets) await db.deleteArticle(item.id)
-        const targetIds = new Set(targets.map((item) => item.id))
-        const remaining = articles.filter((item) => !targetIds.has(item.id))
-        setArticles(remaining)
-        if (activeId && targetIds.has(activeId))
-          setActiveId(remaining[0]?.id ?? null)
+        if (target.activityKind === "batch" && target.activityId)
+          await db.deleteBatch(target.activityId)
+        else
+          await db.deleteArticle(target.id)
         setSyncStatus("idle")
+        notifyWorkspace(targets.length > 1 ? `Đã xóa batch gồm ${targets.length} bài.` : "Đã xóa bài viết.", "success")
       } catch (error: unknown) {
+        setArticles(previousArticles)
+        setActiveId(previousActiveId)
         setArticleActionError(
           `Không xoá được bài viết khỏi Supabase: ${
             error instanceof Error ? error.message : String(error)
