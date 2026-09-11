@@ -2494,6 +2494,7 @@ app.post("/api/generate", async (req, res) => {
     temperature,
     splitByWave,
     bypassCache,
+    requestPurpose,
     jsonMode,
     jsonSchema,
     contextQuery,
@@ -2614,10 +2615,13 @@ app.post("/api/generate", async (req, res) => {
       })
     }
 
-    const budget = await reserveAIBudget(String(articleId), stepNumber)
+    const quotaExemptRecheck = stepNumber === 4 && requestPurpose === "recheck"
+    const budget = quotaExemptRecheck
+      ? null
+      : await reserveAIBudget(String(articleId), stepNumber)
 
     console.log(
-      `[generate] step=${stepNumber} provider=${provider} model=${modelId} waves=${contexts.length} promptLen=${prompt.length} contextChars=${contexts.reduce((sum, item) => sum + item.summary.totalChars, 0)}`,
+      `[generate] step=${stepNumber} purpose=${quotaExemptRecheck ? "recheck" : "generation"} provider=${provider} model=${modelId} waves=${contexts.length} promptLen=${prompt.length} contextChars=${contexts.reduce((sum, item) => sum + item.summary.totalChars, 0)}`,
     )
     const providerStartedAt = Date.now()
     let result
