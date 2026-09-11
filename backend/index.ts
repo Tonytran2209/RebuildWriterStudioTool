@@ -1068,19 +1068,23 @@ function batchUniversalChecks(
 
 function parseBatchSemanticChecks(raw: string) {
   const payload = parseJsonObject(raw)
-  const required = new Set([
+  const requiredIds = [
     "intent-satisfied",
     "reader-outcome",
     "intro-quality",
     "keyword-naturalness",
     "evidence-support",
     "brand-pov",
-  ])
-  const checks = (Array.isArray(payload.checks) ? payload.checks : [])
-    .filter((item: any) => required.has(String(item.id)))
-    .map((item: any) => ({
-      id: String(item.id),
-      label: String(item.label ?? item.id),
+  ]
+  const required = new Set(requiredIds)
+  const entries = Array.isArray(payload.checks)
+    ? payload.checks.map((item: any) => [String(item.id ?? ""), item])
+    : Object.entries(payload.checks ?? {})
+  const checks = entries
+    .filter(([id]: any[]) => required.has(String(id)))
+    .map(([id, item]: any[]) => ({
+      id: String(id),
+      label: String(item.label ?? id),
       kind: "semantic",
       status:
         item.status === "pass"
@@ -1094,9 +1098,11 @@ function parseBatchSemanticChecks(raw: string) {
       recommendedAction: String(item.recommendedAction ?? ""),
       autoFixAllowed: Boolean(item.autoFixAllowed),
     }))
-  if (new Set(checks.map((item: any) => item.id)).size !== required.size)
+  const present = new Set(checks.map((item: any) => item.id))
+  const missing = requiredIds.filter((id) => !present.has(id))
+  if (missing.length)
     throw new Error(
-      "Universal semantic reviewer returned an incomplete report.",
+      `Universal semantic reviewer returned an incomplete report. Missing: ${missing.join(", ")}.`,
     )
   return checks
 }
@@ -1202,15 +1208,14 @@ const semanticQualityJsonSchema: Record<string, unknown> = {
   required: ["checks"],
   properties: {
     checks: {
-      type: "array",
-      minItems: 6,
-      maxItems: 6,
-      items: {
+      type: "object",
+      additionalProperties: false,
+      required: ["intent-satisfied", "reader-outcome", "intro-quality", "keyword-naturalness", "evidence-support", "brand-pov"],
+      properties: Object.fromEntries(["intent-satisfied", "reader-outcome", "intro-quality", "keyword-naturalness", "evidence-support", "brand-pov"].map((id) => [id, {
         type: "object",
         additionalProperties: false,
-        required: ["id", "label", "status", "reason", "evidence", "location", "recommendedAction", "autoFixAllowed"],
+        required: ["label", "status", "reason", "evidence", "location", "recommendedAction", "autoFixAllowed"],
         properties: {
-          id: { type: "string", enum: ["intent-satisfied", "reader-outcome", "intro-quality", "keyword-naturalness", "evidence-support", "brand-pov"] },
           label: { type: "string" },
           status: { type: "string", enum: ["pass", "warning", "fail"] },
           reason: { type: "string" },
@@ -1219,7 +1224,7 @@ const semanticQualityJsonSchema: Record<string, unknown> = {
           recommendedAction: { type: "string" },
           autoFixAllowed: { type: "boolean" },
         },
-      },
+      }])),
     },
   },
 }

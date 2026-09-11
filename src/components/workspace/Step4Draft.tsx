@@ -146,30 +146,33 @@ function mergeStructuredDraft(base: StructuredDraftPayload, repair: StructuredDr
   };
 }
 
+const semanticCheckIds = ['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov'] as const;
+
+const semanticCheckSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['label', 'status', 'reason', 'evidence', 'location', 'recommendedAction', 'autoFixAllowed'],
+  properties: {
+    label: { type: 'string' },
+    status: { type: 'string', enum: ['pass', 'warning', 'fail'] },
+    reason: { type: 'string' },
+    evidence: { type: 'string' },
+    location: { type: 'string' },
+    recommendedAction: { type: 'string' },
+    autoFixAllowed: { type: 'boolean' },
+  },
+};
+
 const semanticQualitySchema: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
   required: ['checks'],
   properties: {
     checks: {
-      type: 'array',
-      minItems: 6,
-      maxItems: 6,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['id', 'label', 'status', 'reason', 'evidence', 'location', 'recommendedAction', 'autoFixAllowed'],
-        properties: {
-          id: { type: 'string', enum: ['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov'] },
-          label: { type: 'string' },
-          status: { type: 'string', enum: ['pass', 'warning', 'fail'] },
-          reason: { type: 'string' },
-          evidence: { type: 'string' },
-          location: { type: 'string' },
-          recommendedAction: { type: 'string' },
-          autoFixAllowed: { type: 'boolean' },
-        },
-      },
+      type: 'object',
+      additionalProperties: false,
+      required: semanticCheckIds,
+      properties: Object.fromEntries(semanticCheckIds.map(id => [id, semanticCheckSchema])),
     },
   },
 };
@@ -255,15 +258,19 @@ function evaluateSeoChecklist(text: string, article: Article, targetWords: numbe
 }
 
 function parseSemanticQuality(raw: string): QualityGateCheck[] {
-  const parsed = parseAIJson(raw) as { checks?: Array<Record<string, unknown>> };
-  const required = new Set(['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov']);
-  const checks = (Array.isArray(parsed.checks) ? parsed.checks : []).flatMap(item => {
-    const id = String(item.id ?? '').trim();
+  const parsed = parseAIJson(raw) as { checks?: Array<Record<string, unknown>> | Record<string, Record<string, unknown>> };
+  const required = new Set<string>(semanticCheckIds);
+  const entries = Array.isArray(parsed.checks)
+    ? parsed.checks.map(item => [String(item.id ?? '').trim(), item] as const)
+    : Object.entries(parsed.checks ?? {});
+  const checks = entries.flatMap(([id, item]) => {
     const status: QualityGateCheck['status'] = item.status === 'pass' ? 'pass' : item.status === 'warning' ? 'warning' : 'fail';
     if (!required.has(id)) return [];
     return [{ id, label: String(item.label ?? id), kind: 'semantic' as const, status, reason: String(item.reason ?? '').trim(), evidence: String(item.evidence ?? '').trim(), location: String(item.location ?? '').trim(), recommendedAction: String(item.recommendedAction ?? '').trim(), autoFixAllowed: Boolean(item.autoFixAllowed) }];
   });
-  if (new Set(checks.map(item => item.id)).size !== required.size) throw new Error('Semantic quality reviewer trả thiếu tiêu chí bắt buộc.');
+  const present = new Set(checks.map(item => item.id));
+  const missing = semanticCheckIds.filter(id => !present.has(id));
+  if (missing.length) throw new Error(`Semantic reviewer chưa hoàn tất báo cáo; thiếu: ${missing.join(', ')}. Draft chưa bị đánh dấu fail.`);
   return checks;
 }
 
@@ -649,29 +656,39 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         await onUpdate({ qualityReport: report });
         throw new Error(`Draft đã được lưu nhưng Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => `${item.label} — ${item.reason}`).join('; ')}.`);
       }
-      const runSemanticReview = (candidate: string, candidateUsage: Record<string, string[]>) => callAI({
-        articleId: article.id,
-        model,
-        railwayUrl,
-        stepNumber: 4,
-        bypassCache: manual || Boolean(article.qualityReport && article.qualityReport.status !== 'pass'),
-        maxTokens: 1400,
-        temperature: 0,
-        jsonMode: true,
-        jsonSchema: semanticQualitySchema,
-        skipDocumentContext: true,
-        systemPrompt: 'You are a strict publishing quality reviewer. Evaluate the supplied Article Spec, approved evidence registry, section-to-evidence mapping and draft. Visible citations, footnotes, filenames and evidence IDs are not required in the prose. Evidence support passes when concrete claims are supported by the supplied evidence and declared mapping; do not penalize general explanatory prose for lacking a citation. Return JSON only. Do not rewrite the article.',
-        prompt: [
-          `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
-          `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
-          `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
-          `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
-          `DRAFT: ${candidate}`,
-          'Return exactly all six required checks. Use warning only for a genuine publish-quality concern; use fail for a blocking unsupported claim or contract violation. Cite the relevant draft location in evidence/location.',
-        ].join('\n\n'),
-      });
-      let semanticResponse = await runSemanticReview(assembledDraft, evidenceUsage);
-      const semantic = parseSemanticQuality(semanticResponse.content);
+      const runSemanticReview = async (candidate: string, candidateUsage: Record<string, string[]>) => {
+        const requestReview = (recovery = false) => callAI({
+          articleId: article.id,
+          model,
+          railwayUrl,
+          stepNumber: 4,
+          bypassCache: recovery || manual || Boolean(article.qualityReport && article.qualityReport.status !== 'pass'),
+          maxTokens: 1400,
+          temperature: 0,
+          jsonMode: true,
+          jsonSchema: semanticQualitySchema,
+          skipDocumentContext: true,
+          systemPrompt: 'You are a strict publishing quality reviewer. Evaluate the supplied Article Spec, approved evidence registry, section-to-evidence mapping and draft. Visible citations, footnotes, filenames and evidence IDs are not required in the prose. Evidence support passes when concrete claims are supported by the supplied evidence and declared mapping; do not penalize general explanatory prose for lacking a citation. Return JSON only. Do not rewrite the article.',
+          prompt: [
+            `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+            `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+            `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
+            `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
+            `DRAFT: ${candidate}`,
+            recovery ? 'The prior reviewer report was structurally incomplete. Return a fresh complete report.' : '',
+            `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}. Use warning only for a genuine publish-quality concern; use fail for a blocking unsupported claim or contract violation.`,
+          ].join('\n\n'),
+        });
+        const first = await requestReview();
+        try {
+          return { response: first, checks: parseSemanticQuality(first.content) };
+        } catch {
+          const recovered = await requestReview(true);
+          return { response: recovered, checks: parseSemanticQuality(recovered.content) };
+        }
+      };
+      let semanticReview = await runSemanticReview(assembledDraft, evidenceUsage);
+      const semantic = semanticReview.checks;
       let report = qualityReport(article, [...deterministic, ...semantic]);
       processTrace.push({
         id: `draft-semantic-${Date.now()}`,
@@ -725,8 +742,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           await onUpdate({ qualityReport: report });
           throw new Error(`Draft đã được lưu nhưng bản sửa semantic chưa đạt kiểm tra deterministic: ${[...repairedValidation.failed.map(item => item.label), ...deterministic.filter(item => item.status === 'fail').map(item => item.label)].join(', ')}.`);
         }
-        semanticResponse = await runSemanticReview(assembledDraft, evidenceUsage);
-        report = qualityReport(article, [...deterministic, ...parseSemanticQuality(semanticResponse.content)]);
+        semanticReview = await runSemanticReview(assembledDraft, evidenceUsage);
+        report = qualityReport(article, [...deterministic, ...semanticReview.checks]);
         processTrace.push({
           id: `draft-semantic-recheck-${Date.now()}`,
           stage: 'validation',
@@ -811,7 +828,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       let findings = [
         ...seo.failed.map(item => ({ label: item.label, reason: item.label })),
         ...deterministic.filter(item => item.status === 'fail').map(item => ({ label: item.label, reason: item.reason })),
-        ...priorSemantic.filter(item => item.status !== 'pass').map(item => ({ label: item.label, reason: item.reason, recommendedAction: item.recommendedAction })),
       ];
 
       if (findings.length) {
@@ -857,9 +873,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         }
       }
 
-      let semantic = priorSemantic;
-      if (!semantic.length || semantic.some(item => item.status !== 'pass') || candidateDraft !== draft) {
-        const semanticResponse = await callAI({
+      const reviewSemantic = async (value: string) => {
+        const requestReview = (recovery = false) => callAI({
           articleId: article.id,
           model,
           railwayUrl,
@@ -875,12 +890,63 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(article.draftEvidenceUsage ?? {})}`,
-            `DRAFT: ${candidateDraft}`,
-            'Return exactly all six required semantic checks.',
+            `DRAFT: ${value}`,
+            recovery ? 'The prior reviewer report was structurally incomplete. Return a fresh report using every required object key exactly once.' : '',
+            `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}.`,
           ].join('\n\n'),
         });
-        semantic = parseSemanticQuality(semanticResponse.content);
+        const first = await requestReview();
+        try {
+          return parseSemanticQuality(first.content);
+        } catch {
+          const recovered = await requestReview(true);
+          return parseSemanticQuality(recovered.content);
+        }
+      };
+
+      let semantic = await reviewSemantic(candidateDraft);
+      const semanticFindings = semantic
+        .filter(item => item.status !== 'pass')
+        .map(item => ({ label: item.label, reason: item.reason, location: item.location, recommendedAction: item.recommendedAction }));
+
+      if (semanticFindings.length) {
+        const repairResponse = await callAI({
+          articleId: article.id,
+          model,
+          railwayUrl,
+          stepNumber: 4,
+          bypassCache: true,
+          maxTokens: 1800,
+          temperature: 0,
+          jsonMode: true,
+          jsonSchema: targetedDraftRepairSchema,
+          skipDocumentContext: true,
+          systemPrompt: 'You are a surgical draft editor. Fix only the supplied semantic findings. Return compact exact-text replacement operations, never a rewritten article. Every find value must be copied verbatim from the current draft. Preserve headings, verified claims and approved URLs.',
+          prompt: [
+            `SEMANTIC FINDINGS: ${JSON.stringify(semanticFindings)}`,
+            `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+            `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+            `TARGET WORDS: ${targetWords}`,
+            `CURRENT DRAFT:\n${candidateDraft}`,
+            'Return at most 8 minimal operations that directly resolve the findings.',
+          ].join('\n\n'),
+        });
+        candidateDraft = applyTargetedDraftRepair(candidateDraft, parseAIJson(repairResponse.content) as TargetedDraftRepair);
+        deterministic = check(candidateDraft);
+        seo = evaluateSeoChecklist(candidateDraft, article, targetWords);
+        const remainingDeterministic = [
+          ...seo.failed.map(item => item.label),
+          ...deterministic.filter(item => item.status === 'fail').map(item => item.label),
+        ];
+        if (remainingDeterministic.length) {
+          const report = qualityReport(article, deterministic);
+          await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint });
+          if (editorRef.current) editorRef.current.innerText = candidateDraft;
+          throw new Error(`Bản sửa semantic đã được lưu nhưng tạo ra lỗi cần xử lý: ${remainingDeterministic.join(', ')}.`);
+        }
+        semantic = await reviewSemantic(candidateDraft);
       }
+
       const report = qualityReport(article, [...deterministic, ...semantic]);
       await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint });
       if (editorRef.current) editorRef.current.innerText = candidateDraft;
