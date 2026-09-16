@@ -920,6 +920,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         });
         const beforeRepair = candidateDraft;
         candidateDraft = applyTargetedDraftRepair(candidateDraft, parseAIJson(repairResponse.content) as TargetedDraftRepair);
+        // AI patches must never be allowed to leave the draft pointing at an
+        // unapproved inventory URL. This is deterministic and requires no
+        // additional model call.
+        candidateDraft = repairDraftInternalLinks(article, candidateDraft, inventory);
         processTrace.push({
           id: `draft-recheck-deterministic-repair-${Date.now()}`,
           stage: 'repair',
@@ -1038,6 +1042,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         });
         const beforeSemanticRepair = candidateDraft;
         candidateDraft = applyTargetedDraftRepair(candidateDraft, parseAIJson(repairResponse.content) as TargetedDraftRepair);
+        // Semantic edits are prose-only. Restore the Website Inventory link
+        // invariant before the deterministic verification sees this draft.
+        candidateDraft = repairDraftInternalLinks(article, candidateDraft, inventory);
         const semanticDraftChanged = candidateDraft !== beforeSemanticRepair;
         processTrace.push({
           id: `draft-recheck-semantic-repair-${Date.now()}`,
@@ -1130,56 +1137,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
     if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current, qualityReport: null, draftSourceFingerprint: null });
   }, []);
-
-  useEffect(() => {
-    const registry = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
-    const HighlightConstructor = (globalThis as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
-    const root = editorRef.current;
-    if (!registry || !HighlightConstructor || !root) return;
-    const names = ['draft-heading', 'draft-keyword', 'draft-evidence', 'draft-attention'];
-    names.forEach(name => registry.delete(name));
-    if (!draft || !highlightsEnabled) return;
-    const highlightStyles = document.createElement('style');
-    highlightStyles.textContent = `
-      ::highlight(draft-heading){color:#f1f1f1;background-color:#343434}
-      ::highlight(draft-evidence){color:#dedede;background-color:#303030}
-      ::highlight(draft-attention){color:#ffffff;background-color:#3a3a3a}
-      .writer-light ::highlight(draft-heading){color:#30302d;background-color:#deded9}
-      .writer-light ::highlight(draft-evidence){color:#444440;background-color:#e8e8e4}
-      .writer-light ::highlight(draft-attention){color:#242422;background-color:#d5d5cf}
-    `;
-    document.head.appendChild(highlightStyles);
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    const nodes: Array<{ node: Text; start: number; end: number }> = [];
-    let text = '';
-    while (walker.nextNode()) {
-      const node = walker.currentNode as Text;
-      const start = text.length;
-      text += node.data;
-      nodes.push({ node, start, end: text.length });
-    }
-    const rangesFor = (matches: Array<{ start: number; end: number }>) => matches.flatMap(match => {
-      const startNode = nodes.find(item => match.start >= item.start && match.start <= item.end);
-      const endNode = [...nodes].reverse().find(item => match.end >= item.start && match.end <= item.end);
-      if (!startNode || !endNode || match.end <= match.start) return [];
-      const range = new Range();
-      range.setStart(startNode.node, Math.min(match.start - startNode.start, startNode.node.length));
-      range.setEnd(endNode.node, Math.min(match.end - endNode.start, endNode.node.length));
-      return [range];
-    });
-    const regexMatches = (regex: RegExp) => [...text.matchAll(regex)].map(match => ({ start: match.index ?? 0, end: (match.index ?? 0) + match[0].length }));
-    const headingMatches = regexMatches(/^#{1,3}\s+.+$/gm);
-    const evidenceMatches = regexMatches(/^>\s+.+$/gm);
-    const attentionMatches = regexMatches(/\[Cần bổ sung dữ liệu\]/gi);
-    const reserved = [...headingMatches, ...evidenceMatches, ...attentionMatches];
-    const groups = {
-      'draft-heading': rangesFor(headingMatches),
-      'draft-evidence': rangesFor(evidenceMatches),
-      'draft-attention': rangesFor(attentionMatches),
-    };
-    Object.entries(groups).forEach(([name, ranges]) => { if (ranges.length) registry.set(name, new HighlightConstructor(...ranges)); });
-    return () => { names.forEach(name => registry.delete(name)); highlightStyles.remove(); };
-  }, [article, draft, highlightsEnabled]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(draft);
