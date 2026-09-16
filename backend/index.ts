@@ -1566,6 +1566,16 @@ const batchDraftRepairJsonSchema: Record<string, unknown> = {
   },
 }
 
+const batchFieldLengthRepairJsonSchema: Record<string, unknown> = {
+  type: "object",
+  additionalProperties: false,
+  required: ["introduction", "conclusion"],
+  properties: {
+    introduction: { type: "string", minLength: 1 },
+    conclusion: { type: "string", minLength: 1 },
+  },
+}
+
 function applyBatchDraftRepair(draft: string, raw: string) {
   const repair = parseJsonObject(raw)
   let next = draft
@@ -1579,6 +1589,46 @@ function applyBatchDraftRepair(draft: string, raw: string) {
     next = index >= 0
       ? `${next.slice(0, index).trimEnd()}\n\n${addition}\n\n${next.slice(index)}`
       : `${next.trimEnd()}\n\n${addition}`
+  }
+  return next
+}
+
+function batchDraftFieldParts(draft: string) {
+  const firstHeading = /^##\s+\S.*$/m.exec(draft)
+  const conclusionHeading = /^##\s+Conclusion\s*$/im.exec(draft)
+  const h1 = /^#\s+.*$/m.exec(draft)
+  const introductionStart = h1 ? h1.index + h1[0].length : 0
+  const introductionEnd = firstHeading?.index ?? draft.length
+  const conclusionStart = conclusionHeading
+    ? conclusionHeading.index + conclusionHeading[0].length
+    : draft.length
+  return {
+    introduction: draft.slice(introductionStart, introductionEnd).trim(),
+    conclusion: draft.slice(conclusionStart).trim(),
+  }
+}
+
+function applyBatchFieldLengthRepair(
+  draft: string,
+  raw: string,
+  failureIds: Set<string>,
+) {
+  const repair = parseJsonObject(raw)
+  let next = draft
+  if (failureIds.has("introduction-word-budget")) {
+    const h1 = /^#\s+.*$/m.exec(next)
+    const firstHeading = /^##\s+\S.*$/m.exec(next)
+    if (h1 && firstHeading && firstHeading.index > h1.index) {
+      const replacement = sanitizeBatchStructuredField(repair.introduction)
+      if (replacement)
+        next = `${next.slice(0, h1.index + h1[0].length).trimEnd()}\n\n${replacement}\n\n${next.slice(firstHeading.index).trimStart()}`
+    }
+  }
+  if (failureIds.has("conclusion-word-budget")) {
+    const conclusion = /^##\s+Conclusion\s*$/im.exec(next)
+    const replacement = sanitizeBatchStructuredField(repair.conclusion, "Conclusion")
+    if (conclusion && replacement)
+      next = `${next.slice(0, conclusion.index + conclusion[0].length).trimEnd()}\n\n${replacement}`
   }
   return next
 }
@@ -1689,6 +1739,19 @@ function batchEvidenceMappingCheck(verified: ReturnType<typeof batchVerifiedOutl
   }
 }
 
+function sanitizeBatchStructuredField(value: unknown, expectedHeading?: string) {
+  let text = String(value ?? "").trim()
+  text = text.replace(/^#{1,6}\s+/, "").trim()
+  if (expectedHeading) {
+    const escapedHeading = expectedHeading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    text = text.replace(
+      new RegExp(`^(?:#{1,6}\\s+)?${escapedHeading}\\s*(?:\\r?\\n|$)`, "i"),
+      "",
+    ).trim()
+  }
+  return text.replace(/^#{1,6}\s+Conclusion\s*$/im, "").trim()
+}
+
 function assembleBatchDraft(raw: string, article: any) {
   const parsed = parseJsonObject(raw)
   if (
@@ -1705,10 +1768,12 @@ function assembleBatchDraft(raw: string, article: any) {
   const byId = new Map(
     parsed.sections.map((section: any) => [section.id, section]),
   )
-  const sections = expected.map(
-    (section: any, index: number) =>
-      byId.get(section.id) ?? parsed.sections[index],
-  )
+  const sections = expected.map((section: any, index: number) => {
+    const candidate = byId.get(section.id) ?? parsed.sections[index]
+    return candidate
+      ? { ...candidate, content: sanitizeBatchStructuredField(candidate.content, section.heading) }
+      : candidate
+  })
   if (
     sections.length !== expected.length ||
     sections.some((section: any) => !String(section?.content ?? "").trim())
@@ -1728,7 +1793,7 @@ function assembleBatchDraft(raw: string, article: any) {
       article.topic ??
       "",
   ).trim()
-  const parsedTitle = String(parsed.title).trim()
+  const parsedTitle = sanitizeBatchStructuredField(parsed.title)
   const title = parsedTitle
     .toLocaleLowerCase()
     .includes(keyword.toLocaleLowerCase())
@@ -1736,7 +1801,7 @@ function assembleBatchDraft(raw: string, article: any) {
     : `${parsedTitle}: ${keyword}`
   const draft = [
     `# ${title}`,
-    String(parsed.introduction).trim(),
+    sanitizeBatchStructuredField(parsed.introduction),
     ...sections.flatMap((section: any, index: number) => [
       `${
         expected[index].level === "h3" ? "###" : "##"
@@ -1744,7 +1809,7 @@ function assembleBatchDraft(raw: string, article: any) {
       String(section.content).trim(),
     ]),
     "## Conclusion",
-    String(parsed.conclusion).trim(),
+    sanitizeBatchStructuredField(parsed.conclusion, "Conclusion"),
   ].join("\n\n")
   const evidenceUsage = Object.fromEntries(expected.map((section: any, index: number) => [
     section.id,
@@ -2289,7 +2354,7 @@ async function runBatchArticle(
             `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
             "Knowledge Base is the only source for concrete facts, figures, evidence and product claims. If a concrete claim has no approved evidence, omit it or replace it with general explanatory prose.",
             "Follow every supplied Skill rule and use only supported KB claims. Keep every approved heading in order and do not add unplanned sections.",
-            'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order. Each usedEvidenceRefs array may contain only IDs approved for that section.',
+            'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order. Each usedEvidenceRefs array may contain only IDs approved for that section. section.content is prose only: never include #, ##, ###, its outline heading, or a Conclusion heading.',
           ].join("\n"),
           true,
           Math.min(12000, Math.max(1800, Math.ceil(effectiveDraftWords * 1.9))),
@@ -2310,7 +2375,7 @@ async function runBatchArticle(
               `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
               `APPROVED OUTLINE AND EVIDENCE: ${JSON.stringify(verifiedOutline)}`,
               `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
-              'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Return every outline section exactly once in order.',
+              'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Return every outline section exactly once in order. section.content must be prose only and must not repeat a Markdown heading.',
             ].join("\n\n"),
             true,
             Math.min(12000, Math.max(1800, Math.ceil(effectiveDraftWords * 1.9))),
@@ -2378,35 +2443,35 @@ async function runBatchArticle(
               ),
           )
           if (!fieldFailures.length) return
+          const failureIds = new Set(fieldFailures.map((item) => item.id))
+          const currentFields = batchDraftFieldParts(assembledDraft)
           const repair = await runBatchModel(
             article,
             4,
             [
-              "Expand only the under-length introduction and/or conclusion in the current structured article. Do not rewrite, remove, shorten, or reorder the title or approved body sections.",
+              "Expand only the under-length introduction and/or conclusion. Do not return a title, headings, body sections, markdown, or any other article field.",
               `LENGTH FAILURES: ${JSON.stringify(fieldFailures)}`,
               `INTRODUCTION: preferred ${budget.introduction.min}-${budget.introduction.max}; mandatory accepted range ${budget.introduction.acceptedMin}-${budget.introduction.acceptedMax} English words.`,
               `CONCLUSION: preferred ${budget.conclusion.min}-${budget.conclusion.max}; mandatory accepted range ${budget.conclusion.acceptedMin}-${budget.conclusion.acceptedMax} English words.`,
               "Count words before responding. Each failed field must meet its accepted range in the returned JSON. Add useful reader-facing explanation that is supported by the Article Spec and approved evidence; do not add filler or unsupported claims.",
               `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
               `APPROVED OUTLINE AND EVIDENCE: ${JSON.stringify(verifiedOutline)}`,
-              `CURRENT DRAFT:\n${assembledDraft}`,
-              `CURRENT EVIDENCE USAGE: ${JSON.stringify(assembled.evidenceUsage)}`,
-              'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Return every approved section exactly once in the existing order.',
+              `CURRENT INTRODUCTION: ${currentFields.introduction}`,
+              `CURRENT CONCLUSION: ${currentFields.conclusion}`,
+              'Return only JSON: {"introduction":string,"conclusion":string}. Keep a field unchanged when it is not listed in LENGTH FAILURES.',
             ].join("\n\n"),
             true,
-            Math.min(16000, Math.max(4000, Math.ceil(effectiveDraftWords * 2))),
-            structuredDraftJsonSchema,
+            1800,
+            batchFieldLengthRepairJsonSchema,
             "recovery",
           )
           draftResponses.push(repair)
-          const repaired = assembleBatchDraft(repair.content, article)
-          const nextDraft = repairBatchInternalLinks(
-            repaired.draft,
-            article,
-            runtimeConfig?.websiteInventory ?? [],
+          const nextDraft = applyBatchFieldLengthRepair(
+            assembledDraft,
+            repair.content,
+            failureIds,
           )
           if (nextDraft === assembledDraft) return
-          assembled = repaired
           assembledDraft = nextDraft
           deterministic = [
             ...batchUniversalChecks(assembledDraft, article, effectiveDraftWords, runtimeConfig?.websiteInventory ?? [], internalNames),
@@ -2561,7 +2626,7 @@ async function runBatchArticle(
         articleSpecFingerprint: article.articleSpecFingerprint,
         checks,
       }
-      if (report.status !== "pass") {
+      if (report.status === "fail") {
         const semanticFindings = semantic.filter(
           (item: any) => item.status !== "pass",
         )
@@ -2569,7 +2634,7 @@ async function runBatchArticle(
           article,
           4,
           [
-            "Revise only what is necessary to resolve the supplied semantic findings. Preserve every approved outline section ID and heading. Return the complete structured draft JSON.",
+            "Revise only what is necessary to resolve the supplied semantic findings. Preserve every approved outline section ID and heading. Section content must contain prose only: never repeat its outline heading or add Markdown headings inside content. Return the complete structured draft JSON.",
             `SEMANTIC FINDINGS: ${JSON.stringify(semanticFindings)}`,
             `CURRENT DRAFT: ${JSON.stringify(assembled.parsed ?? assembledDraft)}`,
             `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
