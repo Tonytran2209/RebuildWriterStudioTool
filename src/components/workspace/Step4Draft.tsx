@@ -621,7 +621,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           jsonMode: true,
           jsonSchema: repairSchemaFor(missingParts),
           contextQuery,
-          skipDocumentContext: !bundle.totalCount,
+          // This is a schema-only recovery. It receives the frozen Article
+          // Spec, outline and missing-field contract, so re-sending KB/Rules
+          // cannot improve the result and only adds billed input tokens.
+          skipDocumentContext: true,
           systemPrompt: [
             systemPrompt,
             'Repair only the missing structured-draft fields listed by the user. Return only those fields as one JSON object. Do not rewrite fields that already passed validation.',
@@ -736,7 +739,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           jsonMode: true,
           jsonSchema: structuredDraftSchema,
           contextQuery,
-          skipDocumentContext: !bundle.totalCount,
+          // Semantic repair is constrained to the approved evidence registry
+          // already included below; avoid charging the same source bundle a
+          // second time for a targeted revision.
+          skipDocumentContext: true,
           systemPrompt: [systemPrompt, 'Revise only what is necessary to resolve the supplied semantic findings. Preserve every outline section ID and heading. Return the complete structured draft JSON so it can be validated deterministically.'].join('\n'),
           prompt: [
             `SEMANTIC FINDINGS: ${JSON.stringify(failedChecks)}`,

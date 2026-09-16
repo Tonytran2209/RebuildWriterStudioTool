@@ -418,6 +418,8 @@ function batchUsage(step: 1 | 2 | 3 | 4, provider: string, response: any) {
     totalTokens: inputTokens + outputTokens,
     costUsd: response.cacheHit ? 0 : (response.costUsd ?? null),
     cacheHit: Boolean(response.cacheHit),
+    purpose: response.callPurpose ?? "generation",
+    contextCharsSent: Number(response.contextCharsSent ?? 0),
     calledAt: new Date().toISOString(),
   }
 }
@@ -809,6 +811,7 @@ async function runBatchModel(
   maxTokens: number,
   jsonSchema?: Record<string, unknown>,
   purpose: "generation" | "recovery" = "generation",
+  options: { skipDocumentContext?: boolean } = {},
 ) {
   const config = await kvGet<any>("writer:config")
   const stepConfig = config?.stepConfigs?.[step]
@@ -843,6 +846,8 @@ async function runBatchModel(
       ...cached,
       provider: model.provider,
       cacheHit: true,
+      callPurpose: purpose,
+      contextCharsSent: options.skipDocumentContext ? 0 : context.summary.totalChars,
       workflowRuleSnapshot: compiledRules.snapshot,
     }
   if (purpose === "generation") await reserveAIBudget(article.id, step)
@@ -854,7 +859,10 @@ async function runBatchModel(
       step === 4
         ? `${compiledRules.systemPrompt}\n\nBATCH LENGTH AUTHORITY: Use the supplied English word-budget contract as the only length requirement. Ignore legacy or document-level fixed character-count requirements for the introduction or conclusion.`
         : compiledRules.systemPrompt,
-    contextDocs: context.contextDocs,
+    // Keep the source fingerprint in the cache key, but do not bill the model
+    // again for source documents when a repair/review already receives the
+    // frozen draft, Article Spec and approved evidence mapping.
+    contextDocs: options.skipDocumentContext ? [] : context.contextDocs,
     jsonMode,
     jsonSchema,
     maxTokens,
@@ -883,6 +891,8 @@ async function runBatchModel(
     provider: model.provider,
     costUsd,
     cacheHit: false,
+    callPurpose: purpose,
+    contextCharsSent: options.skipDocumentContext ? 0 : context.summary.totalChars,
     workflowRuleSnapshot: compiledRules.snapshot,
   }
 }
@@ -1809,6 +1819,20 @@ function normalizeBatchEvidenceUsage(
   })) as Record<string, string[]>
 }
 
+// A section's approved evidence is already validated in Step 2. If the model
+// omits bookkeeping IDs, restore that deterministic declaration rather than
+// paying for a full draft rewrite whose prose would be identical.
+function completeBatchEvidenceUsage(
+  verified: ReturnType<typeof batchVerifiedOutline>,
+  usage: Record<string, string[]>,
+) {
+  const normalized = normalizeBatchEvidenceUsage(verified, usage)
+  return Object.fromEntries(verified.sections.map((section: any) => {
+    const allowed = [...new Set((section.evidenceRefs ?? []).map(String))]
+    return [section.id, normalized[section.id]?.length ? normalized[section.id] : allowed]
+  })) as Record<string, string[]>
+}
+
 function sanitizeBatchStructuredField(value: unknown, expectedHeading?: string) {
   let text = String(value ?? "").trim()
   text = text.replace(/^#{1,6}\s+/, "").trim()
@@ -1885,7 +1909,7 @@ function assembleBatchDraft(raw: string, article: any) {
     section.id,
     [...new Set((sections[index]?.usedEvidenceRefs ?? []).map(String).filter(Boolean))],
   ]))
-  const evidenceUsage = normalizeBatchEvidenceUsage(
+  const evidenceUsage = completeBatchEvidenceUsage(
     batchVerifiedOutline(expected),
     declaredEvidenceUsage,
   )
@@ -2433,7 +2457,7 @@ async function runBatchArticle(
       if (String(article.draft ?? "").trim()) {
         assembled = {
           draft: String(article.draft),
-          evidenceUsage: normalizeBatchEvidenceUsage(
+          evidenceUsage: completeBatchEvidenceUsage(
             verifiedOutline,
             article.draftEvidenceUsage ?? {},
           ),
@@ -2483,6 +2507,7 @@ async function runBatchArticle(
             Math.min(12000, Math.max(1800, Math.ceil(effectiveDraftWords * 1.9))),
             structuredDraftJsonSchema,
             "recovery",
+            { skipDocumentContext: true },
           )
           initialDraftResponses.push(schemaRepair)
           assembled = assembleBatchDraft(schemaRepair.content, article)
@@ -2566,6 +2591,7 @@ async function runBatchArticle(
             1800,
             batchFieldLengthRepairJsonSchema,
             "recovery",
+            { skipDocumentContext: true },
           )
           draftResponses.push(repair)
           const nextDraft = applyBatchFieldLengthRepair(
@@ -2588,11 +2614,8 @@ async function runBatchArticle(
         )
         const needsStructuredRecovery = deterministicFailures.some(
           (item) =>
-            item.id === "seo-contract" ||
-            item.id === "must-cover-draft" ||
-            item.id === "evidence-mapping" ||
-            item.id === "introduction-word-budget" ||
-            item.id === "conclusion-word-budget",
+            item.id === "seo-contract" &&
+            /headings|conclusion heading/i.test(String(item.reason ?? "")),
         )
         const repair = await runBatchModel(
           article,
@@ -2624,6 +2647,7 @@ async function runBatchArticle(
             ? structuredDraftJsonSchema
             : batchDraftRepairJsonSchema,
           "recovery",
+          { skipDocumentContext: true },
         )
         draftResponses.push(repair)
         if (needsStructuredRecovery) {
@@ -2692,6 +2716,7 @@ async function runBatchArticle(
           1600,
           semanticQualityJsonSchema,
           "recovery",
+          { skipDocumentContext: true },
         )
         draftResponses.push(review)
         return review
@@ -2749,6 +2774,7 @@ async function runBatchArticle(
           Math.min(12000, Math.max(3000, Math.ceil(effectiveDraftWords * 1.9))),
           structuredDraftJsonSchema,
           "recovery",
+          { skipDocumentContext: true },
         )
         draftResponses.push(semanticRepair)
         assembled = assembleBatchDraft(semanticRepair.content, article)
