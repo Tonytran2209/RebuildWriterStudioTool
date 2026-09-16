@@ -1013,7 +1013,11 @@ function quoteExistsInDocument(content: string, quote: string) {
     .some((part) => source.includes(part))
 }
 
-function normalizeBatchOutlinePayload(parsed: any, contextDocs: string[]) {
+function normalizeBatchOutlinePayload(
+  parsed: any,
+  contextDocs: string[],
+  inheritedEvidence: any[] = [],
+) {
   const registry =
     parsed?.evidenceRegistry && typeof parsed.evidenceRegistry === "object"
       ? parsed.evidenceRegistry
@@ -1023,11 +1027,14 @@ function normalizeBatchOutlinePayload(parsed: any, contextDocs: string[]) {
   const hasRuleDocs = documents.some((item) => item.role === "rules")
   return (Array.isArray(parsed?.sections) ? parsed.sections : []).map(
     (section: any, index: number) => {
-      const evidence = (Array.isArray(section?.evidenceRefs)
+      const referencedEvidence = (Array.isArray(section?.evidenceRefs)
         ? section.evidenceRefs
-        : []
-      )
+        : [])
         .map((id: any) => registry[String(id)])
+      const directEvidence = Array.isArray(section?.evidence)
+        ? section.evidence
+        : []
+      const verifiedEvidence = [...referencedEvidence, ...directEvidence]
         .flatMap((item: any) => {
           const quote = String(item?.quote ?? "").trim()
           const source = canonicalEvidenceText(String(item?.source ?? ""))
@@ -1049,6 +1056,11 @@ function normalizeBatchOutlinePayload(parsed: any, contextDocs: string[]) {
               }]
             : []
         })
+      // Core Idea evidence was already selected deterministically from the
+      // allowed sources. Reusing it here mirrors the single-article outline
+      // flow and avoids rejecting a structurally sound section merely because
+      // the model omitted a duplicate registry reference.
+      const evidence = [...verifiedEvidence, ...inheritedEvidence]
         .filter(
           (item: any, itemIndex: number, all: any[]) =>
             all.findIndex(
@@ -2071,7 +2083,7 @@ async function runBatchArticle(
         `Selected direction: ${JSON.stringify(idea)}`,
         "Use only exact quotes copied from the supplied reference documents. Never invent or paraphrase evidence quotes.",
         "For every section, include at least one evidence quote from Knowledge Base or the current Content Plan when those sources are available, plus at least one Rules quote when Rules sources are available.",
-        `Return only JSON: {"evidenceRegistry":{"ev-1":{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}},"sections":[{"id":string,"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational","evidenceRefs":string[],"ruleRefs":string[]}]}. ${existingOutline.length ? "Return every existing section." : `Create approximately ${desiredOutlineSections} sections and never fewer than ${minimumOutlineSections}.`} Map verified evidence to every section.`,
+        `Return only JSON: {"evidenceRegistry":{"ev-1":{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}},"sections":[{"id":string,"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational","evidenceRefs":string[],"evidence":[{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}],"ruleRefs":string[]}]}. ${existingOutline.length ? "Return every existing section." : `Create approximately ${desiredOutlineSections} sections and never fewer than ${minimumOutlineSections}.`} Map verified evidence to every section.`,
       ].join("\n")
       const response = await runBatchModel(
         article,
@@ -2083,9 +2095,26 @@ async function runBatchArticle(
         existingOutline.length ? "recovery" : "generation",
       )
       const parsed = parseJsonObject(response.content)
+      const inheritedOutlineEvidence = [
+        ...(Array.isArray(idea?.evidence) ? idea.evidence : []),
+        ...(Array.isArray(article.articleSpec?.evidence)
+          ? article.articleSpec.evidence
+          : []),
+      ].filter(
+        (item: any, index: number, all: any[]) =>
+          item?.source &&
+          item?.quote &&
+          all.findIndex(
+            (candidate: any) =>
+              candidate?.source === item.source &&
+              candidate?.quote === item.quote &&
+              candidate?.role === item.role,
+          ) === index,
+      )
       let sections = normalizeBatchOutlinePayload(
         parsed,
         outlineContext.contextDocs,
+        inheritedOutlineEvidence,
       ).filter((section: any) => section.heading)
       const outlineResponses = [response]
       if (sections.length < minimumOutlineSections) {
@@ -2110,7 +2139,8 @@ async function runBatchArticle(
             `The first response produced only ${sections.length}/${minimumOutlineSections} sections that passed deterministic evidence verification.`,
             `Return exactly ${missingCount} replacement sections only. Do not repeat accepted headings: ${JSON.stringify([...acceptedHeadings])}.`,
             `Rejected headings that may be rebuilt with valid evidence: ${JSON.stringify(rejectedHeadings)}.`,
-            "Each replacement must include valid evidenceRefs for every available source category. Copy source names and quotes exactly from the supplied documents.",
+            `Verified evidence that may be reused directly in each replacement: ${JSON.stringify(inheritedOutlineEvidence)}.`,
+            "Each replacement must include valid evidenceRefs or direct evidence objects for every available source category. Copy source names and quotes exactly from the supplied documents.",
             'Return only {"evidenceRegistry":{...},"sections":[...]}.',
           ].join("\n\n"),
           true,
@@ -2122,6 +2152,7 @@ async function runBatchArticle(
         const additions = normalizeBatchOutlinePayload(
           parseJsonObject(correction.content),
           outlineContext.contextDocs,
+          inheritedOutlineEvidence,
         ).filter((section: any) => section.heading)
         sections = [...sections, ...additions]
           .filter(

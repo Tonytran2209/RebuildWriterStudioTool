@@ -74,7 +74,7 @@ export default function BatchActivity({ articles, onOpen, onStart, onPause, onRe
 
       <div className="grid gap-3 sm:grid-cols-2">{articles.map((article, index) => {
         const status = article.batchStatus ?? "queued"
-        const stage = article.draft?.trim() ? 3 : Math.min(3, Math.max(1, completedStages(article) + (status === "running" ? 1 : 0)))
+        const stage = article.draft?.trim() ? 3 : Math.min(3, Math.max(1, completedStages(article) + (["running", "failed"].includes(status) ? 1 : 0)))
         const itemProgress = articleProgress(article)
         return <article key={article.id} className="rounded-xl border border-[#2b2b2b] bg-[#1b1b1b] p-4">
           <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="text-[10px] font-medium uppercase tracking-[.08em] text-[#858585]">#{index + 1} · {status} · Step {stage}/3</div><h2 className="mt-2 line-clamp-2 text-sm font-medium text-[#dedede]">{article.topic || article.title}</h2></div>
