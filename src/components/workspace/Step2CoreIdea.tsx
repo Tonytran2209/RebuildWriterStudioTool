@@ -625,6 +625,9 @@ export default function Step2CoreIdea({
     });
   };
 
+  const canContinueToOutline = gateStepCompletion({ ...article, selectedCoreIdeaId: selectedId ?? undefined }, 2).allowed && !scanIsStale;
+  const stepActionDisabled = loading || (!canContinueToOutline && (!prerequisite.allowed || !bundle.totalCount));
+
   return (
     <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
       <div className={`minimal-step-shell bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden ${embedded ? '' : 'flex-1 min-h-0'}`}>
@@ -637,16 +640,6 @@ export default function Step2CoreIdea({
                   {tr(`AI đề xuất ${requestedIdeaCount} ý tưởng cho loại nội dung `, `AI proposes ${requestedIdeaCount} core ideas for `)}<b>"{article.contentType || tr('(chưa chọn)', '(not selected)')}"</b>. {tr('Chọn một để sang Bước 2.', 'Select one to continue to Step 2.')}
                 </p>
               </div>
-              <button
-                onClick={() => fetchIdeas(true)}
-                disabled={loading || !prerequisite.allowed || !bundle.totalCount}
-                title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : ideas.length ? tr('Đề xuất lại', 'Regenerate ideas') : tr('Lấy đề xuất', 'Generate ideas')}
-                aria-label={ideas.length ? tr('Đề xuất lại', 'Regenerate ideas') : tr('Lấy đề xuất', 'Generate ideas')}
-                className="draft-toolbar-action"
-              >
-                {loading ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : <Sparkles className="app-icon" aria-hidden="true" />}
-                <span className="sr-only">{loading ? tr('Đang phân tích...', 'Analyzing...') : ideas.length ? tr('Đề xuất lại', 'Regenerate') : tr('Lấy đề xuất', 'Generate ideas')}</span>
-              </button>
             </div>
 
             {!loading && article.articleSpec && (
@@ -779,11 +772,13 @@ export default function Step2CoreIdea({
         </button>
         )}
         <button
-          onClick={onNext}
-          disabled={!gateStepCompletion({ ...article, selectedCoreIdeaId: selectedId ?? undefined }, 2).allowed || scanIsStale}
+          onClick={canContinueToOutline ? onNext : () => void fetchIdeas(Boolean(ideas.length))}
+          disabled={stepActionDisabled}
           className="workflow-endpoint-button"
         >
-          <span>{tr('Tiếp tục — Draft Outline', 'Continue — Draft Outline')}</span><ArrowRight className="app-icon" aria-hidden="true" />
+          {loading ? <><LoaderCircle className="app-icon animate-spin" aria-hidden="true" /><span>{tr('Đang phân tích...', 'Analyzing...')}</span></>
+            : canContinueToOutline ? <><span>{tr('Tiếp tục — Draft Outline', 'Continue — Draft Outline')}</span><ArrowRight className="app-icon" aria-hidden="true" /></>
+            : <><Sparkles className="app-icon" aria-hidden="true" /><span>{ideas.length ? tr('Đề xuất lại', 'Regenerate ideas') : tr('Lấy đề xuất', 'Generate ideas')}</span></>}
         </button>
       </div>
     </div>

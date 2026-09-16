@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, ChevronDown, ChevronUp, Ellipsis, Eye, LoaderCircle, PanelTopOpen, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, Eye, LoaderCircle, PanelTopOpen, Plus, Sparkles, Trash2 } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -487,6 +487,9 @@ export default function Step3Outline({
 
   const h2Count = outline.filter(s => s.level === "h2").length;
   const h3Count = outline.filter(s => s.level === "h3").length;
+  const needsOutlineApproval = article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved';
+  const canContinueToDraft = gateStepCompletion(article, 3).allowed && !needsOutlineApproval;
+  const stepActionDisabled = generating || (needsOutlineApproval ? !outline.length : !canContinueToDraft && !prerequisite.allowed);
 
   return (
     <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
@@ -502,16 +505,6 @@ export default function Step3Outline({
                   {tr('Đọc và chỉnh dàn ý theo đúng thứ tự bài viết. Mở chi tiết khi cần xem keyword, intent hoặc nguồn tham khảo.', 'Review and edit the outline in article order. Open details to inspect keywords, intent, or sources.')}
                 </p>
               </div>
-              <button
-                onClick={() => handleGenerate(Boolean(outline.length))}
-                disabled={generating || !prerequisite.allowed}
-                title={!prerequisite.allowed ? tr(prerequisite.reasonVi, prerequisite.reason) : outline.length ? tr('Tạo lại outline', 'Regenerate outline') : tr('Tạo outline', 'Generate outline')}
-                aria-label={outline.length ? tr('Tạo lại outline', 'Regenerate outline') : tr('Tạo outline', 'Generate outline')}
-                className="draft-toolbar-action"
-              >
-                {generating ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : <Sparkles className="app-icon" aria-hidden="true" />}
-                <span className="sr-only">{generating ? tr('Đang dựng...', 'Generating...') : outline.length ? tr('Tạo lại', 'Regenerate') : tr('Tạo outline', 'Generate outline')}</span>
-              </button>
             </div>
 
             {generating && (
@@ -630,15 +623,17 @@ export default function Step3Outline({
         </button>
         )}
         <div className="flex items-center gap-2">
-          {article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved' && (
-            <button onClick={() => onUpdate({ editorialApproval: { status: 'approved', approvedAt: new Date().toISOString(), outlineFingerprint: article.outlineSourceFingerprint ?? undefined } })} disabled={!outline.length} className="rounded-2xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-40">{tr('Phê duyệt outline', 'Approve outline')}</button>
-          )}
           <button
-            onClick={onNext}
-            disabled={!gateStepCompletion(article, 3).allowed || (article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved')}
+            onClick={needsOutlineApproval
+              ? () => void onUpdate({ editorialApproval: { status: 'approved', approvedAt: new Date().toISOString(), outlineFingerprint: article.outlineSourceFingerprint ?? undefined } })
+              : canContinueToDraft ? onNext : () => void handleGenerate(Boolean(outline.length))}
+            disabled={stepActionDisabled}
             className="workflow-endpoint-button"
           >
-            <span>{tr('Tiếp tục — First Draft', 'Continue — First Draft')}</span><ArrowRight className="app-icon" aria-hidden="true" />
+            {generating ? <><LoaderCircle className="app-icon animate-spin" aria-hidden="true" /><span>{tr('Đang dựng...', 'Generating...')}</span></>
+              : needsOutlineApproval ? <><Check className="app-icon" aria-hidden="true" /><span>{tr('Phê duyệt outline', 'Approve outline')}</span></>
+              : canContinueToDraft ? <><span>{tr('Tiếp tục — First Draft', 'Continue — First Draft')}</span><ArrowRight className="app-icon" aria-hidden="true" /></>
+              : <><Sparkles className="app-icon" aria-hidden="true" /><span>{outline.length ? tr('Tạo lại outline', 'Regenerate outline') : tr('Tạo outline', 'Generate outline')}</span></>}
           </button>
         </div>
       </div>
