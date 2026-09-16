@@ -331,9 +331,9 @@ function repairDraftInternalLinks(article: Article, draft: string, inventory: Ap
 
 function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
   const reason = `Semantic reviewer response was incomplete: ${error instanceof Error ? error.message : String(error)}`;
-  return semanticCheckIds.map(id => ({
-    id,
-    label: id.replace(/-/g, ' '),
+  return [{
+    id: 'semantic-review-schema',
+    label: 'Semantic reviewer response',
     kind: 'semantic' as const,
     status: 'warning' as const,
     reason,
@@ -341,7 +341,7 @@ function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
     location: '',
     recommendedAction: 'Review the saved draft or run Re-check & Fix manually.',
     autoFixAllowed: false,
-  }));
+  }];
 }
 
 function evidenceMappingChecks(
@@ -967,13 +967,14 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         });
         const response = await requestReview();
         try {
-          return parseSemanticQuality(response.content);
+          return { checks: parseSemanticQuality(response.content), schemaComplete: true };
         } catch (error) {
-          return incompleteSemanticReviewChecks(error);
+          return { checks: incompleteSemanticReviewChecks(error), schemaComplete: false };
         }
       };
 
-      let semantic = await reviewSemantic(candidateDraft);
+      let semanticReview = await reviewSemantic(candidateDraft);
+      let semantic = semanticReview.checks;
       const semanticFindings = semantic
         .filter(item => item.status !== 'pass')
         .map(item => ({ label: item.label, reason: item.reason, location: item.location, recommendedAction: item.recommendedAction }));
@@ -985,10 +986,34 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         detail: semanticFindings.length
           ? semanticFindings.map(item => `${item.label}: ${item.reason}${item.location ? ` (${item.location})` : ''}`).join('\n')
           : 'All six semantic publishing checks passed.',
-        facts: { failedOrWarningChecks: semanticFindings.length },
+        facts: { failedOrWarningChecks: semanticFindings.length, schemaComplete: semanticReview.schemaComplete },
       });
 
-      if (semanticFindings.length) {
+      // A malformed reviewer report is a tooling problem, not six independent draft
+      // problems. Keep the draft intact and stop here: repairing it would waste a call
+      // and verifying again would repeat the same incomplete-schema error.
+      if (!semanticReview.schemaComplete) {
+        const report = qualityReport(article, [...deterministic, ...semantic]);
+        processTrace.push({
+          id: `draft-recheck-result-${Date.now()}`,
+          stage: 're-check',
+          status: 'warning',
+          title: 'Re-check paused: reviewer report incomplete',
+          detail: 'The semantic reviewer did not return a complete report. The draft was saved unchanged; no automatic repair or retry was run.',
+          facts: { result: 'warning', reviewerSchemaComplete: false, passedChecks: report.checks.filter(item => item.status === 'pass').length, totalChecks: report.checks.length },
+        });
+        await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace });
+        if (editorRef.current) editorRef.current.innerText = candidateDraft;
+        notifyWorkspace('Re-check đã lưu draft. Reviewer trả báo cáo chưa đầy đủ nên hệ thống không tự repair hoặc lặp lại AI call.', 'warning');
+        return;
+      }
+
+      const actionableSemanticFindings = semanticFindings.filter(item => {
+        const check = semantic.find(candidate => candidate.label === item.label);
+        return check?.status === 'fail' || (check?.status === 'warning' && check.autoFixAllowed);
+      });
+
+      if (actionableSemanticFindings.length) {
         const repairResponse = await callAI({
           articleId: article.id,
           model,
@@ -1003,7 +1028,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           skipDocumentContext: true,
           systemPrompt: 'You are a surgical draft editor. Fix only the supplied semantic findings. Return compact exact-text replacement operations, never a rewritten article. Every find value must be copied verbatim from the current draft. Preserve headings, verified claims and approved URLs.',
           prompt: [
-            `SEMANTIC FINDINGS: ${JSON.stringify(semanticFindings)}`,
+            `SEMANTIC FINDINGS: ${JSON.stringify(actionableSemanticFindings)}`,
             `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
             `TARGET WORDS: ${targetWords}`,
@@ -1019,13 +1044,13 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           stage: 'repair',
           status: semanticDraftChanged ? 'completed' : 'failed',
           title: 'Targeted semantic repair',
-          detail: semanticDraftChanged ? `Applied focused edits for: ${semanticFindings.map(item => item.label).join(', ')}.` : 'The reviewer identified issues, but the repair response produced no applicable exact-text edits.',
-          facts: { draftChanged: semanticDraftChanged, targetedChecks: semanticFindings.length },
+          detail: semanticDraftChanged ? `Applied focused edits for: ${actionableSemanticFindings.map(item => item.label).join(', ')}.` : 'The reviewer identified issues, but the repair response produced no applicable exact-text edits.',
+          facts: { draftChanged: semanticDraftChanged, targetedChecks: actionableSemanticFindings.length },
         });
         if (!semanticDraftChanged) {
           const report = qualityReport(article, [...deterministic, ...semantic]);
           await onUpdate({ qualityReport: report, step4ProcessTrace: processTrace });
-          throw new Error(`Không áp dụng được bản sửa cục bộ. Hãy xem AI log để kiểm tra vị trí và đề xuất của: ${semanticFindings.map(item => item.label).join(', ')}.`);
+          throw new Error(`Không áp dụng được bản sửa cục bộ. Hãy xem AI log để kiểm tra vị trí và đề xuất của: ${actionableSemanticFindings.map(item => item.label).join(', ')}.`);
         }
         deterministic = check(candidateDraft);
         seo = evaluateSeoChecklist(candidateDraft, article, targetWords);
@@ -1039,17 +1064,20 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           if (editorRef.current) editorRef.current.innerText = candidateDraft;
           throw new Error(`Bản sửa semantic đã được lưu nhưng tạo ra lỗi cần xử lý: ${remainingDeterministic.join(', ')}.`);
         }
-        semantic = await reviewSemantic(candidateDraft);
+        semanticReview = await reviewSemantic(candidateDraft);
+        semantic = semanticReview.checks;
         const remainingSemantic = semantic.filter(item => item.status !== 'pass');
         processTrace.push({
           id: `draft-recheck-verification-${Date.now()}`,
           stage: 'verification',
           status: remainingSemantic.length ? 'warning' : 'completed',
           title: 'Post-repair verification',
-          detail: remainingSemantic.length
+          detail: !semanticReview.schemaComplete
+            ? 'The repaired draft was saved, but the verification reviewer returned an incomplete report. No additional repair or retry was run.'
+            : remainingSemantic.length
             ? remainingSemantic.map(item => `${item.label}: ${item.reason}${item.recommendedAction ? ` Action: ${item.recommendedAction}` : ''}`).join('\n')
             : 'The repaired draft passed deterministic and semantic verification.',
-          facts: { remainingChecks: remainingSemantic.length },
+          facts: { remainingChecks: remainingSemantic.length, schemaComplete: semanticReview.schemaComplete },
         });
       }
 
@@ -1067,8 +1095,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace });
       if (editorRef.current) editorRef.current.innerText = candidateDraft;
       if (report.status === 'pass') notifyWorkspace('Re-check & Fix hoàn tất. Draft đã vượt qua toàn bộ checklist.', 'success');
-      if (report.status !== 'pass')
-        throw new Error(`Re-check hoàn tất nhưng còn mục cần review: ${report.checks.filter(item => item.status !== 'pass').map(item => `${item.label} — ${item.reason}${item.recommendedAction ? `; đề xuất: ${item.recommendedAction}` : ''}`).join(' | ')}.`);
+      if (report.status !== 'pass') {
+        notifyWorkspace('Re-check đã lưu draft; còn một số mục cần review. Xem AI log để biết chính xác các mục còn lại.', report.status === 'fail' ? 'error' : 'warning');
+      }
     } catch (err) {
       processTrace.push({
         id: `draft-recheck-result-${Date.now()}`,
