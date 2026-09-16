@@ -289,6 +289,7 @@ export function selectWebsiteCandidates(
         article.contentType,
         article.targetAudience,
         ...(article.articleSpec?.mustCover ?? []),
+        ...(article.articleSpec?.internalLinkRequirements ?? []),
       ].join(" "),
     ),
   )

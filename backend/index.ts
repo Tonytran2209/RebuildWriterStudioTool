@@ -1182,6 +1182,74 @@ function repairBatchInternalLinks(
   return next
 }
 
+function batchCoverageTerms(value: unknown) {
+  return String(value ?? "")
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((term) => term.length > 3)
+}
+
+function batchMissingOutlineCoverage(article: any, outline = article.outline ?? []) {
+  const outlineText = String(
+    outline
+      .flatMap((section: any) => [
+        section.heading,
+        section.notes,
+        section.rationale,
+        ...(section.keywords ?? []),
+      ])
+      .filter(Boolean)
+      .join(" "),
+  )
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+  return (article.articleSpec?.mustCover ?? []).filter((topic: unknown) => {
+    const terms = batchCoverageTerms(topic)
+    return terms.length > 0 && terms.filter((term) => outlineText.includes(term)).length < Math.ceil(terms.length * 0.5)
+  }).map(String)
+}
+
+/**
+ * Article Spec coverage is a contract, not an AI-only suggestion. If an outline
+ * omitted a must-cover topic, attach that requirement to the most relevant
+ * approved section before Step 3. The draft generator receives this persisted
+ * instruction and the final draft is still checked independently below.
+ */
+function attachBatchOutlineCoverage(outline: any[], missingTopics: string[]) {
+  const next = outline.map((section: any) => ({ ...section, keywords: [...(section.keywords ?? [])] }))
+  for (const topic of missingTopics) {
+    const topicTerms = new Set(batchCoverageTerms(topic))
+    const target = next
+      .map((section: any, index: number) => ({
+        index,
+        score: batchCoverageTerms([section.heading, section.notes, section.rationale, ...(section.keywords ?? [])].join(" "))
+          .filter((term) => topicTerms.has(term)).length,
+      }))
+      .sort((left, right) => right.score - left.score || left.index - right.index)[0]
+    if (!target) continue
+    const section = next[target.index]
+    const instruction = `Required coverage: ${topic}.`
+    if (!String(section.notes ?? "").includes(instruction))
+      section.notes = [String(section.notes ?? "").trim(), instruction].filter(Boolean).join(" ")
+    if (!section.keywords.some((keyword: unknown) => String(keyword).toLocaleLowerCase() === topic.toLocaleLowerCase()))
+      section.keywords.push(topic)
+  }
+  return next
+}
+
+function batchMissingDraftCoverage(article: any, text: string) {
+  const draftText = String(text ?? "")
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+  return (article.articleSpec?.mustCover ?? []).filter((topic: unknown) => {
+    const terms = batchCoverageTerms(topic)
+    return terms.length > 0 && terms.filter((term) => draftText.includes(term)).length < Math.ceil(terms.length * 0.5)
+  }).map(String)
+}
+
 function batchUniversalChecks(
   text: string,
   article: any,
@@ -1190,30 +1258,8 @@ function batchUniversalChecks(
   sourceNames: string[] = [],
 ) {
   const basic = batchSeoFailures(text, article, targetWords)
-  const normalized = (value: string) =>
-    value
-      .toLocaleLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-  const outlineCoverage = normalized(
-    (article.outline ?? [])
-      .flatMap((section: any) => [section.heading, section.notes, section.rationale, ...(section.keywords ?? [])])
-      .join(" "),
-  )
-  const coveredContent = outlineCoverage
-  const missing = (article.articleSpec?.mustCover ?? []).filter(
-    (topic: any) => {
-      const terms = normalized(String(topic))
-        .split(" ")
-        .filter((term) => term.length > 3)
-      return (
-        terms.length &&
-        terms.filter((term) => coveredContent.includes(term)).length <
-          Math.ceil(terms.length * 0.5)
-      )
-    },
-  )
+  const missing = batchMissingOutlineCoverage(article)
+  const missingDraftCoverage = batchMissingDraftCoverage(article, text)
   const urls = [...text.matchAll(/https?:\/\/[^\s)\]}>"']+/gi)].map((match) =>
     match[0].replace(/[.,;:!?]+$/, ""),
   )
@@ -1285,6 +1331,16 @@ function batchUniversalChecks(
       reason: missing.length
         ? `Not mapped in the approved outline: ${missing.join(", ")}`
         : "Every required topic is covered by the approved outline or draft.",
+      autoFixAllowed: true,
+    },
+    {
+      id: "must-cover-draft",
+      label: "Must-cover topics in draft",
+      kind: "deterministic",
+      status: missingDraftCoverage.length ? "fail" : "pass",
+      reason: missingDraftCoverage.length
+        ? `Draft does not cover required topics: ${missingDraftCoverage.join(", ")}`
+        : "Every required topic is covered in the draft.",
       autoFixAllowed: true,
     },
     {
@@ -1739,6 +1795,20 @@ function batchEvidenceMappingCheck(verified: ReturnType<typeof batchVerifiedOutl
   }
 }
 
+// Evidence IDs are bookkeeping metadata. Never allow an AI response to claim
+// an ID from another section: retain only IDs explicitly approved for that
+// section, then let the deterministic check flag genuinely missing usage.
+function normalizeBatchEvidenceUsage(
+  verified: ReturnType<typeof batchVerifiedOutline>,
+  usage: Record<string, string[]>,
+) {
+  return Object.fromEntries(verified.sections.map((section: any) => {
+    const allowed = new Set((section.evidenceRefs ?? []).map(String))
+    const declared = Array.isArray(usage[section.id]) ? usage[section.id] : []
+    return [section.id, [...new Set(declared.map(String).filter((id) => allowed.has(id)))]]
+  })) as Record<string, string[]>
+}
+
 function sanitizeBatchStructuredField(value: unknown, expectedHeading?: string) {
   let text = String(value ?? "").trim()
   text = text.replace(/^#{1,6}\s+/, "").trim()
@@ -1811,10 +1881,14 @@ function assembleBatchDraft(raw: string, article: any) {
     "## Conclusion",
     sanitizeBatchStructuredField(parsed.conclusion, "Conclusion"),
   ].join("\n\n")
-  const evidenceUsage = Object.fromEntries(expected.map((section: any, index: number) => [
+  const declaredEvidenceUsage = Object.fromEntries(expected.map((section: any, index: number) => [
     section.id,
     [...new Set((sections[index]?.usedEvidenceRefs ?? []).map(String).filter(Boolean))],
   ]))
+  const evidenceUsage = normalizeBatchEvidenceUsage(
+    batchVerifiedOutline(expected),
+    declaredEvidenceUsage,
+  )
   return { draft, evidenceUsage, parsed }
 }
 
@@ -2319,6 +2393,29 @@ async function runBatchArticle(
       })
       feasibility = compactedFeasibility
     }
+    // Do not spend draft-generation credits on an outline whose Article Spec contract is
+    // not visibly mapped. Persist the missing requirements onto the most
+    // relevant approved section, then validate the generated prose separately.
+    const missingOutlineCoverage = batchMissingOutlineCoverage(article)
+    if (missingOutlineCoverage.length) {
+      article = await saveArticleCheckpoint(article, {
+        outline: attachBatchOutlineCoverage(article.outline ?? [], missingOutlineCoverage),
+        outlineScannedAt: new Date().toISOString(),
+        qualityReport: null,
+      })
+    }
+    const approvedInternalLinkCandidates = selectWebsiteCandidates(
+      article,
+      runtimeConfig?.websiteInventory ?? [],
+      6,
+    )
+    if (
+      article.articleSpec?.internalLinkRequirements?.length &&
+      !approvedInternalLinkCandidates.length
+    )
+      throw new Error(
+        "Batch stopped before draft generation: the Article Spec requires an internal link, but Website Inventory has no relevant approved URL. Approve a matching inventory page or update the Article Spec before retrying.",
+      )
     if (!article.draft?.trim() || article.qualityReport?.status !== "pass") {
       const draftPrerequisite = articleStepPrerequisite(article, 4)
       if (draftPrerequisite) throw new Error(draftPrerequisite)
@@ -2336,7 +2433,10 @@ async function runBatchArticle(
       if (String(article.draft ?? "").trim()) {
         assembled = {
           draft: String(article.draft),
-          evidenceUsage: article.draftEvidenceUsage ?? {},
+          evidenceUsage: normalizeBatchEvidenceUsage(
+            verifiedOutline,
+            article.draftEvidenceUsage ?? {},
+          ),
           parsed: null,
         }
       } else {
@@ -2349,8 +2449,10 @@ async function runBatchArticle(
             `Primary keyword: ${article.articleSpec?.primaryQuery ?? article.coreIdeaSuggestions?.[0]?.primaryKeyword ?? article.keywords ?? article.topic}.`,
             `Approved outline and evidence registry: ${JSON.stringify(verifiedOutline)}`,
             `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
-            `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(selectWebsiteCandidates(article, runtimeConfig?.websiteInventory ?? [], 6))}`,
-            "Never invent a URL. Use only an approved inventory URL when the Article Spec requires a relevant internal link.",
+            `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(approvedInternalLinkCandidates)}`,
+            article.articleSpec?.internalLinkRequirements?.length
+              ? "INTERNAL LINK CONTRACT: Include one contextual Markdown link using exactly one URL from the approved candidates. Never invent, alter, or substitute a URL."
+              : "Never invent a URL. Use only an approved inventory URL when the Article Spec requires a relevant internal link.",
             `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
             "Knowledge Base is the only source for concrete facts, figures, evidence and product claims. If a concrete claim has no approved evidence, omit it or replace it with general explanatory prose.",
             "Follow every supplied Skill rule and use only supported KB claims. Keep every approved heading in order and do not add unplanned sections.",
@@ -2487,6 +2589,7 @@ async function runBatchArticle(
         const needsStructuredRecovery = deterministicFailures.some(
           (item) =>
             item.id === "seo-contract" ||
+            item.id === "must-cover-draft" ||
             item.id === "evidence-mapping" ||
             item.id === "introduction-word-budget" ||
             item.id === "conclusion-word-budget",
