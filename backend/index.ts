@@ -2352,6 +2352,7 @@ async function runBatchArticle(
             `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(selectWebsiteCandidates(article, runtimeConfig?.websiteInventory ?? [], 6))}`,
             "Never invent a URL. Use only an approved inventory URL when the Article Spec requires a relevant internal link.",
             `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
+            "When comparison data belongs in rows and columns, use a valid GFM table: one header row, one hyphen separator row, then data rows. Never simulate tables with aligned plain text, tabs, or spaces.",
             "Knowledge Base is the only source for concrete facts, figures, evidence and product claims. If a concrete claim has no approved evidence, omit it or replace it with general explanatory prose.",
             "Follow every supplied Skill rule and use only supported KB claims. Keep every approved heading in order and do not add unplanned sections.",
             'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order. Each usedEvidenceRefs array may contain only IDs approved for that section. section.content is prose only: never include #, ##, ###, its outline heading, or a Conclusion heading.',
@@ -2375,6 +2376,7 @@ async function runBatchArticle(
               `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
               `APPROVED OUTLINE AND EVIDENCE: ${JSON.stringify(verifiedOutline)}`,
               `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
+              "Preserve valid GFM tables. If adding a table, use a header row, a hyphen separator row, and data rows; do not use aligned plain text.",
               'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Return every outline section exactly once in order. section.content must be prose only and must not repeat a Markdown heading.',
             ].join("\n\n"),
             true,
@@ -5540,6 +5542,67 @@ function inlineMarkdown(value: string) {
     .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, "<em>$1</em>")
 }
 
+function markdownTableCells(line: string, separator = "|") {
+  const trimmed = line.trim()
+  const source = separator === "|"
+    ? trimmed.replace(/^\|/, "").replace(/\|$/, "")
+    : trimmed
+  return source.split(separator).map((cell) => cell.trim())
+}
+
+function markdownTableDivider(line: string) {
+  const cells = markdownTableCells(line)
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell))
+}
+
+function normalizeMarkdownTablesForExport(markdown: string) {
+  const lines = markdown.replace(/\r\n?/g, "\n").split("\n")
+  const output: string[] = []
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]
+    if ((!line.includes("|") && !line.includes("\t")) || markdownTableDivider(lines[index + 1] ?? "")) {
+      output.push(line)
+      continue
+    }
+    const header = markdownTableCells(line)
+    const rows: string[][] = []
+    let cursor = index + 1
+    while (cursor < lines.length && lines[cursor].includes("|")) {
+      const row = markdownTableCells(lines[cursor])
+      if (row.length !== header.length || row.some((cell) => !cell)) break
+      rows.push(row)
+      cursor += 1
+    }
+    if (header.length > 1 && header.every(Boolean) && rows.length) {
+      output.push(`| ${header.join(" | ")} |`)
+      output.push(`| ${header.map(() => "---").join(" | ")} |`)
+      rows.forEach((row) => output.push(`| ${row.join(" | ")} |`))
+      index = cursor - 1
+      continue
+    }
+    if (line.includes("\t")) {
+      const tabHeader = markdownTableCells(line, "\t")
+      const tabRows: string[][] = []
+      let tabCursor = index + 1
+      while (tabCursor < lines.length && lines[tabCursor].includes("\t")) {
+        const row = markdownTableCells(lines[tabCursor], "\t")
+        if (row.length !== tabHeader.length || row.some((cell) => !cell)) break
+        tabRows.push(row)
+        tabCursor += 1
+      }
+      if (tabHeader.length > 1 && tabHeader.every(Boolean) && tabRows.length) {
+        output.push(`| ${tabHeader.join(" | ")} |`)
+        output.push(`| ${tabHeader.map(() => "---").join(" | ")} |`)
+        tabRows.forEach((row) => output.push(`| ${row.join(" | ")} |`))
+        index = tabCursor - 1
+        continue
+      }
+    }
+    output.push(line)
+  }
+  return output.join("\n")
+}
+
 function markdownForGoogleDocs(markdown: string) {
   const html: string[] = ["<div>"]
   let listType: "ul" | "ol" | null = null
@@ -5547,7 +5610,9 @@ function markdownForGoogleDocs(markdown: string) {
     if (listType) html.push(`</${listType}>`)
     listType = null
   }
-  for (const rawLine of markdown.split("\n")) {
+  const lines = normalizeMarkdownTablesForExport(markdown).split("\n")
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index]
     const line = rawLine.trim()
     if (!line) {
       closeList()
@@ -5558,6 +5623,21 @@ function markdownForGoogleDocs(markdown: string) {
       closeList()
       const level = heading[1].length
       html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`)
+      continue
+    }
+    if (line.includes("|") && markdownTableDivider(lines[index + 1] ?? "")) {
+      closeList()
+      const header = markdownTableCells(line)
+      const rows: string[][] = []
+      index += 2
+      while (index < lines.length && lines[index].includes("|") && !markdownTableDivider(lines[index])) {
+        const row = markdownTableCells(lines[index])
+        if (row.length !== header.length) break
+        rows.push(row)
+        index += 1
+      }
+      index -= 1
+      html.push(`<table><thead><tr>${header.map((cell) => `<th>${inlineMarkdown(cell)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${inlineMarkdown(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table>`)
       continue
     }
     const unordered = line.match(/^[-*]\s+(.+)$/)
@@ -5586,7 +5666,7 @@ app.post("/api/format/google-docs", (req, res) => {
   const outline = Array.isArray(req.body?.outline) ? req.body.outline : []
   if (!draft)
     return res.status(400).json({ error: "Draft không được để trống." })
-  const markdown = assignDocumentHeadings(draft, title, outline)
+  const markdown = assignDocumentHeadings(normalizeMarkdownTablesForExport(draft), title, outline)
   return res.json({
     markdown,
     html: markdownForGoogleDocs(markdown),
