@@ -298,6 +298,52 @@ function getDraftEvidenceUsage(parsed: StructuredDraftPayload, article: Article)
   }));
 }
 
+function normalizeDraftEvidenceUsage(
+  article: Article,
+  usage: Record<string, string[]>,
+  verifiedOutline: ReturnType<typeof buildVerifiedOutlineContext>,
+) {
+  const allowedBySection = new Map(verifiedOutline.sections.map(section => [section.id, new Set(section.evidenceRefs)]));
+  return Object.fromEntries((article.outline ?? []).map(section => {
+    const allowed = [...(allowedBySection.get(section.id) ?? new Set<string>())];
+    const declared = [...new Set((usage[section.id] ?? []).map(String).filter(id => allowed.includes(id)))];
+    // Evidence IDs are invisible metadata. When the draft already has an
+    // approved outline, completing this declaration is deterministic and does
+    // not justify another generation call.
+    return [section.id, declared.length ? declared : allowed];
+  }));
+}
+
+function repairDraftInternalLinks(article: Article, draft: string, inventory: AppConfig['websiteInventory'] = []) {
+  const candidates = selectInternalLinkCandidates(article, inventory ?? [], 6);
+  if (!candidates.length) return draft;
+  let next = draft;
+  let audit = auditInternalLinks(article, next, inventory ?? []);
+  for (const url of audit.unapprovedUrls) next = next.split(url).join(candidates[0].url);
+  audit = auditInternalLinks(article, next, inventory ?? []);
+  if (audit.required && !audit.approvedDraftUrls.length) {
+    const selected = candidates[0];
+    const anchor = (selected.suggestedAnchors?.[0] || selected.title).replace(/[\[\]]/g, '');
+    next = applyTargetedDraftRepair(next, { appendBeforeConclusion: `For related guidance, see [${anchor}](${selected.url}).` });
+  }
+  return next;
+}
+
+function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
+  const reason = `Semantic reviewer response was incomplete: ${error instanceof Error ? error.message : String(error)}`;
+  return semanticCheckIds.map(id => ({
+    id,
+    label: id.replace(/-/g, ' '),
+    kind: 'semantic' as const,
+    status: 'warning' as const,
+    reason,
+    evidence: '',
+    location: '',
+    recommendedAction: 'Review the saved draft or run Re-check & Fix manually.',
+    autoFixAllowed: false,
+  }));
+}
+
 function evidenceMappingChecks(
   article: Article,
   usage: Record<string, string[]>,
@@ -536,6 +582,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Hoàn thiện mọi section trước khi mở rộng bất kỳ section nào. Không lặp định nghĩa, lợi ích, so sánh, evidence hoặc kết luận.',
+          '- Trước khi trả JSON, tự kiểm tra nội bộ: đủ section IDs theo outline, đúng word budget, đúng một Conclusion, primary keyword trong H1/body, evidenceRefs thuộc section tương ứng và internal link chỉ dùng URL approved. Tự sửa mọi lỗi phát hiện được trước khi trả kết quả.',
           `- Mỗi đoạn chỉ phục vụ một claim, tối đa ${maxSentencesPerParagraph} câu. Không thêm section ngoài outline.`,
           `- TITLE phải chứa chính xác primary keyword “${getPrimaryKeyword(article)}”.`,
           '- Trả về DUY NHẤT JSON object đúng schema; không Markdown fences, lời dẫn hay nhật ký.',
@@ -656,8 +703,16 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           facts: { repairedFields: missingParts.join(', '), remainingFields: remaining.join(', ') || 'none' },
         });
       }
-      let assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
-      let evidenceUsage = getDraftEvidenceUsage(parsed, article);
+      let assembledDraft = repairDraftInternalLinks(
+        article,
+        parseStructuredDraft(JSON.stringify(parsed), article),
+        config.websiteInventory,
+      );
+      let evidenceUsage = normalizeDraftEvidenceUsage(
+        article,
+        getDraftEvidenceUsage(parsed, article),
+        verifiedOutline,
+      );
       sessionStorage.setItem(recoveryKey, assembledDraft);
       setRecoveryDraft(assembledDraft);
       if (editorRef.current) editorRef.current.innerText = assembledDraft;
@@ -684,12 +739,12 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         throw new Error(`Draft đã được lưu nhưng Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => `${item.label} — ${item.reason}`).join('; ')}.`);
       }
       const runSemanticReview = async (candidate: string, candidateUsage: Record<string, string[]>) => {
-        const requestReview = (recovery = false) => callAI({
+        const requestReview = () => callAI({
           articleId: article.id,
           model,
           railwayUrl,
           stepNumber: 4,
-          bypassCache: recovery || manual || Boolean(article.qualityReport && article.qualityReport.status !== 'pass'),
+          bypassCache: manual || Boolean(article.qualityReport && article.qualityReport.status !== 'pass'),
           maxTokens: 1400,
           temperature: 0,
           jsonMode: true,
@@ -703,16 +758,14 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
             `DRAFT: ${candidate}`,
             semanticReviewInstruction(article, candidate),
-            recovery ? 'The prior reviewer report was structurally incomplete. Return a fresh complete report.' : '',
             `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}. Use warning only for a genuine publish-quality concern; use fail for a blocking unsupported claim or contract violation.`,
           ].join('\n\n'),
         });
-        const first = await requestReview();
+        const response = await requestReview();
         try {
-          return { response: first, checks: parseSemanticQuality(first.content) };
-        } catch {
-          const recovered = await requestReview(true);
-          return { response: recovered, checks: parseSemanticQuality(recovered.content) };
+          return { response, checks: parseSemanticQuality(response.content), schemaComplete: true };
+        } catch (error) {
+          return { response, checks: incompleteSemanticReviewChecks(error), schemaComplete: false };
         }
       };
       let semanticReview = await runSemanticReview(assembledDraft, evidenceUsage);
@@ -723,69 +776,24 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         stage: 'validation',
         status: report.status === 'pass' ? 'completed' : 'warning',
         title: 'Evidence-aware semantic review',
-        detail: report.status === 'pass' ? 'All semantic publishing checks passed.' : `Targeted repair required for: ${semantic.filter(item => item.status !== 'pass').map(item => item.label).join(', ')}.`,
+        detail: report.status === 'pass' ? 'All semantic publishing checks passed.' : `Saved for review: ${semantic.filter(item => item.status !== 'pass').map(item => item.label).join(', ')}.`,
       });
-      if (report.status !== 'pass') {
-        await onUpdate({ qualityReport: report });
-        const failedChecks = report.checks.filter(item => item.kind === 'semantic' && item.status !== 'pass');
-        const repairResponse = await callAI({
-          articleId: article.id,
-          model,
-          railwayUrl,
-          stepNumber: 4,
-          bypassCache: true,
-          maxTokens,
-          temperature: 0.1,
-          jsonMode: true,
-          jsonSchema: structuredDraftSchema,
-          contextQuery,
-          // Semantic repair is constrained to the approved evidence registry
-          // already included below; avoid charging the same source bundle a
-          // second time for a targeted revision.
-          skipDocumentContext: true,
-          systemPrompt: [systemPrompt, 'Revise only what is necessary to resolve the supplied semantic findings. Preserve every outline section ID and heading. Return the complete structured draft JSON so it can be validated deterministically.'].join('\n'),
-          prompt: [
-            `SEMANTIC FINDINGS: ${JSON.stringify(failedChecks)}`,
-            `CURRENT STRUCTURED DRAFT: ${JSON.stringify(parsed)}`,
-            `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
-            `APPROVED OUTLINE AND EVIDENCE: ${JSON.stringify(verifiedOutline)}`,
-            `WORD BUDGET: ${JSON.stringify(wordBudget)}`,
-          ].join('\n\n'),
-        });
-        rawResponseExcerpt = `${rawResponseExcerpt}\n\n--- SEMANTIC REPAIR ---\n${repairResponse.content.slice(0, 8_000)}`.slice(0, 20_000);
-        parsed = parseAIJson(repairResponse.content) as StructuredDraftPayload;
-        const remainingParts = missingStructuredParts(parsed, article);
-        if (remainingParts.length) throw new Error(`Draft đã được lưu; semantic repair trả thiếu: ${remainingParts.join(', ')}.`);
-        assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
-        evidenceUsage = getDraftEvidenceUsage(parsed, article);
-        sessionStorage.setItem(recoveryKey, assembledDraft);
-        setRecoveryDraft(assembledDraft);
-        const repairedValidation = evaluateSeoChecklist(assembledDraft, article, targetWords);
-        deterministic = [
-          ...deterministicQualityChecks(article, assembledDraft, targetWords, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name)),
-          ...evidenceMappingChecks(article, evidenceUsage, verifiedOutline),
-        ];
-        const repairedSaved = await onUpdate({ draft: assembledDraft, draftEvidenceUsage: evidenceUsage, qualityReport: null, draftSourceFingerprint, step4RawResponseExcerpt: rawResponseExcerpt });
-        if (!repairedSaved) throw new Error('Semantic repair đã tạo xong nhưng chưa thể lưu vào Supabase.');
-        if (editorRef.current) editorRef.current.innerText = assembledDraft;
-        if (repairedValidation.failed.length || deterministic.some(item => item.status === 'fail')) {
-          report = qualityReport(article, deterministic);
-          await onUpdate({ qualityReport: report });
-          throw new Error(`Draft đã được lưu nhưng bản sửa semantic chưa đạt kiểm tra deterministic: ${[...repairedValidation.failed.map(item => item.label), ...deterministic.filter(item => item.status === 'fail').map(item => item.label)].join(', ')}.`);
-        }
-        semanticReview = await runSemanticReview(assembledDraft, evidenceUsage);
-        report = qualityReport(article, [...deterministic, ...semanticReview.checks]);
+      if (!semanticReview.schemaComplete) {
         processTrace.push({
-          id: `draft-semantic-recheck-${Date.now()}`,
+          id: `draft-semantic-incomplete-${Date.now()}`,
           stage: 'validation',
-          status: report.status === 'pass' ? 'completed' : 'failed',
-          title: 'Semantic repair recheck',
-          detail: report.status === 'pass' ? 'The targeted repair passed all quality gates.' : 'The repaired draft was saved, but one or more semantic checks still require editorial review.',
+          status: 'warning',
+          title: 'Semantic review incomplete',
+          detail: 'The reviewer response was incomplete. The draft was saved without an automatic retry; use Re-check & Fix only when you choose to spend another AI call.',
         });
-        if (report.status !== 'pass') {
-          await onUpdate({ qualityReport: report });
-          throw new Error(`Draft đã được lưu để review; Semantic Quality Gate còn cảnh báo: ${report.checks.filter(item => item.status !== 'pass').map(item => item.label).join(', ')}.`);
-        }
+      } else if (report.status !== 'pass') {
+        processTrace.push({
+          id: `draft-semantic-deferred-${Date.now()}`,
+          stage: 'validation',
+          status: report.status === 'fail' ? 'failed' : 'warning',
+          title: 'Semantic repair deferred',
+          detail: 'The first draft was saved for review. Automatic semantic rewrites are disabled to prevent repeated paid calls; Re-check & Fix can apply one targeted patch on demand.',
+        });
       }
       const saved = await onUpdate({
         draft: assembledDraft,
@@ -799,7 +807,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       });
       if (!saved) throw new Error('Draft Bước 3 chưa được lưu vào Supabase.');
       if (editorRef.current) editorRef.current.innerText = assembledDraft;
-      notifyWorkspace(manual && draft ? 'Đã viết lại, kiểm tra và lưu draft.' : 'Đã tạo, kiểm tra và lưu draft.', 'success');
+      if (report.status === 'pass')
+        notifyWorkspace(manual && draft ? 'Đã viết lại, kiểm tra và lưu draft.' : 'Đã tạo, kiểm tra và lưu draft.', 'success');
+      else
+        notifyWorkspace('Draft đã được lưu. Một số semantic check cần review; dùng Re-check & Fix nếu muốn sửa bằng AI.', report.status === 'fail' ? 'error' : 'warning');
     } catch (err) {
       processTrace.push({
         id: `draft-failure-${Date.now()}`,
@@ -932,7 +943,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       }
 
       const reviewSemantic = async (value: string) => {
-        const requestReview = (recovery = false) => callAI({
+        const requestReview = () => callAI({
           articleId: article.id,
           model,
           railwayUrl,
@@ -951,16 +962,14 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(article.draftEvidenceUsage ?? {})}`,
             `DRAFT: ${value}`,
             semanticReviewInstruction(article, value),
-            recovery ? 'The prior reviewer report was structurally incomplete. Return a fresh report using every required object key exactly once.' : '',
             `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}.`,
           ].join('\n\n'),
         });
-        const first = await requestReview();
+        const response = await requestReview();
         try {
-          return parseSemanticQuality(first.content);
-        } catch {
-          const recovered = await requestReview(true);
-          return parseSemanticQuality(recovered.content);
+          return parseSemanticQuality(response.content);
+        } catch (error) {
+          return incompleteSemanticReviewChecks(error);
         }
       };
 
