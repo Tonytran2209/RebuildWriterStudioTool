@@ -1982,9 +1982,11 @@ async function runBatchArticle(
             idea.primaryKeyword &&
             researchedKeywords.has(idea.primaryKeyword.toLocaleLowerCase()),
         )
-      if (normalizedIdeas.length < batchIdeaCount)
+      // A batch needs one trustworthy direction to proceed. Treat the configured
+      // idea count as a generation target, not a hard failure condition.
+      if (!normalizedIdeas.length)
         throw new Error(
-          `Batch Step 1 returned only ${normalizedIdeas.length}/${batchIdeaCount} valid rated Core Ideas.`,
+          "Batch Step 1 did not return a valid rated Core Idea.",
         )
       const score = (idea: any) => [
         Number(idea.rating?.overall ?? 0),
@@ -2225,6 +2227,7 @@ async function runBatchArticle(
       const compactedSections = normalizeBatchOutlinePayload(
         parseJsonObject(compacted.content),
         outlineContext.contextDocs,
+        (article.outline ?? []).flatMap((section: any) => section.evidence ?? []),
       ).filter((section: any) => section.heading)
       if (
         compactedSections.length < minimumOutlineSections ||
@@ -2365,6 +2368,53 @@ async function runBatchArticle(
         ...batchFieldBudgetChecks(assembledDraft, budget),
         batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
       ]
+      const repairFieldBudgetGaps = async () => {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const fieldFailures = deterministic.filter(
+            (item) =>
+              item.status === "fail" &&
+              ["introduction-word-budget", "conclusion-word-budget"].includes(
+                item.id,
+              ),
+          )
+          if (!fieldFailures.length) return
+          const repair = await runBatchModel(
+            article,
+            4,
+            [
+              "Expand only the under-length introduction and/or conclusion in the current structured article. Do not rewrite, remove, shorten, or reorder the title or approved body sections.",
+              `LENGTH FAILURES: ${JSON.stringify(fieldFailures)}`,
+              `INTRODUCTION: preferred ${budget.introduction.min}-${budget.introduction.max}; mandatory accepted range ${budget.introduction.acceptedMin}-${budget.introduction.acceptedMax} English words.`,
+              `CONCLUSION: preferred ${budget.conclusion.min}-${budget.conclusion.max}; mandatory accepted range ${budget.conclusion.acceptedMin}-${budget.conclusion.acceptedMax} English words.`,
+              "Count words before responding. Each failed field must meet its accepted range in the returned JSON. Add useful reader-facing explanation that is supported by the Article Spec and approved evidence; do not add filler or unsupported claims.",
+              `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+              `APPROVED OUTLINE AND EVIDENCE: ${JSON.stringify(verifiedOutline)}`,
+              `CURRENT DRAFT:\n${assembledDraft}`,
+              `CURRENT EVIDENCE USAGE: ${JSON.stringify(assembled.evidenceUsage)}`,
+              'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Return every approved section exactly once in the existing order.',
+            ].join("\n\n"),
+            true,
+            Math.min(16000, Math.max(4000, Math.ceil(effectiveDraftWords * 2))),
+            structuredDraftJsonSchema,
+            "recovery",
+          )
+          draftResponses.push(repair)
+          const repaired = assembleBatchDraft(repair.content, article)
+          const nextDraft = repairBatchInternalLinks(
+            repaired.draft,
+            article,
+            runtimeConfig?.websiteInventory ?? [],
+          )
+          if (nextDraft === assembledDraft) return
+          assembled = repaired
+          assembledDraft = nextDraft
+          deterministic = [
+            ...batchUniversalChecks(assembledDraft, article, effectiveDraftWords, runtimeConfig?.websiteInventory ?? [], internalNames),
+            ...batchFieldBudgetChecks(assembledDraft, budget),
+            batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
+          ]
+        }
+      }
       if (deterministic.some((item) => item.status !== "pass")) {
         const deterministicFailures = deterministic.filter(
           (item) => item.status !== "pass",
@@ -2423,6 +2473,7 @@ async function runBatchArticle(
           ...batchFieldBudgetChecks(assembledDraft, budget),
           batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
         ]
+        await repairFieldBudgetGaps()
         const report = {
           version: 5, status: "fail", checkedAt: new Date().toISOString(),
           articleSpecFingerprint: article.articleSpecFingerprint, checks: deterministic,
@@ -2543,6 +2594,7 @@ async function runBatchArticle(
           ...batchFieldBudgetChecks(assembledDraft, budget),
           batchEvidenceMappingCheck(verifiedOutline, assembled.evidenceUsage),
         ]
+        await repairFieldBudgetGaps()
         if (deterministic.every((item) => item.status === "pass")) {
           const verification = await requestSemanticReview(
             assembledDraft,
