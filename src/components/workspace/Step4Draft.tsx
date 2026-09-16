@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
-import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, LoaderCircle, PanelTopOpen, RefreshCw, Sparkles } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
@@ -17,7 +17,6 @@ import { gateArticleStep } from '../../lib/workflowGuards';
 import { auditInternalLinks, deterministicQualityChecks, qualityReport } from '../../lib/universalQuality';
 import { ProcessTraceModal } from './ProcessTrace';
 import { notifyWorkspace } from './WorkspaceNotification';
-import { isMarkdownTableDivider, markdownTableCells, normalizeMarkdownTables } from '../../lib/markdownTables';
 
 function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -32,45 +31,6 @@ function renderKeywordMarks(text: string, keywords: string[]) {
   return text.split(matcher).map((part, index) => terms.some(term => term.toLocaleLowerCase() === part.toLocaleLowerCase())
     ? <span key={`${index}-${part}`} className="draft-keyword-mark">{part}</span>
     : part);
-}
-
-function DraftMarkdownPreview({ draft, keywords, highlightsEnabled }: { draft: string; keywords: string[]; highlightsEnabled: boolean }) {
-  const lines = normalizeMarkdownTables(draft).split('\n');
-  const blocks: ReactNode[] = [];
-  let index = 0;
-  const marked = (value: string) => highlightsEnabled ? renderKeywordMarks(value, keywords) : value;
-  while (index < lines.length) {
-    const line = lines[index].trim();
-    if (!line) { index += 1; continue; }
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
-    if (heading) {
-      const Tag = (`h${heading[1].length}` as 'h1' | 'h2' | 'h3');
-      blocks.push(<Tag key={`heading-${index}`} className={`draft-preview-${Tag}`}>{marked(heading[2])}</Tag>);
-      index += 1;
-      continue;
-    }
-    if (line.includes('|') && isMarkdownTableDivider(lines[index + 1] ?? '')) {
-      const header = markdownTableCells(line);
-      const rows: string[][] = [];
-      index += 2;
-      while (index < lines.length && lines[index].includes('|') && !isMarkdownTableDivider(lines[index])) {
-        const row = markdownTableCells(lines[index]);
-        if (row.length !== header.length) break;
-        rows.push(row);
-        index += 1;
-      }
-      blocks.push(<div key={`table-${index}`} className="draft-table-scroll"><table className="draft-markdown-table"><thead><tr>{header.map((cell, cellIndex) => <th key={cellIndex}>{marked(cell)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{marked(cell)}</td>)}</tr>)}</tbody></table></div>);
-      continue;
-    }
-    const paragraph: string[] = [line];
-    index += 1;
-    while (index < lines.length && lines[index].trim() && !/^(#{1,3})\s+/.test(lines[index]) && !(lines[index].includes('|') && isMarkdownTableDivider(lines[index + 1] ?? ''))) {
-      paragraph.push(lines[index].trim());
-      index += 1;
-    }
-    blocks.push(<p key={`paragraph-${index}`}>{marked(paragraph.join(' '))}</p>);
-  }
-  return <div className="draft-markdown-preview">{blocks}</div>;
 }
 
 type StructuredDraftPayload = {
@@ -452,7 +412,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const [formatCopying, setFormatCopying] = useState(false);
   const [formatCopied, setFormatCopied] = useState(false);
   const [highlightsEnabled, setHighlightsEnabled] = useState(true);
-  const [previewMode, setPreviewMode] = useState(false);
   const [insightPanel, setInsightPanel] = useState<'analysis' | 'quality' | 'keywords'>('quality');
   const [showAudit, setShowAudit] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -577,7 +536,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Hoàn thiện mọi section trước khi mở rộng bất kỳ section nào. Không lặp định nghĩa, lợi ích, so sánh, evidence hoặc kết luận.',
-          '- Khi cần trình bày dữ liệu so sánh theo hàng/cột, dùng GFM table chuẩn: một hàng header, một hàng phân cách chỉ gồm dấu gạch ngang, rồi các hàng dữ liệu. Không giả bảng bằng khoảng trắng, tab hoặc văn bản căn cột.',
           `- Mỗi đoạn chỉ phục vụ một claim, tối đa ${maxSentencesPerParagraph} câu. Không thêm section ngoài outline.`,
           `- TITLE phải chứa chính xác primary keyword “${getPrimaryKeyword(article)}”.`,
           '- Trả về DUY NHẤT JSON object đúng schema; không Markdown fences, lời dẫn hay nhật ký.',
@@ -695,7 +653,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           facts: { repairedFields: missingParts.join(', '), remainingFields: remaining.join(', ') || 'none' },
         });
       }
-      let assembledDraft = normalizeMarkdownTables(parseStructuredDraft(JSON.stringify(parsed), article));
+      let assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
       let evidenceUsage = getDraftEvidenceUsage(parsed, article);
       sessionStorage.setItem(recoveryKey, assembledDraft);
       setRecoveryDraft(assembledDraft);
@@ -792,7 +750,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         parsed = parseAIJson(repairResponse.content) as StructuredDraftPayload;
         const remainingParts = missingStructuredParts(parsed, article);
         if (remainingParts.length) throw new Error(`Draft đã được lưu; semantic repair trả thiếu: ${remainingParts.join(', ')}.`);
-        assembledDraft = normalizeMarkdownTables(parseStructuredDraft(JSON.stringify(parsed), article));
+        assembledDraft = parseStructuredDraft(JSON.stringify(parsed), article);
         evidenceUsage = getDraftEvidenceUsage(parsed, article);
         sessionStorage.setItem(recoveryKey, assembledDraft);
         setRecoveryDraft(assembledDraft);
@@ -1257,17 +1215,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPreviewMode(enabled => !enabled)}
-                  disabled={!draft || generating || repairing}
-                  aria-pressed={previewMode}
-                  title={tr(previewMode ? 'Quay lại chỉnh sửa Markdown' : 'Xem trước nội dung đã định dạng', previewMode ? 'Return to Markdown editing' : 'Preview formatted content')}
-                  className={`draft-toolbar-action ${previewMode ? 'is-active' : ''}`}
-                >
-                  <PanelTopOpen className="app-icon" aria-hidden="true" />
-                  <span className="sr-only">{tr('Chuyển chế độ xem trước', 'Toggle formatted preview')}</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => void handleRecheckAndFix()}
                   disabled={!draft || generating || repairing}
                   title={tr('Kiểm tra lại và chỉ sửa các mục chưa đạt', 'Re-check and fix only failed checks')}
@@ -1310,22 +1257,20 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                     <div key={i} className="ai-loading h-4" style={{ width: `${60 + Math.random() * 40}%` }} />
                   ))}
                 </div>
-              ) : previewMode ? (
-                  <DraftMarkdownPreview draft={draft} keywords={[getPrimaryKeyword(article), ...(article.keywords || '').split(',')]} highlightsEnabled={highlightsEnabled} />
-                ) : (
-                  <div
-                    ref={editorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onInput={handleEditorInput}
-                    data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
-                    className="draft-prose prose-editor min-h-full whitespace-pre-wrap"
-                  >
-                    {highlightsEnabled
-                      ? renderKeywordMarks(draft, [getPrimaryKeyword(article), ...(article.keywords || '').split(',')])
-                      : draft || ''}
-                  </div>
-                )}
+              ) : (
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={handleEditorInput}
+                  data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
+                  className="draft-prose prose-editor min-h-full whitespace-pre-wrap"
+                >
+                  {highlightsEnabled
+                    ? renderKeywordMarks(draft, [getPrimaryKeyword(article), ...(article.keywords || '').split(',')])
+                    : draft || ''}
+                </div>
+              )}
             </div>
 
             {/* Word count bar */}
