@@ -4363,6 +4363,23 @@ app.delete("/api/content-plans/:id", async (req, res) => {
         .filter(Boolean),
     )
     if (await relationalPlansAvailable()) {
+      // Import/classification calls can create usage and batch audit records
+      // before any article exists. Preserve those records for cost history,
+      // but detach the deleted plan so their optional foreign keys cannot
+      // block a legitimate delete of an unused plan.
+      const detachPlanReferences = async (table: string) => {
+        if (!(await tableAvailable(table))) return
+        const references = await tableSelect<any>(table, (query) =>
+          query.eq("content_plan_id", plan.id),
+        )
+        await Promise.all(references.map((reference) =>
+          tableUpdate(table, reference.id, { content_plan_id: null }),
+        ))
+      }
+      await Promise.all([
+        detachPlanReferences("writer_ai_usage"),
+        detachPlanReferences("batch_jobs"),
+      ])
       // A version may be deleted while later versions still exist. Re-parent
       // its direct descendants to the deleted plan's predecessor so the
       // version chain remains navigable and PostgreSQL's self-reference does
