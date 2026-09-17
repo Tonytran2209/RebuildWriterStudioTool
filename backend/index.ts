@@ -4362,9 +4362,32 @@ app.delete("/api/content-plans/:id", async (req, res) => {
         .map((source: any) => source.storagePath)
         .filter(Boolean),
     )
-    if (await relationalPlansAvailable())
+    if (await relationalPlansAvailable()) {
+      // A version may be deleted while later versions still exist. Re-parent
+      // its direct descendants to the deleted plan's predecessor so the
+      // version chain remains navigable and PostgreSQL's self-reference does
+      // not block the delete.
+      const descendants = await tableSelect<any>("content_plans", (query) =>
+        query.eq("previous_version_id", plan.id),
+      )
+      await Promise.all(descendants.map((descendant) =>
+        tableUpdate("content_plans", descendant.id, {
+          previous_version_id: plan.previousVersionId ?? null,
+          updated_at: new Date().toISOString(),
+        }),
+      ))
       await tableDeleteWhere("content_plans", "id", plan.id)
-    else await kvDelete(`${CONTENT_PLAN_PREFIX}${plan.id}`)
+    } else {
+      const allPlans = await kvGetByPrefix(CONTENT_PLAN_PREFIX)
+      await Promise.all(allPlans
+        .filter((record) => record.value?.previousVersionId === plan.id)
+        .map((record) => kvSet(record.key, {
+          ...record.value,
+          previousVersionId: plan.previousVersionId ?? null,
+          updatedAt: new Date().toISOString(),
+        })))
+      await kvDelete(`${CONTENT_PLAN_PREFIX}${plan.id}`)
+    }
     res.json({ ok: true, deletedId: plan.id })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
