@@ -19,6 +19,10 @@ export async function fetchContentPlans(railwayUrl: string): Promise<ContentPlan
   return parse(await fetch(`${baseUrl(railwayUrl)}/api/content-plans`));
 }
 
+export async function deleteContentPlan(id: string, railwayUrl: string): Promise<void> {
+  await parse(await fetch(`${baseUrl(railwayUrl)}/api/content-plans/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+}
+
 export async function updateContentPlanItem(planId: string, itemId: string, type: 'comparison-seo' | 'editorial-originality' | 'needs-review', railwayUrl: string): Promise<ContentPlan> {
   return (await parse(await fetch(`${baseUrl(railwayUrl)}/api/content-plans/${encodeURIComponent(planId)}/items/${encodeURIComponent(itemId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type }) }))).plan;
 }

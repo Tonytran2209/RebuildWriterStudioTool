@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ArrowLeft, ArrowRight, FileText, Plus, Sheet, Upload, X } from "lucide-react"
+import { ArrowLeft, ArrowRight, FileText, LoaderCircle, Plus, Sheet, Trash2, Upload, X } from "lucide-react"
 import type {
   AIModel,
   Article,
@@ -9,6 +9,7 @@ import type {
 } from "../types"
 import {
   classifyContentPlan,
+  deleteContentPlan,
   fetchContentPlans,
   importContentPlan,
   updateContentPlanItem,
@@ -66,6 +67,7 @@ export default function ActivityLauncher({
   const [analysisPhase, setAnalysisPhase] = useState<"upload" | "extract" | "classify" | "save">("upload")
   const [analysisName, setAnalysisName] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   useEffect(() => {
     fetchContentPlans(railwayUrl)
@@ -91,6 +93,25 @@ export default function ActivityLauncher({
     setSourceType(type)
     setMenu(false)
     if (type === "file") fileInput.current?.click()
+  }
+  const handleDeletePlan = async (item: ContentPlan) => {
+    const confirmed = window.confirm(tr(
+      `Xóa Content Plan “${item.name}”? Thao tác này không thể hoàn tác. Các plan đã có bài viết liên kết cần được archive để bảo toàn lịch sử.`,
+      `Delete Content Plan “${item.name}”? This cannot be undone. Plans with linked articles must be archived to preserve history.`,
+    ))
+    if (!confirmed) return
+    setDeletingPlanId(item.id)
+    setError(null)
+    try {
+      await deleteContentPlan(item.id, railwayUrl)
+      setPlans(current => current.filter(planItem => planItem.id !== item.id))
+      setPlan(current => current?.id === item.id ? null : current)
+      setSelected([])
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setDeletingPlanId(null)
+    }
   }
   const submit = async () => {
     setBusy(true)
@@ -641,13 +662,14 @@ export default function ActivityLauncher({
               </button>
             </div>
             <div className="mt-4 space-y-2">
+              {error && <div className="rounded-lg border border-[#5a3434] bg-[#281d1d] px-3 py-2 text-[10px] leading-relaxed text-[#e1a1a1]">{error}</div>}
               {historyPlans.map((item, index) => {
                 const source = item.sources?.[0]
                 const order = historyPlans.length - index
                 const updated = item.updatedAt && item.updatedAt !== item.createdAt
                 return (
+                <div key={item.id} className="group relative">
                 <button
-                  key={item.id}
                   onClick={() => {
                     setPlan(item)
                     setShowHistory(false)
@@ -660,7 +682,7 @@ export default function ActivityLauncher({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-3">
                         <span className="truncate text-xs font-medium text-[#ddd]">{item.name}</span>
-                        <div className="flex shrink-0 items-center gap-1.5">
+                        <div className="flex shrink-0 items-center gap-1.5 pr-7">
                           <span className="rounded-md border border-[#383838] px-1.5 py-0.5 text-[9px] text-[#aaa]">v{item.version}</span>
                           <span className="rounded-md bg-[#292929] px-1.5 py-0.5 text-[9px] capitalize text-[#858585]">{item.status}</span>
                         </div>
@@ -679,6 +701,17 @@ export default function ActivityLauncher({
                     </div>
                   </div>
                 </button>
+                <button
+                  type="button"
+                  onClick={(event) => { event.stopPropagation(); void handleDeletePlan(item) }}
+                  disabled={deletingPlanId === item.id}
+                  className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-md text-[#696969] opacity-0 transition hover:bg-[#312525] hover:text-[#e0a0a0] focus:opacity-100 disabled:opacity-100 group-hover:opacity-100"
+                  title={tr('Xóa Content Plan', 'Delete Content Plan')}
+                  aria-label={`${tr('Xóa Content Plan', 'Delete Content Plan')}: ${item.name}`}
+                >
+                  {deletingPlanId === item.id ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : <Trash2 className="app-icon" aria-hidden="true" />}
+                </button>
+                </div>
               )})}
               {!historyPlans.length && <div className="rounded-xl border border-dashed border-[#333] px-4 py-8 text-center text-[11px] text-[#666]">{tr("Chưa có Content Plan nào", "No Content Plans yet")}</div>}
             </div>
