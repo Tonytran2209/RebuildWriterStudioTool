@@ -2425,11 +2425,25 @@ html, body, #root {
 
 .workflow-rail-button:disabled { opacity: .35; cursor: default; }
 
-.workflow-rail-marker {
+.workflow-rail-status {
   position: relative;
   width: 1.1rem;
-  height: 2px;
+  height: 1.1rem;
   flex: 0 0 1.1rem;
+}
+
+.workflow-rail-marker,
+.workflow-rail-check,
+.workflow-rail-pending {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  transition: opacity 190ms ease, transform 190ms ease;
+}
+
+.workflow-rail-marker {
+  width: 1.1rem;
+  height: 2px;
   border-radius: 999px;
   background: #444;
 }
@@ -2437,7 +2451,6 @@ html, body, #root {
 .workflow-rail-check {
   width: .9rem;
   height: .9rem;
-  flex: 0 0 .9rem;
   color: #e7e7e7;
   stroke-width: 2.35;
 }
@@ -2445,13 +2458,25 @@ html, body, #root {
 .workflow-rail-pending {
   width: .9rem;
   height: .9rem;
-  flex: 0 0 .9rem;
   color: #f2f2f2;
   stroke-width: 1.9;
   animation: workflow-rail-spin 1.15s linear infinite;
 }
 
-@keyframes workflow-rail-spin { to { transform: rotate(360deg); } }
+.workflow-rail-status.is-idle .workflow-rail-marker { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.workflow-rail-status.is-idle .workflow-rail-check,
+.workflow-rail-status.is-idle .workflow-rail-pending { opacity: 0; transform: translate(-50%, -50%) scale(.55); }
+.workflow-rail-status.is-pending .workflow-rail-marker { opacity: 0; transform: translate(-50%, -50%) scale(.45); }
+.workflow-rail-status.is-pending .workflow-rail-pending { opacity: 1; }
+.workflow-rail-status.is-pending .workflow-rail-check { opacity: 0; transform: translate(-50%, -50%) scale(.55); }
+.workflow-rail-status.is-complete .workflow-rail-marker,
+.workflow-rail-status.is-complete .workflow-rail-pending { opacity: 0; transform: translate(-50%, -50%) scale(.55); }
+.workflow-rail-status.is-complete .workflow-rail-check { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+@keyframes workflow-rail-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .workflow-rail-pending { animation: none; }
@@ -2478,18 +2503,6 @@ html, body, #root {
 }
 .workflow-rail-button.is-active { background: transparent; color: #f2f2f2; }
 .workflow-rail-button.is-active .workflow-rail-check { color: #f2f2f2; }
-.workflow-rail-button.is-active .workflow-rail-marker {
-  width: .55rem;
-  height: .55rem;
-  flex-basis: .55rem;
-  margin-left: .3rem;
-  margin-right: .25rem;
-  border: solid #f0f0f0;
-  border-width: 0 2px 2px 0;
-  border-radius: 0;
-  background: transparent;
-  transform: rotate(-45deg);
-}
 .workflow-rail-button.is-active .workflow-rail-label { color: #f2f2f2; font-weight: 500; }
 .workflow-rail-button.is-active .workflow-rail-number { color: #f2f2f2; font-weight: 600; }
 .workflow-rail-button.is-complete .workflow-rail-check { color: #e7e7e7; }

@@ -30,11 +30,11 @@ export default function VerticalWorkflowRail({ article, activeStep, onNavigate }
               title={item.label}
               aria-label={`${item.step - 1}. ${item.label}`}
             >
-              {item.complete
-                ? <Check className="workflow-rail-check" aria-hidden="true" />
-                : activeStep === item.step
-                  ? <LoaderCircle className="workflow-rail-pending" aria-hidden="true" />
-                  : <span className="workflow-rail-marker" aria-hidden="true" />}
+              <span className={`workflow-rail-status ${item.complete ? 'is-complete' : activeStep === item.step ? 'is-pending' : 'is-idle'}`} aria-hidden="true">
+                <span className="workflow-rail-marker" />
+                <LoaderCircle className="workflow-rail-pending" />
+                <Check className="workflow-rail-check" />
+              </span>
               <span className="workflow-rail-label">{item.label}</span>
               <span className="workflow-rail-number" aria-hidden="true">{item.number}</span>
             </button>
