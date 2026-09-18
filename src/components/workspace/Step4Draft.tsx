@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, LoaderCircle, Pencil, RefreshCw, Sparkles } from 'lucide-react';
+import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { useI18n } from '../../lib/i18n';
@@ -31,160 +31,6 @@ function renderKeywordMarks(text: string, keywords: string[]) {
   return text.split(matcher).map((part, index) => terms.some(term => term.toLocaleLowerCase() === part.toLocaleLowerCase())
     ? <span key={`${index}-${part}`} className="draft-keyword-mark">{part}</span>
     : part);
-}
-
-type MarkdownBlock =
-  | { type: 'heading'; level: number; text: string }
-  | { type: 'paragraph'; text: string }
-  | { type: 'unordered-list'; items: string[] }
-  | { type: 'ordered-list'; items: string[] }
-  | { type: 'quote'; text: string }
-  | { type: 'code'; language: string; text: string }
-  | { type: 'table'; headers: string[]; rows: string[][] };
-
-const tableDivider = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/;
-const unorderedItem = /^\s*[-*+]\s+(.+)$/;
-const orderedItem = /^\s*\d+[.)]\s+(.+)$/;
-const headingLine = /^(#{1,6})\s+(.+)$/;
-
-function markdownTableCells(line: string) {
-  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
-}
-
-function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
-  const lines = markdown.replace(/\r/g, '').split('\n');
-  const blocks: MarkdownBlock[] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-    if (!line.trim()) { index += 1; continue; }
-    const heading = line.match(headingLine);
-    if (heading) {
-      blocks.push({ type: 'heading', level: heading[1].length, text: heading[2].trim() });
-      index += 1;
-      continue;
-    }
-    if (line.trimStart().startsWith('```')) {
-      const language = line.trim().slice(3).trim();
-      const code: string[] = [];
-      index += 1;
-      while (index < lines.length && !lines[index].trimStart().startsWith('```')) code.push(lines[index++]);
-      if (index < lines.length) index += 1;
-      blocks.push({ type: 'code', language, text: code.join('\n') });
-      continue;
-    }
-    if (index + 1 < lines.length && line.includes('|') && tableDivider.test(lines[index + 1])) {
-      const headers = markdownTableCells(line);
-      const rows: string[][] = [];
-      index += 2;
-      while (index < lines.length && lines[index].trim() && lines[index].includes('|')) rows.push(markdownTableCells(lines[index++]));
-      blocks.push({ type: 'table', headers, rows });
-      continue;
-    }
-    const unordered = line.match(unorderedItem);
-    if (unordered) {
-      const items: string[] = [];
-      while (index < lines.length) {
-        const item = lines[index].match(unorderedItem);
-        if (!item) break;
-        items.push(item[1]);
-        index += 1;
-      }
-      blocks.push({ type: 'unordered-list', items });
-      continue;
-    }
-    const ordered = line.match(orderedItem);
-    if (ordered) {
-      const items: string[] = [];
-      while (index < lines.length) {
-        const item = lines[index].match(orderedItem);
-        if (!item) break;
-        items.push(item[1]);
-        index += 1;
-      }
-      blocks.push({ type: 'ordered-list', items });
-      continue;
-    }
-    if (line.startsWith('>')) {
-      const quote: string[] = [];
-      while (index < lines.length && lines[index].startsWith('>')) quote.push(lines[index++].replace(/^>\s?/, ''));
-      blocks.push({ type: 'quote', text: quote.join('\n') });
-      continue;
-    }
-    const paragraph: string[] = [];
-    while (index < lines.length && lines[index].trim()) {
-      if (paragraph.length && (headingLine.test(lines[index]) || lines[index].trimStart().startsWith('```') || (lines[index].includes('|') && tableDivider.test(lines[index + 1] ?? '')) || unorderedItem.test(lines[index]) || orderedItem.test(lines[index]) || lines[index].startsWith('>'))) break;
-      paragraph.push(lines[index++]);
-    }
-    blocks.push({ type: 'paragraph', text: paragraph.join('\n') });
-  }
-  return blocks;
-}
-
-function renderInlineMarkdown(text: string, keywords: string[], highlightsEnabled: boolean) {
-  const tokens = text.split(/(\[[^\]]+\]\((?:https?:\/\/|mailto:)[^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_)/g);
-  const markText = (value: string) => highlightsEnabled ? renderKeywordMarks(value, keywords) : value;
-  return tokens.map((token, index) => {
-    const link = token.match(/^\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^)]+)\)$/);
-    if (link) return <a key={index} href={link[2]} target="_blank" rel="noreferrer">{markText(link[1])}</a>;
-    if (token.startsWith('`') && token.endsWith('`')) return <code key={index}>{markText(token.slice(1, -1))}</code>;
-    if ((token.startsWith('**') && token.endsWith('**')) || (token.startsWith('__') && token.endsWith('__'))) return <strong key={index}>{markText(token.slice(2, -2))}</strong>;
-    if ((token.startsWith('*') && token.endsWith('*')) || (token.startsWith('_') && token.endsWith('_'))) return <em key={index}>{markText(token.slice(1, -1))}</em>;
-    return <span key={index}>{markText(token)}</span>;
-  });
-}
-
-function MarkdownPreview({ draft, keywords, highlightsEnabled }: { draft: string; keywords: string[]; highlightsEnabled: boolean }) {
-  const blocks = useMemo(() => parseMarkdownBlocks(draft), [draft]);
-  if (!blocks.length) return null;
-  const inline = (text: string) => renderInlineMarkdown(text, keywords, highlightsEnabled);
-  const withBreaks = (text: string) => text.split('\n').map((line, index) => <span key={index}>{index > 0 && <br />}{inline(line)}</span>);
-  return <article className="draft-prose draft-rendered" aria-label="Draft preview">
-    {blocks.map((block, index) => {
-      if (block.type === 'heading') {
-        const Tag = `h${block.level}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
-        return <Tag key={index}>{inline(block.text)}</Tag>;
-      }
-      if (block.type === 'unordered-list') return <ul key={index}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{inline(item)}</li>)}</ul>;
-      if (block.type === 'ordered-list') return <ol key={index}>{block.items.map((item, itemIndex) => <li key={itemIndex}>{inline(item)}</li>)}</ol>;
-      if (block.type === 'quote') return <blockquote key={index}>{withBreaks(block.text)}</blockquote>;
-      if (block.type === 'code') return <pre key={index} data-language={block.language || undefined}><code>{block.text}</code></pre>;
-      if (block.type === 'table') return (
-        <div className="draft-table-scroll" key={index}>
-          <table>
-            <thead><tr>{block.headers.map((header, cellIndex) => <th key={cellIndex}>{inline(header)}</th>)}</tr></thead>
-            <tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex}>{block.headers.map((_, cellIndex) => <td key={cellIndex}>{inline(row[cellIndex] ?? '')}</td>)}</tr>)}</tbody>
-          </table>
-        </div>
-      );
-      return <p key={index}>{withBreaks(block.text)}</p>;
-    })}
-  </article>;
-}
-
-function escapeHtml(value: string) {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-}
-
-function markdownInlineHtml(text: string) {
-  return escapeHtml(text)
-    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^)]+)\)/g, '<a href="$2">$1</a>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, '<strong>$1$2</strong>')
-    .replace(/\*([^*]+)\*|_([^_]+)_/g, '<em>$1$2</em>');
-}
-
-function markdownToHtml(markdown: string) {
-  return parseMarkdownBlocks(markdown).map(block => {
-    if (block.type === 'heading') return `<h${block.level}>${markdownInlineHtml(block.text)}</h${block.level}>`;
-    if (block.type === 'unordered-list') return `<ul>${block.items.map(item => `<li>${markdownInlineHtml(item)}</li>`).join('')}</ul>`;
-    if (block.type === 'ordered-list') return `<ol>${block.items.map(item => `<li>${markdownInlineHtml(item)}</li>`).join('')}</ol>`;
-    if (block.type === 'quote') return `<blockquote>${markdownInlineHtml(block.text).replace(/\n/g, '<br>')}</blockquote>`;
-    if (block.type === 'code') return `<pre><code>${escapeHtml(block.text)}</code></pre>`;
-    if (block.type === 'table') return `<table><thead><tr>${block.headers.map(cell => `<th>${markdownInlineHtml(cell)}</th>`).join('')}</tr></thead><tbody>${block.rows.map(row => `<tr>${block.headers.map((_, index) => `<td>${markdownInlineHtml(row[index] ?? '')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-    return `<p>${markdownInlineHtml(block.text).replace(/\n/g, '<br>')}</p>`;
-  }).join('\n');
 }
 
 type StructuredDraftPayload = {
@@ -612,7 +458,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const [formatCopying, setFormatCopying] = useState(false);
   const [formatCopied, setFormatCopied] = useState(false);
   const [highlightsEnabled, setHighlightsEnabled] = useState(true);
-  const [editingDraft, setEditingDraft] = useState(false);
   const [insightPanel, setInsightPanel] = useState<'analysis' | 'quality' | 'keywords'>('quality');
   const [showAudit, setShowAudit] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -1304,34 +1149,25 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     setFormatCopying(true);
     setError('');
     try {
-      let html = markdownToHtml(draft);
-      let markdown = draft;
       const baseUrl = railwayUrl.trim().replace(/\/$/, '') || window.location.origin;
-      try {
-        const response = await fetch(`${baseUrl}/api/format/google-docs`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            draft,
-            title: article.title || article.topic || '',
-            outline: (article.outline ?? []).map(section => ({ heading: section.heading, level: section.level })),
-          }),
-        });
-        const payload = await response.json().catch(() => ({ error: response.statusText }));
-        if (response.ok && typeof payload.html === 'string') {
-          html = payload.html;
-          markdown = typeof payload.markdown === 'string' ? payload.markdown : draft;
-        }
-      } catch {
-        // The browser-side formatter retains tables and core formatting if Railway is unavailable.
-      }
+      const response = await fetch(`${baseUrl}/api/format/google-docs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draft,
+          title: article.title || article.topic || '',
+          outline: (article.outline ?? []).map(section => ({ heading: section.heading, level: section.level })),
+        }),
+      });
+      const payload = await response.json().catch(() => ({ error: response.statusText }));
+      if (!response.ok) throw new Error(payload.error || `Railway formatter error ${response.status}`);
       if (navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
         await navigator.clipboard.write([new ClipboardItem({
-          'text/html': new Blob([html], { type: 'text/html' }),
-          'text/plain': new Blob([markdown], { type: 'text/plain' }),
+          'text/html': new Blob([payload.html], { type: 'text/html' }),
+          'text/plain': new Blob([payload.markdown], { type: 'text/plain' }),
         })]);
       } else {
-        await navigator.clipboard.writeText(markdown);
+        await navigator.clipboard.writeText(payload.markdown);
       }
       setFormatCopied(true);
       setTimeout(() => setFormatCopied(false), 2500);
@@ -1380,17 +1216,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 </button>
                 <button
                   type="button"
-                  onClick={() => setEditingDraft(editing => !editing)}
-                  disabled={!draft || generating || repairing}
-                  title={tr(editingDraft ? 'Xem bản hiển thị' : 'Chỉnh sửa Markdown', editingDraft ? 'View formatted draft' : 'Edit Markdown')}
-                  className={`draft-toolbar-action ${editingDraft ? 'is-active' : ''}`}
-                  aria-pressed={editingDraft}
-                >
-                  {editingDraft ? <Eye className="app-icon" aria-hidden="true" /> : <Pencil className="app-icon" aria-hidden="true" />}
-                  <span className="sr-only">{tr(editingDraft ? 'Xem bản hiển thị' : 'Chỉnh sửa Markdown', editingDraft ? 'View formatted draft' : 'Edit Markdown')}</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => void handleRecheckAndFix()}
                   disabled={!draft || generating || repairing}
                   title={tr('Kiểm tra lại và chỉ sửa các mục chưa đạt', 'Re-check and fix only failed checks')}
@@ -1421,27 +1246,20 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                     <div key={i} className="ai-loading h-4" style={{ width: `${60 + Math.random() * 40}%` }} />
                   ))}
                 </div>
-              ) : editingDraft ? (
-                  <div
-                    ref={editorRef}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onInput={handleEditorInput}
-                    data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
-                    className="draft-prose prose-editor min-h-full whitespace-pre-wrap"
-                  >
-                    {draft || ''}
-                  </div>
-                ) : draft ? (
-                  <MarkdownPreview
-                    draft={draft}
-                    keywords={[getPrimaryKeyword(article), ...(article.keywords || '').split(',')]}
-                    highlightsEnabled={highlightsEnabled}
-                  />
-                ) : (
-                  <p className="draft-empty-state">{tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc chuyển sang chỉnh sửa để viết thủ công.", "Click 'AI Draft' to generate content, or switch to edit mode to write manually.")}</p>
-                )
-              }
+              ) : (
+                <div
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={handleEditorInput}
+                  data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
+                  className="draft-prose prose-editor min-h-full whitespace-pre-wrap"
+                >
+                  {highlightsEnabled
+                    ? renderKeywordMarks(draft, [getPrimaryKeyword(article), ...(article.keywords || '').split(',')])
+                    : draft || ''}
+                </div>
+              )}
             </div>
 
             {/* Word count bar */}
