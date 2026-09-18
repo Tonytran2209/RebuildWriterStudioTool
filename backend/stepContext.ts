@@ -161,16 +161,25 @@ async function resolveDocuments(stepNumber: number, articleId?: string) {
   if (!stepConfig) throw new Error(`Chưa cấu hình quyền tài liệu cho Step ${stepNumber}.`);
   const files = Array.isArray(filesValue) ? filesValue : [];
   const readyFiles = files.filter(isReady);
+  // `fileAccess` is a permission boundary, not merely a UI preference.  The
+  // previous implementation read every ready KB/Rules file at every step,
+  // which both leaked unrelated context and needlessly inflated prompts.
+  const allowedKb = new Set(
+    Array.isArray(stepConfig.fileAccess?.kb) ? stepConfig.fileAccess.kb : [],
+  );
+  const allowedRules = new Set(
+    Array.isArray(stepConfig.fileAccess?.rules) ? stepConfig.fileAccess.rules : [],
+  );
   if (!article?.contentPlanInput || !String(article.contentPlanInput).trim()) {
     throw new Error(`Article ${articleId ?? ''} chưa có Content Plan của activity. Hãy mở bài từ kết quả phân loại Content Plan.`);
   }
   const resolved: Array<{ role: Role; document: StoredDocument & { content: string } }> = [
-    ...readyFiles.filter(file => file.category === 'kb').map((document, index) => ({ role: 'KNOWLEDGE_BASE' as Role, document: {
+    ...readyFiles.filter(file => file.category === 'kb' && allowedKb.has(file.id)).map((document, index) => ({ role: 'KNOWLEDGE_BASE' as Role, document: {
       ...document,
       name: document.knowledgeMetadata?.approvedForExternalUse ? document.name : `Internal knowledge source ${index + 1}`,
     } })),
     { role: 'CONTENT_PLAN' as Role, document: { id: `content-plan-${articleId}`, name: 'Current activity Content Plan', content: String(article.contentPlanInput), contentHash: `article-${article.updatedAt ?? 'current'}` } },
-    ...readyFiles.filter(file => file.category === 'rules').map(document => ({ role: 'RULES' as Role, document })),
+    ...readyFiles.filter(file => file.category === 'rules' && allowedRules.has(file.id)).map(document => ({ role: 'RULES' as Role, document })),
   ];
   if (!resolved.length) throw new Error(`Step ${stepNumber} chưa được cấp quyền đọc tài liệu nào.`);
   return resolved;

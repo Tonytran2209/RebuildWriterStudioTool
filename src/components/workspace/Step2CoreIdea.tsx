@@ -480,7 +480,10 @@ export default function Step2CoreIdea({
           railwayUrl,
           prompt: userPrompt,
           systemPrompt,
-          maxTokens: 4000,
+          // The schema deliberately excludes evidence; a bounded completion
+          // avoids paying for verbose rationales while preserving the user's
+          // configured number of ideas.
+          maxTokens: Math.min(3200, 1200 + requestedIdeaCount * 600),
           temperature: 0.1,
           stepNumber: 2,
           bypassCache,

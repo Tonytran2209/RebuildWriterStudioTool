@@ -195,7 +195,10 @@ export default function Step3Outline({
     [article.coreIdeaSuggestions, article.selectedCoreIdeaId],
   );
   const trustedCoreIdeaEvidence = useMemo(
-    () => verifyEvidence(selectedCoreIdea?.evidence, bundle),
+    // The registry can reuse a small verified evidence set by ID. Sending an
+    // unbounded history here duplicates prompt context without improving the
+    // outline's grounding.
+    () => verifyEvidence(selectedCoreIdea?.evidence, bundle).slice(0, 8),
     [bundle, selectedCoreIdea],
   );
   const sourceFingerprint = useMemo(
@@ -225,6 +228,18 @@ export default function Step3Outline({
       secondaryKeywords: kws.slice(1),
     };
   }, [article]);
+  const compactArticleSpec = useMemo(() => ({
+    primaryQuery: article.articleSpec?.primaryQuery,
+    secondaryQueries: article.articleSpec?.secondaryQueries?.slice(0, 6),
+    audience: article.articleSpec?.audience,
+    primaryIntent: article.articleSpec?.primaryIntent,
+    expectedReaderOutcome: article.articleSpec?.expectedReaderOutcome,
+    winningFormat: article.articleSpec?.winningFormat,
+    mustCover: article.articleSpec?.mustCover?.slice(0, 8),
+    thesis: article.articleSpec?.thesis,
+    brandPov: article.articleSpec?.brandPov,
+    ctaObjective: article.articleSpec?.ctaObjective,
+  }), [article.articleSpec]);
   const desiredSections = targetSectionCount(contextBrief.wordCount);
   const configuredMinimumSections = Math.min(12, Math.max(4, Number(getWorkflowParameter(config, 'outline', 'outline-mapping', 'minimumSections') ?? 4)));
   const minimumSections = Math.max(configuredMinimumSections, desiredSections - 2);
@@ -299,7 +314,7 @@ export default function Step3Outline({
         "Railway sẽ nạp trực tiếp nội dung các tài liệu đã được cấp quyền cho Bước 2 từ Supabase.",
         "",
         "DỮ LIỆU TỪ 2 BƯỚC TRƯỚC:",
-        `- ARTICLE SPEC CONTRACT: ${JSON.stringify(article.articleSpec)}`,
+        `- ARTICLE SPEC CONTRACT (compact): ${JSON.stringify(compactArticleSpec)}`,
         `- Loại nội dung (Step 1): ${contextBrief.contentType}`,
         `- Tiêu đề bài viết (Step 2): "${contextBrief.topic}"`,
         `- Angle: ${contextBrief.angle}`,
@@ -328,7 +343,7 @@ export default function Step3Outline({
         railwayUrl,
         prompt: userPrompt,
         systemPrompt,
-        maxTokens: Math.min(6000, 1800 + desiredSections * 400),
+        maxTokens: Math.min(4800, 1400 + desiredSections * 320),
         temperature: 0.1,
         stepNumber: 3,
         bypassCache: manual,

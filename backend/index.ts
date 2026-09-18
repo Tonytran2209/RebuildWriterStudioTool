@@ -53,11 +53,107 @@ const upload = multer({
 })
 
 const ARTICLE_PREFIX = "writer:article:"
+const LEARNING_DECISIONS_KEY = "writer:learning:decision-cards:v1"
 const articleMutationQueues = new Map<string, Promise<unknown>>()
 const aiBudgetQueues = new Map<string, Promise<unknown>>()
 const batchControllers = new Map<string, { paused: boolean; running: boolean }>()
 const deletedBatchIds = new Set<string>()
 const DAILY_AI_LIMITS: Record<number, number> = { 1: 12, 2: 12, 3: 10, 4: 6 }
+
+type LearningDecisionCard = {
+  id: string
+  contentType: string
+  primaryKeyword: string
+  audience: string
+  angle: string
+  title: string
+  thesis: string
+  mustCover: string[]
+  tone: string
+  selectedAt: string
+}
+
+function compactText(value: unknown, limit: number) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit)
+}
+
+function explicitContentGroupLine(line: string) {
+  return line.match(/^\s*\[?(comparison-seo|editorial-originality)\]?\s*[:|–—-]\s*(.+)$/i)
+}
+
+// A content plan can label rows explicitly.  Those rows are already a human
+// data decision, so sending them to the classifier wastes tokens and can
+// introduce needless disagreement.  Ambiguous rows still go through AI.
+function deterministicPlanItems(plan: any) {
+  const items: any[] = []
+  for (const source of plan?.sources ?? []) {
+    const lines = String(source?.extractedContent ?? "").replace(/\r\n?/g, "\n").split("\n")
+    for (const line of lines) {
+      const match = explicitContentGroupLine(line)
+      if (!match) continue
+      const detail = compactText(match[2], 500)
+      const [rawTitle, rawKeywords = ""] = detail.split(/\s*\|\s*/, 2)
+      const title = compactText(rawTitle, 220)
+      if (!title) continue
+      items.push({
+        id: `explicit-${crypto.createHash("sha256").update(`${source.id}|${line}`).digest("hex").slice(0, 20)}`,
+        title,
+        keywords: rawKeywords.split(/[,;]+/).map((item: string) => compactText(item, 120)).filter(Boolean),
+        type: match[1].toLocaleLowerCase(),
+        confidence: 1,
+        classificationReason: "Explicit content-group label in source plan.",
+        sourceId: source.id,
+        sourceSectionId: "explicit-row",
+        sourceLine: line.trim(),
+        sourceQuote: line.trim(),
+      })
+    }
+  }
+  return items
+}
+
+async function recordLearningDecision(article: any) {
+  const idea = selectedArticleIdea(article)
+  if (!idea || !article?.articleSpec || !String(article?.contentType ?? "").trim()) return
+  const card: LearningDecisionCard = {
+    id: crypto.createHash("sha256").update([
+      article.contentType,
+      idea.primaryKeyword,
+      idea.title,
+    ].map(value => compactText(value, 160).toLocaleLowerCase()).join("|")).digest("hex"),
+    contentType: compactText(article.contentType, 80),
+    primaryKeyword: compactText(idea.primaryKeyword, 120),
+    audience: compactText(idea.targetAudience ?? article.articleSpec.audience, 160),
+    angle: compactText(idea.angleLabel, 100),
+    title: compactText(idea.title, 180),
+    thesis: compactText(idea.mainArgument ?? article.articleSpec.thesis, 280),
+    mustCover: Array.isArray(article.articleSpec.mustCover)
+      ? article.articleSpec.mustCover.map((item: unknown) => compactText(item, 100)).filter(Boolean).slice(0, 6)
+      : [],
+    tone: compactText(idea.recommendedTone ?? article.tone, 80),
+    selectedAt: new Date().toISOString(),
+  }
+  const existing = await kvGet<LearningDecisionCard[]>(LEARNING_DECISIONS_KEY)
+  const cards = Array.isArray(existing) ? existing : []
+  await kvSet(LEARNING_DECISIONS_KEY, [card, ...cards.filter(item => item?.id !== card.id)].slice(0, 60))
+}
+
+async function learningDecisionContext(article: any, stepNumber: number) {
+  if (stepNumber !== 2 && stepNumber !== 3) return ""
+  const cards = await kvGet<LearningDecisionCard[]>(LEARNING_DECISIONS_KEY)
+  const contentType = compactText(article?.contentType, 80).toLocaleLowerCase()
+  const selected = (Array.isArray(cards) ? cards : [])
+    .filter(card => compactText(card.contentType, 80).toLocaleLowerCase() === contentType)
+    .slice(0, 3)
+    .map(({ selectedAt, ...card }) => card)
+  if (!selected.length) return ""
+  return [
+    "<<<LEARNING_DECISION_CARDS>>>",
+    "These are prior human selections for style and preference only. They are not factual evidence and must not be cited or override the supplied documents.",
+    JSON.stringify(selected),
+    "<<<END_LEARNING_DECISION_CARDS>>>",
+  ].join("\n")
+}
 
 function hasArticlePlanSelection(article: any) {
   return Boolean(
@@ -3693,7 +3789,7 @@ app.post("/api/generate", async (req, res) => {
     const normalizedContextQuery = String(contextQuery ?? "")
       .trim()
       .slice(0, 4_000)
-    const contexts =
+    let contexts =
       skipDocumentContext && (stepNumber === 2 || stepNumber === 4)
         ? [
             {
@@ -3718,11 +3814,21 @@ app.post("/api/generate", async (req, res) => {
                 String(articleId),
               ),
             ]
+    const learningContext = await learningDecisionContext(article, stepNumber)
+    if (learningContext) {
+      contexts = contexts.map(context => ({
+        ...context,
+        contextDocs: [...context.contextDocs, learningContext],
+      }))
+    }
     const contextMs = Date.now() - contextsStartedAt
     const sourceFingerprint = contexts
       .map((context) => context.summary.sourceFingerprint)
       .sort()
       .join("|")
+      + (learningContext
+        ? `|learning:${crypto.createHash("sha256").update(learningContext).digest("hex")}`
+        : "")
     const cacheKey = aiCacheKey({
       modelId,
       provider,
@@ -4171,6 +4277,17 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
       fingerprint: plan.sourceFingerprint,
       model: model.id,
     })
+    const explicitItems = deterministicPlanItems(plan)
+    const hasUnclassifiedContent = (plan.sources ?? []).some((source: any) =>
+      String(source.extractedContent ?? "")
+        .replace(/\r\n?/g, "\n")
+        .split("\n")
+        .some(line => line.trim() && !explicitContentGroupLine(line)),
+    )
+    if (explicitItems.length && !hasUnclassifiedContent) {
+      const saved = await saveClassifiedPlan(plan, explicitItems, "deterministic-plan-v1")
+      return res.json({ plan: saved, cacheHit: false, deterministic: true })
+    }
     const cached = force ? null : await kvGet<any>(cacheKey)
     let parsed: any
     let response: any
@@ -4181,8 +4298,17 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
       await reserveAIBudget(`content-plan-${plan.id}`, 1)
       const sourceBlock = (plan.sources ?? [])
         .map(
-          (source: any) =>
-            `SOURCE id=${source.id} name=${JSON.stringify(source.name)}\n${String(source.extractedContent).slice(0, 500_000)}`,
+          (source: any) => {
+            // Preserve the original source for verification, but omit rows
+            // whose classification is explicit and already deterministic.
+            const remaining = String(source.extractedContent)
+              .replace(/\r\n?/g, "\n")
+              .split("\n")
+              .filter(line => !explicitContentGroupLine(line))
+              .join("\n")
+              .slice(0, 500_000)
+            return `SOURCE id=${source.id} name=${JSON.stringify(source.name)}\n${remaining}`
+          },
         )
         .join("\n\n---\n\n")
       response = await generate({
@@ -4194,7 +4320,7 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
         systemPrompt:
           "Classify only topics explicitly present in the supplied Content Plan sources. Never invent topics. Every item must include a verbatim sourceQuote copied from its source.",
         prompt: [
-          "Extract every planned article and classify it.",
+          "Extract and classify every remaining planned article. Rows with an explicit content-group label were already handled deterministically; do not repeat them.",
           "comparison-seo: comparisons, versus, alternatives, reviews, best/top lists, pricing, buyer guides, commercial or transactional SEO intent.",
           "editorial-originality: thought leadership, analysis, opinion, original research, storytelling, brand editorial, or expert insight.",
           "Use needs-review when confidence is below 0.65 or the source is ambiguous.",
@@ -4208,7 +4334,12 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
       })
       parsed = parseJsonObject(response.content)
     }
-    const items = verifiedClassificationItems(parsed, plan)
+    const aiItems = verifiedClassificationItems(parsed, plan)
+    const items = [...explicitItems, ...aiItems].filter(
+      (item, index, all) => all.findIndex(candidate =>
+        String(candidate.title).toLocaleLowerCase() === String(item.title).toLocaleLowerCase(),
+      ) === index,
+    )
     if (!items.length)
       throw new Error("AI không trả về topic nào có source evidence hợp lệ.")
     let saved = await saveClassifiedPlan(
@@ -4819,6 +4950,11 @@ app.put("/api/articles/:id", async (req, res) => {
           next.currentStep = requestedStep
         }
         await kvSet(`${ARTICLE_PREFIX}${id}`, next)
+        // A deliberate idea selection is the highest-signal feedback available
+        // in the manual workflow. Keep only a compact, non-evidentiary card so
+        // future runs can reuse preferences without replaying old documents.
+        if (Object.prototype.hasOwnProperty.call(updates, "selectedCoreIdeaId"))
+          await recordLearningDecision(next)
         await projectArticle(next)
         return next
       },
