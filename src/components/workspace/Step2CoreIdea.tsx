@@ -302,7 +302,10 @@ export default function Step2CoreIdea({
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(2, config, files), [config, files]);
   const compiledWorkflowRules = useMemo(() => compileWorkflowRules(config, 2, 'manual'), [config]);
   const configuredIdeaCount = Math.min(6, Math.max(1, Number(getWorkflowParameter(config, 'core-idea', 'idea-generation', 'ideaCount') ?? 3)));
-  const requestedIdeaCount = article.activityType === 'comparison-seo' ? 1 : Math.max(2, configuredIdeaCount);
+  // Interactive single-article workspaces always present the configured set
+  // of directions for an explicit user choice. Batch automation selects its
+  // top-ranked idea in the backend and does not use this component.
+  const requestedIdeaCount = configuredIdeaCount;
   const requestedKeywordCount = Math.min(20, Math.max(5, Number(getWorkflowParameter(config, 'core-idea', 'market-research', 'keywordCount') ?? 10)));
   const selectedSnapshot = useMemo(
     () => article.selectedContentTypeSnapshot
@@ -560,22 +563,13 @@ export default function Step2CoreIdea({
         { id: 'step2-validation', stage: 'validation', status: jsonRepairCalls || evidenceCorrectionCalls || partialResult ? 'warning' : 'completed', title: '5. Đối chứng tài liệu và kiểm tra output', detail: 'Cả bộ Core Idea phải audit đủ Top 10 và chỉ dùng keyword accepted. Evidence từ Knowledge Base, Content Plan và Skills được chọn, xác minh trong ứng dụng; lượt bổ sung idea không nạp lại tài liệu.', facts: { acceptedKeywords, rejectedKeywords, ideasAccepted: result.ideas.length, verifiedEvidence: trustedEvidence.length, jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step2-persist', stage: 'persistence', status: 'completed', title: '6. Lưu kết quả có thể audit', detail: 'Lưu Top 10, quyết định chọn/loại, evidence, điểm số, lý do và nhật ký này cùng bài viết trong Supabase.' },
       ];
-      const autoSelectedIdea = article.activityType === 'comparison-seo' && result.ideas.length === 1 ? result.ideas[0] : null;
       const specFingerprint = articleSpecFingerprint(articleSpec);
       const saved = await onUpdate({
         coreIdeaSuggestions: result.ideas,
-        selectedCoreIdeaId: autoSelectedIdea?.id,
+        selectedCoreIdeaId: undefined,
         articleSpec,
         articleSpecFingerprint: specFingerprint,
-        ...(autoSelectedIdea ? {
-          title: autoSelectedIdea.title,
-          topic: autoSelectedIdea.title,
-          angle: autoSelectedIdea.angleLabel,
-          keywords: [autoSelectedIdea.primaryKeyword, ...autoSelectedIdea.secondaryKeywords].filter(Boolean).join(', '),
-          targetAudience: autoSelectedIdea.targetAudience || articleSpec.audience,
-          tone: autoSelectedIdea.recommendedTone,
-          wordCount: autoSelectedIdea.recommendedWordCount,
-        } : {}),
+        currentStep: 2,
         coreIdeaSourceFingerprint: sourceFingerprint,
         coreIdeaScannedAt: result.res.servedAt ?? result.res.generatedAt ?? new Date().toISOString(),
         seoResearch,
@@ -588,7 +582,7 @@ export default function Step2CoreIdea({
       } else {
         notifyWorkspace('Đã tạo, kiểm tra và lưu Article Spec cùng các Core Idea.', 'success');
       }
-      setSelectedId(autoSelectedIdea?.id ?? null);
+      setSelectedId(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
@@ -625,7 +619,8 @@ export default function Step2CoreIdea({
     });
   };
 
-  const canContinueToOutline = gateStepCompletion({ ...article, selectedCoreIdeaId: selectedId ?? undefined }, 2).allowed && !scanIsStale;
+  const isCurrentStep = (article.currentStep ?? 2) <= 2;
+  const canContinueToOutline = isCurrentStep && gateStepCompletion({ ...article, selectedCoreIdeaId: selectedId ?? undefined }, 2).allowed && !scanIsStale;
   const stepActionDisabled = loading || (!canContinueToOutline && (!prerequisite.allowed || !bundle.totalCount));
 
   return (

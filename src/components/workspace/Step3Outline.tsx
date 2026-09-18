@@ -402,6 +402,7 @@ export default function Step3Outline({
         draft: "",
         draftSourceFingerprint: null,
         draftScannedAt: null,
+        currentStep: 3,
       });
       if (!saved) throw new Error('Outline Bước 2 chưa được lưu vào Supabase.');
       if (partialResult) {
@@ -487,8 +488,9 @@ export default function Step3Outline({
 
   const h2Count = outline.filter(s => s.level === "h2").length;
   const h3Count = outline.filter(s => s.level === "h3").length;
-  const needsOutlineApproval = article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved';
-  const canContinueToDraft = gateStepCompletion(article, 3).allowed && !needsOutlineApproval;
+  const isCurrentStep = (article.currentStep ?? 2) <= 3;
+  const needsOutlineApproval = isCurrentStep && article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved';
+  const canContinueToDraft = isCurrentStep && gateStepCompletion(article, 3).allowed && !needsOutlineApproval;
   const stepActionDisabled = generating || (needsOutlineApproval ? !outline.length : !canContinueToDraft && !prerequisite.allowed);
 
   return (

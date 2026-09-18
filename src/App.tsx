@@ -757,7 +757,7 @@ export default function App() {
                       onPrev={() => { setActiveId(null); setLauncherHistoryOpen(true) }}
                     />
                   </section>
-                  {gateArticleStep(article, 3).allowed && (
+                  {(article.currentStep ?? 2) >= 3 && gateArticleStep(article, 3).allowed && (
                     <section ref={(node) => { if (node) workflowStepRefs.current.set(3, node); else workflowStepRefs.current.delete(3) }} data-workflow-step="3" className="workflow-section scroll-mt-4">
                       <Step3Outline
                         embedded
@@ -772,7 +772,7 @@ export default function App() {
                       />
                     </section>
                   )}
-                  {gateArticleStep(article, 4).allowed && (
+                  {(article.currentStep ?? 2) >= 4 && gateArticleStep(article, 4).allowed && (
                     <section ref={(node) => { if (node) workflowStepRefs.current.set(4, node); else workflowStepRefs.current.delete(4) }} data-workflow-step="4" className="workflow-section scroll-mt-4">
                       <Step4Draft
                         embedded
