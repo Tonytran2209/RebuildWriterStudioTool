@@ -226,6 +226,43 @@ function assessOutlineFeasibility(article: Article, wordTarget: number) {
   };
 }
 
+function canonicalMarkdownHeading(value: string) {
+  return value
+    .replace(/^\s*#{1,6}\s+/, '')
+    .replace(/[*_`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.!?:;]+$/, '')
+    .toLocaleLowerCase();
+}
+
+function stripRepeatedSectionHeading(content: string, expectedHeading: string) {
+  const lines = content.trim().split('\n');
+  const firstContentLine = lines.findIndex(line => line.trim().length > 0);
+  if (firstContentLine < 0) return '';
+  const firstLine = lines[firstContentLine];
+  if (/^\s*#{1,6}\s+/.test(firstLine) && canonicalMarkdownHeading(firstLine) === canonicalMarkdownHeading(expectedHeading)) {
+    lines.splice(firstContentLine, 1);
+  }
+  return lines.join('\n').trim();
+}
+
+function removeConsecutiveDuplicateHeadings(draft: string) {
+  const lines = draft.replace(/\r/g, '').split('\n');
+  let previousHeading = '';
+  return lines.filter(line => {
+    if (!line.trim()) return true;
+    if (!/^\s*#{1,6}\s+/.test(line)) {
+      previousHeading = '';
+      return true;
+    }
+    const heading = canonicalMarkdownHeading(line);
+    if (heading && heading === previousHeading) return false;
+    previousHeading = heading;
+    return true;
+  }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function parseStructuredDraft(raw: string, article: Article) {
   const parsed = parseAIJson(raw) as StructuredDraftPayload;
   if (!parsed.title?.trim() || !parsed.introduction?.trim() || !parsed.conclusion?.trim() || !Array.isArray(parsed.sections)) {
@@ -241,13 +278,13 @@ function parseStructuredDraft(raw: string, article: Article) {
   const title = parsed.title.toLocaleLowerCase().includes(primaryKeyword.toLocaleLowerCase())
     ? parsed.title.trim()
     : `${parsed.title.trim()}: ${primaryKeyword}`;
-  return [
+  return removeConsecutiveDuplicateHeadings([
     `# ${title}`,
     parsed.introduction.trim(),
-    ...sections.flatMap((section, index) => [`${expected[index].level === 'h3' ? '###' : '##'} ${expected[index].heading}`, section!.content!.trim()]),
+    ...sections.flatMap((section, index) => [`${expected[index].level === 'h3' ? '###' : '##'} ${expected[index].heading}`, stripRepeatedSectionHeading(section!.content!, expected[index].heading)]),
     '## Conclusion',
     parsed.conclusion.trim(),
-  ].join('\n\n');
+  ].join('\n\n'));
 }
 
 function getPrimaryKeyword(article: Article) {
@@ -317,7 +354,7 @@ function normalizeDraftEvidenceUsage(
 
 function repairDraftInternalLinks(article: Article, draft: string, inventory: AppConfig['websiteInventory'] = []) {
   const candidates = selectInternalLinkCandidates(article, inventory ?? [], 6);
-  if (!candidates.length) return draft;
+  if (!candidates.length) return removeConsecutiveDuplicateHeadings(draft);
   let next = draft;
   let audit = auditInternalLinks(article, next, inventory ?? []);
   for (const url of audit.unapprovedUrls) next = next.split(url).join(candidates[0].url);
@@ -327,7 +364,7 @@ function repairDraftInternalLinks(article: Article, draft: string, inventory: Ap
     const anchor = (selected.suggestedAnchors?.[0] || selected.title).replace(/[\[\]]/g, '');
     next = applyTargetedDraftRepair(next, { appendBeforeConclusion: `For related guidance, see [${anchor}](${selected.url}).` });
   }
-  return next;
+  return removeConsecutiveDuplicateHeadings(next);
 }
 
 function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
@@ -615,7 +652,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         '',
         'SCHEMA OUTPUT:',
         '{"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}',
-        'Yêu cầu: Viết đủ đúng một entry cho mọi section ID theo đúng thứ tự. usedEvidenceRefs chỉ chứa ID được cấp cho chính section đó; để [] nếu section không dùng evidence. Không lặp nội dung giữa các field.',
+        'Yêu cầu: Viết đủ đúng một entry cho mọi section ID theo đúng thứ tự. sections[].content CHỈ chứa prose của section: không lặp lại heading của outline, không bắt đầu bằng Markdown heading (#, ##, ###), và không thêm tiêu đề "Conclusion". App sẽ tự ghép heading từ outline. usedEvidenceRefs chỉ chứa ID được cấp cho chính section đó; để [] nếu section không dùng evidence. Không lặp nội dung giữa các field.',
         compiledWorkflowRules.taskGuidance,
       ].join('\n');
 
@@ -848,7 +885,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     try {
       const inventory = config.websiteInventory ?? [];
       const candidates = selectInternalLinkCandidates(article, inventory, 6);
-      let candidateDraft = draft;
+      let candidateDraft = removeConsecutiveDuplicateHeadings(draft);
       let linkAudit = auditInternalLinks(article, candidateDraft, inventory);
 
       // URL-only failures can be repaired deterministically without spending AI
