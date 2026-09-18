@@ -30,6 +30,7 @@ import { parseAIJson } from '../../lib/aiJson';
 import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
 import { gateArticleStep, gateStepCompletion } from '../../lib/workflowGuards';
 import { articleSpecFingerprint, normalizeArticleSpec } from '../../lib/articleSpec';
+import { StepUsage } from './StepUsage';
 
 interface Props {
   embedded?: boolean;
@@ -636,6 +637,7 @@ export default function Step2CoreIdea({
                 </p>
               </div>
             </div>
+            <StepUsage step={1} usage={article.aiUsageByStep?.[2]} />
 
             {!loading && article.articleSpec && (
               <section className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">

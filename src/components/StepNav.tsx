@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import type { AICallUsage, AIModel } from '../types';
+import type { AIModel } from '../types';
 import { Monitor } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 
@@ -10,7 +9,6 @@ interface Props {
   onStepChange: (step: number) => void;
   currentModel?: AIModel;
   syncStatus?: SyncStatus;
-  usage?: AICallUsage[];
   canAccessStep?: (step: 2 | 3 | 4) => { allowed: boolean; reason: string };
   articleTitle?: string;
 }
@@ -22,11 +20,9 @@ const SYNC_INDICATOR: Record<string, { dot: string; label: string }> = {
   loading: { dot: 'bg-blue-400 animate-pulse', label: 'Đang tải...' },
 };
 
-export default function StepNav({ currentStep, currentModel, syncStatus = 'idle', usage = [], articleTitle }: Props) {
+export default function StepNav({ currentModel, syncStatus = 'idle', articleTitle }: Props) {
   const sync = SYNC_INDICATOR[syncStatus];
-  const latestUsage = usage.at(-1);
-  const { language, tr } = useI18n();
-  const [showUsage, setShowUsage] = useState(false);
+  const { tr } = useI18n();
   return (
     <header className="minimal-step-nav relative bg-white border-b border-slate-200/80 px-2.5 md:px-5 py-2 md:py-3 flex items-center justify-between gap-2 shrink-0 z-10">
       <section className="article-header-title min-w-0">
@@ -36,17 +32,6 @@ export default function StepNav({ currentStep, currentModel, syncStatus = 'idle'
 
       {/* Right status */}
       <div className="flex items-center gap-2 md:space-x-3 text-xs shrink-0">
-        {latestUsage && (
-          <button
-            type="button"
-            onClick={() => setShowUsage(value => !value)}
-            className="flex flex-col rounded-xl border border-slate-200 bg-slate-50 px-1.5 sm:px-2.5 py-1 text-[8px] sm:text-[9px] leading-tight text-slate-500"
-            title={`Input: ${latestUsage.inputTokens.toLocaleString()} · Output: ${latestUsage.outputTokens.toLocaleString()} · ${latestUsage.costUsd == null ? tr('Chưa cấu hình đơn giá', 'Pricing not configured') : `$${latestUsage.costUsd.toFixed(6)}`}`}
-          >
-            <span className="font-bold text-slate-700">{latestUsage.totalTokens.toLocaleString()} tokens</span>
-            <span>{latestUsage.costUsd == null ? 'USD: N/A' : `$${latestUsage.costUsd.toFixed(6)}`} {latestUsage.cacheHit ? '· cache' : ''}</span>
-          </button>
-        )}
         {currentModel && (
           <span className="app-model-tag hidden max-w-40 items-center space-x-1.5 rounded-lg border px-2.5 py-1.5 font-medium sm:flex">
             <Monitor className="app-icon" aria-hidden="true" />
@@ -58,31 +43,6 @@ export default function StepNav({ currentStep, currentModel, syncStatus = 'idle'
           <span className="hidden min-[390px]:inline font-medium text-[11px] text-slate-500">{sync.label}</span>
         </div>
       </div>
-      {showUsage && usage.length > 0 && (
-        <div className="absolute right-2 top-full mt-1 w-[min(22rem,calc(100vw-1rem))] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl z-30">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-800">{tr(`Chi phí API — Bước ${Math.max(1, currentStep - 1)}`, `API usage — Step ${Math.max(1, currentStep - 1)}`)}</span>
-            <span className="text-[9px] text-slate-400">{usage.length} calls</span>
-          </div>
-          <div className="max-h-56 space-y-1.5 overflow-y-auto">
-            {[...usage].reverse().map(item => (
-              <div key={item.id} className="grid grid-cols-[1fr_auto] gap-2 rounded-xl bg-slate-50 px-2.5 py-2 text-[10px]">
-                <div className="min-w-0">
-                  <div className="truncate font-semibold text-slate-700">{item.model}</div>
-                  <div className="text-slate-400">In {item.inputTokens.toLocaleString()}{item.cachedInputTokens ? ` (${item.cachedInputTokens.toLocaleString()} cached)` : ''} · Out {item.outputTokens.toLocaleString()} · Total {item.totalTokens.toLocaleString()}</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-mono font-bold text-slate-700">{item.costUsd == null ? 'N/A' : `$${item.costUsd.toFixed(6)}`}</div>
-                  <div className="text-[9px] text-slate-400">{item.cacheHit ? 'cache · $0' : new Date(item.calledAt).toLocaleTimeString(language === 'vi' ? 'vi-VN' : 'en-US')}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-          {usage.some(item => item.costUsd == null) && (
-            <p className="mt-2 text-[9px] leading-relaxed text-amber-600">{tr('N/A: model chưa được cấu hình đơn giá input/output trong Quản lý AI Models.', 'N/A: configure input/output pricing for this model in AI Model management.')}</p>
-          )}
-        </div>
-      )}
     </header>
   );
 }

@@ -24,6 +24,7 @@ import { ProcessTraceModal } from './ProcessTrace';
 import { parseAIJson } from '../../lib/aiJson';
 import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
 import { gateArticleStep, gateStepCompletion } from '../../lib/workflowGuards';
+import { StepUsage } from './StepUsage';
 
 function generateId() {
   return Math.random().toString(36).slice(2, 9);
@@ -502,6 +503,7 @@ export default function Step3Outline({
                 </p>
               </div>
             </div>
+            <StepUsage step={2} usage={article.aiUsageByStep?.[3]} />
 
             {generating && (
               <div className="space-y-2">

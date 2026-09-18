@@ -17,6 +17,7 @@ import { gateArticleStep } from '../../lib/workflowGuards';
 import { auditInternalLinks, deterministicQualityChecks, qualityReport } from '../../lib/universalQuality';
 import { ProcessTraceModal } from './ProcessTrace';
 import { notifyWorkspace } from './WorkspaceNotification';
+import { StepUsage } from './StepUsage';
 
 function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -1248,6 +1249,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   <span className="sr-only">{copied ? tr('Đã sao chép', 'Copied') : tr('Sao chép draft', 'Copy draft')}</span>
                 </button>
               </div>
+            </div>
+            <div className="px-3 pt-2 sm:px-4">
+              <StepUsage step={3} usage={article.aiUsageByStep?.[4]} />
             </div>
 
             {/* Draft editor */}

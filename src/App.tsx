@@ -735,11 +735,6 @@ export default function App() {
                 const gate = gateArticleStep(article, step)
                 return { allowed: gate.allowed, reason: tr(gate.reasonVi, gate.reason) }
               }}
-              usage={
-                article.aiUsageByStep?.[
-                  (visibleWorkflowStep as 1 | 2 | 3 | 4)
-                ] ?? []
-              }
             />
             <main className="continuous-workspace flex-1 min-h-0 overflow-y-auto p-2.5 md:p-5">
               <div className="mx-auto grid w-full max-w-6xl grid-cols-[minmax(0,1fr)_2.25rem] gap-2 sm:grid-cols-[minmax(0,1fr)_2.5rem] sm:gap-3 lg:grid-cols-[minmax(0,1fr)_6.5rem] lg:gap-4">
