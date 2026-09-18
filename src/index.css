@@ -2434,6 +2434,14 @@ html, body, #root {
   background: #444;
 }
 
+.workflow-rail-check {
+  width: .9rem;
+  height: .9rem;
+  flex: 0 0 .9rem;
+  color: #e7e7e7;
+  stroke-width: 2.35;
+}
+
 .workflow-rail-label {
   display: none;
   min-width: 0;
@@ -2468,10 +2476,10 @@ html, body, #root {
 }
 .workflow-rail-button.is-active .workflow-rail-label { color: #f2f2f2; font-weight: 500; }
 .workflow-rail-button.is-active .workflow-rail-number { color: #f2f2f2; font-weight: 600; }
-.workflow-rail-button.is-complete .workflow-rail-marker { background: #e7e7e7; }
+.workflow-rail-button.is-complete .workflow-rail-check { color: #e7e7e7; }
 .workflow-rail-button.is-complete .workflow-rail-label { color: #e7e7e7; }
 .workflow-rail-button.is-complete .workflow-rail-number { color: #d8d8d8; }
-.workflow-rail-button.is-active.is-complete .workflow-rail-marker { background: #f0f0f0; }
+.workflow-rail-button.is-active.is-complete .workflow-rail-check { color: #f0f0f0; }
 .workflow-rail-button.has-warning .workflow-rail-marker { background: #777; }
 
 .workflow-rail-ticks {
@@ -2527,7 +2535,7 @@ html, body, #root {
 
 .writer-light .draft-keyword-mark { background: #deded9; color: #30302d; }
 .writer-light .workflow-rail-marker { background: #c8c8c2; }
-.writer-light .workflow-rail-button.is-complete .workflow-rail-marker { background: #30302d; }
+.writer-light .workflow-rail-button.is-complete .workflow-rail-check { color: #30302d; }
 .writer-light .workflow-rail-button.is-complete .workflow-rail-label { color: #30302d; }
 .writer-light .workflow-rail-button.is-active { background: transparent; }
 .writer-light .workflow-rail-button.is-active .workflow-rail-label { color: #242422; }
