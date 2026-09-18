@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, Eye, LoaderCircle, PanelTopOpen, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, Eye, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -34,12 +34,6 @@ const SEARCH_INTENT_META: Record<SearchIntent, { label: string; color: string }>
   commercial:    { label: "Commercial",    color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   transactional: { label: "Transactional", color: "bg-amber-50 text-amber-700 border-amber-200" },
   navigational:  { label: "Navigational",  color: "bg-slate-100 text-slate-700 border-slate-200" },
-};
-
-const EVIDENCE_ROLE_STYLE: Record<string, string> = {
-  kb:     "bg-indigo-50 text-indigo-700 border-indigo-100",
-  content_plan: "bg-emerald-50 text-emerald-700 border-emerald-100",
-  rules:  "bg-amber-50 text-amber-700 border-amber-100",
 };
 
 function extractJson(raw: string): unknown {
@@ -692,7 +686,7 @@ function SectionRow({
   }, [menuOpen]);
 
   return (
-    <div className={`outline-card group rounded-xl border transition-colors ${
+    <div className={`outline-card group overflow-hidden rounded-xl border transition-colors ${
       isH3 ? "ml-2 sm:ml-6 border-slate-200 bg-slate-50/60" : "border-slate-200 bg-white"
     }`}>
       <div className="flex flex-wrap sm:flex-nowrap items-start gap-2 sm:gap-3 p-3 sm:p-4">
@@ -742,7 +736,18 @@ function SectionRow({
           )}
         </div>
 
-        <div ref={menuRef} className="outline-action-menu relative shrink-0">
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setExpanded(value => !value)}
+            className={`outline-details-button flex h-8 w-8 items-center justify-center rounded-lg border ${expanded ? 'is-active' : ''}`}
+            title={expanded ? tr('Thu gọn chi tiết', 'Collapse details') : tr('Mở chi tiết', 'Open details')}
+            aria-label={expanded ? tr('Thu gọn chi tiết', 'Collapse details') : tr('Mở chi tiết', 'Open details')}
+            aria-expanded={expanded}
+          >
+            <Eye className="app-icon" aria-hidden="true" />
+          </button>
+        <div ref={menuRef} className="outline-action-menu relative">
           <button
             type="button"
             onClick={() => setMenuOpen(open => !open)}
@@ -755,8 +760,6 @@ function SectionRow({
           {menuOpen && (
             <div className="outline-menu-popover absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-lg border p-1 shadow-lg" role="menu">
               <button type="button" role="menuitem" onClick={() => { setShowAudit(true); setMenuOpen(false); }}><Eye className="app-icon" aria-hidden="true" /><span>{tr('Xem AI log', 'View AI log')}</span></button>
-              <button type="button" role="menuitem" onClick={() => { setExpanded(value => !value); setMenuOpen(false); }}><PanelTopOpen className="app-icon" aria-hidden="true" /><span>{expanded ? tr('Thu gọn chi tiết', 'Collapse details') : tr('Mở chi tiết', 'Open details')}</span></button>
-              <div className="outline-menu-divider my-1 border-t" />
               <button type="button" role="menuitem" disabled={isFirst} onClick={() => { onMove(-1); setMenuOpen(false); }}><ChevronUp className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển lên', 'Move up')}</span></button>
               <button type="button" role="menuitem" disabled={isLast} onClick={() => { onMove(1); setMenuOpen(false); }}><ChevronDown className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển xuống', 'Move down')}</span></button>
               <div className="outline-menu-divider my-1 border-t" />
@@ -764,11 +767,12 @@ function SectionRow({
             </div>
           )}
         </div>
+        </div>
       </div>
 
       {/* Expanded editor */}
       {expanded && (
-        <div className="outline-expanded space-y-3 border-t border-slate-100 px-4 py-4">
+        <div className="outline-expanded space-y-4 border-t px-3 py-3 sm:px-4 sm:py-4">
           <div className="outline-field">
             <label>Notes</label>
             <textarea
@@ -777,12 +781,12 @@ function SectionRow({
               onBlur={() => notesDraft !== (section.notes ?? '') && onChange({ notes: notesDraft })}
               rows={2}
               placeholder={tr('Nội dung sẽ trình bày trong section...', 'Content to cover in this section...')}
-              className="mt-1 w-full resize-none rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none"
+              className="outline-editor-control mt-1 w-full resize-none rounded-lg border px-2.5 py-2 text-xs outline-none"
             />
           </div>
           <div className="outline-field">
             <label>{tr('Lý do & điểm cần đánh giá', 'Rationale & review points')}</label>
-            <textarea value={rationaleDraft} onChange={e => setRationaleDraft(e.target.value)} onBlur={() => rationaleDraft !== (section.rationale ?? '') && onChange({ rationale: rationaleDraft })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 outline-none" />
+            <textarea value={rationaleDraft} onChange={e => setRationaleDraft(e.target.value)} onBlur={() => rationaleDraft !== (section.rationale ?? '') && onChange({ rationale: rationaleDraft })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="outline-editor-control mt-1 w-full resize-y rounded-lg border px-2.5 py-2 text-xs outline-none" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
@@ -790,7 +794,7 @@ function SectionRow({
               <select
                 value={section.searchIntent || ""}
                 onChange={e => onChange({ searchIntent: (e.target.value || undefined) as SearchIntent | undefined })}
-                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none mt-1"
+                className="outline-editor-control mt-1 w-full rounded-lg border px-2 py-1.5 text-xs outline-none"
               >
                 <option value="">— {tr('chưa xác định', 'not set')} —</option>
                 {Object.entries(SEARCH_INTENT_META).map(([k, v]) => (
@@ -803,7 +807,7 @@ function SectionRow({
               <select
                 value={section.level}
                 onChange={e => onChange({ level: e.target.value as "h2" | "h3" })}
-                className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-700 outline-none mt-1"
+                className="outline-editor-control mt-1 w-full rounded-lg border px-2 py-1.5 text-xs outline-none"
               >
                 <option value="h2">H2</option>
                 <option value="h3">H3</option>
@@ -827,12 +831,7 @@ function SectionRow({
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Toàn bộ dẫn chứng đã kiểm chứng', 'All verified evidence')}</label>
               <div className="space-y-2 mt-1">
                 {section.evidence?.map((e, i) => (
-                  <div
-                    key={i}
-                    className={`text-[10px] rounded-lg px-3 py-2 border ${
-                      e.role ? EVIDENCE_ROLE_STYLE[e.role] : "bg-white text-slate-600 border-slate-200"
-                    }`}
-                  >
+                  <div key={i} className="outline-evidence-card rounded-lg border px-3 py-2 text-[10px]">
                     <div className="font-bold mb-1">{e.role?.toUpperCase()} · {e.source}</div>
                     {e.quote && <blockquote className="border-l-2 border-current/30 pl-2 leading-relaxed whitespace-pre-wrap">“{e.quote}”</blockquote>}
                     {e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}
@@ -841,7 +840,7 @@ function SectionRow({
               </div>
             </div>
           )}
-          {(section.ruleRefs?.length ?? 0) > 0 && <div><label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Rules áp dụng</label><div className="flex flex-wrap gap-1 mt-1">{section.ruleRefs?.map(rule => <span key={rule} className="text-[10px] rounded-md px-2 py-0.5 border bg-amber-50 text-amber-700 border-amber-100">{rule}</span>)}</div></div>}
+          {(section.ruleRefs?.length ?? 0) > 0 && <div><label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Rules áp dụng</label><div className="flex flex-wrap gap-1 mt-1">{section.ruleRefs?.map(rule => <span key={rule} className="outline-rule-chip text-[10px] rounded-md border px-2 py-0.5">{rule}</span>)}</div></div>}
           {keywordSuggestions.length > 0 && (
             <div>
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
