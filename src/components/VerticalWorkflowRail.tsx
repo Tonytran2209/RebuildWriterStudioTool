@@ -30,7 +30,7 @@ export default function VerticalWorkflowRail({ article, activeStep, onNavigate }
               title={item.label}
               aria-label={`${item.step - 1}. ${item.label}`}
             >
-              {item.complete
+              {item.complete || activeStep === item.step
                 ? <Check className="workflow-rail-check" aria-hidden="true" />
                 : <span className="workflow-rail-marker" aria-hidden="true" />}
               <span className="workflow-rail-label">{item.label}</span>
