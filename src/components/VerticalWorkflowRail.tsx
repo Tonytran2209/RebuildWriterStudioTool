@@ -1,5 +1,5 @@
 import type { Article } from '../types';
-import { Check } from 'lucide-react';
+import { Check, LoaderCircle } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 
 interface Props {
@@ -30,9 +30,11 @@ export default function VerticalWorkflowRail({ article, activeStep, onNavigate }
               title={item.label}
               aria-label={`${item.step - 1}. ${item.label}`}
             >
-              {item.complete || activeStep === item.step
+              {item.complete
                 ? <Check className="workflow-rail-check" aria-hidden="true" />
-                : <span className="workflow-rail-marker" aria-hidden="true" />}
+                : activeStep === item.step
+                  ? <LoaderCircle className="workflow-rail-pending" aria-hidden="true" />
+                  : <span className="workflow-rail-marker" aria-hidden="true" />}
               <span className="workflow-rail-label">{item.label}</span>
               <span className="workflow-rail-number" aria-hidden="true">{item.number}</span>
             </button>

@@ -2442,6 +2442,14 @@ html, body, #root {
   stroke-width: 2.35;
 }
 
+.workflow-rail-pending {
+  width: .9rem;
+  height: .9rem;
+  flex: 0 0 .9rem;
+  color: #f2f2f2;
+  stroke-width: 1.9;
+}
+
 .workflow-rail-label {
   display: none;
   min-width: 0;
@@ -2541,6 +2549,7 @@ html, body, #root {
 .writer-light .workflow-rail-button.is-active { background: transparent; }
 .writer-light .workflow-rail-button.is-active .workflow-rail-label { color: #242422; }
 .writer-light .workflow-rail-button.is-active .workflow-rail-check { color: #30302d; }
+.writer-light .workflow-rail-button.is-active .workflow-rail-pending { color: #30302d; }
 .writer-light .workflow-rail-button.is-active .workflow-rail-marker { border-color: #30302d; background: transparent; }
 .writer-light .workflow-rail-button.is-active .workflow-rail-number { color: #242422; }
 .writer-light .workflow-rail-ticks i { background: #d8d8d2; }
