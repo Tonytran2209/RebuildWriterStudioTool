@@ -5716,7 +5716,14 @@ function markdownForGoogleDocs(markdown: string) {
     if (listType) html.push(`</${listType}>`)
     listType = null
   }
-  for (const rawLine of markdown.split("\n")) {
+  const lines = markdown.split("\n")
+  const isTableDivider = (line: string) =>
+    /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line)
+  const tableCells = (line: string) =>
+    line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim())
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index]
     const line = rawLine.trim()
     if (!line) {
       closeList()
@@ -5727,6 +5734,27 @@ function markdownForGoogleDocs(markdown: string) {
       closeList()
       const level = heading[1].length
       html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`)
+      continue
+    }
+    if (line.includes("|") && isTableDivider(lines[index + 1] ?? "")) {
+      closeList()
+      const headers = tableCells(line)
+      const rows: string[][] = []
+      index += 2
+      while (index < lines.length && lines[index].trim() && lines[index].includes("|")) {
+        rows.push(tableCells(lines[index]))
+        index += 1
+      }
+      index -= 1
+      html.push("<table><thead><tr>")
+      html.push(headers.map((cell) => `<th>${inlineMarkdown(cell)}</th>`).join(""))
+      html.push("</tr></thead><tbody>")
+      for (const row of rows) {
+        html.push("<tr>")
+        html.push(headers.map((_, cellIndex) => `<td>${inlineMarkdown(row[cellIndex] ?? "")}</td>`).join(""))
+        html.push("</tr>")
+      }
+      html.push("</tbody></table>")
       continue
     }
     const unordered = line.match(/^[-*]\s+(.+)$/)
