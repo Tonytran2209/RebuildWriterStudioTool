@@ -1194,6 +1194,18 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
+                  onClick={() => void handleGenerate(Boolean(draft))}
+                  disabled={generating || repairing || !prerequisite.allowed}
+                  className="workflow-endpoint-button draft-generate-button"
+                >
+                  {generating
+                    ? <><LoaderCircle className="app-icon animate-spin" aria-hidden="true" /><span>{tr('Đang viết...', 'Writing...')}</span></>
+                    : draft
+                      ? <><RefreshCw className="app-icon" aria-hidden="true" /><span>{tr('Tạo lại Draft', 'Regenerate draft')}</span></>
+                      : <><Sparkles className="app-icon" aria-hidden="true" /><span>{tr('Tạo bài viết', 'Generate article')}</span></>}
+                </button>
+                <button
+                  type="button"
                   onClick={() => setShowAudit(true)}
                   disabled={!article.step4ProcessTrace?.length}
                   title={tr('Xem nhật ký AI', 'View AI log')}
@@ -1379,14 +1391,12 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             <span>{tr('Tải .txt', 'Download .txt')}</span>
           </button>
         <button
-          onClick={!draft || (article.status !== 'done' && !seoChecklistPassed) ? () => void handleGenerate(Boolean(draft)) : onToggleComplete}
-          disabled={completionSaving || generating || repairing || ((!draft || (article.status !== 'done' && !seoChecklistPassed)) && !prerequisite.allowed)}
+          onClick={onToggleComplete}
+          disabled={completionSaving || generating || repairing || !draft || (article.status !== 'done' && !seoChecklistPassed)}
           className={`workflow-endpoint-button ${article.status === 'done' ? 'is-complete' : ''}`}
         >
-          {completionSaving || generating ? <><LoaderCircle className="app-icon animate-spin" aria-hidden="true" /><span>{completionSaving ? tr('Đang lưu...', 'Saving...') : tr('Đang viết...', 'Writing...')}</span></>
+          {completionSaving ? <><LoaderCircle className="app-icon animate-spin" aria-hidden="true" /><span>{tr('Đang lưu...', 'Saving...')}</span></>
             : article.status === 'done' ? <><RefreshCw className="app-icon" aria-hidden="true" /><span>{tr('Mở lại bài viết', 'Reopen article')}</span></>
-            : !draft ? <><Sparkles className="app-icon" aria-hidden="true" /><span>{tr('AI viết Draft', 'Generate draft')}</span></>
-            : !seoChecklistPassed ? <><Sparkles className="app-icon" aria-hidden="true" /><span>{tr('Viết lại Draft', 'Rewrite draft')}</span></>
             : <><Check className="app-icon" aria-hidden="true" /><span>{tr('Đánh dấu hoàn thành', 'Mark complete')}</span></>}
         </button>
         </div>

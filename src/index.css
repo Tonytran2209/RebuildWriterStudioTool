@@ -2036,6 +2036,19 @@ html, body, #root {
 .workflow-endpoint-button.is-complete { color: #3f3f3b; background: #efefeb; border-color: #d5d5cf; }
 .workflow-endpoint-button.is-complete:hover:not(:disabled) { background: #e5e5e0; border-color: #c8c8c2; }
 
+.draft-generate-button {
+  min-height: 2rem;
+  padding: .45rem .7rem;
+  border-radius: .5rem;
+  font-size: .6875rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .draft-generate-button { flex: 1 1 100%; }
+  .draft-toolbar > div:last-child { flex-wrap: wrap; justify-content: flex-end; }
+}
+
 .codex-dark .workspace-notification {
   color: #e4e4e0;
   background: rgba(31, 31, 30, 0.96);
