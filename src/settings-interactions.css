@@ -191,6 +191,41 @@
 .codex-dark .minimal-settings .settings-content .model-provider-group .model-setting-row:hover { background: var(--settings-card) !important; border-color: var(--settings-border) !important; }
 .codex-dark .minimal-settings .prompt-group pre { color: #c9c9cc !important; }
 
+/* Model enablement switches: blue clearly communicates the active state in
+   the otherwise neutral settings surface. */
+.settings-model-toggle {
+  position: relative;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 9999px;
+  background: #363636;
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+.settings-model-toggle::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 9999px;
+  background: #fff;
+  content: "";
+  transition: transform 160ms ease, border-color 160ms ease;
+}
+.settings-model-toggle-input:checked + .settings-model-toggle {
+  background: #2563eb;
+  box-shadow: 0 0 0 1px rgb(96 165 250 / 45%), 0 0 12px rgb(37 99 235 / 35%);
+}
+.settings-model-toggle-input:checked + .settings-model-toggle::after {
+  transform: translateX(1rem);
+  border-color: #fff;
+}
+.settings-model-toggle-input:focus-visible + .settings-model-toggle {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
 @media (max-width: 767px) {
   .minimal-settings .settings-sidebar { max-height: 14rem; }
   .minimal-settings .settings-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .25rem; }

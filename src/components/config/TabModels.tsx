@@ -170,9 +170,9 @@ export default function TabModels({ config, onChange }: Props) {
                       type="checkbox"
                       checked={model.enabled}
                       onChange={() => toggleModel(model.id)}
-                      className="sr-only peer"
+                      className="settings-model-toggle-input sr-only"
                     />
-                    <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-900" />
+                    <div className="settings-model-toggle" />
                   </label>
                 </div>
               ))}
