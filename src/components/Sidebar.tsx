@@ -44,12 +44,11 @@ export default function Sidebar({
   )
     .map(([key, group]) => ({ key, articles: group, article: group[0] }))
     .filter(({ articles: group }) => group.some((article) => (article.topic || article.title).toLowerCase().includes(search.toLowerCase())))
-    .slice(0, 12)
   return (
     <aside
       className={`writer-sidebar ${
         open ? "max-md:h-[65dvh]" : "max-md:h-14"
-      } w-full md:w-[252px] shrink-0 overflow-hidden border-b md:border-b-0 md:border-r border-[#2b2b2b] bg-[#202020] text-[#c8c8c8] transition-all flex flex-col`}
+      } w-full md:w-[252px] shrink-0 min-h-0 overflow-hidden border-b md:border-b-0 md:border-r border-[#2b2b2b] bg-[#202020] text-[#c8c8c8] transition-all flex flex-col`}
     >
       <div className="flex h-14 shrink-0 items-center justify-between px-3">
         <button onClick={onNewArticle} className="flex items-center gap-2 text-sm font-semibold text-[#e7e7e7]">
@@ -105,7 +104,7 @@ export default function Sidebar({
           />
         )}
       </div>
-      <div className="sidebar-recent-list flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+      <div className="sidebar-recent-list min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
         {recent.map(({ key, article, articles: groupArticles }) => {
           const isBatch = groupArticles.length > 1 || article.activityKind === "batch"
           const active = groupArticles.some((item) => item.id === activeArticleId)
