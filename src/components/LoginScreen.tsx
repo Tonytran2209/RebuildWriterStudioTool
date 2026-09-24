@@ -29,7 +29,7 @@ export default function LoginScreen({ onLogin }: Props) {
 
   return <main className="flex min-h-dvh items-center justify-center bg-[#141414] p-5 text-[#e5e5e5]">
     <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-[#303030] bg-[#1c1c1c] p-7 shadow-2xl shadow-black/25">
-      <div className="mb-7 flex items-center gap-3"><BrandMark /><div><h1 className="text-lg font-semibold">Writer Studio</h1><p className="text-xs text-[#a1a1aa]">{tr("Đăng nhập để tiếp tục", "Sign in to continue")}</p></div></div>
+      <div className="mb-7 flex items-center gap-4"><BrandMark className="h-12 w-12" /><div><h1 className="text-lg font-semibold">Writer Studio</h1><p className="text-xs text-[#a1a1aa]">{tr("Đăng nhập để tiếp tục", "Sign in to continue")}</p></div></div>
       <label className="mb-4 block text-sm text-[#d4d4d8]">Email<input required autoComplete="email" type="email" value={email} onChange={event => setEmail(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#3a3a3a] bg-[#252525] px-3 text-white outline-none transition focus:border-blue-500" /></label>
       <label className="mb-5 block text-sm text-[#d4d4d8]">{tr("Mật khẩu", "Password")}<input required autoComplete="current-password" type="password" value={password} onChange={event => setPassword(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[#3a3a3a] bg-[#252525] px-3 text-white outline-none transition focus:border-blue-500" /></label>
       {error && <p role="alert" className="mb-4 rounded-lg border border-red-900/70 bg-red-950/30 px-3 py-2 text-xs text-red-300">{error}</p>}
