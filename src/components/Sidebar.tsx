@@ -1,5 +1,5 @@
-import { useState } from "react"
-import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, LogOut, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, LogOut, Mail, Menu, PenLine, PlusCircle, Search, Settings, ShieldCheck, Trash2, UserRound } from "lucide-react"
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
@@ -13,6 +13,7 @@ interface Props {
   onOpenContentPlans?: () => void
   onOpenConfig: () => void
   canManageSettings: boolean
+  currentUser: { email: string; role: "user" | "admin" }
   onSignOut: () => void
   onToggleComplete: (article: Article) => void
   completionSavingId: string | null
@@ -27,6 +28,7 @@ export default function Sidebar({
   onOpenContentPlans,
   onOpenConfig,
   canManageSettings,
+  currentUser,
   onSignOut,
   onDeleteArticle,
   deletingArticleId,
@@ -35,6 +37,24 @@ export default function Sidebar({
   const [open, setOpen] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [search, setSearch] = useState("")
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const profileMenuRef = useRef<HTMLDivElement>(null)
+  const accountName = currentUser.email.split("@")[0] || currentUser.email
+  const avatarText = accountName.slice(0, 2).toUpperCase()
+  useEffect(() => {
+    const closeProfileMenu = (event: MouseEvent) => {
+      if (!profileMenuRef.current?.contains(event.target as Node)) setProfileMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setProfileMenuOpen(false)
+    }
+    document.addEventListener("mousedown", closeProfileMenu)
+    document.addEventListener("keydown", closeOnEscape)
+    return () => {
+      document.removeEventListener("mousedown", closeProfileMenu)
+      document.removeEventListener("keydown", closeOnEscape)
+    }
+  }, [])
   const recent = Array.from(
     articles.reduce((groups, article) => {
       const key = article.activityKind === "batch" && article.activityId
@@ -166,14 +186,24 @@ export default function Sidebar({
           {language === "vi" ? "Tiếng Việt" : "English"}
           <ChevronDown className="app-icon ml-auto text-[#777]" aria-hidden="true" />
         </button>
-        {canManageSettings && <button onClick={onOpenConfig} className="sidebar-nav">
-          <Settings className="app-icon" aria-hidden="true" />
-          {tr("Cài đặt", "Settings")}
-        </button>}
-        <button onClick={onSignOut} className="sidebar-nav">
-          <LogOut className="app-icon" aria-hidden="true" />
-          {tr("Đăng xuất", "Sign out")}
-        </button>
+        <div ref={profileMenuRef} className="relative mt-1">
+          {profileMenuOpen && <div role="menu" className="absolute bottom-[calc(100%+8px)] left-0 z-30 w-[236px] overflow-hidden rounded-xl border border-[#444] bg-[#2b2b2b] p-1.5 shadow-2xl shadow-black/40">
+            <div className="flex items-center gap-3 px-2.5 py-2.5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[11px] font-semibold text-white">{avatarText}</div>
+              <div className="min-w-0"><p className="truncate text-sm font-medium text-[#f1f1f1]">{accountName}</p><p className="text-xs text-[#a4a4a4]">{currentUser.role === "admin" ? "Admin" : "User"}</p></div>
+            </div>
+            <div className="mx-1 my-1 h-px bg-[#454545]" />
+            <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-[#b5b5b5]"><Mail className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{currentUser.email}</span></div>
+            <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-[#b5b5b5]"><ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span>{tr("Vai trò", "Role")}: {currentUser.role === "admin" ? "Admin" : "User"}</span></div>
+            {canManageSettings && <button role="menuitem" onClick={() => { setProfileMenuOpen(false); onOpenConfig() }} className="sidebar-nav mt-1 w-full"><Settings className="app-icon" aria-hidden="true" />{tr("Cài đặt", "Settings")}</button>}
+            <button role="menuitem" onClick={onSignOut} className="sidebar-nav mt-1 w-full text-red-300 hover:text-red-200"><LogOut className="app-icon" aria-hidden="true" />{tr("Đăng xuất", "Sign out")}</button>
+          </div>}
+          <button onClick={() => setProfileMenuOpen((value) => !value)} aria-haspopup="menu" aria-expanded={profileMenuOpen} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition hover:bg-[#2c2c2c]">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[10px] font-semibold text-white">{avatarText}</div>
+            <div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium text-[#e8e8e8]">{accountName}</p><p className="truncate text-[11px] text-[#858585]">{currentUser.email}</p></div>
+            <ChevronDown className={`app-icon shrink-0 text-[#888] transition-transform ${profileMenuOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </aside>
   )

@@ -690,6 +690,7 @@ export default function App() {
         }}
         onOpenConfig={() => setShowConfig(true)}
         canManageSettings={authSession.user.role === "admin"}
+        currentUser={authSession.user}
         onSignOut={() => { db.clearAuthSession(); setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }}
         onToggleComplete={handleToggleComplete}
         completionSavingId={completionSavingId}
