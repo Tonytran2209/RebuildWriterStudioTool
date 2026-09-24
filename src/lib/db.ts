@@ -91,6 +91,22 @@ export async function login(email: string, password: string): Promise<AuthSessio
   return session
 }
 
+export async function signUp(email: string, password: string): Promise<string> {
+  const result = await railwayRequest<{ message: string }>(
+    "/api/auth/signup",
+    jsonRequest("POST", { email, password }),
+  )
+  return result.message
+}
+
+export async function requestPasswordReset(email: string): Promise<string> {
+  const result = await railwayRequest<{ message: string }>(
+    "/api/auth/forgot-password",
+    jsonRequest("POST", { email }),
+  )
+  return result.message
+}
+
 // ── Articles ──────────────────────────────────────────────────────────────────
 
 export async function fetchArticles(): Promise<Article[]> {

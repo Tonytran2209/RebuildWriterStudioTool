@@ -52,6 +52,24 @@ export async function signInWithPassword(email: string, password: string) {
   return data;
 }
 
+export async function signUpWithPassword(email: string, password: string, emailRedirectTo?: string) {
+  const { data, error } = await getAuthClient().auth.signUp({
+    email,
+    password,
+    options: emailRedirectTo ? { emailRedirectTo } : undefined,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function sendPasswordReset(email: string, emailRedirectTo?: string) {
+  const { error } = await getAuthClient().auth.resetPasswordForEmail(
+    email,
+    emailRedirectTo ? { redirectTo: emailRedirectTo } : undefined,
+  );
+  if (error) throw new Error(error.message);
+}
+
 export async function getAuthenticatedUser(accessToken: string) {
   const { data, error } = await getAuthClient().auth.getUser(accessToken);
   if (error || !data.user) throw new Error('Phiên đăng nhập không hợp lệ hoặc đã hết hạn.');

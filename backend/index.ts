@@ -23,6 +23,8 @@ import {
   tableUpdate,
   tableDeleteWhere,
   signInWithPassword,
+  signUpWithPassword,
+  sendPasswordReset,
   getAuthenticatedUser,
 } from "./supabase.ts"
 import { extractDocumentText } from "./documentParser.ts"
@@ -82,8 +84,44 @@ app.post("/api/auth/login", async (req, res) => {
   }
 })
 
+function validAuthInput(req: express.Request, res: express.Response) {
+  const email = String(req.body?.email ?? "").trim()
+  const password = String(req.body?.password ?? "")
+  if (!email || !password || password.length < 8) {
+    res.status(400).json({ error: "Nhập email hợp lệ và mật khẩu ít nhất 8 ký tự." })
+    return null
+  }
+  return { email, password }
+}
+
+app.post("/api/auth/signup", async (req, res) => {
+  try {
+    const input = validAuthInput(req, res)
+    if (!input) return
+    const data = await signUpWithPassword(input.email, input.password, process.env.SUPABASE_AUTH_REDIRECT_URL)
+    res.status(201).json({
+      message: data.session ? "Đăng ký thành công. Bạn có thể đăng nhập ngay." : "Đăng ký thành công. Hãy kiểm tra email để xác nhận tài khoản.",
+    })
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Không thể đăng ký tài khoản." })
+  }
+})
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const email = String(req.body?.email ?? "").trim()
+    if (!email) return res.status(400).json({ error: "Email là bắt buộc." })
+    await sendPasswordReset(email, process.env.SUPABASE_AUTH_REDIRECT_URL)
+    // Keep this response deliberately neutral so it does not reveal whether
+    // an address has an account.
+    res.json({ message: "Nếu tài khoản tồn tại, email đặt lại mật khẩu đã được gửi." })
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Không thể gửi email đặt lại mật khẩu." })
+  }
+})
+
 app.use("/api", async (req: AuthenticatedRequest, res, next) => {
-  if (req.path === "/auth/login") return next()
+  if (["/auth/login", "/auth/signup", "/auth/forgot-password"].includes(req.path)) return next()
   const token = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim()
   if (!token) return res.status(401).json({ error: "Vui lòng đăng nhập để tiếp tục." })
   try {

@@ -595,7 +595,11 @@ export default function App() {
 
   // ── Loading screen ──
   if (!authSession) {
-    return <LoginScreen onLogin={async (email, password) => setAuthSession(await db.login(email, password))} />
+    return <LoginScreen
+      onLogin={async (email, password) => setAuthSession(await db.login(email, password))}
+      onSignUp={db.signUp}
+      onForgotPassword={db.requestPasswordReset}
+    />
   }
 
   if (syncStatus === "loading") {
