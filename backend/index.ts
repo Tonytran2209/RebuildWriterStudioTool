@@ -25,6 +25,7 @@ import {
   signInWithPassword,
   signUpWithPassword,
   sendPasswordReset,
+  updatePasswordFromRecovery,
   getAuthenticatedUser,
 } from "./supabase.ts"
 import { extractDocumentText } from "./documentParser.ts"
@@ -117,6 +118,20 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     res.json({ message: "Nếu tài khoản tồn tại, email đặt lại mật khẩu đã được gửi." })
   } catch (error) {
     res.status(400).json({ error: error instanceof Error ? error.message : "Không thể gửi email đặt lại mật khẩu." })
+  }
+})
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const password = String(req.body?.password ?? "")
+    const token = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim()
+    if (!token || password.length < 8) {
+      return res.status(400).json({ error: "Link đặt lại không hợp lệ hoặc mật khẩu phải có ít nhất 8 ký tự." })
+    }
+    await updatePasswordFromRecovery(token, password)
+    res.json({ message: "Đặt lại mật khẩu thành công. Hãy đăng nhập bằng mật khẩu mới." })
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Không thể đặt lại mật khẩu." })
   }
 })
 

@@ -70,6 +70,12 @@ export async function sendPasswordReset(email: string, emailRedirectTo?: string)
   if (error) throw new Error(error.message);
 }
 
+export async function updatePasswordFromRecovery(accessToken: string, password: string) {
+  const user = await getAuthenticatedUser(accessToken);
+  const { error } = await getClient().auth.admin.updateUserById(user.id, { password });
+  if (error) throw new Error(error.message);
+}
+
 export async function getAuthenticatedUser(accessToken: string) {
   const { data, error } = await getAuthClient().auth.getUser(accessToken);
   if (error || !data.user) throw new Error('Phiên đăng nhập không hợp lệ hoặc đã hết hạn.');

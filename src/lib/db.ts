@@ -54,7 +54,7 @@ async function railwayRequest<T>(
     try {
       const session = getAuthSession()
       const headers = new Headers(init?.headers)
-      if (session?.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`)
+      if (session?.accessToken && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${session.accessToken}`)
       response = await fetch(url, { ...init, headers })
     } catch (error) {
       lastError = error
@@ -103,6 +103,14 @@ export async function requestPasswordReset(email: string): Promise<string> {
   const result = await railwayRequest<{ message: string }>(
     "/api/auth/forgot-password",
     jsonRequest("POST", { email }),
+  )
+  return result.message
+}
+
+export async function resetPassword(accessToken: string, password: string): Promise<string> {
+  const result = await railwayRequest<{ message: string }>(
+    "/api/auth/reset-password",
+    { ...jsonRequest("POST", { password }), headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` } },
   )
   return result.message
 }

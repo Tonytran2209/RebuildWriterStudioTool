@@ -41,12 +41,23 @@ function createNewArticle(): Article {
   }
 }
 
+function hasPasswordRecoveryLink() {
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.hash.slice(1)).get("type") === "recovery"
+}
+
 type SyncStatus = "idle" | "loading" | "saving" | "error"
 type ArticleUpdateOptions = { silent?: boolean }
 
 export default function App() {
   const { tr } = useI18n()
-  const [authSession, setAuthSession] = useState<db.AuthSession | null>(() => db.getAuthSession())
+  const [authSession, setAuthSession] = useState<db.AuthSession | null>(() => {
+    if (hasPasswordRecoveryLink()) {
+      db.clearAuthSession()
+      return null
+    }
+    return db.getAuthSession()
+  })
   const [articles, setArticles] = useState<Article[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
@@ -599,6 +610,7 @@ export default function App() {
       onLogin={async (email, password) => setAuthSession(await db.login(email, password))}
       onSignUp={db.signUp}
       onForgotPassword={db.requestPasswordReset}
+      onResetPassword={db.resetPassword}
     />
   }
 
