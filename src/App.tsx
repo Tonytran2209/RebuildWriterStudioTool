@@ -22,6 +22,7 @@ import LegacyArticleView from "./components/workspace/LegacyArticleView"
 import { useI18n } from "./lib/i18n"
 import ActivityLauncher from "./components/ActivityLauncher"
 import BatchActivity from "./components/BatchActivity"
+import LoginScreen from "./components/LoginScreen"
 import { clampArticleStep, gateArticleStep, gateStepCompletion } from "./lib/workflowGuards"
 import { isLegacyArticle } from "./lib/legacyCompatibility"
 
@@ -45,6 +46,7 @@ type ArticleUpdateOptions = { silent?: boolean }
 
 export default function App() {
   const { tr } = useI18n()
+  const [authSession, setAuthSession] = useState<db.AuthSession | null>(() => db.getAuthSession())
   const [articles, setArticles] = useState<Article[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
@@ -110,6 +112,10 @@ export default function App() {
 
   // Load all data from Supabase / Railway on mount
   useEffect(() => {
+    if (!authSession) {
+      setSyncStatus("idle")
+      return
+    }
     const load = async () => {
       setSyncStatus("loading")
       setInitialLoadError(null)
@@ -145,7 +151,7 @@ export default function App() {
       }
     }
     load()
-  }, [])
+  }, [authSession])
 
   const handleUpdateArticle = useCallback(
     (id: string, updates: Partial<Article>, options: ArticleUpdateOptions = {}) => {
@@ -588,6 +594,10 @@ export default function App() {
     undefined
 
   // ── Loading screen ──
+  if (!authSession) {
+    return <LoginScreen onLogin={async (email, password) => setAuthSession(await db.login(email, password))} />
+  }
+
   if (syncStatus === "loading") {
     return (
       <div className="codex-dark h-dvh flex items-center justify-center bg-[#141414]">
@@ -663,6 +673,8 @@ export default function App() {
           )
         }}
         onOpenConfig={() => setShowConfig(true)}
+        canManageSettings={authSession.user.role === "admin"}
+        onSignOut={() => { db.clearAuthSession(); setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }}
         onToggleComplete={handleToggleComplete}
         completionSavingId={completionSavingId}
         onDeleteArticle={handleDeleteArticle}

@@ -1,5 +1,33 @@
 import type { Article, AppConfig, DocumentFile, WebsiteContentRecord } from "../types"
 
+const AUTH_STORAGE_KEY = "writer:auth-session"
+
+export type UserRole = "user" | "admin"
+export interface AuthSession {
+  accessToken: string
+  expiresAt: number | null
+  user: { id: string; email: string; role: UserRole }
+}
+
+export function getAuthSession(): AuthSession | null {
+  try {
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY)
+    if (!raw) return null
+    const session = JSON.parse(raw) as AuthSession
+    if (!session.accessToken || !session.user?.role || (session.expiresAt && session.expiresAt * 1000 <= Date.now())) {
+      localStorage.removeItem(AUTH_STORAGE_KEY)
+      return null
+    }
+    return session
+  } catch {
+    return null
+  }
+}
+
+export function clearAuthSession() {
+  localStorage.removeItem(AUTH_STORAGE_KEY)
+}
+
 function resolveRailwayUrl(explicitUrl?: string): string {
   const saved =
     typeof window !== "undefined"
@@ -24,7 +52,10 @@ async function railwayRequest<T>(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     let response: Response
     try {
-      response = await fetch(url, init)
+      const session = getAuthSession()
+      const headers = new Headers(init?.headers)
+      if (session?.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`)
+      response = await fetch(url, { ...init, headers })
     } catch (error) {
       lastError = error
       if (attempt === maxAttempts) throw error
@@ -49,6 +80,15 @@ async function railwayRequest<T>(
   throw lastError instanceof Error
     ? lastError
     : new Error("Không thể kết nối Railway.")
+}
+
+export async function login(email: string, password: string): Promise<AuthSession> {
+  const session = await railwayRequest<AuthSession>(
+    "/api/auth/login",
+    jsonRequest("POST", { email, password }),
+  )
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
+  return session
 }
 
 // ── Articles ──────────────────────────────────────────────────────────────────

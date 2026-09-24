@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
+import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, LogOut, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
@@ -12,6 +12,8 @@ interface Props {
   onNewArticle: () => void
   onOpenContentPlans?: () => void
   onOpenConfig: () => void
+  canManageSettings: boolean
+  onSignOut: () => void
   onToggleComplete: (article: Article) => void
   completionSavingId: string | null
   onDeleteArticle: (article: Article) => void
@@ -24,6 +26,8 @@ export default function Sidebar({
   onNewArticle,
   onOpenContentPlans,
   onOpenConfig,
+  canManageSettings,
+  onSignOut,
   onDeleteArticle,
   deletingArticleId,
 }: Props) {
@@ -162,9 +166,13 @@ export default function Sidebar({
           {language === "vi" ? "Tiếng Việt" : "English"}
           <ChevronDown className="app-icon ml-auto text-[#777]" aria-hidden="true" />
         </button>
-        <button onClick={onOpenConfig} className="sidebar-nav">
+        {canManageSettings && <button onClick={onOpenConfig} className="sidebar-nav">
           <Settings className="app-icon" aria-hidden="true" />
           {tr("Cài đặt", "Settings")}
+        </button>}
+        <button onClick={onSignOut} className="sidebar-nav">
+          <LogOut className="app-icon" aria-hidden="true" />
+          {tr("Đăng xuất", "Sign out")}
         </button>
       </div>
     </aside>

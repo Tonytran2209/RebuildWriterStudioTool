@@ -22,6 +22,8 @@ import {
   tableUpsert,
   tableUpdate,
   tableDeleteWhere,
+  signInWithPassword,
+  getAuthenticatedUser,
 } from "./supabase.ts"
 import { extractDocumentText } from "./documentParser.ts"
 import { extractStructuredSections } from "./documentStructure.ts"
@@ -50,6 +52,51 @@ app.use(express.json({ limit: "10mb" }))
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 1 },
+})
+
+type AuthenticatedRequest = express.Request & {
+  auth?: { userId: string; email: string; role: "user" | "admin" }
+}
+
+function userRole(user: any): "user" | "admin" {
+  const configuredAdmins = (process.env.ADMIN_EMAILS ?? "")
+    .split(",").map((email) => email.trim().toLocaleLowerCase()).filter(Boolean)
+  return user?.app_metadata?.role === "admin" || configuredAdmins.includes(String(user?.email ?? "").toLocaleLowerCase())
+    ? "admin"
+    : "user"
+}
+
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const email = String(req.body?.email ?? "").trim()
+    const password = String(req.body?.password ?? "")
+    if (!email || !password) return res.status(400).json({ error: "Email và mật khẩu là bắt buộc." })
+    const { user, session } = await signInWithPassword(email, password)
+    res.json({
+      accessToken: session.access_token,
+      expiresAt: session.expires_at ?? null,
+      user: { id: user.id, email: user.email ?? email, role: userRole(user) },
+    })
+  } catch (error) {
+    res.status(401).json({ error: error instanceof Error ? error.message : "Không thể đăng nhập." })
+  }
+})
+
+app.use("/api", async (req: AuthenticatedRequest, res, next) => {
+  if (req.path === "/auth/login") return next()
+  const token = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim()
+  if (!token) return res.status(401).json({ error: "Vui lòng đăng nhập để tiếp tục." })
+  try {
+    const user = await getAuthenticatedUser(token)
+    req.auth = { userId: user.id, email: user.email ?? "", role: userRole(user) }
+    // Users need read access to workflow context, but only admins may mutate
+    // shared configuration, documents, or website inventory.
+    const adminOnly = req.method !== "GET" && (req.path === "/config" || req.path.startsWith("/files") || req.path.startsWith("/website-inventory"))
+    if (adminOnly && req.auth.role !== "admin") return res.status(403).json({ error: "Chỉ admin mới được phép quản trị cấu hình và knowledge base." })
+    next()
+  } catch (error) {
+    res.status(401).json({ error: error instanceof Error ? error.message : "Phiên đăng nhập không hợp lệ." })
+  }
 })
 
 const ARTICLE_PREFIX = "writer:article:"
