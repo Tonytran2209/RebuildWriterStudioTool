@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, LogOut, Mail, Menu, PenLine, PlusCircle, Search, Settings, ShieldCheck, Trash2, UserRound } from "lucide-react"
+import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, LogOut, Mail, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
@@ -194,7 +194,6 @@ export default function Sidebar({
             </div>
             <div className="mx-1 my-1 h-px bg-[#454545]" />
             <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-[#b5b5b5]"><Mail className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{currentUser.email}</span></div>
-            <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-[#b5b5b5]"><ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span>{tr("Vai trò", "Role")}: {currentUser.role === "admin" ? "Admin" : "User"}</span></div>
             {canManageSettings && <button role="menuitem" onClick={() => { setProfileMenuOpen(false); onOpenConfig() }} className="sidebar-nav mt-1 w-full"><Settings className="app-icon" aria-hidden="true" />{tr("Cài đặt", "Settings")}</button>}
             <button role="menuitem" onClick={onSignOut} className="sidebar-nav mt-1 w-full text-red-300 hover:text-red-200"><LogOut className="app-icon" aria-hidden="true" />{tr("Đăng xuất", "Sign out")}</button>
           </div>}
