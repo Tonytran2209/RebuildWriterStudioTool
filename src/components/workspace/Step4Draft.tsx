@@ -15,7 +15,7 @@ import {
 import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
 import { selectInternalLinkCandidates } from '../../lib/internalLinkInventory';
 import { gateArticleStep } from '../../lib/workflowGuards';
-import { auditInternalLinks, deterministicQualityChecks, qualityReport } from '../../lib/universalQuality';
+import { auditInternalLinks, deterministicQualityChecks, internalLinkBudget, qualityReport } from '../../lib/universalQuality';
 import { ProcessTraceModal } from './ProcessTrace';
 import { notifyWorkspace } from './WorkspaceNotification';
 import { StepUsage } from './StepUsage';
@@ -390,9 +390,7 @@ function normalizeDraftEvidenceUsage(
 function repairDraftInternalLinks(article: Article, draft: string, inventory: AppConfig['websiteInventory'] = []) {
   const candidates = selectInternalLinkCandidates(article, inventory ?? [], 10);
   if (!candidates.length) return removeConsecutiveDuplicateHeadings(draft);
-  // The semantic publishing contract permits one informational body link before
-  // the CTA. Keep deterministic insertion aligned with that contract.
-  const target = Math.min(candidates.length, 1);
+  const target = Math.min(candidates.length, internalLinkBudget(countWords(draft)).target);
   let next = draft;
   let audit = auditInternalLinks(article, next, inventory ?? []);
   for (const url of audit.unapprovedUrls) next = next.split(url).join(candidates[0].url);
@@ -403,7 +401,17 @@ function repairDraftInternalLinks(article: Article, draft: string, inventory: Ap
     return `For related guidance on ${anchor}, see [${anchor}](${candidate.url}).`;
   });
   if (additions.length) {
-    next = applyTargetedDraftRepair(next, { appendBeforeConclusion: additions.join('\n\n') });
+    const headings = [...next.matchAll(/^#{2,3}\s+(.+)$/gm)].filter(item => !/^conclusion$/i.test(item[1].trim()))
+    const insertions = additions.map((addition, index) => ({
+      at: headings[Math.min(headings.length - 1, Math.floor((index + 1) * headings.length / (additions.length + 1)))]?.index ?? next.length,
+      text: addition,
+    })).sort((left, right) => right.at - left.at)
+    for (const insertion of insertions) {
+      const nextHeading = /^#{2,3}\s+/gm
+      nextHeading.lastIndex = insertion.at + 1
+      const boundary = nextHeading.exec(next)?.index ?? next.length
+      next = `${next.slice(0, boundary).trimEnd()}\n\n${insertion.text}\n\n${next.slice(boundary).trimStart()}`.trim()
+    }
   }
   return removeConsecutiveDuplicateHeadings(next);
 }
@@ -653,7 +661,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   }, [draftIsStale, generating]);
   const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
   const internalLinkCandidates = useMemo(() => selectInternalLinkCandidates(article, config.websiteInventory ?? [], 10), [article, config.websiteInventory]);
-  const internalLinkTarget = Math.min(internalLinkCandidates.length, 1);
+  const internalLinkPlan = internalLinkBudget(targetWords);
+  const internalLinkTarget = Math.min(internalLinkCandidates.length, internalLinkPlan.target);
   const exportBrief = useMemo(() => buildExportBrief(article), [article]);
   const seoChecklist = useMemo(() => evaluateSeoChecklist(draft, article, targetWords), [article, draft, targetWords]);
   const deterministicChecks = useMemo(() => deterministicQualityChecks(
@@ -803,7 +812,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         `- Conclusion: ${wordBudget.conclusion.min}–${wordBudget.conclusion.max} từ`,
         `- Section budgets: ${JSON.stringify(wordBudget.sections)}`,
         `- RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(internalLinkCandidates)}`,
-        internalLinkTarget ? `- Include exactly one contextual informational body link chosen from these candidates. Place it before the final CTA; never invent or alter a URL.` : '- No approved internal-link candidate is available; never invent a URL.',
+        internalLinkTarget ? `- Include ${internalLinkTarget} distinct contextual internal links from these candidates. Spread them across relevant H2/H3 sections, with no more than one link per section. Never invent or alter a URL.` : '- No approved internal-link candidate is available; never invent a URL.',
         '- Include one concise, practical example that helps the reader apply the comparison or decision guidance.',
         '- Every concrete factual claim must be supported by the evidence assigned to its outline section. If no evidence exists, frame the passage explicitly as practical synthesis rather than an established fact.',
         ...(article.activityType === 'comparison-seo' && article.comparisonStructure === 'similarities-differences' ? ['- COMPARISON FORMAT: Include explicit Similarities and Differences H2 sections, then add a business experience/expertise insight section, practical selection guidance, and a CTA aligned to the Article Spec.'] : []),
@@ -1069,6 +1078,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             appendBeforeConclusion: `For related guidance, see [${safeAnchor}](${selected.url}).`,
           });
         }
+        candidateDraft = repairDraftInternalLinks(article, candidateDraft, inventory);
       }
 
       const verifiedOutline = buildVerifiedOutlineContext(article.outline || []);
