@@ -70,9 +70,19 @@ export default function ActivityLauncher({
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   useEffect(() => {
+    let active = true
+    setError(null)
     fetchContentPlans(railwayUrl)
-      .then(setPlans)
-      .catch(() => {})
+      .then((loadedPlans) => {
+        if (active) setPlans(loadedPlans)
+      })
+      .catch((cause) => {
+        if (active) {
+          setPlans([])
+          setError(cause instanceof Error ? cause.message : String(cause))
+        }
+      })
+    return () => { active = false }
   }, [railwayUrl])
   useEffect(() => {
     const open = () => setShowHistory(true)
