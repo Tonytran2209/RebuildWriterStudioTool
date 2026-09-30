@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
-import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, QualityGateCheck } from '../../types';
+import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
+import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, ImageSuggestion, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { authenticatedRailwayFetch } from '../../lib/db';
 import { useI18n } from '../../lib/i18n';
@@ -422,6 +422,48 @@ function buildExportBrief(article: Article) {
   return lines.join('\n');
 }
 
+function buildImageSuggestions(article: Article, draft: string): ImageSuggestion[] {
+  const headings = [...draft.matchAll(/^#{2,3}\s+(.+)$/gm)]
+  const outline = article.outline ?? []
+  const usedPurposes = new Set<string>()
+  return headings.flatMap((match, index) => {
+    const heading = match[1].trim()
+    if (/^conclusion$/i.test(heading)) return []
+    const start = (match.index ?? 0) + match[0].length
+    const end = headings[index + 1]?.index ?? draft.length
+    if (countWords(draft.slice(start, end)) < 100) return []
+    const lower = heading.toLocaleLowerCase()
+    const type: ImageSuggestion['type'] = /compar|versus|vs\.?\b|difference|similarit/.test(lower)
+      ? 'comparison'
+      : /process|step|workflow|how to/.test(lower)
+        ? 'diagram'
+        : /data|stat|trend|metric/.test(lower)
+          ? 'infographic'
+          : 'illustration'
+    const purpose = type === 'comparison'
+      ? 'Clarify the comparison at a glance'
+      : type === 'diagram'
+        ? 'Clarify the process visually'
+        : type === 'infographic'
+          ? 'Summarize the key data visually'
+          : 'Give the reader a visual pause and context'
+    if (usedPurposes.has(purpose)) return []
+    usedPurposes.add(purpose)
+    const section = outline.find(item => item.heading.trim().toLocaleLowerCase() === heading.toLocaleLowerCase())
+    return [{
+      id: `image-${Date.now()}-${index}`,
+      afterSectionId: section?.id ?? `draft-section-${index}`,
+      afterHeading: heading,
+      type,
+      purpose,
+      brief: `${type === 'comparison' ? 'Editorial comparison visual' : type === 'diagram' ? 'Clean explanatory diagram' : type === 'infographic' ? 'Clean editorial infographic' : 'Editorial supporting illustration'} placed after “${heading}”. Explain the section's concept without adding claims, statistics, or source-dependent facts. Match a professional, minimal brand style.`,
+      altText: `${heading}: visual explanation supporting the section`,
+      evidenceSafe: true,
+      status: 'suggested' as const,
+    }]
+  }).slice(0, 5)
+}
+
 function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
   const reason = `Semantic reviewer response was incomplete: ${error instanceof Error ? error.message : String(error)}`;
   return [{
@@ -597,6 +639,20 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     ? savedQualityReport.checks
     : deterministicChecks;
   const seoChecklistPassed = Boolean(draft) && displayedQualityChecks.length > 0 && displayedQualityChecks.every(item => item.status === 'pass');
+  const imageSuggestions = article.imageSuggestions ?? []
+  const createImageSuggestions = () => {
+    const suggestions = buildImageSuggestions(article, draft)
+    void onUpdate({ imageSuggestions: suggestions, qualityReport: null })
+    notifyWorkspace(suggestions.length ? `${suggestions.length} image suggestions are ready for review.` : 'No suitable sections of at least 100 words were found for image suggestions.', suggestions.length ? 'success' : 'warning')
+  }
+  const setImageSuggestionStatus = (id: string, status: ImageSuggestion['status']) => {
+    void onUpdate({ imageSuggestions: imageSuggestions.map(item => item.id === id ? { ...item, status } : item), qualityReport: null })
+  }
+  const editImageSuggestion = (suggestion: ImageSuggestion) => {
+    const brief = window.prompt('Image brief', suggestion.brief)
+    if (brief === null) return
+    void onUpdate({ imageSuggestions: imageSuggestions.map(item => item.id === suggestion.id ? { ...item, brief: brief.trim() || item.brief } : item), qualityReport: null })
+  }
 
   useEffect(() => {
     if (!article.draft) return;
@@ -1408,6 +1464,17 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                     : draft || ''}
                 </div>
               )}
+              {draft && <section className="mt-5 rounded-lg border border-violet-100 bg-violet-50/50 p-3 text-xs text-slate-700">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div><h3 className="font-semibold text-slate-800">Image placement suggestions</h3><p className="mt-0.5 text-[10px] text-slate-500">Explanatory visuals only; never a substitute for written evidence or claims.</p></div>
+                  <button onClick={createImageSuggestions} className="rounded-md border border-violet-200 bg-white px-2.5 py-1.5 text-[10px] font-medium text-violet-700 hover:bg-violet-100"><Image className="mr-1 inline h-3.5 w-3.5" />{imageSuggestions.length ? 'Refresh suggestions' : 'Suggest images'}</button>
+                </div>
+                {imageSuggestions.length > 0 && <div className="mt-3 space-y-2">{imageSuggestions.map(suggestion => <div key={suggestion.id} className="rounded-md border border-violet-100 bg-white p-2.5">
+                  <div className="flex items-start justify-between gap-3"><div><b>{suggestion.type}</b><span className="ml-2 text-slate-500">After: {suggestion.afterHeading}</span><p className="mt-1 text-slate-600">{suggestion.purpose}</p><p className="mt-1 text-[10px] text-slate-500">Alt: {suggestion.altText}</p></div><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px]">{suggestion.status}</span></div>
+                  <p className="mt-2 text-[10px] leading-relaxed text-slate-500">{suggestion.brief}</p>
+                  {suggestion.status === 'suggested' && <div className="mt-2 flex gap-2"><button onClick={() => setImageSuggestionStatus(suggestion.id, 'approved')} className="rounded border border-emerald-200 px-2 py-1 text-[10px] text-emerald-700">Approve</button><button onClick={() => editImageSuggestion(suggestion)} className="rounded border border-violet-200 px-2 py-1 text-[10px] text-violet-700">Edit</button><button onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="rounded border border-slate-200 px-2 py-1 text-[10px] text-slate-600">Dismiss</button></div>}
+                </div>)}</div>}
+              </section>}
             </div>
 
             {/* Word count bar */}

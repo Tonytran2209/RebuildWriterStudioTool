@@ -1,7 +1,27 @@
-import type { Article, QualityGateCheck, UniversalQualityReport, WebsiteContentRecord } from "../types";
+import type { Article, ImageSuggestion, QualityGateCheck, UniversalQualityReport, WebsiteContentRecord } from "../types";
 import { articleSpecFingerprint } from "./articleSpec";
 
-export const UNIVERSAL_QUALITY_VERSION = 6;
+export const UNIVERSAL_QUALITY_VERSION = 7;
+
+function imageSuggestionChecks(draft: string, suggestions: ImageSuggestion[] = []): QualityGateCheck[] {
+  const active = suggestions.filter(item => item.status !== "dismissed")
+  const purposes = active.map(item => normalized(item.purpose)).filter(Boolean)
+  const duplicatePurposes = purposes.filter((purpose, index) => purposes.indexOf(purpose) !== index)
+  const sectionWords = new Map<string, number>()
+  const headings = [...draft.matchAll(/^#{2,3}\s+(.+)$/gm)]
+  for (const [index, match] of headings.entries()) {
+    const start = (match.index ?? 0) + match[0].length
+    const end = headings[index + 1]?.index ?? draft.length
+    sectionWords.set(normalized(match[1]), words(draft.slice(start, end)))
+  }
+  const shortSections = active.filter(item => (sectionWords.get(normalized(item.afterHeading)) ?? 0) < 100)
+  const unsafe = active.filter(item => item.evidenceSafe !== true)
+  return [
+    { id: "image-purpose-duplication", label: "No duplicate image purposes", kind: "deterministic", status: duplicatePurposes.length ? "fail" : "pass", reason: duplicatePurposes.length ? `Duplicate image purposes: ${[...new Set(duplicatePurposes)].join(", ")}.` : "Each active image suggestion has a distinct purpose.", autoFixAllowed: true },
+    { id: "image-section-length", label: "Images only after substantial sections", kind: "deterministic", status: shortSections.length ? "fail" : "pass", reason: shortSections.length ? `Image suggestions attached to sections under 100 words: ${shortSections.map(item => item.afterHeading).join(", ")}.` : "No image is suggested after a short section.", autoFixAllowed: true },
+    { id: "image-evidence-boundary", label: "Images do not replace evidence or claims", kind: "deterministic", status: unsafe.length ? "fail" : "pass", reason: unsafe.length ? "One or more image suggestions are marked as evidence-dependent." : "Every image is decorative or explanatory; evidence remains in the written article.", autoFixAllowed: false },
+  ]
+}
 
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 const normalized = (text: string) => text.toLocaleLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
@@ -71,6 +91,7 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
     { id: "placeholders", label: "No placeholders", kind: "deterministic", status: /\[(?:cần|needs?|todo|tbd)[^\]]*\]|lorem ipsum|about:blank/i.test(draft) ? "fail" : "pass", reason: "Draft must not contain placeholders or about:blank.", autoFixAllowed: true },
     { id: "source-confidentiality", label: "No internal source leakage", kind: "deterministic", status: leaked.length ? "fail" : "pass", reason: leaked.length ? `Leaked source names: ${leaked.join(", ")}` : "No infrastructure filenames detected.", autoFixAllowed: false },
     { id: "link-correctness", label: "Approved internal links", kind: "deterministic", status: !linkAudit.unapprovedUrls.length && (!linkAudit.required || linkAudit.approvedDraftUrls.length > 0) ? "pass" : "fail", reason: linkAudit.unapprovedUrls.length ? `Not approved in Website Inventory: ${linkAudit.unapprovedUrls.join(", ")}` : linkAudit.required && !linkAudit.approvedDraftUrls.length ? "Article Spec requires an internal link, but the draft does not contain an approved URL." : linkAudit.approvedDraftUrls.length ? "Every internal URL matches an approved Website Inventory entry." : "No internal link is required by the Article Spec.", evidence: linkAudit.internalUrls.join(", "), autoFixAllowed: true },
+    ...imageSuggestionChecks(draft, article.imageSuggestions),
   ];
   return checks;
 }

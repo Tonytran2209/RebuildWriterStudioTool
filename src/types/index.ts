@@ -332,6 +332,20 @@ export interface EditorialApproval {
   outlineFingerprint?: string
 }
 
+export type ImageSuggestionStatus = "suggested" | "approved" | "dismissed"
+
+export interface ImageSuggestion {
+  id: string
+  afterSectionId: string
+  afterHeading: string
+  type: "hero" | "infographic" | "comparison" | "diagram" | "illustration"
+  purpose: string
+  brief: string
+  altText: string
+  evidenceSafe: boolean
+  status: ImageSuggestionStatus
+}
+
 export interface Article {
   id: string
   title: string
@@ -377,6 +391,7 @@ export interface Article {
   step4ProcessTrace?: AIProcessTraceEvent[]
   step4RawResponseExcerpt?: string | null
   draftEvidenceUsage?: Record<string, string[]>
+  imageSuggestions?: ImageSuggestion[]
   qualityReport?: UniversalQualityReport | null
   editorialApproval?: EditorialApproval | null
   workflowRuleSnapshots?: Partial<Record<2 | 3 | 4, WorkflowRuleSnapshot>>
