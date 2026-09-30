@@ -427,7 +427,10 @@ function buildExportBrief(article: Article) {
 function buildImageSuggestions(article: Article, draft: string): ImageSuggestion[] {
   const headings = [...draft.matchAll(/^#{2,3}\s+(.+)$/gm)]
   const outline = article.outline ?? []
-  const usedPurposes = new Set<string>()
+  // Scale visual density with the article while retaining only substantial
+  // sections. The earlier type-level dedupe made long articles with several
+  // explanatory sections collapse to one generic illustration suggestion.
+  const targetCount = Math.min(6, Math.max(3, Math.ceil(countWords(draft) / 375)))
   return headings.flatMap((match, index) => {
     const heading = match[1].trim()
     if (/^conclusion$/i.test(heading)) return []
@@ -442,15 +445,14 @@ function buildImageSuggestions(article: Article, draft: string): ImageSuggestion
         : /data|stat|trend|metric/.test(lower)
           ? 'infographic'
           : 'illustration'
-    const purpose = type === 'comparison'
+    const purposeBase = type === 'comparison'
       ? 'Clarify the comparison at a glance'
       : type === 'diagram'
         ? 'Clarify the process visually'
         : type === 'infographic'
           ? 'Summarize the key data visually'
           : 'Give the reader a visual pause and context'
-    if (usedPurposes.has(purpose)) return []
-    usedPurposes.add(purpose)
+    const purpose = `${purposeBase}: ${heading}`
     const section = outline.find(item => item.heading.trim().toLocaleLowerCase() === heading.toLocaleLowerCase())
     return [{
       id: `image-${Date.now()}-${index}`,
@@ -463,7 +465,7 @@ function buildImageSuggestions(article: Article, draft: string): ImageSuggestion
       evidenceSafe: true,
       status: 'suggested' as const,
     }]
-  }).slice(0, 5)
+  }).slice(0, targetCount)
 }
 
 function semanticReviewFingerprint(article: Article, draft: string, usage: Record<string, string[]>) {
@@ -1486,15 +1488,16 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                     : draft || ''}
                 </div>
               )}
-              {draft && <section className="mt-5 rounded-lg border border-violet-100 bg-violet-50/50 p-3 text-xs text-slate-700">
+              {draft && <section className="mt-5 rounded-xl border border-[#303030] bg-[#1b1b1b] p-3.5 text-xs text-[#c4c4c4] shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div><h3 className="font-semibold text-slate-800">Image placement suggestions</h3><p className="mt-0.5 text-[10px] text-slate-500">Explanatory visuals only; never a substitute for written evidence or claims.</p></div>
-                  <button onClick={createImageSuggestions} className="rounded-md border border-violet-200 bg-white px-2.5 py-1.5 text-[10px] font-medium text-violet-700 hover:bg-violet-100"><Image className="mr-1 inline h-3.5 w-3.5" />{imageSuggestions.length ? 'Refresh suggestions' : 'Suggest images'}</button>
+                  <div><h3 className="font-medium text-[#f1f1f1]">Image placement suggestions</h3><p className="mt-0.5 text-[10px] text-[#888]">Visual context only · never a substitute for evidence or claims</p></div>
+                  <button onClick={createImageSuggestions} className="rounded-lg border border-[#3a3a3a] bg-[#242424] px-2.5 py-1.5 text-[10px] font-medium text-[#d0d0d0] transition hover:border-[#555] hover:bg-[#2b2b2b]"><Image className="mr-1 inline h-3.5 w-3.5" />{imageSuggestions.length ? 'Refresh' : 'Suggest images'}</button>
                 </div>
-                {imageSuggestions.length > 0 && <div className="mt-3 space-y-2">{imageSuggestions.map(suggestion => <div key={suggestion.id} className="rounded-md border border-violet-100 bg-white p-2.5">
-                  <div className="flex items-start justify-between gap-3"><div><b>{suggestion.type}</b><span className="ml-2 text-slate-500">After: {suggestion.afterHeading}</span><p className="mt-1 text-slate-600">{suggestion.purpose}</p><p className="mt-1 text-[10px] text-slate-500">Alt: {suggestion.altText}</p></div><span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px]">{suggestion.status}</span></div>
-                  <p className="mt-2 text-[10px] leading-relaxed text-slate-500">{suggestion.brief}</p>
-                  {suggestion.status === 'suggested' && <div className="mt-2 flex gap-2"><button onClick={() => setImageSuggestionStatus(suggestion.id, 'approved')} className="rounded border border-emerald-200 px-2 py-1 text-[10px] text-emerald-700">Approve</button><button onClick={() => editImageSuggestion(suggestion)} className="rounded border border-violet-200 px-2 py-1 text-[10px] text-violet-700">Edit</button><button onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="rounded border border-slate-200 px-2 py-1 text-[10px] text-slate-600">Dismiss</button></div>}
+                {imageSuggestions.length > 0 && <div className="mt-3 grid gap-2 lg:grid-cols-2">{imageSuggestions.map(suggestion => <div key={suggestion.id} className="rounded-lg border border-[#303030] bg-[#202020] p-3">
+                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="rounded-md bg-[#303030] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-[#b9b9b9]">{suggestion.type}</span><span className="text-[10px] text-[#777]">After section</span></div><p className="mt-1.5 truncate text-[11px] font-medium text-[#ececec]">{suggestion.afterHeading}</p></div><span className={`rounded-full px-2 py-0.5 text-[9px] ${suggestion.status === 'approved' ? 'bg-emerald-500/15 text-emerald-300' : suggestion.status === 'dismissed' ? 'bg-[#303030] text-[#777]' : 'bg-amber-500/15 text-amber-200'}`}>{suggestion.status}</span></div>
+                  <p className="mt-2 max-h-8 overflow-hidden text-[10px] leading-relaxed text-[#a7a7a7]">{suggestion.purpose}</p><p className="mt-1 text-[10px] text-[#777]">Alt: {suggestion.altText}</p>
+                  <details className="mt-2 text-[10px] text-[#858585]"><summary className="cursor-pointer select-none hover:text-[#ccc]">View image brief</summary><p className="mt-1.5 leading-relaxed">{suggestion.brief}</p></details>
+                  {suggestion.status === 'suggested' && <div className="mt-3 flex gap-1.5"><button onClick={() => setImageSuggestionStatus(suggestion.id, 'approved')} className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-500/20">Approve</button><button onClick={() => editImageSuggestion(suggestion)} className="rounded-md border border-[#3b3b3b] px-2 py-1 text-[10px] text-[#c6c6c6] hover:bg-[#2a2a2a]">Edit</button><button onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="rounded-md border border-[#3b3b3b] px-2 py-1 text-[10px] text-[#999] hover:bg-[#2a2a2a]">Dismiss</button></div>}
                 </div>)}</div>}
               </section>}
             </div>
