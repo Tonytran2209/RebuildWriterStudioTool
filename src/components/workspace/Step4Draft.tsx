@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
+import { authenticatedRailwayFetch } from '../../lib/db';
 import { useI18n } from '../../lib/i18n';
 import { parseAIJson } from '../../lib/aiJson';
 import {
@@ -1215,7 +1216,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     setError('');
     try {
       const baseUrl = railwayUrl.trim().replace(/\/$/, '') || window.location.origin;
-      const response = await fetch(`${baseUrl}/api/format/google-docs`, {
+      const response = await authenticatedRailwayFetch('/api/format/google-docs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1223,7 +1224,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           title: article.title || article.topic || '',
           outline: (article.outline ?? []).map(section => ({ heading: section.heading, level: section.level })),
         }),
-      });
+      }, baseUrl);
       const payload = await response.json().catch(() => ({ error: response.statusText }));
       if (!response.ok) throw new Error(payload.error || `Railway formatter error ${response.status}`);
       if (navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {

@@ -39,12 +39,27 @@ function resolveRailwayUrl(explicitUrl?: string): string {
   return url.replace(/\/$/, "")
 }
 
+// Use this for Railway endpoints that return non-JSON payloads or need custom
+// response handling. It keeps direct API callers under the same auth contract
+// as the typed helpers below.
+export async function authenticatedRailwayFetch(
+  path: string,
+  init?: RequestInit,
+  railwayUrl?: string,
+): Promise<Response> {
+  const session = getAuthSession()
+  const headers = new Headers(init?.headers)
+  if (session?.accessToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${session.accessToken}`)
+  }
+  return fetch(`${resolveRailwayUrl(railwayUrl)}${path}`, { ...init, headers })
+}
+
 async function railwayRequest<T>(
   path: string,
   init?: RequestInit,
   railwayUrl?: string,
 ): Promise<T> {
-  const url = `${resolveRailwayUrl(railwayUrl)}${path}`
   const method = (init?.method ?? "GET").toUpperCase()
   const maxAttempts = method === "GET" ? 3 : 1
   let lastError: unknown
@@ -52,10 +67,7 @@ async function railwayRequest<T>(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     let response: Response
     try {
-      const session = getAuthSession()
-      const headers = new Headers(init?.headers)
-      if (session?.accessToken && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${session.accessToken}`)
-      response = await fetch(url, { ...init, headers })
+      response = await authenticatedRailwayFetch(path, init, railwayUrl)
     } catch (error) {
       lastError = error
       if (attempt === maxAttempts) throw error

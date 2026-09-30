@@ -1,4 +1,5 @@
 import type { ActionDataSource, DocumentFile, FileCategory } from '../types';
+import { authenticatedRailwayFetch } from './db';
 
 interface ImportResponse {
   target: 'writer:files';
@@ -11,11 +12,11 @@ export async function importSourceThroughRailway(
   railwayUrl: string,
 ): Promise<ImportResponse> {
   const baseUrl = railwayUrl.trim().replace(/\/$/, '') || window.location.origin;
-  const response = await fetch(`${baseUrl}/api/import/source`, {
+  const response = await authenticatedRailwayFetch('/api/import/source', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...source, category }),
-  });
+  }, baseUrl);
   const payload = await response.json().catch(() => ({ error: response.statusText }));
   if (!response.ok) throw new Error(payload.error || `Railway import error ${response.status}`);
   return payload as ImportResponse;

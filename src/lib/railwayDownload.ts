@@ -17,8 +17,10 @@ export async function downloadDocumentFromRailway(
   fallbackName: string,
   railwayUrl: string,
 ): Promise<void> {
-  const response = await fetch(
-    `${resolveBaseUrl(railwayUrl)}/api/documents/${encodeURIComponent(id)}/download`,
+  const response = await authenticatedRailwayFetch(
+    `/api/documents/${encodeURIComponent(id)}/download`,
+    undefined,
+    resolveBaseUrl(railwayUrl),
   );
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ error: response.statusText }));
@@ -35,3 +37,4 @@ export async function downloadDocumentFromRailway(
   anchor.remove();
   URL.revokeObjectURL(objectUrl);
 }
+import { authenticatedRailwayFetch } from './db';
