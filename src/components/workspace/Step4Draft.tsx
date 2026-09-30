@@ -313,14 +313,48 @@ function evaluateSeoChecklist(text: string, article: Article, targetWords: numbe
 }
 
 function parseSemanticQuality(raw: string): QualityGateCheck[] {
-  const parsed = parseAIJson(raw) as { checks?: Array<Record<string, unknown>> | Record<string, Record<string, unknown>> };
+  const parsed = parseAIJson(raw) as Record<string, unknown> & { checks?: Array<Record<string, unknown>> | Record<string, Record<string, unknown>> };
   const required = new Set<string>(semanticCheckIds);
-  const entries = Array.isArray(parsed.checks)
-    ? parsed.checks.map(item => [String(item.id ?? '').trim(), item] as const)
-    : Object.entries(parsed.checks ?? {});
+  // Structured-output support varies by provider. Some providers preserve the
+  // six checks but return camelCase keys, display labels, or a top-level
+  // checks object without the schema's exact kebab-case IDs. Normalize those
+  // equivalent forms before declaring the reviewer response incomplete.
+  const normalizeId = (value: unknown) => {
+    const key = String(value ?? '')
+      .trim()
+      .replace(/([a-z])([A-Z])/g, '$1-$2')
+      .toLocaleLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    const aliases: Record<string, typeof semanticCheckIds[number]> = {
+      'intent-satisfied': 'intent-satisfied',
+      'search-intent': 'intent-satisfied',
+      'reader-outcome': 'reader-outcome',
+      'reader-value': 'reader-outcome',
+      'intro-quality': 'intro-quality',
+      'introduction-quality': 'intro-quality',
+      'keyword-naturalness': 'keyword-naturalness',
+      'natural-keywords': 'keyword-naturalness',
+      'evidence-support': 'evidence-support',
+      'evidence-coverage': 'evidence-support',
+      'brand-pov': 'brand-pov',
+      'brand-voice': 'brand-pov',
+      'brand-perspective': 'brand-pov',
+    }
+    return aliases[key] ?? (required.has(key) ? key as typeof semanticCheckIds[number] : null)
+  }
+  const rawChecks = parsed.checks ?? parsed
+  const entries = Array.isArray(rawChecks)
+    ? rawChecks.map(item => [normalizeId(item.id ?? item.key ?? item.name ?? item.label), item] as const)
+    : Object.entries(rawChecks as Record<string, Record<string, unknown>>).map(([id, item]) => [normalizeId(id), item] as const)
   const checks = entries.flatMap(([id, item]) => {
-    const status: QualityGateCheck['status'] = item.status === 'pass' ? 'pass' : item.status === 'warning' ? 'warning' : 'fail';
-    if (!required.has(id)) return [];
+    if (!id || !required.has(id)) return [];
+    const rawStatus = String(item.status ?? '').trim().toLocaleLowerCase()
+    const status: QualityGateCheck['status'] = ['pass', 'passed', 'ok'].includes(rawStatus)
+      ? 'pass'
+      : ['warning', 'warn'].includes(rawStatus)
+        ? 'warning'
+        : 'fail';
     return [{ id, label: String(item.label ?? id), kind: 'semantic' as const, status, reason: String(item.reason ?? '').trim(), evidence: String(item.evidence ?? '').trim(), location: String(item.location ?? '').trim(), recommendedAction: String(item.recommendedAction ?? '').trim(), autoFixAllowed: Boolean(item.autoFixAllowed) }];
   });
   const present = new Set(checks.map(item => item.id));
@@ -1039,7 +1073,35 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         try {
           return { checks: parseSemanticQuality(response.content), schemaComplete: true };
         } catch (error) {
-          return { checks: incompleteSemanticReviewChecks(error), schemaComplete: false };
+          // Re-check & Fix is user-initiated, so one compact schema recovery is
+          // preferable to leaving an otherwise valid draft permanently blocked
+          // by an incomplete reviewer payload.
+          try {
+            const recovery = await callAI({
+              articleId: article.id,
+              model,
+              railwayUrl,
+              stepNumber: 4,
+              bypassCache: true,
+              requestPurpose: 'recheck',
+              maxTokens: 1600,
+              temperature: 0,
+              jsonMode: true,
+              jsonSchema: semanticQualitySchema,
+              skipDocumentContext: true,
+              systemPrompt: 'You are a structured-output recovery reviewer. Return one complete JSON object matching the required schema exactly. Evaluate the supplied draft; do not rewrite it and do not omit any check.',
+              prompt: [
+                `PARSING ERROR: ${error instanceof Error ? error.message : String(error)}`,
+                `INCOMPLETE REVIEWER RESPONSE: ${response.content}`,
+                `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
+                `DRAFT: ${value}`,
+                `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}. Keep every field concise.`,
+              ].join('\n\n'),
+            });
+            return { checks: parseSemanticQuality(recovery.content), schemaComplete: true };
+          } catch (recoveryError) {
+            return { checks: incompleteSemanticReviewChecks(recoveryError), schemaComplete: false };
+          }
         }
       };
 
