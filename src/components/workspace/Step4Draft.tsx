@@ -468,6 +468,21 @@ function buildImageSuggestions(article: Article, draft: string): ImageSuggestion
   }).slice(0, targetCount)
 }
 
+function insertImagePlaceholder(draft: string, suggestion: ImageSuggestion) {
+  const placeholderUrl = `image-placeholder://${suggestion.id}`
+  if (draft.includes(placeholderUrl)) return draft
+  const escapedHeading = suggestion.afterHeading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const heading = new RegExp(`^#{2,3}\\s+${escapedHeading}\\s*$`, 'im').exec(draft)
+  const placeholder = `![${suggestion.altText}](${placeholderUrl})`
+  if (!heading || heading.index === undefined) return `${draft.trim()}\n\n${placeholder}`
+  const sectionStart = heading.index + heading[0].length
+  const nextHeading = /^#{2,3}\s+/gm
+  nextHeading.lastIndex = sectionStart
+  const next = nextHeading.exec(draft)
+  const insertAt = next?.index ?? draft.length
+  return `${draft.slice(0, insertAt).trimEnd()}\n\n${placeholder}\n\n${draft.slice(insertAt).trimStart()}`.trim()
+}
+
 function semanticReviewFingerprint(article: Article, draft: string, usage: Record<string, string[]>) {
   const input = [draft, article.articleSpecFingerprint ?? '', JSON.stringify(usage), JSON.stringify(article.outline ?? [])].join('\u0000')
   let hash = 2166136261
@@ -661,6 +676,18 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   }
   const setImageSuggestionStatus = (id: string, status: ImageSuggestion['status']) => {
     void onUpdate({ imageSuggestions: imageSuggestions.map(item => item.id === id ? { ...item, status } : item), qualityReport: null })
+  }
+  const approveImageSuggestion = (suggestion: ImageSuggestion) => {
+    const nextDraft = insertImagePlaceholder(draft, suggestion)
+    if (editorRef.current) editorRef.current.innerText = nextDraft
+    void onUpdate({
+      draft: nextDraft,
+      imageSuggestions: imageSuggestions.map(item => item.id === suggestion.id ? { ...item, status: 'approved' } : item),
+      qualityReport: null,
+      semanticReviewFingerprint: null,
+      semanticReviewChecks: null,
+    })
+    notifyWorkspace('Image placeholder added after the selected section.', 'success')
   }
   const editImageSuggestion = (suggestion: ImageSuggestion) => {
     const brief = window.prompt('Image brief', suggestion.brief)
@@ -1497,7 +1524,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="rounded-md bg-[#303030] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-[#b9b9b9]">{suggestion.type}</span><span className="text-[10px] text-[#777]">After section</span></div><p className="mt-1.5 truncate text-[11px] font-medium text-[#ececec]">{suggestion.afterHeading}</p></div><span className={`rounded-full px-2 py-0.5 text-[9px] ${suggestion.status === 'approved' ? 'bg-emerald-500/15 text-emerald-300' : suggestion.status === 'dismissed' ? 'bg-[#303030] text-[#777]' : 'bg-amber-500/15 text-amber-200'}`}>{suggestion.status}</span></div>
                   <p className="mt-2 max-h-8 overflow-hidden text-[10px] leading-relaxed text-[#a7a7a7]">{suggestion.purpose}</p><p className="mt-1 text-[10px] text-[#777]">Alt: {suggestion.altText}</p>
                   <details className="mt-2 text-[10px] text-[#858585]"><summary className="cursor-pointer select-none hover:text-[#ccc]">View image brief</summary><p className="mt-1.5 leading-relaxed">{suggestion.brief}</p></details>
-                  {suggestion.status === 'suggested' && <div className="mt-3 flex gap-1.5"><button onClick={() => setImageSuggestionStatus(suggestion.id, 'approved')} className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-500/20">Approve</button><button onClick={() => editImageSuggestion(suggestion)} className="rounded-md border border-[#3b3b3b] px-2 py-1 text-[10px] text-[#c6c6c6] hover:bg-[#2a2a2a]">Edit</button><button onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="rounded-md border border-[#3b3b3b] px-2 py-1 text-[10px] text-[#999] hover:bg-[#2a2a2a]">Dismiss</button></div>}
+                  {suggestion.status === 'suggested' && <div className="mt-3 flex gap-1.5"><button onClick={() => approveImageSuggestion(suggestion)} className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-300 hover:bg-emerald-500/20">Approve</button><button onClick={() => editImageSuggestion(suggestion)} className="rounded-md border border-[#3b3b3b] px-2 py-1 text-[10px] text-[#c6c6c6] hover:bg-[#2a2a2a]">Edit</button><button onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="rounded-md border border-[#3b3b3b] px-2 py-1 text-[10px] text-[#999] hover:bg-[#2a2a2a]">Dismiss</button></div>}
                 </div>)}</div>}
               </section>}
             </div>
