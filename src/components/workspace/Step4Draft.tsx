@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Highlighter, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, ImageSuggestion, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { authenticatedRailwayFetch } from '../../lib/db';
@@ -22,17 +22,6 @@ import { StepUsage } from './StepUsage';
 
 function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
-function renderKeywordMarks(text: string, keywords: string[]) {
-  const terms = [...new Set(keywords.map(item => item.trim()).filter(item => item.length >= 3))]
-    .sort((a, b) => b.length - a.length);
-  if (!terms.length) return text;
-  const escaped = terms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const matcher = new RegExp(`(${escaped.join('|')})`, 'gi');
-  return text.split(matcher).map((part, index) => terms.some(term => term.toLocaleLowerCase() === part.toLocaleLowerCase())
-    ? <span key={`${index}-${part}`} className="draft-keyword-mark">{part}</span>
-    : part);
 }
 
 type StructuredDraftPayload = {
@@ -629,7 +618,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const [copied, setCopied] = useState(false);
   const [formatCopying, setFormatCopying] = useState(false);
   const [formatCopied, setFormatCopied] = useState(false);
-  const [highlightsEnabled, setHighlightsEnabled] = useState(true);
   const [insightPanel, setInsightPanel] = useState<'analysis' | 'quality' | 'keywords'>('quality');
   const [showAudit, setShowAudit] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -642,6 +630,13 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const recoveryKey = `writer:draft-recovery:${article.id}`;
   const [recoveryDraft, setRecoveryDraft] = useState(() => sessionStorage.getItem(recoveryKey) ?? '');
   const draft = article.draft || recoveryDraft;
+  // This is intentionally an uncontrolled editor. Rendering keyword-mark spans inside a
+  // contentEditable element while also changing its innerText imperatively can leave React
+  // reconciling nodes that the browser has already replaced, causing NotFoundError.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (editor && editor.innerText !== draft) editor.innerText = draft;
+  }, [draft]);
   const prerequisite = gateArticleStep(article, 4);
   const draftSourceFingerprint = useMemo(
     () => [
@@ -1462,17 +1457,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 </button>
                 <button
                   type="button"
-                  onClick={() => setHighlightsEnabled(enabled => !enabled)}
-                  disabled={!draft || generating || repairing}
-                  aria-pressed={highlightsEnabled}
-                  title={tr(highlightsEnabled ? 'Ẩn điểm nhấn trong bài' : 'Hiện điểm nhấn trong bài', highlightsEnabled ? 'Hide article highlights' : 'Show article highlights')}
-                  className={`draft-toolbar-action ${highlightsEnabled ? 'is-active' : ''}`}
-                >
-                  <Highlighter className="app-icon" aria-hidden="true" />
-                  <span className="sr-only">{tr('Bật hoặc tắt điểm nhấn', 'Toggle highlights')}</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => void handleRecheckAndFix()}
                   disabled={!draft || generating || repairing}
                   title={tr('Kiểm tra lại và chỉ sửa các mục chưa đạt', 'Re-check and fix only failed checks')}
@@ -1519,11 +1503,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   onInput={handleEditorInput}
                   data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
                   className="draft-prose prose-editor min-h-full whitespace-pre-wrap"
-                >
-                  {highlightsEnabled
-                    ? renderKeywordMarks(draft, [getPrimaryKeyword(article), ...(article.keywords || '').split(',')])
-                    : draft || ''}
-                </div>
+                />
               )}
               {draft && <section className="mt-5 rounded-xl border border-[#303030] bg-[#1b1b1b] p-3.5 text-xs text-[#c4c4c4] shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
