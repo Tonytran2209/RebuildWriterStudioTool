@@ -390,7 +390,9 @@ function normalizeDraftEvidenceUsage(
 function repairDraftInternalLinks(article: Article, draft: string, inventory: AppConfig['websiteInventory'] = []) {
   const candidates = selectInternalLinkCandidates(article, inventory ?? [], 10);
   if (!candidates.length) return removeConsecutiveDuplicateHeadings(draft);
-  const target = Math.min(candidates.length, countWords(draft) >= 1800 ? 4 : countWords(draft) >= 1100 ? 3 : 2);
+  // The semantic publishing contract permits one informational body link before
+  // the CTA. Keep deterministic insertion aligned with that contract.
+  const target = Math.min(candidates.length, 1);
   let next = draft;
   let audit = auditInternalLinks(article, next, inventory ?? []);
   for (const url of audit.unapprovedUrls) next = next.split(url).join(candidates[0].url);
@@ -462,6 +464,16 @@ function buildImageSuggestions(article: Article, draft: string): ImageSuggestion
       status: 'suggested' as const,
     }]
   }).slice(0, 5)
+}
+
+function semanticReviewFingerprint(article: Article, draft: string, usage: Record<string, string[]>) {
+  const input = [draft, article.articleSpecFingerprint ?? '', JSON.stringify(usage), JSON.stringify(article.outline ?? [])].join('\u0000')
+  let hash = 2166136261
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `semantic-v1-${(hash >>> 0).toString(36)}`
 }
 
 function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
@@ -624,7 +636,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   }, [draftIsStale, generating]);
   const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
   const internalLinkCandidates = useMemo(() => selectInternalLinkCandidates(article, config.websiteInventory ?? [], 10), [article, config.websiteInventory]);
-  const internalLinkTarget = Math.min(internalLinkCandidates.length, targetWords >= 1800 ? 4 : targetWords >= 1100 ? 3 : 2);
+  const internalLinkTarget = Math.min(internalLinkCandidates.length, 1);
   const exportBrief = useMemo(() => buildExportBrief(article), [article]);
   const seoChecklist = useMemo(() => evaluateSeoChecklist(draft, article, targetWords), [article, draft, targetWords]);
   const deterministicChecks = useMemo(() => deterministicQualityChecks(
@@ -762,7 +774,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         `- Conclusion: ${wordBudget.conclusion.min}–${wordBudget.conclusion.max} từ`,
         `- Section budgets: ${JSON.stringify(wordBudget.sections)}`,
         `- RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(internalLinkCandidates)}`,
-        internalLinkTarget ? `- Include ${internalLinkTarget} distinct contextual internal links chosen from these candidates, distributed across relevant body sections. Never invent or alter a URL.` : '- No approved internal-link candidate is available; never invent a URL.',
+        internalLinkTarget ? `- Include exactly one contextual informational body link chosen from these candidates. Place it before the final CTA; never invent or alter a URL.` : '- No approved internal-link candidate is available; never invent a URL.',
+        '- Include one concise, practical example that helps the reader apply the comparison or decision guidance.',
+        '- Every concrete factual claim must be supported by the evidence assigned to its outline section. If no evidence exists, frame the passage explicitly as practical synthesis rather than an established fact.',
         ...(article.activityType === 'comparison-seo' && article.comparisonStructure === 'similarities-differences' ? ['- COMPARISON FORMAT: Include explicit Similarities and Differences H2 sections, then add a business experience/expertise insight section, practical selection guidance, and a CTA aligned to the Article Spec.'] : []),
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
@@ -924,7 +938,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           return { response, checks: incompleteSemanticReviewChecks(error), schemaComplete: false };
         }
       };
-      let semanticReview = await runSemanticReview(assembledDraft, evidenceUsage);
+      const semanticKey = semanticReviewFingerprint(article, assembledDraft, evidenceUsage)
+      let semanticReview = article.semanticReviewFingerprint === semanticKey && article.semanticReviewChecks?.length
+        ? { checks: article.semanticReviewChecks, schemaComplete: true, cached: true }
+        : await runSemanticReview(assembledDraft, evidenceUsage);
       const semantic = semanticReview.checks;
       let report = qualityReport(article, [...deterministic, ...semantic]);
       processTrace.push({
@@ -955,6 +972,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         draft: assembledDraft,
         draftEvidenceUsage: evidenceUsage,
         qualityReport: report,
+        semanticReviewFingerprint: semanticKey,
+        semanticReviewChecks: semantic,
         draftSourceFingerprint,
         draftScannedAt: res.servedAt ?? res.generatedAt ?? new Date().toISOString(),
         step4ProcessTrace: processTrace,
@@ -1161,7 +1180,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         }
       };
 
-      let semanticReview = await reviewSemantic(candidateDraft);
+      const semanticKey = semanticReviewFingerprint(article, candidateDraft, article.draftEvidenceUsage ?? {})
+      let semanticReview = article.semanticReviewFingerprint === semanticKey && article.semanticReviewChecks?.length
+        ? { checks: article.semanticReviewChecks, schemaComplete: true, cached: true }
+        : await reviewSemantic(candidateDraft);
       let semantic = semanticReview.checks;
       const semanticFindings = semantic
         .filter(item => item.status !== 'pass')
@@ -1283,7 +1305,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           : report.checks.filter(item => item.status !== 'pass').map(item => `${item.label}: ${item.reason}${item.recommendedAction ? ` Action: ${item.recommendedAction}` : ''}`).join('\n'),
         facts: { result: report.status, passedChecks: report.checks.filter(item => item.status === 'pass').length, totalChecks: report.checks.length },
       });
-      await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace });
+      await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace, semanticReviewFingerprint: semanticReviewFingerprint(article, candidateDraft, article.draftEvidenceUsage ?? {}), semanticReviewChecks: semantic });
       if (editorRef.current) editorRef.current.innerText = candidateDraft;
       if (report.status === 'pass') notifyWorkspace('Re-check & Fix hoàn tất. Draft đã vượt qua toàn bộ checklist.', 'success');
       if (report.status !== 'pass') {
@@ -1310,7 +1332,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       pendingDraft.current = editorRef.current.innerText;
       if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
       draftSaveTimer.current = setTimeout(() => {
-        if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current, qualityReport: null, draftSourceFingerprint: null });
+        if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current, qualityReport: null, draftSourceFingerprint: null, semanticReviewFingerprint: null, semanticReviewChecks: null });
         pendingDraft.current = null;
         draftSaveTimer.current = null;
       }, 700);

@@ -391,6 +391,8 @@ export interface Article {
   step4ProcessTrace?: AIProcessTraceEvent[]
   step4RawResponseExcerpt?: string | null
   draftEvidenceUsage?: Record<string, string[]>
+  semanticReviewFingerprint?: string | null
+  semanticReviewChecks?: QualityGateCheck[] | null
   imageSuggestions?: ImageSuggestion[]
   qualityReport?: UniversalQualityReport | null
   editorialApproval?: EditorialApproval | null

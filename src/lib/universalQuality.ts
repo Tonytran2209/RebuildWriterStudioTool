@@ -75,6 +75,8 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
   const acceptedMax = Math.floor(wordTarget * 1.15);
   const count = words(draft);
   const linkAudit = auditInternalLinks(article, draft, inventory);
+  const beforeConclusion = draft.split(/^##\s+conclusion\s*$/im)[0] ?? draft;
+  const bodyInternalLinks = linkAudit.internalUrls.filter(url => beforeConclusion.includes(url));
   const duplicateHeadings = consecutiveDuplicateHeadings(draft);
   const leaked = sourceNames.filter(name => /\.[a-z0-9]{1,8}$/i.test(name.trim()) && draft.toLowerCase().includes(name.trim().toLowerCase()));
   const outlineCoverage = normalized((article.outline ?? []).flatMap(section => [section.heading, section.notes, section.rationale, ...(section.keywords ?? [])]).join(" "));
@@ -91,6 +93,7 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
     { id: "placeholders", label: "No placeholders", kind: "deterministic", status: /\[(?:cần|needs?|todo|tbd)[^\]]*\]|lorem ipsum|about:blank/i.test(draft) ? "fail" : "pass", reason: "Draft must not contain placeholders or about:blank.", autoFixAllowed: true },
     { id: "source-confidentiality", label: "No internal source leakage", kind: "deterministic", status: leaked.length ? "fail" : "pass", reason: leaked.length ? `Leaked source names: ${leaked.join(", ")}` : "No infrastructure filenames detected.", autoFixAllowed: false },
     { id: "link-correctness", label: "Approved internal links", kind: "deterministic", status: !linkAudit.unapprovedUrls.length && (!linkAudit.required || linkAudit.approvedDraftUrls.length > 0) ? "pass" : "fail", reason: linkAudit.unapprovedUrls.length ? `Not approved in Website Inventory: ${linkAudit.unapprovedUrls.join(", ")}` : linkAudit.required && !linkAudit.approvedDraftUrls.length ? "Article Spec requires an internal link, but the draft does not contain an approved URL." : linkAudit.approvedDraftUrls.length ? "Every internal URL matches an approved Website Inventory entry." : "No internal link is required by the Article Spec.", evidence: linkAudit.internalUrls.join(", "), autoFixAllowed: true },
+    { id: "body-link-limit", label: "One informational body link before CTA", kind: "deterministic", status: bodyInternalLinks.length <= 1 ? "pass" : "fail", reason: bodyInternalLinks.length <= 1 ? "The draft has at most one informational internal link before Conclusion/CTA." : `Found ${bodyInternalLinks.length} informational internal links before Conclusion/CTA; keep one.`, evidence: bodyInternalLinks.join(", "), autoFixAllowed: true },
     ...imageSuggestionChecks(draft, article.imageSuggestions),
   ];
   return checks;
