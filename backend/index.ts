@@ -1345,7 +1345,7 @@ function repairBatchInternalLinks(
       }
     }),
   )
-  const candidates = selectWebsiteCandidates(article, inventory, 6)
+  const candidates = selectWebsiteCandidates(article, inventory, 10)
   const replacement = candidates[0]
   let next = draft
   const urls = [...draft.matchAll(/https?:\/\/[^\s)\]}>"']+/gi)].map(
@@ -1367,18 +1367,14 @@ function repairBatchInternalLinks(
   const repairedUrls = [...next.matchAll(/https?:\/\/[^\s)\]}>"']+/gi)].map(
     (match) => canonicalUrl(match[0].replace(/[.,;:!?]+$/, "")),
   )
-  const requiresInternalLink = Boolean(
-    article.articleSpec?.internalLinkRequirements?.length,
-  )
-  if (
-    requiresInternalLink &&
-    replacement?.url &&
-    !repairedUrls.some((value) => approved.has(value))
-  ) {
-    const anchor = String(
-      replacement.suggestedAnchors?.[0] ?? replacement.title ?? "related guidance",
-    ).replace(/[\[\]]/g, "")
-    const addition = `For related guidance, see [${anchor}](${replacement.url}).`
+  const usedUrls = new Set(repairedUrls.filter((value) => approved.has(value)))
+  const targetLinks = Math.min(candidates.length, String(next).split(/\s+/).length >= 1800 ? 4 : String(next).split(/\s+/).length >= 1100 ? 3 : 2)
+  const additions = candidates.filter((candidate: any) => !usedUrls.has(canonicalUrl(candidate.url))).slice(0, Math.max(0, targetLinks - usedUrls.size)).map((candidate: any) => {
+    const anchor = String(candidate.suggestedAnchors?.[0] ?? candidate.title ?? "related guidance").replace(/[\[\]]/g, "")
+    return `For related guidance on ${anchor}, see [${anchor}](${candidate.url}).`
+  })
+  if (additions.length) {
+    const addition = additions.join("\n\n")
     const conclusionIndex = next.search(/^##\s+Conclusion\s*$/mi)
     next =
       conclusionIndex >= 0
@@ -2627,7 +2623,7 @@ async function runBatchArticle(
     const approvedInternalLinkCandidates = selectWebsiteCandidates(
       article,
       runtimeConfig?.websiteInventory ?? [],
-      6,
+      10,
     )
     if (
       article.articleSpec?.internalLinkRequirements?.length &&
@@ -2670,9 +2666,13 @@ async function runBatchArticle(
             `Approved outline and evidence registry: ${JSON.stringify(verifiedOutline)}`,
             `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
             `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(approvedInternalLinkCandidates)}`,
-            article.articleSpec?.internalLinkRequirements?.length
-              ? "INTERNAL LINK CONTRACT: Include one contextual Markdown link using exactly one URL from the approved candidates. Never invent, alter, or substitute a URL."
-              : "Never invent a URL. Use only an approved inventory URL when the Article Spec requires a relevant internal link.",
+            approvedInternalLinkCandidates.length
+              ? `INTERNAL LINK CONTRACT: Include ${Math.min(approvedInternalLinkCandidates.length, effectiveDraftWords >= 1800 ? 4 : effectiveDraftWords >= 1100 ? 3 : 2)} distinct contextual Markdown links from the approved candidates. Distribute them through relevant body sections, use descriptive anchors, and never invent, alter, or substitute a URL.`
+              : "Never invent a URL.",
+            "INTRODUCTION CONTRACT: In 45–90 words and no more than two short paragraphs, answer the primary search intent and reader pain point directly, then establish a useful insight. Do not use generic scene-setting.",
+            article.activityType === "comparison-seo" && article.comparisonStructure === "similarities-differences"
+              ? "COMPARISON FORMAT: Include explicit Similarities and Differences H2 sections, then business experience/expertise, practical selection guidance, and a CTA aligned to the Article Spec."
+              : "",
             `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
             "Knowledge Base is the only source for concrete facts, figures, evidence and product claims. If a concrete claim has no approved evidence, omit it or replace it with general explanatory prose.",
             "Follow every supplied Skill rule and use only supported KB claims. Keep every approved heading in order and do not add unplanned sections.",

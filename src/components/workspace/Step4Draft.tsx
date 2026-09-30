@@ -353,18 +353,38 @@ function normalizeDraftEvidenceUsage(
 }
 
 function repairDraftInternalLinks(article: Article, draft: string, inventory: AppConfig['websiteInventory'] = []) {
-  const candidates = selectInternalLinkCandidates(article, inventory ?? [], 6);
+  const candidates = selectInternalLinkCandidates(article, inventory ?? [], 10);
   if (!candidates.length) return removeConsecutiveDuplicateHeadings(draft);
+  const target = Math.min(candidates.length, countWords(draft) >= 1800 ? 4 : countWords(draft) >= 1100 ? 3 : 2);
   let next = draft;
   let audit = auditInternalLinks(article, next, inventory ?? []);
   for (const url of audit.unapprovedUrls) next = next.split(url).join(candidates[0].url);
   audit = auditInternalLinks(article, next, inventory ?? []);
-  if (audit.required && !audit.approvedDraftUrls.length) {
-    const selected = candidates[0];
-    const anchor = (selected.suggestedAnchors?.[0] || selected.title).replace(/[\[\]]/g, '');
-    next = applyTargetedDraftRepair(next, { appendBeforeConclusion: `For related guidance, see [${anchor}](${selected.url}).` });
+  const used = new Set(audit.approvedDraftUrls);
+  const additions = candidates.filter(candidate => !used.has(candidate.url)).slice(0, Math.max(0, target - used.size)).map(candidate => {
+    const anchor = (candidate.suggestedAnchors?.[0] || candidate.title).replace(/[\[\]]/g, '');
+    return `For related guidance on ${anchor}, see [${anchor}](${candidate.url}).`;
+  });
+  if (additions.length) {
+    next = applyTargetedDraftRepair(next, { appendBeforeConclusion: additions.join('\n\n') });
   }
   return removeConsecutiveDuplicateHeadings(next);
+}
+
+function buildExportBrief(article: Article) {
+  const topKeywords = (article.seoResearch?.keywords ?? []).slice(0, 10);
+  const lines = [
+    '## SEO Brief',
+    `- Primary keyword: ${getPrimaryKeyword(article) || '—'}`,
+    `- Search intent: ${article.articleSpec?.primaryIntent ?? '—'}`,
+    `- Secondary intent: ${article.articleSpec?.secondaryIntent ?? '—'}`,
+    `- Audience: ${article.articleSpec?.audience ?? article.targetAudience ?? '—'}`,
+    `- CTA objective: ${article.articleSpec?.ctaObjective ?? '—'}`,
+    '',
+    '### Top 10 keywords',
+    ...(topKeywords.length ? topKeywords.map((item, index) => `${index + 1}. ${item.keyword} — ${item.intent ?? 'intent n/a'}`) : ['No SEO research available.']),
+  ];
+  return lines.join('\n');
 }
 
 function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
@@ -526,6 +546,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     if (draftIsStale && !generating) notifyWorkspace('Outline, tài liệu, prompting rules hoặc model đã thay đổi. Draft đã lưu vẫn được giữ nguyên cho đến khi viết lại.', 'warning');
   }, [draftIsStale, generating]);
   const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
+  const internalLinkCandidates = useMemo(() => selectInternalLinkCandidates(article, config.websiteInventory ?? [], 10), [article, config.websiteInventory]);
+  const internalLinkTarget = Math.min(internalLinkCandidates.length, targetWords >= 1800 ? 4 : targetWords >= 1100 ? 3 : 2);
+  const exportBrief = useMemo(() => buildExportBrief(article), [article]);
   const seoChecklist = useMemo(() => evaluateSeoChecklist(draft, article, targetWords), [article, draft, targetWords]);
   const deterministicChecks = useMemo(() => deterministicQualityChecks(
     article,
@@ -620,6 +643,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Hoàn thiện mọi section trước khi mở rộng bất kỳ section nào. Không lặp định nghĩa, lợi ích, so sánh, evidence hoặc kết luận.',
+          '- SAPO/INTRODUCTION: bắt đầu bằng câu trả lời trực tiếp cho search intent và pain point của người đọc; nêu insight có ích, không kể chuyện vòng vo, không dùng lời mở đầu chung chung. Giữ sapo ngắn gọn, tối đa 2 đoạn.',
+          '- INTERNAL LINKS: đặt các link trong section liên quan, với anchor mô tả tự nhiên; không dồn link vào conclusion hoặc dùng một anchor lặp lại.',
           '- Trước khi trả JSON, tự kiểm tra nội bộ: đủ section IDs theo outline, đúng word budget, đúng một Conclusion, primary keyword trong H1/body, evidenceRefs thuộc section tương ứng và internal link chỉ dùng URL approved. Tự sửa mọi lỗi phát hiện được trước khi trả kết quả.',
           `- Mỗi đoạn chỉ phục vụ một claim, tối đa ${maxSentencesPerParagraph} câu. Không thêm section ngoài outline.`,
           `- TITLE phải chứa chính xác primary keyword “${getPrimaryKeyword(article)}”.`,
@@ -642,10 +667,12 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         `- Từ khóa: ${article.keywords || ''}`,
         `- TARGET WORDS: ${wordBudget.wordTarget} từ tiếng Anh. Hãy chủ động viết trong vùng tối ưu ${wordBudget.targetMin}–${wordBudget.targetMax}; QC chấp nhận ${wordBudget.acceptedMin}–${wordBudget.acceptedMax}. Đây là target linh hoạt, không phải yêu cầu cắt câu hoặc bỏ kết luận.`,
         `- Introduction: ${wordBudget.introduction.min}–${wordBudget.introduction.max} từ`,
+        '- Sapo must answer the primary intent and reader pain point directly in 45–90 words, then set a practical insight or expectation for the article.',
         `- Conclusion: ${wordBudget.conclusion.min}–${wordBudget.conclusion.max} từ`,
         `- Section budgets: ${JSON.stringify(wordBudget.sections)}`,
-        `- RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(selectInternalLinkCandidates(article, config.websiteInventory ?? [], 6))}`,
-        '- Never invent a URL. Use only URLs in the approved inventory, and only when the Article Spec requires a relevant internal link.',
+        `- RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(internalLinkCandidates)}`,
+        internalLinkTarget ? `- Include ${internalLinkTarget} distinct contextual internal links chosen from these candidates, distributed across relevant body sections. Never invent or alter a URL.` : '- No approved internal-link candidate is available; never invent a URL.',
+        ...(article.activityType === 'comparison-seo' && article.comparisonStructure === 'similarities-differences' ? ['- COMPARISON FORMAT: Include explicit Similarities and Differences H2 sections, then add a business experience/expertise insight section, practical selection guidance, and a CTA aligned to the Article Spec.'] : []),
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
         JSON.stringify(verifiedOutline),
@@ -1192,7 +1219,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          draft,
+          draft: `${exportBrief}\n\n---\n\n${draft}`,
           title: article.title || article.topic || '',
           outline: (article.outline ?? []).map(section => ({ heading: section.heading, level: section.level })),
         }),
@@ -1293,6 +1320,11 @@ export default function Step4Draft({ embedded = false, article, config, files, m
 
             {/* Draft editor */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+              <section className="mb-4 rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-xs text-slate-600">
+                <div className="mb-2 flex items-center justify-between gap-3"><h3 className="font-semibold text-slate-800">SEO brief</h3><span className="text-[10px] text-slate-500">{internalLinkTarget ? `${internalLinkTarget} internal links targeted` : 'No approved internal links'}</span></div>
+                <div className="grid gap-1 sm:grid-cols-2"><span><b>Primary:</b> {getPrimaryKeyword(article) || '—'}</span><span><b>Intent:</b> {article.articleSpec?.primaryIntent ?? '—'}</span></div>
+                <div className="mt-2 flex flex-wrap gap-1.5">{(article.seoResearch?.keywords ?? []).slice(0, 10).map((item, index) => <span key={`${item.keyword}-${index}`} className="rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[10px]"><b>#{index + 1}</b> {item.keyword}{item.intent ? ` · ${item.intent}` : ''}</span>)}</div>
+              </section>
               {generating ? (
                 <div className="space-y-3">
                   {[...Array(12)].map((_, i) => (
@@ -1417,7 +1449,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           </button>
           <button onClick={handleCopyGoogleDocs} disabled={!draft || formatCopying} className="draft-export-secondary inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40">
             {formatCopying ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : formatCopied ? <Check className="app-icon" aria-hidden="true" /> : <ClipboardCopy className="app-icon" aria-hidden="true" />}
-            <span>{formatCopying ? tr('Đang định dạng…', 'Formatting…') : formatCopied ? tr('Đã copy', 'Copied') : 'Copy formated content'}</span>
+            <span>{formatCopying ? tr('Đang định dạng…', 'Formatting…') : formatCopied ? tr('Đã copy', 'Copied') : tr('Copy bài + SEO brief', 'Copy article + SEO brief')}</span>
           </button>
           <button disabled={!draft} onClick={() => {
             const blob = new Blob([draft], { type: 'text/plain' });

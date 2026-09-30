@@ -288,8 +288,11 @@ export function selectWebsiteCandidates(
         article.keywords,
         article.contentType,
         article.targetAudience,
+        article.articleSpec?.primaryQuery,
+        article.articleSpec?.ctaObjective,
         ...(article.articleSpec?.mustCover ?? []),
         ...(article.articleSpec?.internalLinkRequirements ?? []),
+        ...(article.outline ?? []).flatMap((section: any) => [section.heading, section.notes, section.rationale, ...(section.keywords ?? [])]),
       ].join(" "),
     ),
   )
@@ -311,10 +314,9 @@ export function selectWebsiteCandidates(
         item,
         score:
           semanticScore +
-          (["service", "portfolio"].includes(item.contentType) ? 1 : 0),
+          (["service", "portfolio"].includes(item.contentType) ? 3 : item.contentType === "commercial" ? 2 : 1),
       }
     })
-    .filter(({ score }) => score > 0)
     .sort(
       (a, b) =>
         b.score - a.score ||

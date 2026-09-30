@@ -20,7 +20,10 @@ export function selectInternalLinkCandidates(
         article.keywords,
         article.contentType,
         article.targetAudience,
+        article.articleSpec?.primaryQuery,
+        article.articleSpec?.ctaObjective,
         ...(article.articleSpec?.mustCover ?? []),
+        ...(article.outline ?? []).flatMap(section => [section.heading, section.notes, section.rationale, ...(section.keywords ?? [])]),
       ].join(" "),
     ),
   )
@@ -38,13 +41,9 @@ export function selectInternalLinkCandidates(
         overlap((item.services ?? []).join(" ")) * 4 +
         overlap((item.internalLinkAnchors ?? []).join(" ")) * 3 +
         overlap(`${item.summary ?? ""} ${item.description ?? ""} ${item.audience ?? ""}`)
-      const typeBoost =
-        item.contentType === "service" || item.contentType === "portfolio"
-          ? 1
-          : 0
+      const typeBoost = item.contentType === "service" || item.contentType === "portfolio" ? 3 : item.contentType === "commercial" ? 2 : 1
       return { item, score: semanticScore + typeBoost }
     })
-    .filter(({ score }) => score > 0)
     .sort(
       (a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title),
     )

@@ -369,6 +369,7 @@ export interface Article {
   outlineScannedAt?: string | null
   step3ProcessTrace?: AIProcessTraceEvent[]
   step3SuggestedKeywords?: string[]
+  comparisonStructure?: "standard" | "similarities-differences"
   // Step 4 data
   draft?: string
   draftSourceFingerprint?: string | null

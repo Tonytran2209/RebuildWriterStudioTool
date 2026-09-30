@@ -207,8 +207,9 @@ export default function Step3Outline({
       article.contentType, article.topic, article.angle, article.keywords,
       article.targetAudience, article.tone, article.wordCount, article.selectedCoreIdeaId, compiledWorkflowRules.fingerprint,
       article.articleSpecFingerprint,
+      article.comparisonStructure,
     ].join(":"),
-    [article.angle, article.articleSpecFingerprint, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, model.id, model.provider],
+    [article.angle, article.articleSpecFingerprint, article.comparisonStructure, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, model.id, model.provider],
   );
   const outlineIsStale = Boolean(outline.length) && article.outlineSourceFingerprint !== sourceFingerprint;
   useEffect(() => {
@@ -323,6 +324,9 @@ export default function Step3Outline({
         `- Số từ mục tiêu: ${contextBrief.wordCount}`,
         `- Primary keyword: ${contextBrief.primaryKeyword}`,
         `- Secondary keywords: ${contextBrief.secondaryKeywords.join(", ")}`,
+        ...(article.activityType === "comparison-seo" && article.comparisonStructure === "similarities-differences" ? [
+          "- COMPARISON STRUCTURE (mandatory): Build a decision-useful comparison with dedicated H2 sections for Similarities and Differences, followed by expert/first-hand business insight, use-case guidance, and a CTA matched to the Article Spec. Do not use a generic pros-and-cons-only structure.",
+        ] : []),
         ...(trustedCoreIdeaEvidence.length ? [
           "",
           "EVIDENCE STEP 2 ĐÃ ĐƯỢC XÁC MINH (có thể tái sử dụng bằng quote/source tương ứng):",
@@ -518,6 +522,14 @@ export default function Step3Outline({
                 </p>
               </div>
             </div>
+            {article.activityType === "comparison-seo" && <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+              <label className="block text-xs font-semibold text-slate-700">{tr("Cấu trúc bài Comparison", "Comparison structure")}</label>
+              <select value={article.comparisonStructure ?? "standard"} onChange={event => void onUpdate({ comparisonStructure: event.target.value as "standard" | "similarities-differences", draft: "", draftSourceFingerprint: null })} className="mt-2 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-400">
+                <option value="standard">{tr("Tiêu chuẩn", "Standard")}</option>
+                <option value="similarities-differences">Similarities / Differences + Insights + CTA</option>
+              </select>
+              <p className="mt-1.5 text-[11px] text-slate-500">{tr("Tùy chọn này sẽ yêu cầu outline có phần tương đồng, khác biệt, insight doanh nghiệp và CTA.", "This requires similarities, differences, business insight, and a CTA in the outline.")}</p>
+            </div>}
             <StepUsage step={2} usage={article.aiUsageByStep?.[3]} />
 
             {generating && (
