@@ -52,6 +52,15 @@ export async function signInWithPassword(email: string, password: string) {
   return data;
 }
 
+export async function refreshAuthSession(refreshToken: string) {
+  const { data, error } = await getAuthClient().auth.refreshSession({
+    refresh_token: refreshToken,
+  });
+  if (error || !data.session || !data.user)
+    throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+  return { user: data.user, session: data.session };
+}
+
 export async function signUpWithPassword(email: string, password: string, emailRedirectTo?: string) {
   const { data, error } = await getAuthClient().auth.signUp({
     email,

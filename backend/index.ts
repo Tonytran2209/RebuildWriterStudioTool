@@ -23,6 +23,7 @@ import {
   tableUpdate,
   tableDeleteWhere,
   signInWithPassword,
+  refreshAuthSession,
   signUpWithPassword,
   sendPasswordReset,
   updatePasswordFromRecovery,
@@ -77,11 +78,28 @@ app.post("/api/auth/login", async (req, res) => {
     const { user, session } = await signInWithPassword(email, password)
     res.json({
       accessToken: session.access_token,
+      refreshToken: session.refresh_token,
       expiresAt: session.expires_at ?? null,
       user: { id: user.id, email: user.email ?? email, role: userRole(user) },
     })
   } catch (error) {
     res.status(401).json({ error: error instanceof Error ? error.message : "Không thể đăng nhập." })
+  }
+})
+
+app.post("/api/auth/refresh", async (req, res) => {
+  try {
+    const refreshToken = String(req.body?.refreshToken ?? "").trim()
+    if (!refreshToken) return res.status(400).json({ error: "Refresh token không hợp lệ." })
+    const { user, session } = await refreshAuthSession(refreshToken)
+    res.json({
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token,
+      expiresAt: session.expires_at ?? null,
+      user: { id: user.id, email: user.email ?? "", role: userRole(user) },
+    })
+  } catch (error) {
+    res.status(401).json({ error: error instanceof Error ? error.message : "Không thể làm mới phiên đăng nhập." })
   }
 })
 
@@ -136,7 +154,7 @@ app.post("/api/auth/reset-password", async (req, res) => {
 })
 
 app.use("/api", async (req: AuthenticatedRequest, res, next) => {
-  if (["/auth/login", "/auth/signup", "/auth/forgot-password"].includes(req.path)) return next()
+  if (["/auth/login", "/auth/signup", "/auth/forgot-password", "/auth/refresh"].includes(req.path)) return next()
   const token = req.header("authorization")?.replace(/^Bearer\s+/i, "").trim()
   if (!token) return res.status(401).json({ error: "Vui lòng đăng nhập để tiếp tục." })
   try {

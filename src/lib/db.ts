@@ -5,16 +5,17 @@ const AUTH_STORAGE_KEY = "writer:auth-session"
 export type UserRole = "user" | "admin"
 export interface AuthSession {
   accessToken: string
+  refreshToken?: string
   expiresAt: number | null
   user: { id: string; email: string; role: UserRole }
 }
 
-export function getAuthSession(): AuthSession | null {
+function readStoredAuthSession(): AuthSession | null {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY)
     if (!raw) return null
     const session = JSON.parse(raw) as AuthSession
-    if (!session.accessToken || !session.user?.role || (session.expiresAt && session.expiresAt * 1000 <= Date.now())) {
+    if (!session.accessToken || !session.user?.role) {
       localStorage.removeItem(AUTH_STORAGE_KEY)
       return null
     }
@@ -22,6 +23,11 @@ export function getAuthSession(): AuthSession | null {
   } catch {
     return null
   }
+}
+
+export function getAuthSession(): AuthSession | null {
+  const session = readStoredAuthSession()
+  return session?.expiresAt && session.expiresAt * 1000 <= Date.now() ? null : session
 }
 
 export function clearAuthSession() {
@@ -39,6 +45,32 @@ function resolveRailwayUrl(explicitUrl?: string): string {
   return url.replace(/\/$/, "")
 }
 
+let refreshInFlight: Promise<AuthSession | null> | null = null
+
+async function refreshStoredAuthSession(railwayUrl?: string): Promise<AuthSession | null> {
+  const current = readStoredAuthSession()
+  if (!current?.refreshToken) return null
+  if (!refreshInFlight) {
+    refreshInFlight = fetch(`${resolveRailwayUrl(railwayUrl)}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: current.refreshToken }),
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({})) as AuthSession & { error?: string }
+        if (!response.ok || !payload.accessToken) throw new Error(payload.error || "Không thể làm mới phiên đăng nhập.")
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(payload))
+        return payload
+      })
+      .catch(() => {
+        localStorage.removeItem(AUTH_STORAGE_KEY)
+        return null
+      })
+      .finally(() => { refreshInFlight = null })
+  }
+  return refreshInFlight
+}
+
 // Use this for Railway endpoints that return non-JSON payloads or need custom
 // response handling. It keeps direct API callers under the same auth contract
 // as the typed helpers below.
@@ -47,12 +79,19 @@ export async function authenticatedRailwayFetch(
   init?: RequestInit,
   railwayUrl?: string,
 ): Promise<Response> {
-  const session = getAuthSession()
-  const headers = new Headers(init?.headers)
-  if (session?.accessToken && !headers.has("Authorization")) {
-    headers.set("Authorization", `Bearer ${session.accessToken}`)
+  let session = getAuthSession()
+  if (!session) session = await refreshStoredAuthSession(railwayUrl)
+  const request = (token?: string) => {
+    const headers = new Headers(init?.headers)
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`)
+    }
+    return fetch(`${resolveRailwayUrl(railwayUrl)}${path}`, { ...init, headers })
   }
-  return fetch(`${resolveRailwayUrl(railwayUrl)}${path}`, { ...init, headers })
+  let response = await request(session?.accessToken)
+  if (response.status !== 401 || path === "/api/auth/refresh") return response
+  session = await refreshStoredAuthSession(railwayUrl)
+  return session ? request(session.accessToken) : response
 }
 
 async function railwayRequest<T>(
