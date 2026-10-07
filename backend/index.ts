@@ -327,6 +327,19 @@ function articleStepPrerequisite(article: any, step: number): string | null {
   return null
 }
 
+/**
+ * Batch workers own queued, running and paused items. Terminal items are not
+ * picked up by runBatch(), so they can safely be repaired from the article
+ * workspace without racing the batch writer.
+ */
+function activeBatchManualMutationError(article: any): string | null {
+  if (article?.activityKind !== "batch") return null
+  if (["completed", "failed"].includes(String(article?.batchStatus ?? "")))
+    return null
+  const status = String(article?.batchStatus ?? "queued")
+  return `Bài này vẫn thuộc batch đang ${status}. Hãy đợi batch hoàn tất hoặc xử lý Retry từ màn hình batch để tránh ghi đè dữ liệu.`
+}
+
 function highestReachableArticleStep(article: any): 2 | 3 | 4 {
   if (!articleStepPrerequisite(article, 4)) return 4
   if (!articleStepPrerequisite(article, 3)) return 3
@@ -3844,12 +3857,13 @@ app.post("/api/seo/research", async (req, res) => {
     const article = await kvGet<any>(`${ARTICLE_PREFIX}${articleId}`)
     if (!article)
       return res.status(404).json({ error: "Article không tồn tại." })
-    if (article.activityKind === "batch") {
+    const batchMutationError = activeBatchManualMutationError(article)
+    if (batchMutationError) {
       return res
         .status(409)
         .json({
           code: "BATCH_ORCHESTRATION_REQUIRED",
-          error: "Bài batch chỉ được xử lý qua batch orchestration.",
+          error: batchMutationError,
         })
     }
     const prerequisiteError = articleStepPrerequisite(article, 2)
@@ -3951,12 +3965,13 @@ app.post("/api/generate", async (req, res) => {
     const article = await kvGet<any>(`${ARTICLE_PREFIX}${String(articleId)}`)
     if (!article)
       return res.status(404).json({ error: "Article không tồn tại." })
-    if (article.activityKind === "batch") {
+    const batchMutationError = activeBatchManualMutationError(article)
+    if (batchMutationError) {
       return res
         .status(409)
         .json({
           code: "BATCH_ORCHESTRATION_REQUIRED",
-          error: "Bài batch chỉ được xử lý qua batch orchestration.",
+          error: batchMutationError,
         })
     }
     const prerequisiteError = articleStepPrerequisite(article, stepNumber)
