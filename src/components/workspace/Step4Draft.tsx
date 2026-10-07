@@ -636,7 +636,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   useEffect(() => {
     const editor = editorRef.current;
     if (editor && editor.innerText !== draft) editor.innerText = draft;
-  }, [draft]);
+  // The editor is unmounted while a draft is generating. Include generating so
+  // a draft that arrived during the loading state is copied into the newly
+  // mounted editor as soon as generation finishes (also covers batch polling).
+  }, [draft, generating]);
   const prerequisite = gateArticleStep(article, 4);
   const draftSourceFingerprint = useMemo(
     () => [
