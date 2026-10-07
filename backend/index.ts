@@ -1111,6 +1111,59 @@ async function runBatchModel(
   }
 }
 
+/**
+ * Keep the first generation unchanged for output quality, but do not fail an
+ * entire batch when a provider wraps or slightly corrupts a structured reply.
+ * Recovery uses a distinct cache purpose, so a malformed primary reply is
+ * never replayed as the recovery result.
+ */
+async function runBatchJsonObject(
+  article: any,
+  step: 2 | 3 | 4,
+  prompt: string,
+  maxTokens: number,
+  jsonSchema?: Record<string, unknown>,
+  options: { skipDocumentContext?: boolean } = {},
+) {
+  const primary = await runBatchModel(
+    article,
+    step,
+    prompt,
+    true,
+    maxTokens,
+    jsonSchema,
+    "generation",
+    options,
+  )
+  try {
+    return { payload: parseJsonObject(primary.content), response: primary, responses: [primary] }
+  } catch {
+    const recovery = await runBatchModel(
+      article,
+      step,
+      [
+        "FORMAT RECOVERY: Repeat the requested task below with the same substantive quality, evidence constraints and field values.",
+        "Return exactly one complete, valid JSON object. Do not include Markdown fences, explanations, or text before or after the JSON.",
+        prompt,
+      ].join("\n\n"),
+      true,
+      maxTokens,
+      jsonSchema,
+      "recovery",
+      options,
+    )
+    try {
+      return {
+        payload: parseJsonObject(recovery.content),
+        response: recovery,
+        responses: [primary, recovery],
+      }
+    } catch {
+      throw new Error("AI did not return a valid JSON object after one automatic format recovery.")
+    }
+  }
+}
+
 function batchSeoFailures(text: string, article: any, targetWords: number) {
   const words = text.trim().split(/\s+/).filter(Boolean).length
   const acceptedMin = Math.max(800, Math.ceil(targetWords * 0.85))
@@ -2286,7 +2339,7 @@ async function runBatchArticle(
           seoUsage = null
         }
       }
-      const response = await runBatchModel(
+      const batchJson = await runBatchJsonObject(
         article,
         2,
         [
@@ -2298,10 +2351,9 @@ async function runBatchArticle(
           "Use the supplied Knowledge Base and Skills. Return only JSON:",
           '{"articleSpec":{"topic":string,"primaryQuery":string,"secondaryQueries":string[],"audience":string,"market":"Global / USA","language":"English","primaryIntent":"informational|commercial|transactional|navigational","secondaryIntent":"informational|commercial|transactional|navigational","expectedReaderOutcome":string,"winningFormat":string,"mustCover":string[],"optionalCoverage":string[],"thesis":string,"brandPov":string,"evidence":[],"ctaObjective":string,"internalLinkRequirements":string[]},"ideas":[{"title":string,"angleLabel":string,"angleDescription":string,"mainArgument":string,"primaryKeyword":string,"secondaryKeywords":string[],"targetAudience":string,"recommendedTone":string,"recommendedWordCount":number,"rating":{"overall":number,"seoPotential":number,"audienceFit":number,"docSupport":number,"uniqueness":number},"ratingRationale":string}]}',
         ].join("\n"),
-        true,
         Math.min(6000, 2200 + batchIdeaCount * 700),
       )
-      const payload = parseJsonObject(response.content)
+      const { payload, response } = batchJson
       const coreIdeaContext = await resolveStepContext(
         2,
         `${article.topic ?? ""} ${article.keywords ?? ""}`,
@@ -2391,7 +2443,15 @@ async function runBatchArticle(
         evidence: trustedIdeaEvidence,
       }
       const articleSpecFingerprint = snapshotFingerprint(articleSpec)
-      const step2Usage = appendUsage(2, response)
+      const step2Usage = {
+        ...article.aiUsageByStep,
+        2: [
+          ...(article.aiUsageByStep?.[2] ?? []),
+          ...batchJson.responses.map((item: any) =>
+            batchUsage(2, item.provider ?? "unknown", item),
+          ),
+        ].slice(-50),
+      }
       if (seoUsage)
         step2Usage[2] = [seoUsage, ...(step2Usage[2] ?? [])].slice(-50)
       article = await saveArticleCheckpoint(article, {
