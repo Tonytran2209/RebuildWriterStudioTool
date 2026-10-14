@@ -16,6 +16,7 @@ All endpoints are served by Railway. Authenticated client calls use `src/lib/db.
 | Batches | `/api/batches/*` | Backend/workflow |
 | Config/files | `/api/config`, `/api/files/*`, imports/uploads | Backend + storage |
 | Inventory | `/api/website-inventory/*` | Backend + database |
+| Agent Library | `/api/agent-library/status`, `/context`, `/sync` | Agent Hub foundation |
 
 ## Error contract
 
@@ -30,3 +31,10 @@ All endpoints are served by Railway. Authenticated client calls use `src/lib/db.
 2. Update the matching client library call.
 3. Update error handling and the relevant Design flow.
 4. Verify auth, batch ownership and optimistic-update behavior.
+
+## Agent Library retrieval
+
+- `POST /api/agent-library/sync` compiles the Git canonical `.agent-hub` documents into a commit/content-pinned Supabase index. It is admin-only.
+- `GET /api/agent-library/context?q=...&layers=design,backend&maxChars=...` returns only ranked, bounded chunks from the current indexed version.
+- `GET /api/agent-library/status` reports whether a current index version exists.
+- The index is a retrieval cache, never a replacement for the Git documents. A request records both its base commit and library version.

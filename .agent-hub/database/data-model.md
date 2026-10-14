@@ -18,6 +18,7 @@ sourceOfTruth: supabase/migrations
 | `batch_jobs`, `batch_job_items` | Batch status and item outcomes | `003` |
 | `article_specs`, `quality_gate_runs`, `editorial_approvals` | Governed writing contracts | `004` |
 | `knowledge_items`, `website_content_inventory` | Knowledge and approved internal-link candidates | `004`–`006` |
+| `agent_library_versions`, `agent_library_documents`, `agent_library_chunks` | Commit-pinned MD Library retrieval cache | `007` |
 
 ## Data invariants
 
@@ -26,6 +27,7 @@ sourceOfTruth: supabase/migrations
 - Stage runs are append-only revisions keyed by article, stage and input fingerprint.
 - Batch item state is one of `queued`, `running`, `paused`, `completed`, `failed`.
 - Quality reports and Article Specs are fingerprinted to prevent stale results from being treated as current.
+- Agent Library chunks mirror a canonical Git version; they are not independently editable source documents.
 
 ## Migration rules
 

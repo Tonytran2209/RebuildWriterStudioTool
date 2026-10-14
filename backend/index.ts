@@ -40,6 +40,12 @@ import { compileBackendWorkflowRules } from "./workflowRules.ts"
 import { researchSeoKeywords, seoResearchConfigured } from "./seoResearch.ts"
 import { jsonrepair } from "jsonrepair"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
+import {
+  agentLibraryStatus,
+  retrieveAgentLibraryContext,
+  syncAgentLibrary,
+  type AgentLibraryLayer,
+} from "./agentLibrary.ts"
 
 // DIST_PATH env var set by Railway start command; fallback to sibling dist/ of cwd
 const DIST = process.env.DIST_PATH
@@ -162,7 +168,7 @@ app.use("/api", async (req: AuthenticatedRequest, res, next) => {
     req.auth = { userId: user.id, email: user.email ?? "", role: userRole(user) }
     // Users need read access to workflow context, but only admins may mutate
     // shared configuration, documents, or website inventory.
-    const adminOnly = req.method !== "GET" && (req.path === "/config" || req.path.startsWith("/files") || req.path.startsWith("/website-inventory"))
+    const adminOnly = req.method !== "GET" && (req.path === "/config" || req.path.startsWith("/files") || req.path.startsWith("/website-inventory") || req.path.startsWith("/agent-library"))
     if (adminOnly && req.auth.role !== "admin") return res.status(403).json({ error: "Chỉ admin mới được phép quản trị cấu hình và knowledge base." })
     next()
   } catch (error) {
@@ -5261,6 +5267,41 @@ app.post("/api/config", async (req, res) => {
     res.json({ ok: true })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// ─── Agent Hub MD Library ───────────────────────────────────────────────────
+
+app.get("/api/agent-library/status", async (_req, res) => {
+  try {
+    res.json(await agentLibraryStatus())
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? String(error) })
+  }
+})
+
+app.post("/api/agent-library/sync", async (_req, res) => {
+  try {
+    // The API middleware restricts this mutable index operation to admins.
+    res.json({ ok: true, library: await syncAgentLibrary() })
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? String(error) })
+  }
+})
+
+app.get("/api/agent-library/context", async (req, res) => {
+  try {
+    const query = String(req.query.q ?? "").trim()
+    if (query.length < 2)
+      return res.status(400).json({ error: "q must contain at least two characters." })
+    const layers = String(req.query.layers ?? "")
+      .split(",")
+      .map((layer) => layer.trim())
+      .filter(Boolean) as AgentLibraryLayer[]
+    const maxChars = Number(req.query.maxChars ?? 6_000)
+    res.json(await retrieveAgentLibraryContext({ query, layers, maxChars }))
+  } catch (error: any) {
+    res.status(500).json({ error: error?.message ?? String(error) })
   }
 })
 
