@@ -25,6 +25,18 @@ function displayDraft(text: string) {
   return text.replace(/\u2014/g, '-');
 }
 
+// Structured drafts place the introduction between the H1 and first section.
+// For legacy drafts without section headings, only clamp the first paragraph.
+function draftPreviewParts(text: string) {
+  const title = text.match(/^\s*# [^\n]+(?:\r?\n)+/);
+  const start = title?.[0].length ?? 0;
+  const content = text.slice(start);
+  const section = content.search(/^#{2,6}\s+/m);
+  const paragraph = content.search(/\r?\n\s*\r?\n/);
+  const end = section >= 0 ? section : paragraph >= 0 ? paragraph : content.length;
+  return { title: text.slice(0, start), introduction: content.slice(0, end).trimEnd(), body: content.slice(end) };
+}
+
 function applyDisplayedDraftEdit(original: string, edited: string) {
   const displayed = displayDraft(original);
   let start = 0;
@@ -635,6 +647,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const [formatCopied, setFormatCopied] = useState(false);
   const [insightPanel, setInsightPanel] = useState<'analysis' | 'quality' | 'keywords'>('quality');
   const [showAudit, setShowAudit] = useState(false);
+  const [editingDraft, setEditingDraft] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const generationInFlight = useRef(false);
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -656,6 +669,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   // a draft that arrived during the loading state is copied into the newly
   // mounted editor as soon as generation finishes (also covers batch polling).
   }, [draft, generating]);
+  useEffect(() => { setEditingDraft(false); }, [article.id]);
+  const preview = draftPreviewParts(displayDraft(pendingDraft.current ?? draft));
   const prerequisite = gateArticleStep(article, 4);
   const draftSourceFingerprint = useMemo(
     () => [
@@ -1515,6 +1530,18 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   ))}
                 </div>
               ) : (
+                <>
+                {draft && <button
+                  type="button"
+                  className="mb-3 rounded border border-slate-300 px-3 py-1 text-xs"
+                  onClick={() => setEditingDraft(value => !value)}
+                >{editingDraft ? tr('Xem bản nháp', 'Preview draft') : tr('Chỉnh sửa toàn bộ bản nháp', 'Edit full draft')}</button>}
+                {draft && !editingDraft && <div className="draft-prose whitespace-pre-wrap">
+                  {preview.title && <div>{preview.title}</div>}
+                  <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 6, overflow: 'hidden' }}>{preview.introduction}</div>
+                  <div>{preview.body}</div>
+                </div>}
+                <div hidden={Boolean(draft) && !editingDraft}>
                 <div
                   ref={editorRef}
                   contentEditable
@@ -1523,6 +1550,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
                   className="draft-prose prose-editor min-h-full whitespace-pre-wrap"
                 />
+                </div>
+                </>
               )}
               {draft && <section className="mt-5 rounded-xl border border-[#303030] bg-[#1b1b1b] p-3.5 text-xs text-[#c4c4c4] shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
