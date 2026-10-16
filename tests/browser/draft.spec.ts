@@ -15,8 +15,8 @@ test('Draft preview preserves body, full editing and stored source',async({page}
    await expect(introduction).toBeVisible();
    const geometry=await introduction.evaluate(e=>({height:e.getBoundingClientRect().height,lineHeight:parseFloat(getComputedStyle(e).lineHeight),fullHeight:e.scrollHeight,clamp:getComputedStyle(e).getPropertyValue('-webkit-line-clamp')}));
    expect(geometry.clamp).toBe('6');expect(geometry.height).toBeLessThanOrEqual(geometry.lineHeight*6+1);expect(geometry.fullHeight).toBeGreaterThan(geometry.height);
-   await expect(page.getByText(/BODY_SENTINEL:/).last()).toBeVisible();
-   await expect(page.getByText(/CONCLUSION_SENTINEL:/).last()).toBeVisible();
+   await expect(page.locator('.draft-prose:not(.prose-editor)').getByText(/BODY_SENTINEL:/)).toBeVisible();
+   await expect(page.locator('.draft-prose:not(.prose-editor)').getByText(/CONCLUSION_SENTINEL:/)).toBeVisible();
    await page.screenshot({path:info.outputPath('six-line-preview.png'),fullPage:true});
    await editButton.click();
  }
