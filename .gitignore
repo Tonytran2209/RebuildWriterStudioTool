@@ -13,3 +13,6 @@ logs/
 .claude-replay.*
 .tmp-*
 dist/
+
+/playwright-report/
+/test-results/
