@@ -39,6 +39,7 @@ import {
 import { compileBackendWorkflowRules } from "./workflowRules.ts"
 import { researchSeoKeywords, seoResearchConfigured } from "./seoResearch.ts"
 import { jsonrepair } from "jsonrepair"
+import { resolveArticleProjection } from "./articleProjection.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
 import {
   agentLibraryStatus,
@@ -685,6 +686,13 @@ async function projectArticle(article: any) {
     }
     return
   }
+  const originalArticle = article
+  article = await resolveArticleProjection(article, async (table, id) => {
+    const rows = await tableSelect<any>(table, (query) =>
+      query.select(table === "content_plans" ? "id" : "id, content_plan_id").eq("id", id).limit(1),
+    )
+    return rows[0]
+  })
   await tableUpsert(
     "writer_articles",
     {
@@ -701,7 +709,7 @@ async function projectArticle(article: any) {
       title: article.topic?.trim() || article.title,
       status: article.status,
       current_step: article.currentStep,
-      payload: article,
+      payload: originalArticle,
       draft: article.draft ?? null,
       batch_status: article.batchStatus ?? null,
       error_message: article.batchError ?? null,
@@ -6206,9 +6214,17 @@ app.listen(PORT, () => {
   void (async () => {
     if (!(await tableAvailable("writer_articles"))) return
     const articles = await loadArticles()
-    for (const article of articles) await projectArticle(article)
+    let failed = 0
+    for (const article of articles) {
+      try {
+        await projectArticle(article)
+      } catch (error) {
+        failed += 1
+        console.error(`[migration] article ${article.id} projection failed:`, error)
+      }
+    }
     console.log(
-      `[migration] projected ${articles.length} KV articles into relational tables`,
+      `[migration] projected ${articles.length - failed}/${articles.length} articles into relational tables; failed: ${failed}`,
     )
   })().catch((error) =>
     console.error("[migration] relational projection failed:", error),
