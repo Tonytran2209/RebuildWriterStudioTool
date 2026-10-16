@@ -20,6 +20,21 @@ import { ProcessTraceModal } from './ProcessTrace';
 import { notifyWorkspace } from './WorkspaceNotification';
 import { StepUsage } from './StepUsage';
 
+// Keep typography normalization at the editor boundary, outside persisted draft data.
+function displayDraft(text: string) {
+  return text.replace(/\u2014/g, '-');
+}
+
+function applyDisplayedDraftEdit(original: string, edited: string) {
+  const displayed = displayDraft(original);
+  let start = 0;
+  while (start < displayed.length && start < edited.length && displayed[start] === edited[start]) start++;
+  let end = 0;
+  while (end < displayed.length - start && end < edited.length - start
+    && displayed[displayed.length - 1 - end] === edited[edited.length - 1 - end]) end++;
+  return original.slice(0, start) + edited.slice(start, edited.length - end) + original.slice(original.length - end);
+}
+
 function countWords(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -635,7 +650,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   // reconciling nodes that the browser has already replaced, causing NotFoundError.
   useEffect(() => {
     const editor = editorRef.current;
-    if (editor && editor.innerText !== draft) editor.innerText = draft;
+    const displayed = displayDraft(draft);
+    if (editor && editor.innerText !== displayed) editor.innerText = displayed;
   // The editor is unmounted while a draft is generating. Include generating so
   // a draft that arrived during the loading state is copied into the newly
   // mounted editor as soon as generation finishes (also covers batch polling).
@@ -686,7 +702,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   }
   const approveImageSuggestion = (suggestion: ImageSuggestion) => {
     const nextDraft = insertImagePlaceholder(draft, suggestion)
-    if (editorRef.current) editorRef.current.innerText = nextDraft
+    if (editorRef.current) editorRef.current.innerText = displayDraft(nextDraft)
     void onUpdate({
       draft: nextDraft,
       imageSuggestions: imageSuggestions.map(item => item.id === suggestion.id ? { ...item, status: 'approved' } : item),
@@ -921,7 +937,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       );
       sessionStorage.setItem(recoveryKey, assembledDraft);
       setRecoveryDraft(assembledDraft);
-      if (editorRef.current) editorRef.current.innerText = assembledDraft;
+      if (editorRef.current) editorRef.current.innerText = displayDraft(assembledDraft);
       const checkpointSaved = await onUpdate({
         draft: assembledDraft,
         draftEvidenceUsage: evidenceUsage,
@@ -1017,7 +1033,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 4: compiledWorkflowRules.snapshot },
       });
       if (!saved) throw new Error('Draft Bước 3 chưa được lưu vào Supabase.');
-      if (editorRef.current) editorRef.current.innerText = assembledDraft;
+      if (editorRef.current) editorRef.current.innerText = displayDraft(assembledDraft);
       if (report.status === 'pass')
         notifyWorkspace(manual && draft ? 'Đã viết lại, kiểm tra và lưu draft.' : 'Đã tạo, kiểm tra và lưu draft.', 'success');
       else
@@ -1153,7 +1169,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         if (findings.length) {
           const report = qualityReport(article, deterministic);
           await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint });
-          if (editorRef.current) editorRef.current.innerText = candidateDraft;
+          if (editorRef.current) editorRef.current.innerText = displayDraft(candidateDraft);
           throw new Error(`Bản sửa cục bộ đã được lưu nhưng còn lỗi: ${findings.map(item => item.label).join(', ')}.`);
         }
       }
@@ -1250,7 +1266,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           facts: { result: 'warning', reviewerSchemaComplete: false, passedChecks: report.checks.filter(item => item.status === 'pass').length, totalChecks: report.checks.length },
         });
         await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace });
-        if (editorRef.current) editorRef.current.innerText = candidateDraft;
+        if (editorRef.current) editorRef.current.innerText = displayDraft(candidateDraft);
         notifyWorkspace('Re-check đã lưu draft. Reviewer trả báo cáo chưa đầy đủ nên hệ thống không tự repair hoặc lặp lại AI call.', 'warning');
         return;
       }
@@ -1311,7 +1327,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         if (remainingDeterministic.length) {
           const report = qualityReport(article, deterministic);
           await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint });
-          if (editorRef.current) editorRef.current.innerText = candidateDraft;
+          if (editorRef.current) editorRef.current.innerText = displayDraft(candidateDraft);
           throw new Error(`Bản sửa semantic đã được lưu nhưng tạo ra lỗi cần xử lý: ${remainingDeterministic.join(', ')}.`);
         }
         semanticReview = await reviewSemantic(candidateDraft);
@@ -1343,7 +1359,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         facts: { result: report.status, passedChecks: report.checks.filter(item => item.status === 'pass').length, totalChecks: report.checks.length },
       });
       await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace, semanticReviewFingerprint: semanticReviewFingerprint(article, candidateDraft, article.draftEvidenceUsage ?? {}), semanticReviewChecks: semantic });
-      if (editorRef.current) editorRef.current.innerText = candidateDraft;
+      if (editorRef.current) editorRef.current.innerText = displayDraft(candidateDraft);
       if (report.status === 'pass') notifyWorkspace('Re-check & Fix hoàn tất. Draft đã vượt qua toàn bộ checklist.', 'success');
       if (report.status !== 'pass') {
         notifyWorkspace('Re-check đã lưu draft; còn một số mục cần review. Xem AI log để biết chính xác các mục còn lại.', report.status === 'fail' ? 'error' : 'warning');
@@ -1366,7 +1382,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
 
   const handleEditorInput = () => {
     if (editorRef.current) {
-      pendingDraft.current = editorRef.current.innerText;
+      pendingDraft.current = applyDisplayedDraftEdit(pendingDraft.current ?? draft, editorRef.current.innerText);
       if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
       draftSaveTimer.current = setTimeout(() => {
         if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current, qualityReport: null, draftSourceFingerprint: null, semanticReviewFingerprint: null, semanticReviewChecks: null });
