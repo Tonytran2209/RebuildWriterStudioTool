@@ -20,10 +20,11 @@ import { ProcessTraceModal } from './ProcessTrace';
 import { notifyWorkspace } from './WorkspaceNotification';
 import { StepUsage } from './StepUsage';
 import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionCheck } from '../../lib/introductionPolicy';
+import { normalizeDraftOutput, normalizeDraftHtml } from '../../lib/draftExport';
 
 // Keep typography normalization at the editor boundary, outside persisted draft data.
 function displayDraft(text: string) {
-  return text.replace(/\u2014/g, '-');
+  return normalizeDraftOutput(text);
 }
 
 // Structured drafts place the introduction between the H1 and first section.
@@ -1438,10 +1439,14 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current, qualityReport: null, draftSourceFingerprint: null });
   }, []);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(draft);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(normalizeDraftOutput(pendingDraft.current ?? draft));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : String(copyError));
+    }
   };
 
   const handleCopyGoogleDocs = async () => {
@@ -1454,20 +1459,20 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          draft: `${exportBrief}\n\n---\n\n${draft}`,
-          title: article.title || article.topic || '',
-          outline: (article.outline ?? []).map(section => ({ heading: section.heading, level: section.level })),
+          draft: normalizeDraftOutput(`${exportBrief}\n\n---\n\n${pendingDraft.current ?? draft}`),
+          title: normalizeDraftOutput(article.title || article.topic || ''),
+          outline: (article.outline ?? []).map(section => ({ heading: normalizeDraftOutput(section.heading), level: section.level })),
         }),
       }, baseUrl);
       const payload = await response.json().catch(() => ({ error: response.statusText }));
       if (!response.ok) throw new Error(payload.error || `Railway formatter error ${response.status}`);
       if (navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
         await navigator.clipboard.write([new ClipboardItem({
-          'text/html': new Blob([payload.html], { type: 'text/html' }),
-          'text/plain': new Blob([payload.markdown], { type: 'text/plain' }),
+          'text/html': new Blob([normalizeDraftHtml(payload.html)], { type: 'text/html' }),
+          'text/plain': new Blob([normalizeDraftOutput(payload.markdown)], { type: 'text/plain' }),
         })]);
       } else {
-        await navigator.clipboard.writeText(payload.markdown);
+        await navigator.clipboard.writeText(normalizeDraftOutput(payload.markdown));
       }
       setFormatCopied(true);
       setTimeout(() => setFormatCopied(false), 2500);
@@ -1698,11 +1703,11 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             <span>{formatCopying ? tr('Đang định dạng…', 'Formatting…') : formatCopied ? tr('Đã copy', 'Copied') : tr('Copy bài + SEO brief', 'Copy article + SEO brief')}</span>
           </button>
           <button disabled={!draft} onClick={() => {
-            const blob = new Blob([draft], { type: 'text/plain' });
+            const blob = new Blob([normalizeDraftOutput(pendingDraft.current ?? draft)], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${(article.title || 'bai-viet').replace(/\s+/g, '-')}.txt`;
+            a.download = `${normalizeDraftOutput(article.title || 'bai-viet').replace(/\s+/g, '-')}.txt`;
             a.click();
             URL.revokeObjectURL(url);
           }} className="draft-export-secondary inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-[10px] font-medium transition-colors disabled:opacity-40">

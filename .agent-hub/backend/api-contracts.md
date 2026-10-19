@@ -34,6 +34,8 @@ All endpoints are served by Railway. Authenticated client calls use `src/lib/db.
 
 ## Agent Library retrieval
 
+- `POST /api/format/google-docs` returns `{markdown, html, formatter: "deterministic-v2", aiCalls: 0}`. Normalize em dashes to hyphens in the export copy only. HTML supports headings, emphasis, links, lists, horizontal rules and Markdown tables with aligned cells. No stored draft is mutated.
+
 - `POST /api/agent-library/sync` compiles the Git canonical `.agent-hub` documents into a commit/content-pinned Supabase index. It is admin-only.
 - `GET /api/agent-library/context?q=...&layers=design,backend&maxChars=...` returns only ranked, bounded chunks from the current indexed version.
 - `GET /api/agent-library/status` reports whether a current index version exists.

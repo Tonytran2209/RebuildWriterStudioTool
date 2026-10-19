@@ -30,3 +30,7 @@ projectId: writer-studio
 ## Draft introduction display
 
 Show the complete introduction in draft preview and full editing. The 5–6 line goal is a writing guideline, enforced through a shared 60–85-word single-paragraph contract, not CSS clipping. Responsive line wrapping must not hide saved content.
+
+## Draft copy and export
+
+Preview, plain copy, rich copy and TXT downloads normalize em dashes to hyphens on output only; saved source remains unchanged. Copy/export includes pending editor changes. Rich copy includes HTML and Markdown clipboard variants, including table cells and inline formatting. Plain-text fallback retains Markdown syntax when rich clipboard support is unavailable.
