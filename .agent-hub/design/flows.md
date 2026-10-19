@@ -26,3 +26,7 @@ projectId: writer-studio
 - On completion, replace loading UI with the persisted result in the same view.
 - On warning, preserve the saved output and state exactly what remains unresolved.
 - On error, preserve usable progress and offer the safe retry path.
+
+## Draft introduction display
+
+Show the complete introduction in draft preview and full editing. The 5–6 line goal is a writing guideline, enforced through a shared 60–85-word single-paragraph contract, not CSS clipping. Responsive line wrapping must not hide saved content.

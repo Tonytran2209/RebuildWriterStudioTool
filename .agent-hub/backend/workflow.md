@@ -27,6 +27,8 @@ Railway Express (`backend/index.ts`) owns authentication, provider calls, articl
 
 ## Change rules
 
+- Draft introductions use a fixed 60–85 English words in one paragraph, ideally 3–4 concise sentences, aiming for about 5–6 desktop reading lines. This overrides historical introduction percentage settings. Single and batch generation, deterministic QC, semantic review and targeted repair share this contract. Start with the reader's pain point/decision and answer the search intent directly; avoid generic setup and unsupported promises. Allocate the remaining word budget to body sections.
+
 - API or workflow changes require matching updates to `backend/api-contracts.md` and affected UI flow documentation.
 - Preserve legacy-compatible step numbers 2/3/4 in storage unless a migration request is explicitly approved.
 - Do not add unbounded retries, parallel mutation paths or silent fallback models.

@@ -40,6 +40,7 @@ import { compileBackendWorkflowRules } from "./workflowRules.ts"
 import { researchSeoKeywords, seoResearchConfigured } from "./seoResearch.ts"
 import { jsonrepair } from "jsonrepair"
 import { resolveArticleProjection } from "./articleProjection.ts"
+import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionCheck } from "../src/lib/introductionPolicy.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
 import {
   agentLibraryStatus,
@@ -1765,6 +1766,7 @@ function batchSemanticReviewInstruction(article: any, draft: string) {
     : 0
   const wordCount = draft.trim().split(/\s+/).filter(Boolean).length
   return [
+    INTRODUCTION_INSTRUCTION,
     "For keyword-naturalness, pass when the primary query is present in the H1/body and reads grammatically in context.",
     "Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.",
     "Fail only for material keyword stuffing that blocks publication.",
@@ -1775,19 +1777,11 @@ function batchSemanticReviewInstruction(article: any, draft: string) {
 function batchDraftBudget(
   outline: any[],
   wordTarget: number,
-  introductionPercent = 8,
   conclusionPercent = 7,
 ) {
   const targetMin = Math.ceil(wordTarget * 0.95)
   const targetMax = Math.floor(wordTarget * 1.03)
-  const introduction = {
-    min: Math.floor((targetMin * introductionPercent) / 100),
-    max: Math.floor((targetMax * (introductionPercent + 1)) / 100),
-  }
-  const introductionAccepted = {
-    min: Math.max(1, Math.floor(introduction.min * 0.85)),
-    max: Math.ceil(introduction.max * 1.15),
-  }
+  const introduction = { ...INTRODUCTION_BUDGET }
   const conclusion = {
     min: Math.floor((targetMin * conclusionPercent) / 100),
     max: Math.floor((targetMax * (conclusionPercent + 1)) / 100),
@@ -1821,8 +1815,8 @@ function batchDraftBudget(
     targetMin,
     targetMax,
     introduction: { ...introduction,
-      acceptedMin: introductionAccepted.min,
-      acceptedMax: introductionAccepted.max,
+      acceptedMin: introduction.acceptedMin,
+      acceptedMax: introduction.acceptedMax,
     },
     conclusion: { ...conclusion,
       acceptedMin: conclusionAccepted.min,
@@ -1846,32 +1840,17 @@ function batchFieldBudgetChecks(
   budget: ReturnType<typeof batchDraftBudget>,
 ) {
   const lines = draft.split("\n")
-  const firstH2 = lines.findIndex((line) => /^##\s+\S/.test(line.trim()))
   const conclusionIndex = lines.findIndex((line) =>
     /^##\s+conclusion\s*$/i.test(line.trim()),
   )
   const count = (value: string) =>
     value.trim().split(/\s+/).filter(Boolean).length
-  const introductionWords = count(
-    lines.slice(1, firstH2 >= 0 ? firstH2 : lines.length).join(" "),
-  )
   const conclusionWords =
     conclusionIndex >= 0
       ? count(lines.slice(conclusionIndex + 1).join(" "))
       : 0
   return [
-    {
-      id: "introduction-word-budget",
-      label: "Introduction word budget",
-      kind: "deterministic",
-      status:
-        introductionWords >= budget.introduction.acceptedMin &&
-        introductionWords <= budget.introduction.acceptedMax
-          ? "pass"
-          : "fail",
-      reason: `${introductionWords} English words; preferred ${budget.introduction.min}-${budget.introduction.max}, accepted ${budget.introduction.acceptedMin}-${budget.introduction.acceptedMax}.`,
-      autoFixAllowed: true,
-    },
+    introductionCheck(draft),
     {
       id: "conclusion-word-budget",
       label: "Conclusion word budget",
@@ -2263,13 +2242,6 @@ async function runBatchArticle(
     Math.max(
       2,
       workflowParam("core-idea", "idea-generation", "ideaCount", 3),
-    ),
-  )
-  const introductionPercent = Math.min(
-    15,
-    Math.max(
-      5,
-      workflowParam("draft", "word-allocation", "introductionPercent", 8),
     ),
   )
   const conclusionPercent = Math.min(
@@ -2744,7 +2716,6 @@ async function runBatchArticle(
       const budget = batchDraftBudget(
         article.outline ?? [],
         effectiveDraftWords,
-        introductionPercent,
         conclusionPercent,
       )
       const verifiedOutline = batchVerifiedOutline(article.outline ?? [])
@@ -2774,7 +2745,7 @@ async function runBatchArticle(
             approvedInternalLinkCandidates.length
               ? `INTERNAL LINK CONTRACT: Include ${Math.min(approvedInternalLinkCandidates.length, effectiveDraftWords >= 1800 ? 4 : effectiveDraftWords >= 1100 ? 3 : 2)} distinct contextual Markdown links from the approved candidates. Distribute them through relevant body sections, use descriptive anchors, and never invent, alter, or substitute a URL.`
               : "Never invent a URL.",
-            "INTRODUCTION CONTRACT: In 45–90 words and no more than two short paragraphs, answer the primary search intent and reader pain point directly, then establish a useful insight. Do not use generic scene-setting.",
+            INTRODUCTION_INSTRUCTION,
             article.activityType === "comparison-seo" && article.comparisonStructure === "similarities-differences"
               ? "COMPARISON FORMAT: Include explicit Similarities and Differences H2 sections, then business experience/expertise, practical selection guidance, and a CTA aligned to the Article Spec."
               : "",
@@ -2877,7 +2848,8 @@ async function runBatchArticle(
             article,
             4,
             [
-              "Expand only the under-length introduction and/or conclusion. Do not return a title, headings, body sections, markdown, or any other article field.",
+              "Repair only the failed introduction and/or conclusion: shorten over-length text, expand under-length text and fix paragraph structure. Preserve supported meaning. Do not return a title, headings, body sections, or any other article field.",
+              INTRODUCTION_INSTRUCTION,
               `LENGTH FAILURES: ${JSON.stringify(fieldFailures)}`,
               `INTRODUCTION: preferred ${budget.introduction.min}-${budget.introduction.max}; mandatory accepted range ${budget.introduction.acceptedMin}-${budget.introduction.acceptedMax} English words.`,
               `CONCLUSION: preferred ${budget.conclusion.min}-${budget.conclusion.max}; mandatory accepted range ${budget.conclusion.acceptedMin}-${budget.conclusion.acceptedMax} English words.`,

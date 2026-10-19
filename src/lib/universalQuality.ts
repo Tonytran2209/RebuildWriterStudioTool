@@ -1,7 +1,8 @@
 import type { Article, ImageSuggestion, QualityGateCheck, UniversalQualityReport, WebsiteContentRecord } from "../types";
 import { articleSpecFingerprint } from "./articleSpec";
+import { introductionCheck } from "./introductionPolicy";
 
-export const UNIVERSAL_QUALITY_VERSION = 7;
+export const UNIVERSAL_QUALITY_VERSION = 8;
 
 export function internalLinkBudget(wordCount: number) {
   if (wordCount < 1000) return { target: 3, max: 4 }
@@ -98,6 +99,7 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
     return terms.length > 0 && terms.filter(term => outlineCoverage.includes(term)).length < Math.ceil(terms.length * 0.5);
   });
   const checks: QualityGateCheck[] = [
+    introductionCheck(draft),
     { id: "complete-structure", label: "Complete article structure", kind: "deterministic", status: /^#\s+/m.test(draft) && /^##\s+/m.test(draft) ? "pass" : "fail", reason: "Draft must contain one H1 and at least one H2.", autoFixAllowed: true },
     { id: "duplicate-headings", label: "No consecutive duplicate headings", kind: "deterministic", status: duplicateHeadings.length ? "fail" : "pass", reason: duplicateHeadings.length ? `Repeated heading immediately before its prose: ${duplicateHeadings.join(", ")}` : "Each section heading appears once before its prose.", autoFixAllowed: true },
     { id: "word-budget", label: "English word target range", kind: "deterministic", status: count >= acceptedMin && count <= acceptedMax ? "pass" : "fail", reason: `${count} English words; target ${wordTarget}, accepted range ${acceptedMin}–${acceptedMax}.`, autoFixAllowed: true },

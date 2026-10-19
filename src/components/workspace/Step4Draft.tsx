@@ -19,6 +19,7 @@ import { auditInternalLinks, deterministicQualityChecks, internalLinkBudget, qua
 import { ProcessTraceModal } from './ProcessTrace';
 import { notifyWorkspace } from './WorkspaceNotification';
 import { StepUsage } from './StepUsage';
+import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionCheck } from '../../lib/introductionPolicy';
 
 // Keep typography normalization at the editor boundary, outside persisted draft data.
 function displayDraft(text: string) {
@@ -26,7 +27,7 @@ function displayDraft(text: string) {
 }
 
 // Structured drafts place the introduction between the H1 and first section.
-// For legacy drafts without section headings, only clamp the first paragraph.
+// For legacy drafts without section headings, use the first paragraph.
 function draftPreviewParts(text: string) {
   const title = text.match(/^\s*# [^\n]+(?:\r?\n)+/);
   const start = title?.[0].length ?? 0;
@@ -132,6 +133,7 @@ function semanticReviewInstruction(article: Article, draft: string) {
   const exactMatches = keyword ? draft.match(new RegExp(escaped, 'gi'))?.length ?? 0 : 0;
   const density = keyword ? (exactMatches / Math.max(countWords(draft), 1)) * 100 : 0;
   return [
+    INTRODUCTION_INSTRUCTION,
     'For keyword-naturalness, pass when the primary query is present in the H1/body and reads grammatically in context.',
     'Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.',
     'Fail only for material keyword stuffing that blocks publication.',
@@ -209,10 +211,10 @@ const semanticQualitySchema: Record<string, unknown> = {
   },
 };
 
-function buildSectionBudget(outline: NonNullable<Article['outline']>, wordTarget: number, introductionPercent = 8, conclusionPercent = 7) {
+function buildSectionBudget(outline: NonNullable<Article['outline']>, wordTarget: number, conclusionPercent = 7) {
   const targetMin = Math.ceil(wordTarget * 0.95);
   const targetMax = Math.floor(wordTarget * 1.03);
-  const introduction = { min: Math.floor(targetMin * introductionPercent / 100), max: Math.floor(targetMax * (introductionPercent + 1) / 100) };
+  const introduction = { ...INTRODUCTION_BUDGET };
   const conclusion = { min: Math.floor(targetMin * conclusionPercent / 100), max: Math.floor(targetMax * (conclusionPercent + 1) / 100) };
   const headingOverhead = outline.reduce((sum, section) => sum + countWords(section.heading) + 1, 10);
   const sectionPoolMin = Math.max(0, targetMin - introduction.min - conclusion.min - headingOverhead);
@@ -508,7 +510,7 @@ function insertImagePlaceholder(draft: string, suggestion: ImageSuggestion) {
 }
 
 function semanticReviewFingerprint(article: Article, draft: string, usage: Record<string, string[]>) {
-  const input = [draft, article.articleSpecFingerprint ?? '', JSON.stringify(usage), JSON.stringify(article.outline ?? [])].join('\u0000')
+  const input = [INTRODUCTION_INSTRUCTION, draft, article.articleSpecFingerprint ?? '', JSON.stringify(usage), JSON.stringify(article.outline ?? [])].join('\u0000')
   let hash = 2166136261
   for (let index = 0; index < input.length; index += 1) {
     hash ^= input.charCodeAt(index)
@@ -636,7 +638,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const bundle = useMemo(() => collectStepDocs(4, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(4, config, files), [config, files]);
   const compiledWorkflowRules = useMemo(() => compileWorkflowRules(config, 4, 'manual'), [config]);
-  const introductionPercent = Number(getWorkflowParameter(config, 'draft', 'word-allocation', 'introductionPercent') ?? 8);
   const conclusionPercent = Number(getWorkflowParameter(config, 'draft', 'word-allocation', 'conclusionPercent') ?? 7);
   const maxSentencesPerParagraph = Number(getWorkflowParameter(config, 'draft', 'structured-assembly', 'maxSentencesPerParagraph') ?? 5);
   const [generating, setGenerating] = useState(false);
@@ -796,7 +797,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         article.keywords,
         ...(article.outline ?? []).map(section => section.heading),
       ].filter(Boolean).join(' ');
-      const wordBudget = buildSectionBudget(article.outline || [], targetWords, introductionPercent, conclusionPercent);
+      const wordBudget = buildSectionBudget(article.outline || [], targetWords, conclusionPercent);
       // English prose, JSON escaping and provider tokenization need headroom beyond
       // the visible word target. The hard word limit is still enforced after assembly.
       const maxTokens = Math.min(12_000, Math.max(1800, Math.ceil(targetWords * 1.9)));
@@ -813,7 +814,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           '- Giữ nguyên đầy đủ heading và đúng thứ tự section của OUTLINE_STEP_3.',
           '- Evidence trong OUTLINE_STEP_3 đã được kiểm chứng; dùng đúng evidenceRefs cho section tương ứng, không bịa thêm số liệu.',
           '- Hoàn thiện mọi section trước khi mở rộng bất kỳ section nào. Không lặp định nghĩa, lợi ích, so sánh, evidence hoặc kết luận.',
-          '- SAPO/INTRODUCTION: bắt đầu bằng câu trả lời trực tiếp cho search intent và pain point của người đọc; nêu insight có ích, không kể chuyện vòng vo, không dùng lời mở đầu chung chung. Giữ sapo ngắn gọn, tối đa 2 đoạn.',
+          INTRODUCTION_INSTRUCTION,
           '- INTERNAL LINKS: đặt các link trong section liên quan, với anchor mô tả tự nhiên; không dồn link vào conclusion hoặc dùng một anchor lặp lại.',
           '- Trước khi trả JSON, tự kiểm tra nội bộ: đủ section IDs theo outline, đúng word budget, đúng một Conclusion, primary keyword trong H1/body, evidenceRefs thuộc section tương ứng và internal link chỉ dùng URL approved. Tự sửa mọi lỗi phát hiện được trước khi trả kết quả.',
           `- Mỗi đoạn chỉ phục vụ một claim, tối đa ${maxSentencesPerParagraph} câu. Không thêm section ngoài outline.`,
@@ -837,7 +838,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         `- Từ khóa: ${article.keywords || ''}`,
         `- TARGET WORDS: ${wordBudget.wordTarget} từ tiếng Anh. Hãy chủ động viết trong vùng tối ưu ${wordBudget.targetMin}–${wordBudget.targetMax}; QC chấp nhận ${wordBudget.acceptedMin}–${wordBudget.acceptedMax}. Đây là target linh hoạt, không phải yêu cầu cắt câu hoặc bỏ kết luận.`,
         `- Introduction: ${wordBudget.introduction.min}–${wordBudget.introduction.max} từ`,
-        '- Sapo must answer the primary intent and reader pain point directly in 45–90 words, then set a practical insight or expectation for the article.',
+        INTRODUCTION_INSTRUCTION,
         `- Conclusion: ${wordBudget.conclusion.min}–${wordBudget.conclusion.max} từ`,
         `- Section budgets: ${JSON.stringify(wordBudget.sections)}`,
         `- RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(internalLinkCandidates)}`,
@@ -939,6 +940,31 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           detail: remaining.length ? `Repair still missing: ${remaining.join(', ')}.` : `Recovered only the missing fields: ${missingParts.join(', ')}.`,
           facts: { repairedFields: missingParts.join(', '), remainingFields: remaining.join(', ') || 'none' },
         });
+      }
+      if (parsed.introduction?.trim() && introductionCheck(`# Title\n\n${parsed.introduction}\n\n## Body`).status === 'fail') {
+        try {
+        const introRepair = await callAI({
+          articleId: article.id, model, railwayUrl, stepNumber: 4,
+          requestPurpose: 'recheck', skipDocumentContext: true,
+          maxTokens: 500, temperature: 0.1, jsonMode: true,
+          jsonSchema: repairSchemaFor(['introduction']),
+          systemPrompt: `${INTRODUCTION_INSTRUCTION}\nRepair only the introduction. Preserve supported meaning; return JSON containing introduction only.`,
+          prompt: `TOPIC: ${article.topic}\nPRIMARY QUERY: ${getPrimaryKeyword(article)}\nCURRENT INTRODUCTION: ${parsed.introduction}`,
+        });
+        const repaired = parseAIJson(introRepair.content) as StructuredDraftPayload;
+        const passed = Boolean(repaired.introduction?.trim()) && introductionCheck(`# Title\n\n${repaired.introduction}\n\n## Body`).status === 'pass';
+        if (passed) parsed.introduction = repaired.introduction;
+        processTrace.push({
+          id: `draft-intro-repair-${Date.now()}`, stage: 'repair',
+          status: passed ? 'completed' : 'failed', title: 'Concise introduction repair',
+          detail: passed ? 'Repaired only the introduction to 60–85 words in one paragraph.' : 'Introduction still needs editorial correction; draft remains available for review.',
+        });
+        } catch {
+          processTrace.push({
+            id: `draft-intro-repair-error-${Date.now()}`, stage: 'repair', status: 'failed',
+            title: 'Concise introduction repair', detail: 'Could not repair the introduction. Preserved the generated draft for review and re-check.',
+          });
+        }
       }
       let assembledDraft = repairDraftInternalLinks(
         article,
@@ -1121,7 +1147,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       const priorSemantic = (article.qualityReport?.checks ?? []).filter(item => item.kind === 'semantic');
       let findings = [
         ...seo.failed.map(item => ({ label: item.label, reason: item.label })),
-        ...deterministic.filter(item => item.status === 'fail').map(item => ({ label: item.label, reason: item.reason })),
+        ...deterministic.filter(item => item.status === 'fail').map(item => ({ label: item.label, reason: item.reason, recommendedAction: item.recommendedAction })),
       ];
       processTrace.push({
         id: `draft-recheck-audit-${Date.now()}`,
@@ -1538,7 +1564,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 >{editingDraft ? tr('Xem bản nháp', 'Preview draft') : tr('Chỉnh sửa toàn bộ bản nháp', 'Edit full draft')}</button>}
                 {draft && !editingDraft && <div className="draft-prose whitespace-pre-wrap">
                   {preview.title && <div>{preview.title}</div>}
-                  <div style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 6, overflow: 'hidden' }}>{preview.introduction}</div>
+                  <div>{preview.introduction}</div>
                   <div>{preview.body}</div>
                 </div>}
                 <div hidden={Boolean(draft) && !editingDraft}>
