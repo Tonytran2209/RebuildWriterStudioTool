@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { Check, CircleX, ClipboardCopy, Copy, Download, Eye, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { TriangleAlert, Check, CircleX, ClipboardCopy, Copy, Download, Eye, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, ImageSuggestion, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { authenticatedRailwayFetch } from '../../lib/db';
@@ -1671,11 +1671,18 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">Universal QC</h3><span className={`seo-score-tag rounded-full border px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'is-pass' : ''}`}>{displayedQualityChecks.filter(item => item.status === 'pass').length}/{displayedQualityChecks.length}</span></div>
               <div className="space-y-1.5">
                 {displayedQualityChecks.map(item => (
-                  <div key={item.id} className="flex items-start gap-2" title={item.reason}>
+                  <div key={item.id} data-qc-check={item.id} data-qc-status={item.status} className={`flex min-w-0 items-start gap-2 ${item.status === 'pass' ? 'text-emerald-700' : item.status === 'warning' ? 'text-amber-700' : 'text-rose-700'}`}>
                     {item.status === 'pass'
-                      ? <span className="seo-check-icon is-pass flex h-4 w-4 shrink-0 items-center justify-center rounded-full" aria-hidden="true"><Check className="app-icon" /></span>
-                      : <CircleX className="seo-check-icon app-icon shrink-0" aria-hidden="true" />}
-                    <span className={`text-[10px] leading-snug ${item.status === 'pass' ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}{item.status === 'warning' && <span className="block text-amber-600">{item.reason}</span>}</span>
+                      ? <Check data-qc-icon="pass" className="app-icon shrink-0" aria-hidden="true" />
+                      : item.status === 'warning'
+                        ? <TriangleAlert data-qc-icon="warning" className="app-icon shrink-0" aria-hidden="true" />
+                        : <CircleX data-qc-icon="fail" className="app-icon shrink-0" aria-hidden="true" />}
+                    <div className="min-w-0 flex-1 break-words text-[10px] leading-snug [overflow-wrap:anywhere]">
+                      <span>{item.label}</span>
+                      <span className="ml-1 font-medium">{item.status === 'pass' ? tr('Đạt', 'Pass') : item.status === 'warning' ? tr('Cảnh báo', 'Warning') : tr('Thất bại', 'Fail')}</span>
+                      {item.status !== 'pass' && item.reason && <p className="mt-1">{item.reason}</p>}
+                      {item.status !== 'pass' && item.recommendedAction && <p className="mt-1">{tr('Đề xuất', 'Recommended action')}: {item.recommendedAction}</p>}
+                    </div>
                   </div>
                 ))}
               </div>
