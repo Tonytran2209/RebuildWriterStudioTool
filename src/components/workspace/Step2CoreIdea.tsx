@@ -282,9 +282,13 @@ export default function Step2CoreIdea({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(article.selectedCoreIdeaId ?? null);
+  const selectedId = article.selectedCoreIdeaId ?? null;
   const [detailIdeaId, setDetailIdeaId] = useState<string | null>(null);
   const [auditIdeaId, setAuditIdeaId] = useState<string | null>(null);
+  useEffect(() => {
+    setDetailIdeaId(null);
+    setAuditIdeaId(null);
+  }, [article.id]);
   const generationInFlight = useRef(false);
   const { tr, canonicalAIOutputInstruction } = useI18n();
   const prerequisite = gateArticleStep(article, 2);
@@ -586,7 +590,6 @@ export default function Step2CoreIdea({
       } else {
         notifyWorkspace('Đã tạo, kiểm tra và lưu Article Spec cùng các Core Idea.', 'success');
       }
-      setSelectedId(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
@@ -599,7 +602,6 @@ export default function Step2CoreIdea({
   const handleSelect = (idea: CoreIdeaSuggestion) => {
     const selectionChanged = article.selectedCoreIdeaId !== idea.id;
     const selectedSpec = article.articleSpec ? { ...article.articleSpec, thesis: idea.mainArgument, audience: idea.targetAudience || article.articleSpec.audience } : null;
-    setSelectedId(idea.id);
     onUpdate({
       selectedCoreIdeaId: idea.id,
       title: idea.title,

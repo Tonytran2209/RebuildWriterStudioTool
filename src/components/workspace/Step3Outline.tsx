@@ -553,6 +553,12 @@ export default function Step3Outline({
             {/* Outline */}
             {!generating && outline.length > 0 && (
               <div className="space-y-2">
+                {article.title && (
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <div className="text-[11px] text-slate-500">{tr('Tiêu đề bài viết', 'Article title')}</div>
+                    <h3 data-testid="outline-article-title" className="mt-1 whitespace-pre-wrap break-words text-base font-medium text-slate-800">{article.title}</h3>
+                  </div>
+                )}
                 <div className="outline-summary flex items-center justify-between px-1 text-[11px] text-slate-500">
                   <span>
                     <span className="font-mono text-slate-700 font-bold">{outline.length}</span> section — {h2Count} H2 · {h3Count} H3
