@@ -158,6 +158,7 @@ for(const status of ['pass','warning','fail'])test(`qc-status-display qc-evidenc
  await expect(row.locator(`[data-qc-icon="${status}"]`)).toBeVisible();
  await expect(row).toContainText(status==='pass'?/Pass|Đạt/:status==='warning'?/Warning|Cảnh báo/:/Fail|Thất bại/);
  if(status!=='pass'){
+  await row.locator('summary').click();
   await expect(row.getByText('Fixture review finding:',{exact:false})).toBeVisible();
   await expect(row.getByText('Compare the claim',{exact:false})).toBeVisible();
   expect(await row.evaluate(e=>e.scrollWidth<=e.clientWidth+1)).toBe(true);
@@ -171,7 +172,7 @@ for(const status of ['pass','warning','fail'])test(`qc-status-display qc-evidenc
 
 test('qc-display-preservation generated report survives reload and viewing preserves outputs',async({page})=>{
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async(text:string)=>{(window as any).__qcCopy=text;}},configurable:true}));
- const calls=await mockQcFlow(page,'generation');
+ const calls=await mockQcFlow(page,'generation',false,true);
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
  const snapshot=()=>page.evaluate(()=>({article:JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'),updates:sessionStorage.getItem('qc-updates')}));
@@ -192,9 +193,23 @@ test('qc-display-preservation generated report survives reload and viewing prese
  await expect(page.locator('[data-qc-check="quality-review-stale"]')).toHaveCount(0);
  const panel=page.locator('.draft-insight-panel').filter({hasText:'Universal QC'});
  const reportText=await panel.textContent();
+ const score=await panel.locator('.seo-score-tag').textContent();
+ const completion=page.getByRole('button',{name:/Đánh dấu hoàn thành|Mark.*complete/i});
+ const completionState=await completion.isEnabled();
+ const finding=page.locator('[data-qc-check="evidence-support"]');
+ await finding.locator('summary').click();
+ await expect(finding.getByText('Reviewed fixture',{exact:true})).toBeVisible();
+ await finding.locator('summary').click();
+ await expect(finding.locator('details')).not.toHaveAttribute('open','');
+ expect(await capture()).toEqual(output);
  expect(await snapshot()).toEqual(before);
  await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
  await expect(panel).toHaveText(reportText!);
+ await expect(finding.locator('details')).not.toHaveAttribute('open','');
+ await finding.locator('summary').click();
+ await expect(finding.getByText('Reviewed fixture',{exact:true})).toBeVisible();
+ expect(await panel.locator('.seo-score-tag').textContent()).toBe(score);
+ expect(await completion.isEnabled()).toBe(completionState);
  await expect(page.locator('[data-qc-check="quality-review-stale"]')).toHaveCount(0);
  expect(await snapshot()).toEqual(before);
  expect(await capture()).toEqual(output);
@@ -269,4 +284,66 @@ test('qc-evidence recheck retrieves current section KB without manufacturing usa
  expect(calls[0].prompt).toContain('script review');
  await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
  await expect(page.locator('[data-qc-check="quality-review-stale"]')).toHaveCount(0);
+});
+
+
+// Seed only the existing fixture's saved report; production persistence is untouched.
+async function compactQcFixture(page:import('@playwright/test').Page){
+ await openQcFixture(page,'warning');
+ await page.evaluate(()=>{
+  const saved=JSON.parse(sessionStorage.getItem('qc-fixture')!);
+  saved.qualityReport.checks=saved.qualityReport.checks.map((c:any,i:number)=>({
+   ...c,status:i===0?'pass':i===2?'fail':'warning',
+   label:i===1?'Long finding '+ 'readable '.repeat(20):c.label,
+   reason:i===3?'': 'Full reason '+ 'unbroken'.repeat(70),
+   recommendedAction:i===3?'': 'Full action '+ 'Review the approved evidence. '.repeat(20),
+  }));
+  sessionStorage.setItem('qc-fixture',JSON.stringify(saved));
+ });
+ await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
+}
+test('qc-compact independent collapsed findings preserve complete reason and action',async({page})=>{
+ await compactQcFixture(page);
+ const pass=page.locator('[data-qc-check="intent-satisfied"]');
+ const warning=page.locator('[data-qc-check="reader-outcome"]');
+ const fail=page.locator('[data-qc-check="intro-quality"]');
+ await expect(pass.locator('summary')).toHaveCount(0);
+ await expect(page.locator('[data-qc-check="keyword-naturalness"] summary')).toHaveCount(0);
+ for(const row of [warning,fail]){
+  await expect(row.locator('details')).not.toHaveAttribute('open','');
+  await expect(row.getByText('Full reason ',{exact:false})).not.toBeVisible();
+  await row.locator('summary').click();
+  await expect(row.locator('p').nth(0)).toHaveText('Full reason '+ 'unbroken'.repeat(70));
+  await expect(row.locator('p').nth(1)).toContainText('Full action '+ 'Review the approved evidence. '.repeat(20).trimEnd());
+ }
+ await warning.locator('summary').click();
+ await expect(warning.locator('details')).not.toHaveAttribute('open','');
+ await expect(fail.locator('details')).toHaveAttribute('open','');
+});
+test('qc-disclosure-accessibility keyboard pointer touch and long content fit viewport',async({page})=>{
+ await compactQcFixture(page);
+ const row=page.locator('[data-qc-check="reader-outcome"]');
+ const summary=row.locator('summary');
+ await summary.focus();
+ await page.keyboard.press('Tab');
+ await page.keyboard.press('Shift+Tab');
+ await expect(summary).toBeFocused();
+ expect(await summary.evaluate(e=>{const s=getComputedStyle(e);return s.outlineStyle!=='none' && parseFloat(s.outlineWidth)>=2;})).toBe(true);
+ await page.keyboard.press('Enter');
+ await expect(row.locator('details')).toHaveAttribute('open','');
+ await page.keyboard.press('Space');
+ await expect(row.locator('details')).not.toHaveAttribute('open','');
+ await summary.click();
+ await expect(row.locator('details')).toHaveAttribute('open','');
+ for(const element of [row,summary,row.locator('p').nth(0),row.locator('p').nth(1)]){
+  expect(await element.evaluate(e=>{const r=e.getBoundingClientRect();return e.scrollWidth<=e.clientWidth+1 && r.left>=0 && r.right<=innerWidth+1 && e.scrollHeight<=e.clientHeight+1;})).toBe(true);
+ }
+ // Enable touch on the existing desktop/mobile browser context without changing config.
+ const session=await page.context().newCDPSession(page);
+ await session.send('Emulation.setTouchEmulationEnabled',{enabled:true,maxTouchPoints:1});
+ const box=await summary.boundingBox();
+ await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:box!.x+12,y:box!.y+12}]});
+ await session.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await expect(row.locator('details')).not.toHaveAttribute('open','');
+ await session.detach();
 });

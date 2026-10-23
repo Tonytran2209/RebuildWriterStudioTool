@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { TriangleAlert, Check, CircleX, ClipboardCopy, Copy, Download, Eye, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { ChevronDown, TriangleAlert, Check, CircleX, ClipboardCopy, Copy, Download, Eye, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, ImageSuggestion, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { authenticatedRailwayFetch } from '../../lib/db';
@@ -1695,21 +1695,32 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             {insightPanel === 'quality' && <section className="draft-insight-panel space-y-2.5 p-3">
               <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">Universal QC</h3><span className={`seo-score-tag rounded-full border px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'is-pass' : ''}`}>{displayedQualityChecks.filter(item => item.status === 'pass').length}/{displayedQualityChecks.length}</span></div>
               <div className="space-y-1.5">
-                {displayedQualityChecks.map(item => (
-                  <div key={item.id} data-qc-check={item.id} data-qc-status={item.status} className={`flex min-w-0 items-start gap-2 ${item.status === 'pass' ? 'text-emerald-700' : item.status === 'warning' ? 'text-amber-700' : 'text-rose-700'}`}>
+                {displayedQualityChecks.map(item => {
+                  const hasDetails = item.status !== 'pass' && Boolean(item.reason?.trim() || item.recommendedAction?.trim());
+                  const heading = <>
                     {item.status === 'pass'
                       ? <Check data-qc-icon="pass" className="app-icon shrink-0" aria-hidden="true" />
                       : item.status === 'warning'
                         ? <TriangleAlert data-qc-icon="warning" className="app-icon shrink-0" aria-hidden="true" />
                         : <CircleX data-qc-icon="fail" className="app-icon shrink-0" aria-hidden="true" />}
-                    <div className="min-w-0 flex-1 break-words text-[10px] leading-snug [overflow-wrap:anywhere]">
-                      <span>{item.label}</span>
+                    <span className="min-w-0 flex-1">
+                      {item.label}
                       <span className="ml-1 font-medium">{item.status === 'pass' ? tr('Đạt', 'Pass') : item.status === 'warning' ? tr('Cảnh báo', 'Warning') : tr('Thất bại', 'Fail')}</span>
-                      {item.status !== 'pass' && item.reason && <p className="mt-1">{item.reason}</p>}
-                      {item.status !== 'pass' && item.recommendedAction && <p className="mt-1">{tr('Đề xuất', 'Recommended action')}: {item.recommendedAction}</p>}
-                    </div>
-                  </div>
-                ))}
+                    </span>
+                  </>;
+                  return <div key={item.id} data-qc-check={item.id} data-qc-status={item.status} className={`min-w-0 break-words text-[10px] leading-snug [overflow-wrap:anywhere] ${item.status === 'pass' ? 'text-emerald-700' : item.status === 'warning' ? 'text-amber-700' : 'text-rose-700'}`}>
+                    {hasDetails ? <details className="group min-w-0">
+                      <summary className="flex min-w-0 cursor-pointer list-none items-start gap-2 rounded px-1 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 [&::-webkit-details-marker]:hidden">
+                        {heading}
+                        <ChevronDown className="app-icon shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+                      </summary>
+                      <div className="min-w-0 space-y-1 pb-1 pl-7 pr-1">
+                        {item.reason && <p className="whitespace-pre-wrap">{item.reason}</p>}
+                        {item.recommendedAction && <p className="whitespace-pre-wrap">{tr('Đề xuất', 'Recommended action')}: {item.recommendedAction}</p>}
+                      </div>
+                    </details> : <div className="flex min-w-0 items-start gap-2 px-1 py-1">{heading}</div>}
+                  </div>;
+                })}
               </div>
             </section>}
 
