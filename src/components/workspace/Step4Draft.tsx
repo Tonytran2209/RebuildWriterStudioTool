@@ -24,6 +24,7 @@ import { normalizeDraftOutput, normalizeDraftHtml } from '../../lib/draftExport'
 import { canonicalSpecFingerprint, qualityInputFingerprint, qualityAllowsCompletion, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION } from '../../lib/qualityPolicy';
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage } from '../../lib/evidencePolicy';
 import { verifyEvidence } from '../../lib/evidenceValidation';
+import { internalLinkInstruction, addMissingInternalLinks } from '../../lib/internalLinkPolicy';
 
 // Keep typography normalization at the editor boundary, outside persisted draft data.
 function displayDraft(text: string) {
@@ -402,32 +403,14 @@ function normalizeDraftEvidenceUsage(
   return declaredEvidenceUsage(verifiedOutline.sections, usage);
 }
 
-function repairDraftInternalLinks(article: Article, draft: string, inventory: AppConfig['websiteInventory'] = []) {
+function repairDraftInternalLinks(article: Article, draft: string, inventory: AppConfig['websiteInventory'] = [], wordTarget = countWords(draft)) {
   const candidates = selectInternalLinkCandidates(article, inventory ?? [], 10);
   if (!candidates.length) return removeConsecutiveDuplicateHeadings(draft);
-  const target = Math.min(candidates.length, internalLinkBudget(countWords(draft)).target);
   let next = draft;
   let audit = auditInternalLinks(article, next, inventory ?? []);
   for (const url of audit.unapprovedUrls) next = next.split(url).join(candidates[0].url);
   audit = auditInternalLinks(article, next, inventory ?? []);
-  const used = new Set(audit.approvedDraftUrls);
-  const additions = candidates.filter(candidate => !used.has(candidate.url)).slice(0, Math.max(0, target - used.size)).map(candidate => {
-    const anchor = (candidate.suggestedAnchors?.[0] || candidate.title).replace(/[\[\]]/g, '');
-    return `For related guidance on ${anchor}, see [${anchor}](${candidate.url}).`;
-  });
-  if (additions.length) {
-    const headings = [...next.matchAll(/^#{2,3}\s+(.+)$/gm)].filter(item => !/^conclusion$/i.test(item[1].trim()))
-    const insertions = additions.map((addition, index) => ({
-      at: headings[Math.min(headings.length - 1, Math.floor((index + 1) * headings.length / (additions.length + 1)))]?.index ?? next.length,
-      text: addition,
-    })).sort((left, right) => right.at - left.at)
-    for (const insertion of insertions) {
-      const nextHeading = /^#{2,3}\s+/gm
-      nextHeading.lastIndex = insertion.at + 1
-      const boundary = nextHeading.exec(next)?.index ?? next.length
-      next = `${next.slice(0, boundary).trimEnd()}\n\n${insertion.text}\n\n${next.slice(boundary).trimStart()}`.trim()
-    }
-  }
+  next = addMissingInternalLinks(next, candidates, audit.approvedUrls, wordTarget);
   return removeConsecutiveDuplicateHeadings(next);
 }
 
@@ -693,7 +676,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
   const internalLinkCandidates = useMemo(() => selectInternalLinkCandidates(article, config.websiteInventory ?? [], 10), [article, config.websiteInventory]);
   const internalLinkPlan = internalLinkBudget(targetWords);
-  const internalLinkTarget = Math.min(internalLinkCandidates.length, internalLinkPlan.target);
   const exportBrief = useMemo(() => buildExportBrief(article), [article]);
   const seoChecklist = useMemo(() => evaluateSeoChecklist(draft, article, targetWords), [article, draft, targetWords]);
   const deterministicChecks = useMemo(() => deterministicQualityChecks(
@@ -851,7 +833,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         `- Conclusion: ${wordBudget.conclusion.min}–${wordBudget.conclusion.max} từ`,
         `- Section budgets: ${JSON.stringify(wordBudget.sections)}`,
         `- RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(internalLinkCandidates)}`,
-        internalLinkTarget ? `- Include ${internalLinkTarget} distinct contextual internal links from these candidates. Spread them across relevant H2/H3 sections, with no more than one link per section. Never invent or alter a URL.` : '- No approved internal-link candidate is available; never invent a URL.',
+        internalLinkInstruction(targetWords, internalLinkCandidates.length),
         '- Include one concise, practical example that helps the reader apply the comparison or decision guidance.',
         '- Every concrete factual claim must be supported by the evidence assigned to its outline section. If no evidence exists, frame the passage explicitly as practical synthesis rather than an established fact.',
         ...(article.activityType === 'comparison-seo' && article.comparisonStructure === 'similarities-differences' ? ['- COMPARISON FORMAT: Include explicit Similarities and Differences H2 sections, then add a business experience/expertise insight section, practical selection guidance, and a CTA aligned to the Article Spec.'] : []),
@@ -979,6 +961,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         article,
         parseStructuredDraft(JSON.stringify(parsed), article),
         config.websiteInventory,
+        targetWords,
       );
       let evidenceUsage = normalizeDraftEvidenceUsage(
         article,
@@ -1139,7 +1122,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     }];
     try {
       const inventory = config.websiteInventory ?? [];
-      const candidates = selectInternalLinkCandidates(reviewArticle, inventory, 6);
+      const candidates = selectInternalLinkCandidates(reviewArticle, inventory, 10);
       let candidateDraft = removeConsecutiveDuplicateHeadings(draft);
       let linkAudit = auditInternalLinks(reviewArticle, candidateDraft, inventory);
 
@@ -1158,7 +1141,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             appendBeforeConclusion: `For related guidance, see [${safeAnchor}](${selected.url}).`,
           });
         }
-        candidateDraft = repairDraftInternalLinks(reviewArticle, candidateDraft, inventory);
+        candidateDraft = repairDraftInternalLinks(reviewArticle, candidateDraft, inventory, targetWords);
       }
 
       const verifiedOutline = buildVerifiedOutlineContext(reviewArticle.outline || []);
@@ -1207,6 +1190,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `FAILED CHECKS: ${JSON.stringify(findings)}`,
             `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
             `APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(candidates)}`,
+            internalLinkInstruction(targetWords, candidates.length),
             `TARGET WORDS: ${targetWords}`,
             `CURRENT DRAFT:\n${candidateDraft}`,
             'Return at most 8 minimal find/replace edits. Use appendBeforeConclusion only when adding a short missing passage. Preserve headings and all unaffected prose.',
@@ -1217,7 +1201,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         // AI patches must never be allowed to leave the draft pointing at an
         // unapproved inventory URL. This is deterministic and requires no
         // additional model call.
-        candidateDraft = repairDraftInternalLinks(reviewArticle, candidateDraft, inventory);
+        candidateDraft = repairDraftInternalLinks(reviewArticle, candidateDraft, inventory, targetWords);
         processTrace.push({
           id: `draft-recheck-deterministic-repair-${Date.now()}`,
           stage: 'repair',
@@ -1383,7 +1367,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         candidateDraft = applyTargetedDraftRepair(candidateDraft, parseAIJson(repairResponse.content) as TargetedDraftRepair);
         // Semantic edits are prose-only. Restore the Website Inventory link
         // invariant before the deterministic verification sees this draft.
-        candidateDraft = repairDraftInternalLinks(reviewArticle, candidateDraft, inventory);
+        candidateDraft = repairDraftInternalLinks(reviewArticle, candidateDraft, inventory, targetWords);
         const semanticDraftChanged = candidateDraft !== beforeSemanticRepair;
         processTrace.push({
           id: `draft-recheck-semantic-repair-${Date.now()}`,
@@ -1588,7 +1572,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             {/* Draft editor */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-5">
               <section className="mb-4 rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-xs text-slate-600">
-                <div className="mb-2 flex items-center justify-between gap-3"><h3 className="font-semibold text-slate-800">SEO brief</h3><span className="text-[10px] text-slate-500">{internalLinkTarget ? `${internalLinkTarget} internal links targeted` : 'No approved internal links'}</span></div>
+                <div className="mb-2 flex items-center justify-between gap-3"><h3 className="font-semibold text-slate-800">SEO brief</h3><span className="text-[10px] text-slate-500">{`${internalLinkPlan.target}–${internalLinkPlan.max} internal links required · ${internalLinkCandidates.length} approved candidates`}</span></div>
                 <div className="grid gap-1 sm:grid-cols-2"><span><b>Primary:</b> {getPrimaryKeyword(article) || '—'}</span><span><b>Intent:</b> {article.articleSpec?.primaryIntent ?? '—'}</span></div>
                 <div className="mt-2 flex flex-wrap gap-1.5">{(article.seoResearch?.keywords ?? []).slice(0, 10).map((item, index) => <span key={`${item.keyword}-${index}`} className="rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[10px]"><b>#{index + 1}</b> {item.keyword}{item.intent ? ` · ${item.intent}` : ''}</span>)}</div>
               </section>

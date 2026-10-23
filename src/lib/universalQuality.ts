@@ -3,16 +3,11 @@ import { articleSpecFingerprint } from "./articleSpec";
 import { introductionCheck } from "./introductionPolicy";
 import { QUALITY_VERSION, qualityInputFingerprint } from './qualityPolicy';
 import type { DocumentFile } from '../types';
+import { internalLinkChecks } from './internalLinkPolicy';
+export { internalLinkBudget } from './internalLinkPolicy';
 
 export const UNIVERSAL_QUALITY_VERSION = QUALITY_VERSION;
 
-export function internalLinkBudget(wordCount: number) {
-  if (wordCount < 1000) return { target: 3, max: 4 }
-  if (wordCount < 1300) return { target: 4, max: 5 }
-  if (wordCount <= 1700) return { target: 5, max: 7 }
-  if (wordCount <= 2100) return { target: 6, max: 8 }
-  return { target: 7, max: 9 }
-}
 
 function imageSuggestionChecks(draft: string, suggestions: ImageSuggestion[] = []): QualityGateCheck[] {
   const active = suggestions.filter(item => item.status !== "dismissed")
@@ -86,13 +81,6 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
   const acceptedMax = Math.floor(wordTarget * 1.15);
   const count = words(draft);
   const linkAudit = auditInternalLinks(article, draft, inventory);
-  const linkBudget = internalLinkBudget(count);
-  const uniqueInternalLinks = [...new Set(linkAudit.approvedDraftUrls.map(canonicalUrl))];
-  const sectionLinkCounts = [...draft.matchAll(/^#{2,3}\s+(.+)$/gm)].map((heading, index, all) => {
-    const start = (heading.index ?? 0) + heading[0].length
-    const end = all[index + 1]?.index ?? draft.length
-    return links(draft.slice(start, end)).filter(url => linkAudit.approvedUrls.has(canonicalUrl(url))).length
-  });
   const duplicateHeadings = consecutiveDuplicateHeadings(draft);
   const leaked = sourceNames.filter(name => /\.[a-z0-9]{1,8}$/i.test(name.trim()) && draft.toLowerCase().includes(name.trim().toLowerCase()));
   const outlineCoverage = normalized((article.outline ?? []).flatMap(section => [section.heading, section.notes, section.rationale, ...(section.keywords ?? [])]).join(" "));
@@ -110,8 +98,7 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
     { id: "placeholders", label: "No placeholders", kind: "deterministic", status: /\[(?:cần|needs?|todo|tbd)[^\]]*\]|lorem ipsum|about:blank/i.test(draft) ? "fail" : "pass", reason: "Draft must not contain placeholders or about:blank.", autoFixAllowed: true },
     { id: "source-confidentiality", label: "No internal source leakage", kind: "deterministic", status: leaked.length ? "fail" : "pass", reason: leaked.length ? `Leaked source names: ${leaked.join(", ")}` : "No infrastructure filenames detected.", autoFixAllowed: false },
     { id: "link-correctness", label: "Approved internal links", kind: "deterministic", status: !linkAudit.unapprovedUrls.length && (!linkAudit.required || linkAudit.approvedDraftUrls.length > 0) ? "pass" : "fail", reason: linkAudit.unapprovedUrls.length ? `Not approved in Website Inventory: ${linkAudit.unapprovedUrls.join(", ")}` : linkAudit.required && !linkAudit.approvedDraftUrls.length ? "Article Spec requires an internal link, but the draft does not contain an approved URL." : linkAudit.approvedDraftUrls.length ? "Every internal URL matches an approved Website Inventory entry." : "No internal link is required by the Article Spec.", evidence: linkAudit.internalUrls.join(", "), autoFixAllowed: true },
-    { id: "internal-link-budget", label: "Internal link budget", kind: "deterministic", status: uniqueInternalLinks.length >= linkBudget.target && uniqueInternalLinks.length <= linkBudget.max ? "pass" : "fail", reason: `${uniqueInternalLinks.length} unique approved internal links; target ${linkBudget.target}–${linkBudget.max} for ${count} words.`, evidence: uniqueInternalLinks.join(", "), autoFixAllowed: true },
-    { id: "internal-link-distribution", label: "Internal links distributed across sections", kind: "deterministic", status: sectionLinkCounts.every(count => count <= 1) ? "pass" : "fail", reason: sectionLinkCounts.every(count => count <= 1) ? "No section is overloaded with more than one approved internal link." : "At least one section contains more than one internal link; distribute links across relevant sections.", autoFixAllowed: true },
+    ...internalLinkChecks(draft, linkAudit.approvedUrls, wordTarget),
     ...imageSuggestionChecks(draft, article.imageSuggestions),
   ];
   return checks;

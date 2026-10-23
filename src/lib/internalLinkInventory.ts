@@ -1,4 +1,5 @@
-import type { Article, WebsiteContentRecord } from "../types"
+import type { Article, WebsiteContentRecord } from "../types/index.ts"
+import { canonicalInternalUrl } from './internalLinkPolicy.ts'
 
 const terms = (value: unknown) =>
   String(value ?? "")
@@ -23,6 +24,7 @@ export function selectInternalLinkCandidates(
         article.articleSpec?.primaryQuery,
         article.articleSpec?.ctaObjective,
         ...(article.articleSpec?.mustCover ?? []),
+        ...(article.articleSpec?.internalLinkRequirements ?? []),
         ...(article.outline ?? []).flatMap(section => [section.heading, section.notes, section.rationale, ...(section.keywords ?? [])]),
       ].join(" "),
     ),
@@ -47,7 +49,8 @@ export function selectInternalLinkCandidates(
     .sort(
       (a, b) => b.score - a.score || a.item.title.localeCompare(b.item.title),
     )
-    .slice(0, Math.max(1, limit))
+    .filter((entry, index, all) => all.findIndex(other => canonicalInternalUrl(other.item.redirectTarget || other.item.canonicalUrl || other.item.url) === canonicalInternalUrl(entry.item.redirectTarget || entry.item.canonicalUrl || entry.item.url)) === index)
+    .slice(0, Math.max(0, limit))
     .map(({ item, score }) => ({
       title: item.title,
       url: item.redirectTarget || item.canonicalUrl || item.url,

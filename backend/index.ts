@@ -41,6 +41,7 @@ import { researchSeoKeywords, seoResearchConfigured } from "./seoResearch.ts"
 import { jsonrepair } from "jsonrepair"
 import { resolveArticleProjection } from "./articleProjection.ts"
 import { formatDraftExport } from "./draftFormatter.ts"
+import { internalLinkInstruction, internalLinkChecks, addMissingInternalLinks } from "../src/lib/internalLinkPolicy.ts"
 import { canonicalSpecFingerprint, qualityInputFingerprint, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION } from "../src/lib/qualityPolicy.ts"
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from "../src/lib/evidencePolicy.ts"
 import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionCheck } from "../src/lib/introductionPolicy.ts"
@@ -1403,6 +1404,7 @@ function repairBatchInternalLinks(
   draft: string,
   article: any,
   inventory: any[],
+  wordTarget: number,
 ) {
   const canonicalUrl = (value: string) => {
     try {
@@ -1457,24 +1459,7 @@ function repairBatchInternalLinks(
       // Ignore malformed non-link text; deterministic QC reports it later.
     }
   }
-  const repairedUrls = [...next.matchAll(/https?:\/\/[^\s)\]}>"']+/gi)].map(
-    (match) => canonicalUrl(match[0].replace(/[.,;:!?]+$/, "")),
-  )
-  const usedUrls = new Set(repairedUrls.filter((value) => approved.has(value)))
-  const targetLinks = Math.min(candidates.length, String(next).split(/\s+/).length >= 1800 ? 4 : String(next).split(/\s+/).length >= 1100 ? 3 : 2)
-  const additions = candidates.filter((candidate: any) => !usedUrls.has(canonicalUrl(candidate.url))).slice(0, Math.max(0, targetLinks - usedUrls.size)).map((candidate: any) => {
-    const anchor = String(candidate.suggestedAnchors?.[0] ?? candidate.title ?? "related guidance").replace(/[\[\]]/g, "")
-    return `For related guidance on ${anchor}, see [${anchor}](${candidate.url}).`
-  })
-  if (additions.length) {
-    const addition = additions.join("\n\n")
-    const conclusionIndex = next.search(/^##\s+Conclusion\s*$/mi)
-    next =
-      conclusionIndex >= 0
-        ? `${next.slice(0, conclusionIndex).trimEnd()}\n\n${addition}\n\n${next.slice(conclusionIndex)}`
-        : `${next.trimEnd()}\n\n${addition}`
-  }
-  return next
+  return addMissingInternalLinks(next, candidates, approved, wordTarget)
 }
 
 function batchCoverageTerms(value: unknown) {
@@ -1675,7 +1660,7 @@ function batchUniversalChecks(
       autoFixAllowed: true,
     },
   ]
-  return checks
+  return [...checks, ...internalLinkChecks(text, approved, targetWords)]
 }
 
 function parseBatchSemanticChecks(raw: string) {
@@ -2723,9 +2708,7 @@ async function runBatchArticle(
             `Approved outline and evidence registry: ${JSON.stringify(verifiedOutline)}`,
             `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
             `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(approvedInternalLinkCandidates)}`,
-            approvedInternalLinkCandidates.length
-              ? `INTERNAL LINK CONTRACT: Include ${Math.min(approvedInternalLinkCandidates.length, effectiveDraftWords >= 1800 ? 4 : effectiveDraftWords >= 1100 ? 3 : 2)} distinct contextual Markdown links from the approved candidates. Distribute them through relevant body sections, use descriptive anchors, and never invent, alter, or substitute a URL.`
-              : "Never invent a URL.",
+            internalLinkInstruction(effectiveDraftWords, approvedInternalLinkCandidates.length),
             INTRODUCTION_INSTRUCTION,
             article.activityType === "comparison-seo" && article.comparisonStructure === "similarities-differences"
               ? "COMPARISON FORMAT: Include explicit Similarities and Differences H2 sections, then business experience/expertise, practical selection guidance, and a CTA aligned to the Article Spec."
@@ -2772,6 +2755,7 @@ async function runBatchArticle(
         assembled.draft,
         article,
         runtimeConfig?.websiteInventory ?? [],
+        effectiveDraftWords,
       )
       article = await saveArticleCheckpoint(article, {
         draft: assembledDraft,
@@ -2883,7 +2867,8 @@ async function runBatchArticle(
                 `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
                 `APPROVED OUTLINE AND EVIDENCE: ${JSON.stringify(verifiedOutline)}`,
                 `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
-                `APPROVED INTERNAL LINKS: ${JSON.stringify(selectWebsiteCandidates(article, runtimeConfig?.websiteInventory ?? [], 6))}`,
+                `APPROVED INTERNAL LINKS: ${JSON.stringify(approvedInternalLinkCandidates)}`,
+                internalLinkInstruction(effectiveDraftWords, approvedInternalLinkCandidates.length),
                 `CURRENT DRAFT:\n${assembledDraft}`,
                 'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Return every approved section exactly once, one conclusion, and only evidence IDs allowed for that section.',
               ].join("\n\n")
@@ -2891,7 +2876,8 @@ async function runBatchArticle(
                 "Repair only the deterministic QC findings in the current draft. Return exact find/replace edits, not a rewritten article.",
                 `FINDINGS: ${JSON.stringify(deterministicFailures)}`,
                 `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
-                `APPROVED INTERNAL LINKS: ${JSON.stringify(selectWebsiteCandidates(article, runtimeConfig?.websiteInventory ?? [], 6))}`,
+                `APPROVED INTERNAL LINKS: ${JSON.stringify(approvedInternalLinkCandidates)}`,
+                internalLinkInstruction(effectiveDraftWords, approvedInternalLinkCandidates.length),
                 `CURRENT DRAFT:\n${assembledDraft}`,
                 "Never invent URLs. Preserve headings and unaffected prose.",
               ].join("\n\n"),
@@ -2912,6 +2898,7 @@ async function runBatchArticle(
             assembled.draft,
             article,
             runtimeConfig?.websiteInventory ?? [],
+            effectiveDraftWords,
           )
         } else {
           assembledDraft = applyBatchDraftRepair(assembledDraft, repair.content)
@@ -3040,6 +3027,7 @@ async function runBatchArticle(
           assembled.draft,
           article,
           runtimeConfig?.websiteInventory ?? [],
+          effectiveDraftWords,
         )
         deterministic = [
           ...batchUniversalChecks(assembledDraft, article, effectiveDraftWords, runtimeConfig?.websiteInventory ?? [], internalNames),
