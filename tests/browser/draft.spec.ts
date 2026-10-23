@@ -64,3 +64,88 @@ test('Copy normalizes punctuation and preserves rich tables without mutating sou
  expect(copied.html).not.toContain('—');expect(copied.text).not.toContain('—');
  expect(await source.textContent()).toBe(initial);
 });
+
+// These scenarios run in GitHub browser-check; the Mac LaunchAgent must not launch a browser.
+async function openQcFixture(page:import('@playwright/test').Page,status:string){
+ await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
+ await page.goto(`/?qc=${status}`);
+ await page.getByRole('button',{name:'QC',exact:true}).click();
+}
+test('qc-schema accepts six checks and preserves saved draft on incomplete schema',async({page})=>{
+ await openQcFixture(page,'incomplete');
+ const before=await page.getByTestId('stored-source').textContent();
+ const result=await page.evaluate(()=>{
+  const h=(window as any).qcHarness;
+  const ids=['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov'];
+  const checks=Object.fromEntries(ids.map(id=>[id,{status:'pass',reason:'Reviewed',autoFixAllowed:false}]));
+  const complete=h.parseSemanticQuality(JSON.stringify({checks}));
+  delete checks['brand-pov'];
+  let warning;try{h.parseSemanticQuality(JSON.stringify({checks}));}catch(error){warning=h.incompleteSemanticReviewChecks(error);}
+  return {complete:h.completeSemanticChecks(complete),warning};
+ });
+ expect(result.complete).toBe(true);
+ expect(result.warning[0]).toMatchObject({status:'warning',autoFixAllowed:false});
+ await expect(page.getByText('Semantic review incomplete',{exact:false}).first()).toBeVisible();
+ expect(await page.getByTestId('stored-source').textContent()).toBe(before);
+});
+test('qc-cache rejects incomplete, duplicate and schema-warning cache entries',async({page})=>{
+ await openQcFixture(page,'incomplete');
+ const result=await page.evaluate(()=>{
+  const h=(window as any).qcHarness;
+  const ids=['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov'];
+  const checks=ids.map(id=>({id,kind:'semantic',status:'pass'}));
+  return [h.completeSemanticChecks(checks),h.completeSemanticChecks(checks.slice(1)),h.completeSemanticChecks(Array(6).fill(checks[0])),h.completeSemanticChecks(h.incompleteSemanticReviewChecks('missing'))];
+ });
+ expect(result).toEqual([true,false,false,false]);
+});
+for(const status of ['pass','warning','fail','incomplete'])test(`qc-reload preserves ${status} report and marks changed configuration for re-check`,async({page})=>{
+ await openQcFixture(page,status);
+ const panel=page.locator('.draft-insight-panel').filter({hasText:'Universal QC'});
+ const before=await panel.textContent();
+ const draft=await page.getByTestId('stored-source').textContent();
+ await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
+ await expect(panel).toHaveText(before!);
+ expect(await page.getByTestId('stored-source').textContent()).toBe(draft);
+ await page.getByRole('button',{name:'Change QC configuration'}).click();
+ await expect(panel.getByText('QC needs re-check',{exact:false}).first()).toBeVisible();
+});
+
+// Exercise the real component handlers and HTTP boundary; no live AI or storage.
+async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incomplete=false){
+ const calls:any[]=[];
+ await page.route('**/*',async route=>{
+  const url=new URL(route.request().url());
+  if(url.hostname!=='127.0.0.1')return route.abort();
+  if(url.pathname!=='/api/generate')return route.continue();
+  const body=route.request().postDataJSON();calls.push(body);
+  const reviewer=/publishing quality reviewer|structured-output recovery reviewer/.test(body.systemPrompt);
+  const content=reviewer ? JSON.stringify({checks:Object.fromEntries(['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support',...(incomplete?[]:['brand-pov'])].map(id=>[id,{status:'pass',reason:'Reviewed fixture',autoFixAllowed:false}]))}) : await page.evaluate(()=>JSON.stringify((window as any).qcFlow.payload));
+  if(reviewer){const checkpoint=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));expect(checkpoint.draft).toContain('Fixture practical guide');}
+  await route.fulfill({json:{content,model:'fixture',usage:{inputTokens:0,outputTokens:0}}});
+ });
+ await page.goto('/?qc='+mode);return calls;
+}
+for(const incomplete of [false,true])test(`qc-schema generation saves checkpoint before reviewer and preserves ${incomplete?'incomplete':'complete'} report`,async({page})=>{
+ const calls=await mockQcFlow(page,'generation',incomplete);
+ await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
+ await expect.poll(()=>calls.length).toBe(2);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(incomplete?1:6);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-updates')||'[]').filter((p:any)=>p.semanticReviewChecks).length)).toBe(1);
+ const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));
+ expect(saved.draft).toContain('Fixture practical guide');
+ if(incomplete)expect(saved.semanticReviewChecks[0].id).toBe('semantic-review-schema');
+ await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
+ if(incomplete)await expect(page.getByText('Semantic review incomplete',{exact:false}).first()).toBeVisible();
+ expect(calls).toHaveLength(2);
+});
+for(const incomplete of [false,true])test(`qc-cache recheck calls reviewer for incomplete cache without rewrite (${incomplete?'incomplete':'complete'})`,async({page})=>{
+ const calls=await mockQcFlow(page,'recheck',incomplete);
+ const before=await page.getByTestId('stored-source').textContent();
+ await page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/}).click();
+ await expect.poll(()=>calls.length).toBe(incomplete?2:1);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(incomplete?1:6);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-updates')||'[]').filter((p:any)=>p.semanticReviewChecks).length)).toBe(1);
+ expect(calls.every(c=>/publishing quality reviewer|structured-output recovery reviewer/.test(c.systemPrompt))).toBe(true);
+ expect(await page.getByTestId('stored-source').textContent()).toBe(before);
+ await page.reload();expect(calls).toHaveLength(incomplete?2:1);
+});

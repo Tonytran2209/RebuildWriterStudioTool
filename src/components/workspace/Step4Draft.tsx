@@ -331,7 +331,7 @@ function evaluateSeoChecklist(text: string, article: Article, targetWords: numbe
   return { items, failed: items.filter(item => !item.pass), primaryKeyword, markdownTitle, wordCount };
 }
 
-function parseSemanticQuality(raw: string): QualityGateCheck[] {
+export function parseSemanticQuality(raw: string): QualityGateCheck[] {
   const parsed = parseAIJson(raw) as Record<string, unknown> & { checks?: Array<Record<string, unknown>> | Record<string, Record<string, unknown>> };
   const required = new Set<string>(semanticCheckIds);
   // Structured-output support varies by provider. Some providers preserve the
@@ -520,11 +520,17 @@ function semanticReviewFingerprint(article: Article, draft: string, usage: Recor
   return `semantic-v1-${(hash >>> 0).toString(36)}`
 }
 
-function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
+export function completeSemanticChecks(checks: QualityGateCheck[] | null | undefined): checks is QualityGateCheck[] {
+  return Boolean(checks && checks.length === semanticCheckIds.length && semanticCheckIds.every(id =>
+    checks.some(check => check.id === id && check.kind === 'semantic' && ['pass', 'warning', 'fail'].includes(check.status)),
+  ));
+}
+
+export function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
   const reason = `Semantic reviewer response was incomplete: ${error instanceof Error ? error.message : String(error)}`;
   return [{
     id: 'semantic-review-schema',
-    label: 'Semantic reviewer response',
+    label: 'Semantic review incomplete',
     kind: 'semantic' as const,
     status: 'warning' as const,
     reason,
@@ -704,9 +710,16 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name),
   ), [article, config.websiteInventory, draft, files, targetWords]);
   const savedQualityReport = article.qualityReport;
-  const displayedQualityChecks = savedQualityReport && savedQualityReport.articleSpecFingerprint === article.articleSpecFingerprint && !draftIsStale
-    ? savedQualityReport.checks
-    : deterministicChecks;
+  const reportIsCurrent = savedQualityReport && savedQualityReport.articleSpecFingerprint === article.articleSpecFingerprint && !draftIsStale;
+  const baseQualityChecks = savedQualityReport?.checks ?? deterministicChecks;
+  const displayedQualityChecks: QualityGateCheck[] = [...baseQualityChecks];
+  if (draft && !reportIsCurrent) displayedQualityChecks.push({
+    id: 'quality-review-stale', label: 'QC needs re-check', kind: 'semantic', status: 'warning', autoFixAllowed: false,
+    reason: 'Saved draft preserved. The current draft and configuration need Re-check & Fix before QC can pass.',
+  });
+  if (draft && !completeSemanticChecks(baseQualityChecks.filter(item => item.kind === 'semantic')) && !baseQualityChecks.some(item => item.id === 'semantic-review-schema')) {
+    displayedQualityChecks.push(...incompleteSemanticReviewChecks('Run Re-check & Fix to complete all six semantic checks.'));
+  }
   const seoChecklistPassed = Boolean(draft) && displayedQualityChecks.length > 0 && displayedQualityChecks.every(item => item.status === 'pass');
   const imageSuggestions = article.imageSuggestions ?? []
   const createImageSuggestions = () => {
@@ -1033,7 +1046,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         }
       };
       const semanticKey = semanticReviewFingerprint(article, assembledDraft, evidenceUsage)
-      let semanticReview = article.semanticReviewFingerprint === semanticKey && article.semanticReviewChecks?.length
+      let semanticReview = article.semanticReviewFingerprint === semanticKey && completeSemanticChecks(article.semanticReviewChecks)
         ? { checks: article.semanticReviewChecks, schemaComplete: true, cached: true }
         : await runSemanticReview(assembledDraft, evidenceUsage);
       const semantic = semanticReview.checks;
@@ -1276,7 +1289,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       };
 
       const semanticKey = semanticReviewFingerprint(article, candidateDraft, article.draftEvidenceUsage ?? {})
-      let semanticReview = article.semanticReviewFingerprint === semanticKey && article.semanticReviewChecks?.length
+      let semanticReview = article.semanticReviewFingerprint === semanticKey && completeSemanticChecks(article.semanticReviewChecks)
         ? { checks: article.semanticReviewChecks, schemaComplete: true, cached: true }
         : await reviewSemantic(candidateDraft);
       let semantic = semanticReview.checks;
@@ -1307,7 +1320,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           detail: 'The semantic reviewer did not return a complete report. The draft was saved unchanged; no automatic repair or retry was run.',
           facts: { result: 'warning', reviewerSchemaComplete: false, passedChecks: report.checks.filter(item => item.status === 'pass').length, totalChecks: report.checks.length },
         });
-        await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace });
+        await onUpdate({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace, semanticReviewFingerprint: semanticKey, semanticReviewChecks: semantic });
         if (editorRef.current) editorRef.current.innerText = displayDraft(candidateDraft);
         notifyWorkspace('Re-check đã lưu draft. Reviewer trả báo cáo chưa đầy đủ nên hệ thống không tự repair hoặc lặp lại AI call.', 'warning');
         return;
@@ -1662,7 +1675,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                     {item.status === 'pass'
                       ? <span className="seo-check-icon is-pass flex h-4 w-4 shrink-0 items-center justify-center rounded-full" aria-hidden="true"><Check className="app-icon" /></span>
                       : <CircleX className="seo-check-icon app-icon shrink-0" aria-hidden="true" />}
-                    <span className={`text-[10px] leading-snug ${item.status === 'pass' ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}</span>
+                    <span className={`text-[10px] leading-snug ${item.status === 'pass' ? 'text-slate-600' : 'text-slate-400'}`}>{item.label}{item.status === 'warning' && <span className="block text-amber-600">{item.reason}</span>}</span>
                   </div>
                 ))}
               </div>
