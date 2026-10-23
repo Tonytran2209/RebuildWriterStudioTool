@@ -149,3 +149,61 @@ for(const incomplete of [false,true])test(`qc-cache recheck calls reviewer for i
  expect(await page.getByTestId('stored-source').textContent()).toBe(before);
  await page.reload();expect(calls).toHaveLength(incomplete?2:1);
 });
+
+for(const status of ['pass','warning','fail'])test(`qc-status-display qc-evidence-details preserves reviewer ${status}`,async({page})=>{
+ await openQcFixture(page,status);
+ const row=page.locator('[data-qc-check="evidence-support"]');
+ await expect(row).toHaveAttribute('data-qc-status',status);
+ await expect(row).toHaveClass(new RegExp(status==='pass'?'text-emerald-700':status==='warning'?'text-amber-700':'text-rose-700'));
+ await expect(row.locator(`[data-qc-icon="${status}"]`)).toBeVisible();
+ await expect(row).toContainText(status==='pass'?/Pass|Đạt/:status==='warning'?/Warning|Cảnh báo/:/Fail|Thất bại/);
+ if(status!=='pass'){
+  await expect(row.getByText('Fixture review finding:',{exact:false})).toBeVisible();
+  await expect(row.getByText('Compare the claim',{exact:false})).toBeVisible();
+  expect(await row.evaluate(e=>e.scrollWidth<=e.clientWidth+1)).toBe(true);
+ }
+ const stale=page.locator('[data-qc-check="quality-review-stale"]');
+ await expect(stale).toHaveAttribute('data-qc-status','warning');
+ await expect(stale.locator('[data-qc-icon="warning"]')).toBeVisible();
+ await expect(stale).toContainText(/Warning|Cảnh báo/);
+ await expect(stale.locator('[data-qc-icon="fail"]')).toHaveCount(0);
+});
+
+test('qc-display-preservation generated report survives reload and viewing preserves outputs',async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async(text:string)=>{(window as any).__qcCopy=text;}},configurable:true}));
+ const calls=await mockQcFlow(page,'generation');
+ await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
+ const snapshot=()=>page.evaluate(()=>({article:JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'),updates:sessionStorage.getItem('qc-updates')}));
+ const before=await snapshot();
+ const capture=async()=>{
+  await page.getByRole('button',{name:/Copy nội dung|Copy content/}).click();
+  const copied=await page.evaluate(()=>(window as any).__qcCopy);
+  const downloading=page.waitForEvent('download');
+  await page.getByRole('button',{name:/Tải .txt/}).click();
+  const download=await downloading;
+  const {readFile}=await import('node:fs/promises');
+  return {copied,exported:await readFile((await download.path())!,'utf8')};
+ };
+ const output=await capture();
+ expect(output.copied).toBe(before.article.draft.replace(/—/g,'-'));
+ expect(output.exported).toBe(output.copied);
+ await page.getByRole('button',{name:'QC',exact:true}).click();
+ await expect(page.locator('[data-qc-check="quality-review-stale"]')).toHaveCount(0);
+ const panel=page.locator('.draft-insight-panel').filter({hasText:'Universal QC'});
+ const reportText=await panel.textContent();
+ expect(await snapshot()).toEqual(before);
+ await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
+ await expect(panel).toHaveText(reportText!);
+ await expect(page.locator('[data-qc-check="quality-review-stale"]')).toHaveCount(0);
+ expect(await snapshot()).toEqual(before);
+ expect(await capture()).toEqual(output);
+ await page.getByRole('button',{name:'Change QC configuration'}).click();
+ await expect(page.locator('[data-qc-check="quality-review-stale"]')).toHaveAttribute('data-qc-status','warning');
+ const after=await snapshot();
+ expect(after.article.draft).toBe(before.article.draft);
+ expect(after.article.qualityReport).toEqual(before.article.qualityReport);
+ expect(after.updates).toBe(before.updates);
+ expect(await capture()).toEqual(output);
+ expect(calls).toHaveLength(2);
+});
