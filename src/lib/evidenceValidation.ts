@@ -1,5 +1,6 @@
 import type { EvidenceRef } from "../types";
 import type { DocBundle, DocRef } from "./docContext";
+import { isClaimEvidence, hasRequiredEvidence, quoteSupportedBySource } from './evidencePolicy';
 
 function canonical(value: string): string {
   return value
@@ -14,18 +15,7 @@ function canonical(value: string): string {
 }
 
 function quoteExists(content: string, quote: string): boolean {
-  const source = canonical(content);
-  const target = canonical(quote);
-  if (!target) return false;
-  if (source.includes(target)) return true;
-  // PDF/DOCX extraction often changes line breaks or punctuation around a
-  // multi-sentence quote. At least one substantial verbatim segment must still
-  // exist; this remains deterministic and does not use fuzzy similarity.
-  return quote
-    .split(/\r?\n|\.{3}|…|(?<=[.!?。])\s+/)
-    .map(canonical)
-    .filter(part => part.length >= 24)
-    .some(part => source.includes(part));
+  return quoteSupportedBySource(content, quote);
 }
 
 function docIndex(bundle: DocBundle): Map<string, { role: EvidenceRef["role"]; doc: DocRef }> {
@@ -72,7 +62,7 @@ export function verifiedRuleRefs(value: unknown, bundle: DocBundle): string[] {
 }
 
 export function hasResearchEvidence(evidence: EvidenceRef[]): boolean {
-  return evidence.some(item => item.role === "kb" || item.role === "content_plan");
+  return evidence.some(isClaimEvidence);
 }
 
 export function hasRulesEvidence(evidence: EvidenceRef[]): boolean {
@@ -81,9 +71,6 @@ export function hasRulesEvidence(evidence: EvidenceRef[]): boolean {
 
 /** Require only the evidence groups that are actually available to the step. */
 export function hasEvidenceForAuthorizedCategories(evidence: EvidenceRef[], bundle: DocBundle): boolean {
-  const hasResearchDocs = Boolean(bundle.knowledgeBase.length || bundle.contentPlan.length);
-  return (
-    (!hasResearchDocs || evidence.some(item => item.role === "kb" || item.role === "content_plan"))
-    && (!bundle.rules.length || evidence.some(item => item.role === "rules"))
-  );
+  const hasResearchDocs = Boolean(bundle.knowledgeBase.length);
+  return hasRequiredEvidence(evidence, hasResearchDocs, Boolean(bundle.rules.length));
 }

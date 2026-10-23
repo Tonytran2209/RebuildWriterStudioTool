@@ -27,6 +27,8 @@ All endpoints are served by Railway. Authenticated client calls use `src/lib/db.
 
 ## API change checklist
 
+Universal QC v9 adds optional `qualityReport.inputFingerprint` and section `grounding` to existing article JSON/checkpoint responses. Re-check saves refreshed section evidence and remapped usage with the new report in the same article update. Spec fingerprint values are opaque versioned identifiers; callers must use the shared canonical function rather than a local SHA implementation. Existing drafts/reports remain readable and require an explicit review to adopt the new metadata.
+
 1. Version or document the request/response change.
 2. Update the matching client library call.
 3. Update error handling and the relevant Design flow.

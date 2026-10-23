@@ -1,4 +1,5 @@
 import type { ArticleSpec, EvidenceRef, SearchIntent, SeoResearchResult } from "../types";
+import { canonicalSpecFingerprint } from './qualityPolicy';
 
 export const ARTICLE_SPEC_VERSION = 1;
 
@@ -43,8 +44,5 @@ export function normalizeArticleSpec(
 }
 
 export function articleSpecFingerprint(spec: ArticleSpec): string {
-  const payload = JSON.stringify({ ...spec, createdAt: undefined, evidence: spec.evidence.map(item => ({ source: item.source, quote: item.quote, role: item.role })) });
-  let hash = 2166136261;
-  for (let index = 0; index < payload.length; index += 1) { hash ^= payload.charCodeAt(index); hash = Math.imul(hash, 16777619); }
-  return `spec-${ARTICLE_SPEC_VERSION}-${(hash >>> 0).toString(16)}`;
+  return canonicalSpecFingerprint(spec);
 }

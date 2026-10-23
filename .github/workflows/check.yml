@@ -20,6 +20,7 @@ jobs:
             backend/package-lock.json
       - run: npm ci
       - run: npm ci --prefix backend
+      - run: npm --prefix backend test
       - run: npm run check
 
   browser-check:

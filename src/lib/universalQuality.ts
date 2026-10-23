@@ -1,8 +1,10 @@
 import type { Article, ImageSuggestion, QualityGateCheck, UniversalQualityReport, WebsiteContentRecord } from "../types";
 import { articleSpecFingerprint } from "./articleSpec";
 import { introductionCheck } from "./introductionPolicy";
+import { QUALITY_VERSION, qualityInputFingerprint } from './qualityPolicy';
+import type { DocumentFile } from '../types';
 
-export const UNIVERSAL_QUALITY_VERSION = 8;
+export const UNIVERSAL_QUALITY_VERSION = QUALITY_VERSION;
 
 export function internalLinkBudget(wordCount: number) {
   if (wordCount < 1000) return { target: 3, max: 4 }
@@ -115,7 +117,7 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
   return checks;
 }
 
-export function qualityReport(article: Article, checks: QualityGateCheck[]): UniversalQualityReport {
+export function qualityReport(article: Article, checks: QualityGateCheck[], targetWords = 1500, files: DocumentFile[] = [], rules: unknown = {}): UniversalQualityReport {
   const status = checks.some(item => item.status === "fail") ? "fail" : checks.some(item => item.status === "warning") ? "warning" : "pass";
-  return { version: UNIVERSAL_QUALITY_VERSION, status, checkedAt: new Date().toISOString(), articleSpecFingerprint: article.articleSpec ? articleSpecFingerprint(article.articleSpec) : "missing-spec", checks };
+  return { version: UNIVERSAL_QUALITY_VERSION, inputFingerprint: qualityInputFingerprint(article, article.draft ?? '', targetWords, files, rules), status, checkedAt: new Date().toISOString(), articleSpecFingerprint: article.articleSpec ? articleSpecFingerprint(article.articleSpec) : "missing-spec", checks };
 }

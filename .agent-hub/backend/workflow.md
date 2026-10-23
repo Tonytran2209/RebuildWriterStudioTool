@@ -27,6 +27,11 @@ Railway Express (`backend/index.ts`) owns authentication, provider calls, articl
 
 ## Change rules
 
+- Universal QC v9 shares canonical Article Spec and reviewed-input fingerprints between browser and batch. A review records draft, spec, outline, keywords, word target, authorized KB/rules content and relevant workflow settings; model/UI-only changes do not stale the review. Historical reports without this metadata require one explicit re-check, preserving drafts.
+- Content Plan supplies topic/intent; Rules supply style; neither is factual evidence. Select verified KB excerpts per section and keep evidence usage explicitly declared. Mark sections without factual KB excerpts as editorial-guidance (no invented statistics, healthcare outcomes or product claims); semantic review still rejects unsupported concrete claims and unmet Article Spec requirements. Do not fill empty usage or treat a valid reference as proof of claim support. Quote verification requires every quoted fragment to exist in its source.
+- Re-check refreshes bounded, relevant excerpts from the authorized KB and remaps historical IDs by source/quote/role. If no relevant evidence is available and evidence support is unresolved, preserve the draft and request a source or manual qualification rather than another automatic rewrite. Semantic JSON recovery receives the same registry as the original review.
+- Failures, evidence-support warnings, incomplete reviews and stale reviews block completion in manual and batch flows. Other semantic warnings are advisory unless explicitly blocking; retain them visibly in the report.
+
 - Draft introductions use a fixed 60–85 English words in one paragraph, ideally 3–4 concise sentences, aiming for about 5–6 desktop reading lines. This overrides historical introduction percentage settings. Single and batch generation, deterministic QC, semantic review and targeted repair share this contract. Start with the reader's pain point/decision and answer the search intent directly; avoid generic setup and unsupported promises. Allocate the remaining word budget to body sections.
 
 - API or workflow changes require matching updates to `backend/api-contracts.md` and affected UI flow documentation.

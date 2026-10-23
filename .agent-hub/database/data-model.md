@@ -35,3 +35,7 @@ sourceOfTruth: supabase/migrations
 - Additive, backward-compatible changes are preferred. Contract removals require a deprecation plan.
 - Database requests must specify rollback, backfill, RLS impact, indexes and API compatibility.
 - Service-role backend access is intentional; no client-side change may expose service credentials.
+
+## Universal QC review metadata
+
+Article JSON payloads retain optional `qualityReport.inputFingerprint` (qc-9) alongside the existing specification fingerprint. This identifies exactly which content and source inputs were reviewed. Existing reports are preserved and treated as requiring an explicit re-check; no relational schema migration or automatic rewrite is needed. New/rechecked specifications use the same canonical spec-2 fingerprint in the browser and backend. `QualityGateCheck.blocking` may mark a warning as blocking, but cannot waive evidence, incomplete-review or stale-review warnings. Outline sections may store `grounding: evidence-led | editorial-guidance`; this restricts guidance-only prose and does not prove factual support.

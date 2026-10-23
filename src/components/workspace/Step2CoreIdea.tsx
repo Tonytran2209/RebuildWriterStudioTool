@@ -95,7 +95,7 @@ function deterministicBundleEvidence(
     const best = ranked[0];
     return best ? { source: best.source, role, quote: best.quote, note: "Deterministically selected and verified source excerpt." } : null;
   };
-  const research = bestExcerpt([...bundle.knowledgeBase, ...bundle.contentPlan], "kb");
+  const research = bestExcerpt(bundle.knowledgeBase, "kb");
   const rules = bestExcerpt(bundle.rules, "rules");
   return verifyEvidence([research, rules].filter((item): item is EvidenceRef => Boolean(item)), bundle);
 }

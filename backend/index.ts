@@ -41,6 +41,8 @@ import { researchSeoKeywords, seoResearchConfigured } from "./seoResearch.ts"
 import { jsonrepair } from "jsonrepair"
 import { resolveArticleProjection } from "./articleProjection.ts"
 import { formatDraftExport } from "./draftFormatter.ts"
+import { canonicalSpecFingerprint, qualityInputFingerprint, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION } from "../src/lib/qualityPolicy.ts"
+import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from "../src/lib/evidencePolicy.ts"
 import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionCheck } from "../src/lib/introductionPolicy.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
 import {
@@ -1240,9 +1242,9 @@ function batchSeoFailures(text: string, article: any, targetWords: number) {
 }
 
 function batchOutlineHasEvidence(outline: any[]) {
-  return outline.some(
+  return outline.length > 0 && outline.every(
     (section: any) =>
-      Array.isArray(section?.evidence) && section.evidence.length > 0,
+      (Array.isArray(section?.evidence) && section.evidence.some(isClaimEvidence)) || section.grounding === "editorial-guidance",
   )
 }
 
@@ -1302,21 +1304,13 @@ function batchDeterministicEvidence(contextDocs: string[], query: string) {
           })),
       )
       .sort((left, right) => right.score - left.score || right.quote.length - left.quote.length)[0]
-  return [best(["kb", "content_plan"]), best(["rules"])]
+  return [best(["kb"]), best(["rules"])]
     .filter(Boolean)
     .map(({ score: _score, ...item }: any) => item)
 }
 
 function quoteExistsInDocument(content: string, quote: string) {
-  const source = canonicalEvidenceText(content)
-  const target = canonicalEvidenceText(quote)
-  if (!target) return false
-  if (source.includes(target)) return true
-  return quote
-    .split(/\r?\n|\.{3}|…|(?<=[.!?。])\s+/)
-    .map(canonicalEvidenceText)
-    .filter((part) => part.length >= 24)
-    .some((part) => source.includes(part))
+  return quoteSupportedBySource(content, quote)
 }
 
 function normalizeBatchOutlinePayload(
@@ -1329,8 +1323,8 @@ function normalizeBatchOutlinePayload(
       ? parsed.evidenceRegistry
       : {}
   const documents = batchContextDocuments(contextDocs)
-  const hasResearchDocs = documents.some((item) => item.role !== "rules")
   const hasRuleDocs = documents.some((item) => item.role === "rules")
+  const kbExcerpts = knowledgeExcerpts(documents.filter(doc => doc.role === "kb"))
   return (Array.isArray(parsed?.sections) ? parsed.sections : []).map(
     (section: any, index: number) => {
       const referencedEvidence = (Array.isArray(section?.evidenceRefs)
@@ -1366,7 +1360,8 @@ function normalizeBatchOutlinePayload(
       // allowed sources. Reusing it here mirrors the single-article outline
       // flow and avoids rejecting a structurally sound section merely because
       // the model omitted a duplicate registry reference.
-      const evidence = [...verifiedEvidence, ...inheritedEvidence]
+      const evidence = [...verifiedEvidence, ...inheritedEvidence.filter((item: any) => item.role === "rules"),
+        ...sectionEvidence([...inheritedEvidence, ...kbExcerpts], `${section.heading ?? ""} ${section.notes ?? ""} ${(section.keywords ?? []).join(" ")}`)]
         .filter(
           (item: any, itemIndex: number, all: any[]) =>
             all.findIndex(
@@ -1376,11 +1371,9 @@ function normalizeBatchOutlinePayload(
                 candidate.quote === item.quote,
             ) === itemIndex,
         )
-      const hasRequiredEvidence =
-        (!hasResearchDocs || evidence.some((item: any) => item.role !== "rules")) &&
-        (!hasRuleDocs || evidence.some((item: any) => item.role === "rules"))
-      if (!hasRequiredEvidence) return null
+      if (!hasRequiredEvidence(evidence, false, hasRuleDocs)) return null
       return {
+        grounding: evidence.some(isClaimEvidence) ? "evidence-led" : "editorial-guidance",
         id: String(section?.id ?? `batch-section-${index + 1}`),
         heading: String(section?.heading ?? "").trim(),
         notes: String(section?.notes ?? "").trim(),
@@ -1716,6 +1709,7 @@ function parseBatchSemanticChecks(raw: string) {
       location: String(item.location ?? ""),
       recommendedAction: String(item.recommendedAction ?? ""),
       autoFixAllowed: Boolean(item.autoFixAllowed),
+      blocking: typeof item.blocking === "boolean" ? item.blocking : undefined,
     }))
   const present = new Set(checks.map((item: any) => item.id))
   const missing = requiredIds.filter((id) => !present.has(id))
@@ -1767,6 +1761,7 @@ function batchSemanticReviewInstruction(article: any, draft: string) {
     : 0
   const wordCount = draft.trim().split(/\s+/).filter(Boolean).length
   return [
+    EVIDENCE_REVIEW_INSTRUCTION,
     INTRODUCTION_INSTRUCTION,
     "For keyword-naturalness, pass when the primary query is present in the H1/body and reads grammatically in context.",
     "Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.",
@@ -2029,12 +2024,13 @@ const semanticQualityJsonSchema: Record<string, unknown> = {
   },
 }
 
-function batchVerifiedOutline(outline: any[]) {
+function batchVerifiedOutline(outline: any[], claimOnly = true) {
   const evidenceRegistry: Record<string, any> = {}
   const evidenceIds = new Map<string, string>()
   const sections = outline.map((section: any) => ({
     ...section,
-    evidenceRefs: (section.evidence ?? []).map((evidence: any) => {
+    grounding: (section.evidence ?? []).some(isClaimEvidence) ? "evidence-led" : "editorial-guidance",
+    evidenceRefs: (section.evidence ?? []).filter((item: any) => !claimOnly || isClaimEvidence(item)).map((evidence: any) => {
       const key = [evidence.role, evidence.source, evidence.quote].join("|")
       let id = evidenceIds.get(key)
       if (!id) {
@@ -2052,24 +2048,20 @@ function batchVerifiedOutline(outline: any[]) {
 function batchEvidenceMappingCheck(verified: ReturnType<typeof batchVerifiedOutline>, usage: Record<string, string[]>) {
   const registered = new Set(Object.keys(verified.evidenceRegistry))
   const invalid: string[] = []
-  const missing: string[] = []
   for (const section of verified.sections) {
     const allowed = new Set(section.evidenceRefs ?? [])
     const used = usage[section.id] ?? []
     const bad = used.filter((id) => !registered.has(id) || !allowed.has(id))
     if (bad.length) invalid.push(`${section.id}: ${bad.join(", ")}`)
-    if (allowed.size > 0 && used.length === 0) missing.push(section.id)
   }
   return {
     id: "evidence-mapping",
     label: "Evidence mapped to outline sections",
     kind: "deterministic",
-    status: invalid.length || missing.length ? "fail" : "pass",
+    status: invalid.length ? "fail" : "pass",
     reason: invalid.length
       ? `Evidence references outside their approved section: ${invalid.join("; ")}`
-      : missing.length
-        ? `Sections with approved evidence did not declare usage: ${missing.join(", ")}`
-        : "Every declared evidence reference exists and belongs to its outline section.",
+      : "Declared references are valid; claim support is checked separately by the semantic reviewer. Empty usage is allowed for general editorial guidance.",
     evidence: JSON.stringify(usage),
     autoFixAllowed: true,
   }
@@ -2082,25 +2074,16 @@ function normalizeBatchEvidenceUsage(
   verified: ReturnType<typeof batchVerifiedOutline>,
   usage: Record<string, string[]>,
 ) {
-  return Object.fromEntries(verified.sections.map((section: any) => {
-    const allowed = new Set((section.evidenceRefs ?? []).map(String))
-    const declared = Array.isArray(usage[section.id]) ? usage[section.id] : []
-    return [section.id, [...new Set(declared.map(String).filter((id) => allowed.has(id)))]]
-  })) as Record<string, string[]>
+  return declaredEvidenceUsage(verified.sections, usage)
 }
 
-// A section's approved evidence is already validated in Step 2. If the model
-// omits bookkeeping IDs, restore that deterministic declaration rather than
-// paying for a full draft rewrite whose prose would be identical.
+// Preserve explicit usage only. Approved evidence is available context, not
+// proof that the generated prose used it.
 function completeBatchEvidenceUsage(
   verified: ReturnType<typeof batchVerifiedOutline>,
   usage: Record<string, string[]>,
 ) {
-  const normalized = normalizeBatchEvidenceUsage(verified, usage)
-  return Object.fromEntries(verified.sections.map((section: any) => {
-    const allowed = [...new Set((section.evidenceRefs ?? []).map(String))]
-    return [section.id, normalized[section.id]?.length ? normalized[section.id] : allowed]
-  })) as Record<string, string[]>
+  return normalizeBatchEvidenceUsage(verified, usage)
 }
 
 function sanitizeBatchStructuredField(value: unknown, expectedHeading?: string) {
@@ -2286,7 +2269,7 @@ async function runBatchArticle(
       if (JSON.stringify(sanitizedSpec.mustCover) !== JSON.stringify(article.articleSpec.mustCover)) {
         article = await saveArticleCheckpoint(article, {
           articleSpec: sanitizedSpec,
-          articleSpecFingerprint: snapshotFingerprint(sanitizedSpec),
+          articleSpecFingerprint: canonicalSpecFingerprint(sanitizedSpec),
         })
       }
     }
@@ -2442,7 +2425,7 @@ async function runBatchArticle(
         audience: normalized.targetAudience || baseArticleSpec.audience,
         evidence: trustedIdeaEvidence,
       }
-      const articleSpecFingerprint = snapshotFingerprint(articleSpec)
+      const articleSpecFingerprint = canonicalSpecFingerprint(articleSpec)
       const step2Usage = {
         ...article.aiUsageByStep,
         2: [
@@ -2726,10 +2709,7 @@ async function runBatchArticle(
       if (String(article.draft ?? "").trim()) {
         assembled = {
           draft: String(article.draft),
-          evidenceUsage: completeBatchEvidenceUsage(
-            verifiedOutline,
-            article.draftEvidenceUsage ?? {},
-          ),
+          evidenceUsage: remapEvidenceUsage(batchVerifiedOutline(article.outline ?? [], false).evidenceRegistry, verifiedOutline.sections, verifiedOutline.evidenceRegistry, article.draftEvidenceUsage ?? {}),
           parsed: null,
         }
       } else {
@@ -2752,6 +2732,7 @@ async function runBatchArticle(
               : "",
             `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
             "Knowledge Base is the only source for concrete facts, figures, evidence and product claims. If a concrete claim has no approved evidence, omit it or replace it with general explanatory prose.",
+            "Sections marked editorial-guidance may offer general analysis or decision guidance only. Never invent measurements, clinical outcomes or product claims to satisfy a missing source. If the Article Spec requires such a claim, flag the missing evidence.",
             "Follow every supplied Skill rule and use only supported KB claims. Keep every approved heading in order and do not add unplanned sections.",
             'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order. Each usedEvidenceRefs array may contain only IDs approved for that section. section.content is prose only: never include #, ##, ###, its outline heading, or a Conclusion heading.',
           ].join("\n"),
@@ -2815,7 +2796,8 @@ async function runBatchArticle(
         },
       })
       draftResponses.length = 0
-      const internalNames = ((await kvGet<any[]>("writer:files")) ?? [])
+      const qualityFiles = (await kvGet<any[]>("writer:files")) ?? []
+      const internalNames = qualityFiles
         .filter(
           (item) =>
             item.category === "kb" &&
@@ -2941,7 +2923,7 @@ async function runBatchArticle(
         ]
         await repairFieldBudgetGaps()
         const report = {
-          version: 5, status: "fail", checkedAt: new Date().toISOString(),
+          version: QUALITY_VERSION, status: "fail", checkedAt: new Date().toISOString(),
           articleSpecFingerprint: article.articleSpecFingerprint, checks: deterministic,
         }
         article = await saveArticleCheckpoint(article, {
@@ -3018,17 +3000,19 @@ async function runBatchArticle(
       }
       let checks = [...deterministic, ...semantic]
       let report = {
-        version: 5,
+        version: QUALITY_VERSION,
         status: checks.every((item) => item.status === "pass")
           ? "pass"
           : checks.some((item) => item.status === "fail")
             ? "fail"
             : "warning",
         checkedAt: new Date().toISOString(),
-        articleSpecFingerprint: article.articleSpecFingerprint,
+        articleSpecFingerprint: canonicalSpecFingerprint(article.articleSpec),
+        inputFingerprint: qualityInputFingerprint(article, assembledDraft, effectiveDraftWords, qualityFiles, runtimeConfig.workflowRules),
         checks,
       }
-      if (report.status === "fail") {
+      const missingEvidence = Object.keys(verifiedOutline.evidenceRegistry).length === 0 && semantic.some((item: any) => item.id === "evidence-support" && item.status !== "pass")
+      if ((report.status === "fail" || report.checks.some(blocksPublication)) && !missingEvidence) {
         const semanticFindings = semantic.filter(
           (item: any) => item.status !== "pass",
         )
@@ -3087,14 +3071,15 @@ async function runBatchArticle(
         }
         checks = [...deterministic, ...semantic]
         report = {
-          version: 5,
+          version: QUALITY_VERSION,
           status: checks.every((item) => item.status === "pass") ? "pass" : checks.some((item) => item.status === "fail") ? "fail" : "warning",
           checkedAt: new Date().toISOString(),
-          articleSpecFingerprint: article.articleSpecFingerprint,
+          articleSpecFingerprint: canonicalSpecFingerprint(article.articleSpec),
+          inputFingerprint: qualityInputFingerprint(article, assembledDraft, effectiveDraftWords, qualityFiles, runtimeConfig.workflowRules),
           checks,
         }
       }
-      if (report.status === "fail") {
+      if (report.status === "fail" || report.checks.some(blocksPublication)) {
         article = await saveArticleCheckpoint(article, {
           draft: assembledDraft,
           draftEvidenceUsage: assembled.evidenceUsage,
@@ -3110,7 +3095,7 @@ async function runBatchArticle(
           },
         })
         throw new Error(
-          `Targeted batch recovery was saved, but Universal QC is still ${report.status}: ${checks.filter((item) => item.status !== "pass").map((item) => `${item.label}: ${item.reason}`).join("; ")}`,
+          `${missingEvidence ? "Add relevant Knowledge Base evidence or qualify the unsupported claim. " : ""}Targeted batch recovery was saved, but Universal QC is still ${report.status}: ${checks.filter((item) => item.status !== "pass").map((item) => `${item.label}: ${item.reason}`).join("; ")}`,
         )
       }
       article = await saveArticleCheckpoint(article, {

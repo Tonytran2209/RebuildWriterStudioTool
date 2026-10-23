@@ -111,7 +111,7 @@ for(const status of ['pass','warning','fail','incomplete'])test(`qc-reload prese
 });
 
 // Exercise the real component handlers and HTTP boundary; no live AI or storage.
-async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incomplete=false){
+async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incomplete=false,evidenceWarning=false,withKnowledge=false){
  const calls:any[]=[];
  await page.route('**/*',async route=>{
   const url=new URL(route.request().url());
@@ -119,11 +119,11 @@ async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incom
   if(url.pathname!=='/api/generate')return route.continue();
   const body=route.request().postDataJSON();calls.push(body);
   const reviewer=/publishing quality reviewer|structured-output recovery reviewer/.test(body.systemPrompt);
-  const content=reviewer ? JSON.stringify({checks:Object.fromEntries(['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support',...(incomplete?[]:['brand-pov'])].map(id=>[id,{status:'pass',reason:'Reviewed fixture',autoFixAllowed:false}]))}) : await page.evaluate(()=>JSON.stringify((window as any).qcFlow.payload));
+  const content=reviewer ? JSON.stringify({checks:Object.fromEntries(['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support',...(incomplete?[]:['brand-pov'])].map(id=>[id,{status:evidenceWarning && id==='evidence-support'?'warning':'pass',reason:'Reviewed fixture',autoFixAllowed:evidenceWarning && id==='evidence-support'}]))}) : await page.evaluate(()=>JSON.stringify((window as any).qcFlow.payload));
   if(reviewer){const checkpoint=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));expect(checkpoint.draft).toContain('Fixture practical guide');}
   await route.fulfill({json:{content,model:'fixture',usage:{inputTokens:0,outputTokens:0}}});
  });
- await page.goto('/?qc='+mode);return calls;
+ await page.goto('/?qc='+mode+(withKnowledge?'&kb=1':''));return calls;
 }
 for(const incomplete of [false,true])test(`qc-schema generation saves checkpoint before reviewer and preserves ${incomplete?'incomplete':'complete'} report`,async({page})=>{
  const calls=await mockQcFlow(page,'generation',incomplete);
@@ -206,4 +206,67 @@ test('qc-display-preservation generated report survives reload and viewing prese
  expect(after.updates).toBe(before.updates);
  expect(await capture()).toEqual(output);
  expect(calls).toHaveLength(2);
+});
+
+test('qc-batch shared review fingerprint survives legacy spec metadata and missing browser generation fingerprint',async({page})=>{
+ const calls=await mockQcFlow(page,'generation');
+ await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-9-/);
+ await page.evaluate(()=>{
+   const saved=JSON.parse(sessionStorage.getItem('qc-fixture')!);
+   saved.articleSpecFingerprint='legacy-backend-sha256';saved.activityKind='batch';
+   delete saved.draftSourceFingerprint;
+   sessionStorage.setItem('qc-fixture',JSON.stringify(saved));
+ });
+ await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
+ await expect(page.locator('[data-qc-check="quality-review-stale"]')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:/Đánh dấu hoàn thành|Mark complete/})).toBeEnabled();
+ expect(calls).toHaveLength(2);
+});
+
+test('qc-advisory warning permits completion but evidence warnings remain blocking',async({page})=>{
+ await mockQcFlow(page,'generation');
+ await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-9-/);
+ const complete=page.getByRole('button',{name:/Đánh dấu hoàn thành|Mark complete/});
+ await page.evaluate(()=>{
+   const saved=JSON.parse(sessionStorage.getItem('qc-fixture')!);
+   saved.qualityReport.status='warning';
+   saved.qualityReport.checks=saved.qualityReport.checks.map((c:any)=>c.id==='brand-pov'?{...c,status:'warning'}:c);
+   sessionStorage.setItem('qc-fixture',JSON.stringify(saved));
+ });
+ await page.reload();await expect(complete).toBeEnabled();
+ await page.evaluate(()=>{
+   const saved=JSON.parse(sessionStorage.getItem('qc-fixture')!);
+   saved.qualityReport.checks=saved.qualityReport.checks.map((c:any)=>c.id==='evidence-support'?{...c,status:'warning',blocking:false}:c);
+   sessionStorage.setItem('qc-fixture',JSON.stringify(saved));
+ });
+ await page.reload();await expect(complete).toBeDisabled();
+});
+
+test('qc-evidence missing KB does not trigger an unsupported rewrite or repeated paid review',async({page})=>{
+ const calls=await mockQcFlow(page,'recheck',false,true);
+ const source=await page.getByTestId('stored-source').textContent();
+ const recheck=page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/});
+ await recheck.click();
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').step4ProcessTrace?.some((event:any)=>event.title==='Knowledge Base evidence required'))).toBe(true);
+ await expect(recheck).toBeEnabled();
+ await recheck.click();
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-updates')||'[]').filter((p:any)=>p.semanticReviewChecks).length)).toBe(2);
+ expect(calls).toHaveLength(1);
+ expect(await page.getByTestId('stored-source').textContent()).toBe(source);
+ await expect(page.getByRole('button',{name:/Đánh dấu hoàn thành|Mark complete/})).toBeDisabled();
+});
+
+test('qc-evidence recheck retrieves current section KB without manufacturing usage',async({page})=>{
+ const calls=await mockQcFlow(page,'recheck',false,false,true);
+ await page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/}).click();
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-9-/);
+ const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));
+ expect(saved.outline.every((s:any)=>s.evidence.some((e:any)=>e.role==='kb' && e.quote.includes('script review')))).toBe(true);
+ expect(Object.values(saved.draftEvidenceUsage).every((refs:any)=>refs.length===0)).toBe(true);
+ expect(calls).toHaveLength(1);
+ expect(calls[0].prompt).toContain('script review');
+ await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
+ await expect(page.locator('[data-qc-check="quality-review-stale"]')).toHaveCount(0);
 });

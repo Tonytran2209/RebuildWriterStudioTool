@@ -177,6 +177,7 @@ export interface EvidenceRef {
 }
 
 export interface OutlineSection {
+  grounding?: "evidence-led" | "editorial-guidance"
   id: string
   heading: string
   notes: string
@@ -306,6 +307,7 @@ export interface ArticleSpec {
 }
 
 export interface QualityGateCheck {
+  blocking?: boolean
   id: string
   label: string
   kind: "deterministic" | "semantic"
@@ -318,6 +320,7 @@ export interface QualityGateCheck {
 }
 
 export interface UniversalQualityReport {
+  inputFingerprint?: string
   version: number
   status: "pass" | "warning" | "fail"
   checkedAt: string

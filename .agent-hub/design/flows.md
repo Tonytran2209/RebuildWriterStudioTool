@@ -34,3 +34,7 @@ Show the complete introduction in draft preview and full editing. The 5–6 line
 ## Draft copy and export
 
 Preview, plain copy, rich copy and TXT downloads normalize em dashes to hyphens on output only; saved source remains unchanged. Copy/export includes pending editor changes. Rich copy includes HTML and Markdown clipboard variants, including table cells and inline formatting. Plain-text fallback retains Markdown syntax when rich clipboard support is unavailable.
+
+## Universal QC review
+
+Keep all warning/failure details visible across reloads. Refresh deterministic checks locally and retain saved semantic findings. Permit completion only with a current complete review and no blocking checks; advisory semantic warnings stay visible without forcing another paid repair. Evidence, incomplete-review and stale-review warnings remain blocking. Re-check can retrieve relevant KB excerpts for each section; missing-source findings must explain the required source/manual correction instead of recommending repeated AI calls.

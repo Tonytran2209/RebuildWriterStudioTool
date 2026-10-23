@@ -20,6 +20,7 @@ import {
   describeBundle,
 } from "../../lib/docContext";
 import { hasEvidenceForAuthorizedCategories, verifiedRuleRefs, verifyEvidence } from "../../lib/evidenceValidation";
+import { sectionEvidence, knowledgeExcerpts, isClaimEvidence } from '../../lib/evidencePolicy';
 import { ProcessTraceModal } from './ProcessTrace';
 import { parseAIJson } from '../../lib/aiJson';
 import { compileWorkflowRules, getWorkflowParameter } from '../../lib/workflowRules';
@@ -99,6 +100,7 @@ function normalizeSections(
       return id ? [[id, record]] : [];
     }));
   const rejectedHeadings: string[] = [];
+  const sectionCandidates = [...trustedEvidence, ...knowledgeExcerpts(bundle.knowledgeBase)];
   const sections = rawSections
     .map(raw => {
       if (!raw || typeof raw !== "object") return null;
@@ -119,15 +121,17 @@ function normalizeSections(
       const evidence = verifyEvidence([
         ...(Array.isArray(obj.evidence) ? obj.evidence : []),
         ...registryEvidence,
-        ...trustedEvidence,
+        ...trustedEvidence.filter(item => item.role === 'rules'),
+        ...sectionEvidence(sectionCandidates, [heading, obj.notes ?? '', obj.keywords ?? ''].join(' ')),
       ], bundle).filter((item, index, all) => all.findIndex(candidate =>
         candidate.source === item.source && candidate.role === item.role && candidate.quote === item.quote
       ) === index);
-      if (!hasEvidenceForAuthorizedCategories(evidence, bundle)) {
+      if (!hasEvidenceForAuthorizedCategories(evidence, { ...bundle, knowledgeBase: [] })) {
         rejectedHeadings.push(heading);
         return null;
       }
       return {
+        grounding: evidence.some(isClaimEvidence) ? 'evidence-led' : 'editorial-guidance',
         id: generateId(),
         heading,
         notes: String(obj.notes ?? obj.description ?? "").trim(),
