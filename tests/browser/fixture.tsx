@@ -1,5 +1,7 @@
 import React,{useState,useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
+import Step2CoreIdea from '../../src/components/workspace/Step2CoreIdea';
+import Step3Outline from '../../src/components/workspace/Step3Outline';
 import Step4Draft, {parseSemanticQuality, completeSemanticChecks, incompleteSemanticReviewChecks} from '../../src/components/workspace/Step4Draft';
 import {normalizeArticleSpec,articleSpecFingerprint} from '../../src/lib/articleSpec';
 import {INTRODUCTION_INSTRUCTION} from '../../src/lib/introductionPolicy';
@@ -28,4 +30,19 @@ function Fixture(){
  useEffect(()=>{if(qcStatus)sessionStorage.setItem('qc-fixture',JSON.stringify(article));},[article]);
  return <main>{qcStatus && <button onClick={()=>setArticle((a:any)=>({...a,articleSpecFingerprint:'changed-fixture-spec',keywords:'changed configuration'}))}>Change QC configuration</button>}<details><summary>Fixture source (local only)</summary><pre data-testid="stored-source">{article.draft}</pre></details><Step4Draft article={article} config={flow?flowConfig as any:DEFAULT_CONFIG} files={[]} model={DEFAULT_MODELS[0]} railwayUrl={flow?"http://127.0.0.1:4173":""} onUpdate={async p=>{if(flow){const history=JSON.parse(sessionStorage.getItem("qc-updates")||"[]");history.push(p);sessionStorage.setItem("qc-updates",JSON.stringify(history));}setArticle((a:any)=>{const next={...a,...p};if(qcStatus)sessionStorage.setItem('qc-fixture',JSON.stringify(next));return next;});return true;}} onPrev={()=>{}} onToggleComplete={()=>{}}/></main>;
 }
-createRoot(document.getElementById('root')!).render(<LanguageProvider><Fixture/></LanguageProvider>);
+const reopenIdeas=['one','two'].map((id,index)=>({id,title:'Idea '+id,mainArgument:'Saved argument '+id,primaryKeyword:'fixture',secondaryKeywords:[],rating:{overall:8,seoPotential:8,audienceFit:8,docSupport:8,uniqueness:8},matchedDocs:[],ruleRefs:[],evidence:[]}));
+const reopenArticles=['draft','completed','missing','unmatched'].map((status,index)=>({id:'reopen-'+index,title:index===0?'Hướng dẫn viết bài tiếng Việt đầy đủ với tiêu đề dài để kiểm tra xuống dòng trên màn hình nhỏ và giữ nguyên toàn bộ nội dung':'Tiêu đề bài '+index,topic:'Saved topic',status:status==='completed'?'completed':'draft',currentStep:4,draft:'Saved draft '+index,outline:[{id:'section',level:'h2',heading:'Section heading differs from title',notes:'Saved notes'}],coreIdeaSuggestions:reopenIdeas,selectedCoreIdeaId:index===2?undefined:index===3?'absent':index===0?'one':'two'}));
+function ReopenFixture(){
+ const [state,setState]=useState<any>(()=>JSON.parse(sessionStorage.getItem('reopen-state')||'null')||{articles:reopenArticles,index:0,updates:[]});
+ useEffect(()=>{sessionStorage.setItem('reopen-state',JSON.stringify(state));},[state]);
+ const article=state.articles[state.index];
+ const props={article,config:DEFAULT_CONFIG,files:[],model:DEFAULT_MODELS[0],railwayUrl:'http://127.0.0.1:4173',onUpdate:async(p:any)=>{setState((s:any)=>({...s,updates:[...s.updates,p]}));return true;},onPrev:()=>{},onNext:()=>{}};
+ return <main>
+  {state.articles.map((a:any,index:number)=><button key={a.id} onClick={()=>setState((s:any)=>({...s,index}))}>Open {index}</button>)}
+  <button onClick={()=>setState((s:any)=>({...s,articles:s.articles.map((a:any,index:number)=>index===s.index?{...a,selectedCoreIdeaId:'two',title:'Tiêu đề cập nhật cùng ID'}:a)}))}>Update snapshot</button>
+  <pre data-testid="reopen-state">{JSON.stringify(state)}</pre>
+  <section data-testid="reopen-core"><Step2CoreIdea {...props}/></section>
+  <section data-testid="reopen-outline"><Step3Outline {...props}/></section>
+ </main>;
+}
+createRoot(document.getElementById('root')!).render(<LanguageProvider>{new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>}</LanguageProvider>);
