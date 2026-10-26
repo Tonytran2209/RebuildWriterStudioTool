@@ -4,18 +4,27 @@ const AUTH_STORAGE_KEY = "writer:auth-session"
 
 export type UserRole = "user" | "admin"
 export interface AuthSession {
+  authProvider?: "supabase" | "postgres"
   accessToken: string
   refreshToken?: string
   expiresAt: number | null
   user: { id: string; email: string; role: UserRole }
 }
 
+let memorySession: AuthSession | null = null
+function saveSession(session: AuthSession) {
+  memorySession = session
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session.authProvider === "postgres"
+    ? { authProvider: "postgres", user: session.user, expiresAt: null, accessToken: "" }
+    : session))
+}
 function readStoredAuthSession(): AuthSession | null {
+  if (memorySession?.authProvider === "postgres") return memorySession
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY)
     if (!raw) return null
     const session = JSON.parse(raw) as AuthSession
-    if (!session.accessToken || !session.user?.role) {
+    if ((!session.accessToken && session.authProvider !== "postgres") || !session.user?.role) {
       localStorage.removeItem(AUTH_STORAGE_KEY)
       return null
     }
@@ -27,12 +36,21 @@ function readStoredAuthSession(): AuthSession | null {
 
 export function getAuthSession(): AuthSession | null {
   const session = readStoredAuthSession()
+  if (!session?.accessToken) return null
   return session?.expiresAt && session.expiresAt * 1000 <= Date.now() ? null : session
 }
 
 export function clearAuthSession() {
+  memorySession = null
   localStorage.removeItem(AUTH_STORAGE_KEY)
+  window.dispatchEvent(new Event("writer:auth-expired"))
 }
+if (typeof window !== "undefined") window.addEventListener("storage", event => {
+  if (event.key === AUTH_STORAGE_KEY && !event.newValue) {
+    memorySession = null
+    window.dispatchEvent(new Event("writer:auth-expired"))
+  }
+})
 
 function resolveRailwayUrl(explicitUrl?: string): string {
   const saved =
@@ -47,23 +65,30 @@ function resolveRailwayUrl(explicitUrl?: string): string {
 
 let refreshInFlight: Promise<AuthSession | null> | null = null
 
-async function refreshStoredAuthSession(railwayUrl?: string): Promise<AuthSession | null> {
+export async function refreshStoredAuthSession(railwayUrl?: string): Promise<AuthSession | null> {
   const current = readStoredAuthSession()
-  if (!current?.refreshToken) return null
+  if (!current?.refreshToken && current?.authProvider !== "postgres") return null
   if (!refreshInFlight) {
-    refreshInFlight = fetch(`${resolveRailwayUrl(railwayUrl)}/api/auth/refresh`, {
+    const fetchRefresh = () => fetch(`${resolveRailwayUrl(railwayUrl)}/api/auth/refresh`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken: current.refreshToken }),
     })
+    // Serialize cookie rotation across tabs when the Web Locks API is available.
+    const response: Promise<Response> = (async () =>
+      current.authProvider === "postgres" && typeof navigator !== "undefined" && navigator.locks
+        ? await navigator.locks.request("writer-auth-refresh", async () => await fetchRefresh())
+        : await fetchRefresh())()
+    refreshInFlight = response
       .then(async (response) => {
         const payload = await response.json().catch(() => ({})) as AuthSession & { error?: string }
         if (!response.ok || !payload.accessToken) throw new Error(payload.error || "Không thể làm mới phiên đăng nhập.")
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(payload))
+        saveSession(payload)
         return payload
       })
       .catch(() => {
-        localStorage.removeItem(AUTH_STORAGE_KEY)
+        clearAuthSession()
         return null
       })
       .finally(() => { refreshInFlight = null })
@@ -86,7 +111,7 @@ export async function authenticatedRailwayFetch(
     if (token && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${token}`)
     }
-    return fetch(`${resolveRailwayUrl(railwayUrl)}${path}`, { ...init, headers })
+    return fetch(`${resolveRailwayUrl(railwayUrl)}${path}`, { ...init, headers, credentials: "include" })
   }
   let response = await request(session?.accessToken)
   if (response.status !== 401 || path === "/api/auth/refresh") return response
@@ -138,8 +163,28 @@ export async function login(email: string, password: string): Promise<AuthSessio
     "/api/auth/login",
     jsonRequest("POST", { email, password }),
   )
-  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session))
+  saveSession(session)
   return session
+}
+
+export async function logout(all = false) {
+  if (refreshInFlight) await refreshInFlight
+  const session = readStoredAuthSession()
+  if (session?.authProvider === "postgres") {
+    const response = await authenticatedRailwayFetch(all ? "/api/auth/logout-all" : "/api/auth/logout", jsonRequest("POST", {}))
+    if (!response.ok) throw new Error("Không thể thu hồi phiên đăng nhập. Vui lòng thử lại.")
+  }
+  clearAuthSession()
+}
+
+export async function verifyEmail(token: string): Promise<string> {
+  return (await railwayRequest<{ message: string }>("/api/auth/verify-email", jsonRequest("POST", { token }))).message
+}
+export async function authOptions() {
+  return railwayRequest<{ provider: string; allowSignup: boolean; passwordMin: number }>("/api/auth/config")
+}
+export async function resendVerification(email: string): Promise<string> {
+  return (await railwayRequest<{ message: string }>("/api/auth/resend-verification", jsonRequest("POST", { email }))).message
 }
 
 export async function signUp(email: string, password: string): Promise<string> {

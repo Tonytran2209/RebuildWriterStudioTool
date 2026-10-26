@@ -5,6 +5,10 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
+    "auth:migrate": "tsx authMigrate.ts",
+    "auth:scope": "tsx authScope.ts",
+    "auth:cleanup": "tsx authCleanup.ts",
+    "auth:import": "tsx authImport.ts",
     "db:migrate": "tsx dbMigrate.ts",
     "db:scope": "tsx dbScope.ts",
     "db:import": "tsx dbImport.ts",
@@ -22,6 +26,7 @@
     "@google/generative-ai": "^0.24.0",
     "@supabase/server": "^1.4.1",
     "@supabase/supabase-js": "^2.112.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^4.21.2",
@@ -29,6 +34,7 @@
     "jsonrepair": "^3.15.0",
     "mammoth": "^1.12.0",
     "multer": "^2.2.0",
+    "nodemailer": "^10.2.1",
     "openai": "^4.100.0",
     "pdfjs-dist": "^5.4.149",
     "pg": "^8.23.1",
@@ -41,6 +47,7 @@
     "@types/express": "^5.0.2",
     "@types/multer": "^2.2.0",
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "typescript": "^5.7.0"
   }

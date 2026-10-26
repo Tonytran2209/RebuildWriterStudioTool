@@ -1,4 +1,6 @@
 import "dotenv/config"
+import { authProvider, AuthService, AuthError } from "./authService.ts"
+import { postgresAuthRouter, assertAuthConfig, appOrigin } from "./authRoutes.ts"
 import { provider as databaseProvider, closeDatabase } from "./postgres.ts"
 import { storageProvider } from "./documentStorage.ts"
 import express from "express"
@@ -29,7 +31,7 @@ import {
   signUpWithPassword,
   sendPasswordReset,
   updatePasswordFromRecovery,
-  getAuthenticatedUser,
+  getAuthenticatedUser as getSupabaseAuthenticatedUser,
 } from "./supabase.ts"
 import { extractDocumentText } from "./documentParser.ts"
 import { extractStructuredSections } from "./documentStructure.ts"
@@ -64,9 +66,17 @@ console.log(`[static] serving frontend from: ${DIST}`)
 
 const app = express()
 const PORT = process.env.PORT || 3000
+assertAuthConfig()
+const authService = authProvider() === "postgres" ? new AuthService() : null
+const getAuthenticatedUser = (token: string) => authService ? authService.authenticate(token) : getSupabaseAuthenticatedUser(token)
+if (process.env.AUTH_TRUST_PROXY_HOPS) {
+  const hops = Number(process.env.AUTH_TRUST_PROXY_HOPS)
+  if (!Number.isInteger(hops) || hops < 0 || hops > 3) throw new Error("Invalid AUTH_TRUST_PROXY_HOPS")
+  app.set("trust proxy", hops)
+}
 databaseProvider() // Reject invalid providers explicitly; DATABASE_URL never chooses the provider.
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || true }))
+app.use(cors({ origin: authProvider() === "postgres" ? appOrigin() : process.env.CORS_ORIGIN || true, credentials: true }))
 app.use(express.json({ limit: "10mb" }))
 // Read endpoints can populate caches or projections, so freeze every API route
 // during the final snapshot/cutover, not just POST requests.
@@ -88,12 +98,19 @@ type AuthenticatedRequest = express.Request & {
 }
 
 function userRole(user: any): "user" | "admin" {
+  if (authProvider() === "postgres") return user?.app_metadata?.role === "admin" ? "admin" : "user"
   const configuredAdmins = (process.env.ADMIN_EMAILS ?? "")
     .split(",").map((email) => email.trim().toLocaleLowerCase()).filter(Boolean)
   return user?.app_metadata?.role === "admin" || configuredAdmins.includes(String(user?.email ?? "").toLocaleLowerCase())
     ? "admin"
     : "user"
 }
+
+app.get("/api/auth/config", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store")
+  res.json({ provider: authProvider(), allowSignup: authProvider() === "supabase" || process.env.AUTH_ALLOW_SIGNUP === "true", passwordMin: authProvider() === "postgres" ? 12 : 8 })
+})
+if (authService) app.use("/api/auth", postgresAuthRouter(authService))
 
 app.post("/api/auth/login", async (req, res) => {
   try {
@@ -192,6 +209,10 @@ app.use("/api", async (req: AuthenticatedRequest, res, next) => {
     if (adminOnly && req.auth.role !== "admin") return res.status(403).json({ error: "Chỉ admin mới được phép quản trị cấu hình và knowledge base." })
     next()
   } catch (error) {
+    if (authService && !(error instanceof AuthError)) {
+      console.error("Auth verification unavailable", (error as any)?.code ?? "INTERNAL")
+      return res.status(503).json({ error: "Dịch vụ xác thực tạm thời không khả dụng." })
+    }
     res.status(401).json({ error: error instanceof Error ? error.message : "Phiên đăng nhập không hợp lệ." })
   }
 })
@@ -3791,6 +3812,7 @@ app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
     databaseProvider: databaseProvider(),
+    authProvider: authProvider(),
     storageProvider: storageProvider(),
     version: "1.0.0",
     providers: getAvailableProviders(),
@@ -3812,13 +3834,17 @@ app.get("/health/dependencies", async (_req, res) => {
   const threeStageSessions = supabaseOk
     ? await tableAvailable("article_stage_runs")
     : false
-  const ready = supabaseOk && (databaseProvider() !== "postgres" || (relationalContentPlans && threeStageSessions))
+  const authConnected = authService
+    ? await authService.pool.query("SELECT 1 FROM writer_studio.auth_users LIMIT 1").then(() => true, () => false)
+    : null
+  const ready = supabaseOk && authConnected !== false && (databaseProvider() !== "postgres" || (relationalContentPlans && threeStageSessions))
   res.status(ready ? 200 : 503).json({
     status: ready ? "ok" : "degraded",
     databaseProvider: databaseProvider(),
     databaseConnected: supabaseOk,
     supabase: databaseProvider() === "supabase" ? supabaseOk : null,
-    authProvider: "supabase",
+    authProvider: authProvider(),
+    authConnected,
     storageProvider: storageProvider(),
     relationalContentPlans,
     threeStageSessions,

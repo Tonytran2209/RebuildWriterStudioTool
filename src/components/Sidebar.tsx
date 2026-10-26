@@ -15,6 +15,7 @@ interface Props {
   canManageSettings: boolean
   currentUser: { email: string; role: "user" | "admin" }
   onSignOut: () => void
+  onSignOutAll?: () => void
   onToggleComplete: (article: Article) => void
   completionSavingId: string | null
   onDeleteArticle: (article: Article) => void
@@ -30,6 +31,7 @@ export default function Sidebar({
   canManageSettings,
   currentUser,
   onSignOut,
+  onSignOutAll,
   onDeleteArticle,
   deletingArticleId,
 }: Props) {
@@ -196,6 +198,7 @@ export default function Sidebar({
             <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-[#b5b5b5]"><Mail className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span className="truncate">{currentUser.email}</span></div>
             {canManageSettings && <button role="menuitem" onClick={() => { setProfileMenuOpen(false); onOpenConfig() }} className="sidebar-nav mt-1 w-full"><Settings className="app-icon" aria-hidden="true" />{tr("Cài đặt", "Settings")}</button>}
             <button role="menuitem" onClick={onSignOut} className="sidebar-nav mt-1 w-full text-red-300 hover:text-red-200"><LogOut className="app-icon" aria-hidden="true" />{tr("Đăng xuất", "Sign out")}</button>
+            {onSignOutAll && <button role="menuitem" onClick={onSignOutAll} className="sidebar-nav mt-1 w-full text-red-300 hover:text-red-200"><LogOut className="app-icon" aria-hidden="true" />{tr("Đăng xuất mọi thiết bị", "Sign out all devices")}</button>}
           </div>}
           <button onClick={() => setProfileMenuOpen((value) => !value)} aria-haspopup="menu" aria-expanded={profileMenuOpen} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition hover:bg-[#2c2c2c]">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-500 text-[10px] font-semibold text-white">{avatarText}</div>

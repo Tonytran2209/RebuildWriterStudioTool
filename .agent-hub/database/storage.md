@@ -17,7 +17,10 @@ projectId: writer-studio
 
 ## Retention and privacy
 
-- PostgreSQL remains backend-only. Supabase Auth, password recovery and the explicit Supabase Query import feature still require source credentials.
+- AUTH_PROVIDER defaults to supabase and may independently switch to postgres after migration/import. PostgreSQL sessions use hashed opaque tokens, refresh cookies HttpOnly/Secure/SameSite=Strict, access tokens only in browser memory; no PostgreSQL bearer/refresh secrets in localStorage.
+- Auth email delivery requires configured SMTP; reset/verify tokens expire after 30 minutes and are one-use. Explicit auth:cleanup handles expired sessions/tokens/rate-limit buckets and 90-day audit retention. Source Storage/Query dependencies remain until separately migrated.
+
+- PostgreSQL remains backend-only. Supabase Auth/recovery require source credentials under AUTH_PROVIDER=supabase; Supabase Query and untransferred Storage continue to depend on source credentials independently.
 - Filesystem mode requires DOCUMENT_STORAGE_ROOT on a persistent volume. Paths are validated; uploads refuse overwrites and directory symlinks. No database blob storage or silent source fallback.
 - Freeze all API activity and drain background jobs for final snapshot/cutover. Admin-only smoke mode is explicit; ordinary users remain blocked. New target writes make a provider-only rollback unsafe.
 - See docs/postgres-migration.md for exact operator commands and shared-source ownership requirements.

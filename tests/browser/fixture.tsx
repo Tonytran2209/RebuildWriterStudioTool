@@ -1,4 +1,6 @@
 import React,{useState,useEffect} from 'react';
+import LoginScreen from '../../src/components/LoginScreen';
+import * as auth from '../../src/lib/db';
 import {createRoot} from 'react-dom/client';
 import Step2CoreIdea from '../../src/components/workspace/Step2CoreIdea';
 import Step3Outline from '../../src/components/workspace/Step3Outline';
@@ -47,4 +49,10 @@ function ReopenFixture(){
   <section data-testid="reopen-outline"><Step3Outline {...props}/></section>
  </main>;
 }
-createRoot(document.getElementById('root')!).render(<LanguageProvider>{new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>}</LanguageProvider>);
+function AuthFixture(){
+ const [session,setSession]=useState(auth.getAuthSession);
+ useEffect(()=>{void auth.refreshStoredAuthSession().then(value=>{if(value)setSession(value);});},[]);
+ if(session)return <main><p>{session.user.email}</p><button onClick={()=>void auth.logout().then(()=>setSession(null))}>Logout fixture</button></main>;
+ return <LoginScreen onLogin={async(email,password)=>setSession(await auth.login(email,password))} onSignUp={auth.signUp} onForgotPassword={auth.requestPasswordReset} onResetPassword={auth.resetPassword}/>;
+}
+createRoot(document.getElementById('root')!).render(<LanguageProvider>{new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>}</LanguageProvider>);

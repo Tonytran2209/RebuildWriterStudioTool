@@ -22,6 +22,9 @@ sourceOfTruth: supabase/migrations + backend/migrations
 
 ## Data invariants
 
+- Optional PostgreSQL Auth has a separate explicit auth:migrate ledger and migrations/002_auth.sql. auth_users stores identities/roles, auth_sessions stores only access/refresh hashes, auth_tokens stores one-time email token hashes, auth_rate_limits persists throttles, auth_audit_events records security events.
+- Auth import uses explicit reviewed user UUID/email/role scope; shared Supabase auth.users is not project-isolated merely because app data schemas differ. Never import all source users or silently downgrade MFA. See docs/postgres-auth.md.
+
 - `writer_articles.id` is the stable article identity across client, backend and stage runs.
 - A content plan item maps to at most one article in a plan.
 - Stage runs are append-only revisions keyed by article, stage and input fingerprint.
@@ -31,7 +34,7 @@ sourceOfTruth: supabase/migrations + backend/migrations
 
 ## Migration rules
 
-- Database provider is explicit: DATABASE_PROVIDER=supabase (default) or postgres. DATABASE_URL alone never changes routing. PostgreSQL tables are isolated in writer_studio; Auth and Supabase Query remain on Supabase.
+- Database provider is explicit: DATABASE_PROVIDER=supabase (default) or postgres. DATABASE_URL alone never changes routing. PostgreSQL tables are isolated in writer_studio; AUTH_PROVIDER is independent and defaults to supabase. Supabase Query remains on the source.
 - backend/migrations/001_writer_studio.sql is the destination baseline; npm run db:migrate is explicit, ledger/checksum protected and advisory-locked. No startup schema migration. Legacy projection is disabled unless explicitly opted in.
 - Shared-source row ownership must be confirmed by exact ID/key manifests; code/table names do not establish production ownership. Import is dry-run by default, uses a read-only source snapshot, and commits only with --apply after counts, full-row checksums and FK validation.
 - PostgreSQL stage revision allocation is transaction-locked and deduplicates input fingerprints so approve/backtrack/regenerate does not reuse a revision number.

@@ -43,7 +43,7 @@ function createNewArticle(): Article {
 
 function hasPasswordRecoveryLink() {
   if (typeof window === "undefined") return false
-  return new URLSearchParams(window.location.hash.slice(1)).get("type") === "recovery"
+  return ["recovery", "verification"].includes(new URLSearchParams(window.location.hash.slice(1)).get("type") ?? "")
 }
 
 type SyncStatus = "idle" | "loading" | "saving" | "error"
@@ -59,6 +59,11 @@ export default function App() {
     return db.getAuthSession()
   })
   const [articles, setArticles] = useState<Article[]>([])
+  useEffect(() => {
+    if (!hasPasswordRecoveryLink() && !db.getAuthSession()) {
+      void db.refreshStoredAuthSession().then(session => { if (session) setAuthSession(session) })
+    }
+  }, [])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [files, setFiles] = useState<DocumentFile[]>([])
@@ -122,6 +127,11 @@ export default function App() {
     articleMutationQueues.current.get(articleId) ?? Promise.resolve(), [])
 
   // Load all data from Supabase / Railway on mount
+  useEffect(() => {
+    const expired = () => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }
+    window.addEventListener("writer:auth-expired", expired)
+    return () => window.removeEventListener("writer:auth-expired", expired)
+  }, [])
   useEffect(() => {
     if (!authSession) {
       setSyncStatus("idle")
@@ -691,7 +701,8 @@ export default function App() {
         onOpenConfig={() => setShowConfig(true)}
         canManageSettings={authSession.user.role === "admin"}
         currentUser={authSession.user}
-        onSignOut={() => { db.clearAuthSession(); setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }}
+        onSignOut={() => { void db.logout().then(() => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }).catch(error => notifyWorkspace(error.message, "error")) }}
+        onSignOutAll={authSession.authProvider === "postgres" ? () => { void db.logout(true).then(() => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }).catch(error => notifyWorkspace(error.message, "error")) } : undefined}
         onToggleComplete={handleToggleComplete}
         completionSavingId={completionSavingId}
         onDeleteArticle={handleDeleteArticle}

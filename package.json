@@ -4,6 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "auth:migrate": "npm --prefix backend run auth:migrate",
+    "auth:scope": "npm --prefix backend run auth:scope --",
+    "auth:cleanup": "npm --prefix backend run auth:cleanup --",
+    "auth:import": "npm --prefix backend run auth:import --",
     "db:migrate": "npm --prefix backend run db:migrate",
     "db:scope": "npm --prefix backend run db:scope --",
     "db:import": "npm --prefix backend run db:import --",
