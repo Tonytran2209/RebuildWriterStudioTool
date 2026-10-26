@@ -24,7 +24,7 @@ import { normalizeDraftOutput, normalizeDraftHtml } from '../../lib/draftExport'
 import { canonicalSpecFingerprint, qualityInputFingerprint, qualityAllowsCompletion, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION } from '../../lib/qualityPolicy';
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage } from '../../lib/evidencePolicy';
 import { verifyEvidence } from '../../lib/evidenceValidation';
-import { internalLinkInstruction, addMissingInternalLinks } from '../../lib/internalLinkPolicy';
+import { internalLinkInstruction, addMissingInternalLinks, redistributeInternalLinks } from '../../lib/internalLinkPolicy';
 
 // Keep typography normalization at the editor boundary, outside persisted draft data.
 function displayDraft(text: string) {
@@ -405,11 +405,12 @@ function normalizeDraftEvidenceUsage(
 
 function repairDraftInternalLinks(article: Article, draft: string, inventory: AppConfig['websiteInventory'] = [], wordTarget = countWords(draft)) {
   const candidates = selectInternalLinkCandidates(article, inventory ?? [], 10);
-  if (!candidates.length) return removeConsecutiveDuplicateHeadings(draft);
+  if (!candidates.length) return removeConsecutiveDuplicateHeadings(redistributeInternalLinks(draft, auditInternalLinks(article, draft, inventory ?? []).approvedUrls));
   let next = draft;
   let audit = auditInternalLinks(article, next, inventory ?? []);
   for (const url of audit.unapprovedUrls) next = next.split(url).join(candidates[0].url);
   audit = auditInternalLinks(article, next, inventory ?? []);
+  next = redistributeInternalLinks(next, audit.approvedUrls);
   next = addMissingInternalLinks(next, candidates, audit.approvedUrls, wordTarget);
   return removeConsecutiveDuplicateHeadings(next);
 }
@@ -990,8 +991,12 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       ];
       if (deterministic.some(item => item.status === 'fail')) {
         const report = qualityReport({ ...article, draft: assembledDraft }, deterministic, targetWords, files, config.workflowRules);
-        await onUpdate({ qualityReport: report });
-        throw new Error(`Draft đã được lưu nhưng Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => `${item.label} — ${item.reason}`).join('; ')}.`);
+        const detail = `Draft đã được lưu nhưng Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => `${item.label} — ${item.reason}`).join('; ')}.`;
+        processTrace.push({ id: `draft-qc-${Date.now()}`, stage: 'validation', status: 'warning', title: 'Draft saved; QC needs attention', detail });
+        const saved = await onUpdate({ qualityReport: report, step4ProcessTrace: processTrace });
+        if (!saved) throw new Error('Draft đã lưu nhưng chưa ghi được kết quả QC. Hãy tải lại bài trước khi Re-check.');
+        setError(detail);
+        return;
       }
       const runSemanticReview = async (candidate: string, candidateUsage: Record<string, string[]>) => {
         const requestReview = () => callAI({

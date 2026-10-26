@@ -4,6 +4,7 @@ import { introductionCheck } from "./introductionPolicy";
 import { QUALITY_VERSION, qualityInputFingerprint } from './qualityPolicy';
 import type { DocumentFile } from '../types';
 import { internalLinkChecks } from './internalLinkPolicy';
+import { missingMustCoverTopics } from './mustCoverPolicy';
 export { internalLinkBudget } from './internalLinkPolicy';
 
 export const UNIVERSAL_QUALITY_VERSION = QUALITY_VERSION;
@@ -83,18 +84,14 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
   const linkAudit = auditInternalLinks(article, draft, inventory);
   const duplicateHeadings = consecutiveDuplicateHeadings(draft);
   const leaked = sourceNames.filter(name => /\.[a-z0-9]{1,8}$/i.test(name.trim()) && draft.toLowerCase().includes(name.trim().toLowerCase()));
-  const outlineCoverage = normalized((article.outline ?? []).flatMap(section => [section.heading, section.notes, section.rationale, ...(section.keywords ?? [])]).join(" "));
-  const missingCoverage = (spec?.mustCover ?? []).filter(topic => {
-    const terms = normalized(topic).split(" ").filter(term => term.length > 3);
-    return terms.length > 0 && terms.filter(term => outlineCoverage.includes(term)).length < Math.ceil(terms.length * 0.5);
-  });
+  const missingCoverage = missingMustCoverTopics(article.outline ?? [], spec?.mustCover ?? [], draft);
   const checks: QualityGateCheck[] = [
     introductionCheck(draft),
     { id: "complete-structure", label: "Complete article structure", kind: "deterministic", status: /^#\s+/m.test(draft) && /^##\s+/m.test(draft) ? "pass" : "fail", reason: "Draft must contain one H1 and at least one H2.", autoFixAllowed: true },
     { id: "duplicate-headings", label: "No consecutive duplicate headings", kind: "deterministic", status: duplicateHeadings.length ? "fail" : "pass", reason: duplicateHeadings.length ? `Repeated heading immediately before its prose: ${duplicateHeadings.join(", ")}` : "Each section heading appears once before its prose.", autoFixAllowed: true },
     { id: "word-budget", label: "English word target range", kind: "deterministic", status: count >= acceptedMin && count <= acceptedMax ? "pass" : "fail", reason: `${count} English words; target ${wordTarget}, accepted range ${acceptedMin}–${acceptedMax}.`, autoFixAllowed: true },
     { id: "primary-query", label: "Primary query coverage", kind: "deterministic", status: spec?.primaryQuery && body.includes(normalized(spec.primaryQuery)) ? "pass" : "fail", reason: "The primary query must appear naturally in the article.", evidence: spec?.primaryQuery, autoFixAllowed: true },
-    { id: "must-cover", label: "Must-cover topics mapped in outline", kind: "deterministic", status: missingCoverage.length ? "fail" : "pass", reason: missingCoverage.length ? `Not mapped in the approved outline: ${missingCoverage.join(", ")}` : "Every required topic is mapped into the approved outline.", autoFixAllowed: true },
+    { id: "must-cover", label: "Must-cover topic coverage", kind: "deterministic", status: missingCoverage.length ? "fail" : "pass", reason: missingCoverage.length ? `Not covered in the approved outline or draft: ${missingCoverage.join(", ")}` : "Every required topic is covered in the approved outline or draft.", autoFixAllowed: true },
     { id: "placeholders", label: "No placeholders", kind: "deterministic", status: /\[(?:cần|needs?|todo|tbd)[^\]]*\]|lorem ipsum|about:blank/i.test(draft) ? "fail" : "pass", reason: "Draft must not contain placeholders or about:blank.", autoFixAllowed: true },
     { id: "source-confidentiality", label: "No internal source leakage", kind: "deterministic", status: leaked.length ? "fail" : "pass", reason: leaked.length ? `Leaked source names: ${leaked.join(", ")}` : "No infrastructure filenames detected.", autoFixAllowed: false },
     { id: "link-correctness", label: "Approved internal links", kind: "deterministic", status: !linkAudit.unapprovedUrls.length && (!linkAudit.required || linkAudit.approvedDraftUrls.length > 0) ? "pass" : "fail", reason: linkAudit.unapprovedUrls.length ? `Not approved in Website Inventory: ${linkAudit.unapprovedUrls.join(", ")}` : linkAudit.required && !linkAudit.approvedDraftUrls.length ? "Article Spec requires an internal link, but the draft does not contain an approved URL." : linkAudit.approvedDraftUrls.length ? "Every internal URL matches an approved Website Inventory entry." : "No internal link is required by the Article Spec.", evidence: linkAudit.internalUrls.join(", "), autoFixAllowed: true },

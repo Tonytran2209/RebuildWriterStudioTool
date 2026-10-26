@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { internalLinkBudget, internalLinkInstruction, internalLinkChecks, addMissingInternalLinks } from '../src/lib/internalLinkPolicy.ts'
+import { internalLinkBudget, internalLinkInstruction, internalLinkChecks, addMissingInternalLinks, redistributeInternalLinks } from '../src/lib/internalLinkPolicy.ts'
 import { selectInternalLinkCandidates } from '../src/lib/internalLinkInventory.ts'
 import { selectWebsiteCandidates } from './websiteInventory.ts'
 
@@ -46,4 +46,19 @@ test('server and browser share candidate selection including canonical URL dedup
   const duplicate = { ...inventory[0], id: 'duplicate', url: 'https://www.example.com/guide-0/?track=1' }
   assert.equal(selectWebsiteCandidates(article, [...inventory, duplicate], 20).length, 10)
   assert.deepEqual(selectWebsiteCandidates(article, inventory, 7), selectInternalLinkCandidates(article, inventory, 7))
+})
+
+test('moves an extra approved link to a related empty body section without spending a model call', () => {
+  const source = '# Animation vs Live Action\n\n## Decision Framework\n\nCompare [animation guide](https://example.com/guide-0) and [production guide](https://example.com/guide-1).\n\n## Production Considerations\n\nDiscuss the production workflow.\n\n## Conclusion\n\nChoose based on the project.'
+  const result = redistributeInternalLinks(source, approved)
+  assert.equal(internalLinkChecks(result, approved, 1500)[1].status, 'pass')
+  assert.match(result.split('## Decision Framework')[1].split('## Production Considerations')[0], /production guide\./)
+  assert.match(result.split('## Production Considerations')[1].split('## Conclusion')[0], /\[production guide\]\(https:\/\/example.com\/guide-1\)/)
+  assert.equal(redistributeInternalLinks(result, approved), result)
+})
+
+test('does not move a link into an unrelated section or the conclusion', () => {
+  const source = '# Title\n\n## Decision Framework\n\n[Animation](https://example.com/guide-0) [Pricing](https://example.com/guide-1)\n\n## Conclusion\n\nFinish.'
+  assert.equal(redistributeInternalLinks(source, approved), source)
+  assert.equal(internalLinkChecks(source, approved, 1500)[1].status, 'fail')
 })

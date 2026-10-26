@@ -36,6 +36,39 @@ export function internalLinkChecks(draft: string, approvedValues: Iterable<strin
 }
 
 type Candidate = { url: string; title: string; suggestedAnchors?: string[] };
+
+// Move an extra approved Markdown link only when another unlinked body section
+// has a matching topic. Keep the original sentence and anchor text intact.
+export function redistributeInternalLinks(draft: string, approvedValues: Iterable<string>) {
+  const approved = new Set([...approvedValues].map(canonicalInternalUrl));
+  const headingMatches = [...draft.matchAll(/^#{2,3}\s+(.+)$/gm)];
+  if (headingMatches.length < 2) return draft;
+  const intro = draft.slice(0, headingMatches[0].index);
+  const sections = headingMatches.map((heading, index) => ({
+    heading: heading[1],
+    text: draft.slice(heading.index!, headingMatches[index + 1]?.index ?? draft.length),
+  }));
+  const markdownLinks = (value: string) => [...value.matchAll(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g)]
+    .filter(match => approved.has(canonicalInternalUrl(match[2])));
+  const keywords = (value: string) => [...new Set((value.toLocaleLowerCase().match(/[a-z]{4,}/g) ?? []))]
+    .filter(term => !['about', 'guide', 'more', 'your', 'with', 'from', 'this', 'that', 'which'].includes(term));
+
+  for (const section of sections) {
+    const links = markdownLinks(section.text);
+    if (links.length < 2) continue;
+    for (const extra of links.slice(1).reverse()) {
+      const topic = keywords(extra[1]);
+      const destination = sections.map((other, index) => ({ index, score: topic.filter(term => other.heading.toLocaleLowerCase().includes(term)).length }))
+        .filter(item => sections[item.index] !== section && item.score > 0 && !/^conclusion$/i.test(sections[item.index].heading.trim()) && markdownLinks(sections[item.index].text).length === 0)
+        .sort((a, b) => b.score - a.score || a.index - b.index)[0];
+      if (!destination) continue;
+      section.text = section.text.slice(0, extra.index!) + extra[1] + section.text.slice(extra.index! + extra[0].length);
+      sections[destination.index].text = `${sections[destination.index].text.trimEnd()}\n\nSee [${extra[1]}](${extra[2]}) for related guidance.\n\n`;
+    }
+  }
+  return intro + sections.map(section => section.text).join('');
+}
+
 export function addMissingInternalLinks(draft: string, candidates: Candidate[], approvedValues: Iterable<string>, wordTarget: number) {
   const approved = new Set([...approvedValues].map(canonicalInternalUrl));
   const used = new Set(urls(draft).filter(url => approved.has(url)));

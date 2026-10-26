@@ -11,6 +11,7 @@ import type {
 } from "../../types";
 import { callAI } from "../../lib/aiService";
 import { useI18n } from "../../lib/i18n";
+import { mapMustCoverTopics } from "../../lib/mustCoverPolicy";
 import { notifyWorkspace } from "./WorkspaceNotification";
 import {
   collectStepDocs,
@@ -402,6 +403,7 @@ export default function Step3Outline({
         `Không có section nào vượt qua kiểm chứng sau một lần bổ sung có mục tiêu. `
         + `Đã đọc ${normalized.rawSectionCount} section, ${normalized.registryCount} evidence registry và ${trustedCoreIdeaEvidence.length} evidence kế thừa từ Step 2.`,
       );
+      sections = mapMustCoverTopics(sections, article.articleSpec?.mustCover ?? []);
       const partialResult = sections.length < minimumSections;
       const trace: AIProcessTraceEvent[] = [
         { id: 'step3-handoff', stage: 'input', status: 'completed', title: '1. Nhận Content Plan và kết quả Bước 1', detail: 'Khóa nhóm nội dung, Core Idea, angle, audience, tone, word count và bộ keyword đã chọn để làm đầu vào outline.', facts: { contentType: contextBrief.contentType, topic: contextBrief.topic, primaryKeyword: contextBrief.primaryKeyword, secondaryKeywords: contextBrief.secondaryKeywords.length } },
