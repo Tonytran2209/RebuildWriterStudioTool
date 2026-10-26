@@ -130,6 +130,7 @@ for(const incomplete of [false,true])test(`qc-schema generation saves checkpoint
  const calls=await mockQcFlow(page,'generation',incomplete);
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
  await expect.poll(()=>calls.length).toBe(2);
+ expect(calls[1].systemPrompt).toContain('Never evaluate URLs, internal links, link targets, or Website Inventory in a semantic check');
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-updates')||'[]').filter((p:any)=>p.semanticReviewChecks).length)).toBe(1);
  const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));

@@ -217,6 +217,8 @@ const semanticQualitySchema: Record<string, unknown> = {
   },
 };
 
+const semanticLinkBoundary = 'Never evaluate URLs, internal links, link targets, or Website Inventory in a semantic check; deterministic QC validates them separately. Do not infer that approved inventory is absent because it is not supplied to this reviewer.';
+
 function semanticSchemaFor(ids: readonly string[]): Record<string, unknown> {
   return {
     type: 'object', additionalProperties: false, required: ['checks'],
@@ -1033,7 +1035,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           jsonMode: true,
           jsonSchema: semanticQualitySchema,
           skipDocumentContext: true,
-          systemPrompt: 'You are a strict publishing quality reviewer. Evaluate the supplied Article Spec, approved evidence registry, section-to-evidence mapping and draft. Visible citations, footnotes, filenames and evidence IDs are not required in the prose. Evidence support passes when concrete claims are supported by the supplied evidence and declared mapping; do not penalize general explanatory prose for lacking a citation. Return JSON only. Do not rewrite the article.',
+          systemPrompt: `You are a strict publishing quality reviewer. Evaluate the supplied Article Spec, approved evidence registry, section-to-evidence mapping and draft. Visible citations, footnotes, filenames and evidence IDs are not required in the prose. Evidence support passes when concrete claims are supported by the supplied evidence and declared mapping; do not penalize general explanatory prose for lacking a citation. ${semanticLinkBoundary} Return JSON only. Do not rewrite the article.`,
           prompt: [
             `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
@@ -1263,7 +1265,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             model, railwayUrl, stepNumber: 4, bypassCache: true, requestPurpose: 'recheck',
             maxTokens: Math.max(650, needed.length * 320), temperature: 0,
             jsonMode: true, jsonSchema: semanticSchemaFor(needed), skipDocumentContext: true,
-            systemPrompt: 'You are a strict publishing quality reviewer. Evaluate only the requested missing checks. Return concise JSON matching the schema. Do not rewrite the draft. Never assume evidence or brand alignment without support.',
+            systemPrompt: `You are a strict publishing quality reviewer. Evaluate only the requested missing checks. ${semanticLinkBoundary} Return concise JSON matching the schema. Do not rewrite the draft. Never assume evidence or brand alignment without support.`,
             prompt: [
               `MISSING CHECKS: ${needed.join(', ')}`,
               `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
@@ -1297,7 +1299,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           jsonMode: true,
           jsonSchema: semanticQualitySchema,
           skipDocumentContext: true,
-          systemPrompt: 'You are a strict publishing quality reviewer. Re-check the repaired draft against the Article Spec and evidence mapping. Return JSON only; do not rewrite the reviewArticle.',
+          systemPrompt: `You are a strict publishing quality reviewer. Re-check the repaired draft against the Article Spec and evidence mapping. ${semanticLinkBoundary} Return JSON only; do not rewrite the article.`,
           prompt: [
             `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
