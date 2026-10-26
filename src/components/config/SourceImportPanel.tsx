@@ -48,27 +48,40 @@ function FileForm({ onAdd, railwayUrl, category }: { onAdd: (sources: ActionData
 
   const [reading, setReading] = useState(false);
   const [error, setError] = useState('');
+  const busy = useRef(false);
+  const [progress, setProgress] = useState('');
 
   const handle = async (list: FileList | null) => {
-    if (!list) return;
+    if (!list || busy.current) return;
+    busy.current = true;
     setReading(true);
     setError('');
     try {
       const extracted: ActionDataSource[] = [];
+      const failures: string[] = [];
       for (const f of Array.from(list)) {
-        const result = await uploadDocumentToRailway(f, category, railwayUrl);
-        const record = result.record as ActionDataSource & { uploadedAt?: string };
-        extracted.push({
-          ...record,
-          sourceType: 'file',
-          addedAt: record.addedAt ?? record.uploadedAt ?? new Date().toISOString(),
-        });
+        setProgress(`${extracted.length + failures.length + 1}/${list.length}: ${f.name}`);
+        try {
+          if (f.size > 15 * 1024 * 1024) throw new Error(tr('File vượt quá 15 MB', 'File exceeds 15 MB'));
+          const result = await uploadDocumentToRailway(f, category, railwayUrl);
+          const record = result.record as ActionDataSource & { uploadedAt?: string };
+          extracted.push({
+            ...record,
+            sourceType: 'file',
+            addedAt: record.addedAt ?? record.uploadedAt ?? new Date().toISOString(),
+          });
+        } catch (error) {
+          failures.push(`${f.name}: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
-      onAdd(extracted);
+      if (extracted.length) onAdd(extracted);
+      setError(failures.join('\n'));
+      setProgress(tr(`Đã lưu ${extracted.length}/${list.length} tài liệu.`, `Saved ${extracted.length}/${list.length} documents.`));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setReading(false);
+      busy.current = false;
       if (ref.current) ref.current.value = '';
     }
   };
@@ -83,10 +96,11 @@ function FileForm({ onAdd, railwayUrl, category }: { onAdd: (sources: ActionData
         bg-emerald-50/30 border-emerald-200 hover:border-emerald-500 ${dragging ? 'scale-[0.99] opacity-75' : ''}`}
     >
       <FolderUp className="mx-auto mb-2 h-8 w-8" aria-hidden="true" />
-      <p className="text-xs font-bold text-slate-700">{reading ? tr('Railway đang scan và lưu Supabase...', 'Railway is scanning and saving to Supabase...') : tr('Kéo thả hoặc nhấp để chọn file', 'Drop files here or click to browse')}</p>
-      <p className="text-[11px] text-slate-400 mt-1">CSV · XLSX · JSON · PDF · TXT · XML</p>
-      <input ref={ref} type="file" multiple accept=".csv,.xlsx,.json,.pdf,.txt,.xml,.tsv" className="hidden" onChange={e => handle(e.target.files)} />
-      {error && <p className="text-[11px] text-red-600 mt-2">{error}</p>}
+      <p className="text-xs font-bold text-slate-700">{reading ? tr('Đang trích xuất và lưu tài liệu...', 'Extracting and saving documents...') : tr('Kéo thả hoặc chọn nhiều file để nạp tài liệu mới', 'Drop or select multiple files to upload new documents')}</p>
+      <p className="text-[11px] text-slate-400 mt-1">DOCX · PDF · TXT · MD · CSV · XLSX · JSON · XML · TSV · 15 MB/file</p>
+      <input ref={ref} disabled={reading} type="file" multiple accept=".docx,.md,.csv,.xlsx,.json,.pdf,.txt,.xml,.tsv" className="hidden" onChange={e => handle(e.target.files)} />
+      {progress && <p role="status" className="mt-2 text-xs text-slate-500">{progress}</p>}
+      {error && <p role="alert" className="text-[11px] text-red-600 mt-2 whitespace-pre-line">{error}</p>}
     </div>
   );
 }
@@ -427,7 +441,6 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
   };
   const addSources = (newSources: ActionDataSource[]) => {
     onChange([...newSources, ...sources]);
-    if (newSources.length) setShowImporter(false);
   };
   const removeSource = (id: string) => onChange(sources.filter(s => s.id !== id));
   const updateKnowledgeMetadata = (id: string, patch: Partial<KnowledgeMetadata>) => onChange(sources.map(source => {
@@ -452,7 +465,7 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
     <div className="knowledge-source-manager space-y-3">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-medium text-slate-800">{tr('Tài liệu Knowledge Base', 'Knowledge Base sources')}</h3>
+          <h3 className="text-sm font-medium text-slate-800">{category === 'rules' ? tr('Tài liệu Skills & Rules', 'Skills & Rules sources') : tr('Tài liệu Knowledge Base', 'Knowledge Base sources')}</h3>
           <p className="mt-1 text-xs leading-5 text-slate-500">{tr('Quản lý nội dung AI có thể đọc và quyền sử dụng của từng nguồn.', 'Manage what AI can read and how each source may be used.')}</p>
         </div>
         <button onClick={() => setShowImporter(value => !value)} className="settings-secondary-action inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition-colors">
@@ -492,7 +505,7 @@ export default function SourceImportPanel({ sources = [], onChange, railwayUrl, 
         {mode === 'manual'   && <ManualForm   onAdd={addSource} />}
         {mode === 'supabase' && <SupabaseForm onAdd={addSource} />}
         {mode === 'airtable' && <AirtableForm onAdd={addSource} />}
-        {importing && <p className="mt-3 text-[11px] font-semibold text-blue-600">{tr('Railway đang lấy dữ liệu và lưu Supabase...', 'Railway is importing and saving data to Supabase...')}</p>}
+        {importing && <p className="mt-3 text-[11px] font-semibold text-blue-600">{tr('Đang nhập và lưu nội dung...', 'Importing and saving content...')}</p>}
         {importError && <p className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[11px] text-red-600">{importError}</p>}
       </div>
       </div>}

@@ -8,6 +8,8 @@ import cors from "cors"
 import multer from "multer"
 import crypto from "crypto"
 import path from "path"
+import { access } from "node:fs/promises"
+import { constants as fsConstants } from "node:fs"
 import { fileURLToPath } from "url"
 import { generate, getAvailableProviders } from "./providers.ts"
 import {
@@ -5804,6 +5806,18 @@ app.delete("/api/website-inventory/:id", async (req, res) => {
 })
 
 // ─── Files ────────────────────────────────────────────────────────────────────
+
+app.get("/api/documents/storage", async (_req, res) => {
+  try {
+    const provider = storageProvider()
+    if (provider === "filesystem") {
+      await access(process.env.DOCUMENT_STORAGE_ROOT!, fsConstants.R_OK | fsConstants.W_OK)
+    }
+    res.json({ provider, database: databaseProvider(), configured: true, maxFileBytes: 15 * 1024 * 1024 })
+  } catch {
+    res.status(503).json({ configured: false, error: "Kho tài liệu chưa sẵn sàng. Kiểm tra volume và cấu hình lưu trữ trên Railway." })
+  }
+})
 
 app.get("/api/files", async (_req, res) => {
   try {

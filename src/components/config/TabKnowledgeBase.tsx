@@ -18,6 +18,7 @@ import {
   fetchWebsiteInventoryBatch,
   scanWebsiteUrl,
   startWebsiteInventoryBatch,
+  authenticatedRailwayFetch,
   updateWebsiteInventoryRecord,
 } from "../../lib/db"
 import { isLegacyActionPlan } from "../../lib/legacyCompatibility"
@@ -94,6 +95,20 @@ export default function TabKnowledgeBase({
   onConfigChange,
 }: Props) {
   const [activeSubTab, setActiveSubTab] = useState<KbSubTab>("kb")
+  const [storage, setStorage] = useState<{ provider: string; database: string } | null>(null)
+  const [storageError, setStorageError] = useState("")
+  useEffect(() => {
+    let active = true
+    setStorage(null)
+    setStorageError("")
+    authenticatedRailwayFetch("/api/documents/storage", {}, railwayUrl)
+      .then(async response => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || "Không kiểm tra được kho tài liệu.")
+        if (active) setStorage(result)
+      }).catch(error => { if (active) setStorageError(error.message) })
+    return () => { active = false }
+  }, [railwayUrl])
   const meta = SUBTAB_META[activeSubTab]
 
   const sources = meta.category
@@ -111,6 +126,14 @@ export default function TabKnowledgeBase({
 
   return (
     <div className="space-y-7">
+      <div className="settings-preference-group rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm">
+        <p className="font-medium text-slate-800">Kho tài liệu</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">
+          {storageError || (storage ? `File gốc: ${storage.provider === "filesystem" ? "Volume Railway" : "Supabase Storage"}. Nội dung AI: ${storage.database === "postgres" ? "PostgreSQL Railway" : "Supabase Database"}.` : "Đang kiểm tra cấu hình lưu trữ...")}
+        </p>
+        <p className="mt-2 text-xs leading-5 text-slate-500">Nạp tài liệu kiến thức vào Knowledge Base; nạp hướng dẫn viết và checklist vào Skills &amp; Rules. File mới được thêm vào thư viện sau khi trích xuất và lưu thành công. Content Plan được nạp riêng trong luồng tạo kế hoạch.</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">Upload được lưu ngay, kể cả khi đóng Cài đặt. Chọn Lưu thay đổi để lưu các chỉnh sửa phân quyền và quy tắc sau đó.</p>
+      </div>
       <div className="settings-subnav flex gap-1 overflow-x-auto rounded-lg bg-slate-100 p-1">
         {(Object.entries(
           SUBTAB_META,
@@ -132,11 +155,14 @@ export default function TabKnowledgeBase({
       </div>
 
       {activeSubTab === "rules" ? (
+        <div className="space-y-6">
+        <SourceImportPanel category="rules" sources={sources} onChange={handleChange} railwayUrl={railwayUrl} />
         <WorkflowRulesPanel
           config={config}
           files={files}
           onChange={onConfigChange}
         />
+        </div>
       ) : activeSubTab === "website" ? (
         <WebsiteInventoryPanel
           records={config.websiteInventory ?? []}

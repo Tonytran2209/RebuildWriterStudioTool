@@ -446,6 +446,7 @@ export default function App() {
   const handleSaveConfig = async (
     newConfig: AppConfig,
     newFiles: DocumentFile[],
+    filesChanged: boolean,
   ) => {
     setConfig(newConfig)
     setFiles(newFiles)
@@ -455,11 +456,12 @@ export default function App() {
     try {
       await Promise.all([
         db.saveConfig(newConfig),
-        db.saveFiles(newFiles, newConfig.railwayUrl),
+        filesChanged ? db.saveFiles(newFiles, newConfig.railwayUrl) : Promise.resolve(),
       ])
       setSyncStatus("idle")
-    } catch {
+    } catch (error) {
       setSyncStatus("error")
+      throw error
     }
   }
 
@@ -698,7 +700,7 @@ export default function App() {
             0,
           )
         }}
-        onOpenConfig={() => setShowConfig(true)}
+        onOpenConfig={() => { void db.fetchFiles().then(latest => { setFiles(latest); setShowConfig(true) }).catch(error => notifyWorkspace(error.message, "error")) }}
         canManageSettings={authSession.user.role === "admin"}
         currentUser={authSession.user}
         onSignOut={() => { void db.logout().then(() => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }).catch(error => notifyWorkspace(error.message, "error")) }}
@@ -852,7 +854,7 @@ export default function App() {
           files={files}
           articles={articles}
           onSave={handleSaveConfig}
-          onClose={() => setShowConfig(false)}
+          onClose={() => { setShowConfig(false); void db.fetchFiles().then(setFiles).catch(error => notifyWorkspace(error.message, "error")) }}
         />
       )}
     </div>

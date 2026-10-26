@@ -12,7 +12,7 @@ interface Props {
   config: AppConfig;
   files: DocumentFile[];
   articles: Article[];
-  onSave: (config: AppConfig, files: DocumentFile[]) => void;
+  onSave: (config: AppConfig, files: DocumentFile[], filesChanged: boolean) => Promise<void>;
   onClose: () => void;
 }
 
@@ -28,6 +28,9 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
   const [query, setQuery] = useState('');
   const [localConfig, setLocalConfig] = useState<AppConfig>({ ...config });
   const [localFiles, setLocalFiles] = useState<DocumentFile[]>([...files]);
+  const [initialFiles] = useState(() => JSON.stringify(files));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const active = TABS.find(tab => tab.id === activeTab) ?? TABS[0];
   const visibleTabs = useMemo(() => {
@@ -36,11 +39,18 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
     return TABS.filter(tab => [tab.labelVi, tab.labelEn, tab.descriptionVi, tab.descriptionEn].some(value => value.toLocaleLowerCase().includes(normalized)));
   }, [query]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError('');
     const sanitized = sanitizeConfigFileAccess(localConfig, localFiles);
     setLocalConfig(sanitized);
-    onSave(sanitized, localFiles);
-    onClose();
+    try {
+      await onSave(sanitized, localFiles, JSON.stringify(localFiles) !== initialFiles);
+      onClose();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    } finally { setSaving(false); }
   };
 
   return (
@@ -94,8 +104,9 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
           </div>
 
           <footer className="settings-footer flex shrink-0 items-center justify-end gap-2 border-t border-slate-200 bg-white px-5 py-3 md:px-8">
+            {saveError && <p role="alert" className="text-xs text-red-600">{saveError}</p>}
             <button onClick={onClose} className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900">{tr('Huỷ', 'Cancel')}</button>
-            <button onClick={handleSave} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800">{tr('Lưu thay đổi', 'Save changes')}</button>
+            <button disabled={saving} onClick={handleSave} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-50">{saving ? tr('Đang lưu...', 'Saving...') : tr('Lưu thay đổi', 'Save changes')}</button>
           </footer>
         </main>
       </div>

@@ -17,6 +17,8 @@ projectId: writer-studio
 
 ## Retention and privacy
 
+- Fresh re-upload workflow: docs/document-reupload.md. GET /api/documents/storage reports configured providers and filesystem directory access. KB/rules uploads retain originals on the selected provider and extracted content in writer:files; storage metadata alone does not imply usable AI content.
+
 - AUTH_PROVIDER defaults to supabase and may independently switch to postgres after migration/import. PostgreSQL sessions use hashed opaque tokens, refresh cookies HttpOnly/Secure/SameSite=Strict, access tokens only in browser memory; no PostgreSQL bearer/refresh secrets in localStorage.
 - Auth email delivery requires configured SMTP; reset/verify tokens expire after 30 minutes and are one-use. Explicit auth:cleanup handles expired sessions/tokens/rate-limit buckets and 90-day audit retention. Source Storage/Query dependencies remain until separately migrated.
 

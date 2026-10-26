@@ -1,5 +1,6 @@
 import React,{useState,useEffect} from 'react';
 import LoginScreen from '../../src/components/LoginScreen';
+import TabKnowledgeBase from '../../src/components/config/TabKnowledgeBase';
 import * as auth from '../../src/lib/db';
 import {createRoot} from 'react-dom/client';
 import Step2CoreIdea from '../../src/components/workspace/Step2CoreIdea';
@@ -55,4 +56,8 @@ function AuthFixture(){
  if(session)return <main><p>{session.user.email}</p><button onClick={()=>void auth.logout().then(()=>setSession(null))}>Logout fixture</button></main>;
  return <LoginScreen onLogin={async(email,password)=>setSession(await auth.login(email,password))} onSignUp={auth.signUp} onForgotPassword={auth.requestPasswordReset} onResetPassword={auth.resetPassword}/>;
 }
-createRoot(document.getElementById('root')!).render(<LanguageProvider>{new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>}</LanguageProvider>);
+function LibraryFixture(){
+ const [files,setFiles]=useState<any[]>([]);
+ return <main><TabKnowledgeBase files={files} onChange={setFiles} railwayUrl="http://127.0.0.1:4173" config={DEFAULT_CONFIG} onConfigChange={()=>{}}/><pre data-testid="library-records">{JSON.stringify(files)}</pre></main>;
+}
+createRoot(document.getElementById('root')!).render(<LanguageProvider>{new URLSearchParams(location.search).has('library')?<LibraryFixture/>:new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>}</LanguageProvider>);
