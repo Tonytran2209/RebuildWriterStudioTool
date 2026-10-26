@@ -58,6 +58,7 @@ function AuthFixture(){
 }
 function LibraryFixture(){
  const [files,setFiles]=useState<any[]>([]);
- return <main><TabKnowledgeBase files={files} onChange={setFiles} railwayUrl="http://127.0.0.1:4173" config={DEFAULT_CONFIG} onConfigChange={()=>{}}/><pre data-testid="library-records">{JSON.stringify(files)}</pre></main>;
+ const [config,setConfig]=useState(DEFAULT_CONFIG);
+ return <main><TabKnowledgeBase files={files} onChange={setFiles} railwayUrl="http://127.0.0.1:4173" config={config} onConfigChange={setConfig}/><pre data-testid="library-records">{JSON.stringify(files)}</pre><pre data-testid="library-access">{JSON.stringify(config.stepConfigs[4].fileAccess)}</pre></main>;
 }
 createRoot(document.getElementById('root')!).render(<LanguageProvider>{new URLSearchParams(location.search).has('library')?<LibraryFixture/>:new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>}</LanguageProvider>);

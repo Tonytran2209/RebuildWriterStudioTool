@@ -29,4 +29,7 @@ test('Rules importer retains successful documents after a partial upload failure
   const records = JSON.parse(await page.getByTestId('library-records').innerText());
   expect(records).toHaveLength(2);
   expect(records.every((record: any) => record.category === 'rules')).toBe(true);
+  await expect(page.getByLabel('Draft', { exact: true }).first()).not.toBeChecked();
+  await page.getByLabel('Draft', { exact: true }).first().check();
+  await expect(page.getByTestId('library-access')).toContainText('file-1');
 });

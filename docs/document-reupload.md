@@ -20,6 +20,8 @@ Open Settings → Knowledge & Rules. The storage banner must show Railway Volume
 
 Upload evidence and reference documents in Knowledge Base. Upload writing guides/checklists in Skills & Rules above the workflow rules editor. Both support multiple DOCX, PDF, TXT, MD, CSV, TSV, XLSX, JSON and XML files, maximum 15 MB each. Uploads run sequentially; failed files are listed individually and successful files remain visible. Only retry failed files to avoid duplicate records. Uploading the same name creates a new document ID; it does not replace an existing source.
 
+Use the per-document Idea/Outline/Draft checkboxes to grant AI access to new documents, then Save changes. Upload itself does not grant stage access; the backend enforces these permissions.
+
 Upload persists the original on the configured volume and extracted text in writer_studio.kv_store under writer:files immediately. Canceling Settings does not undo an upload. Save changes persists subsequent library edits, governance metadata and workflow configuration; save failures remain visible. Opening/closing Settings reloads the server library, and saving unrelated configuration does not rewrite an unchanged library.
 
 Content Plan documents still use the Content Plan ingestion flow, sharing the same storage provider. Historical Supabase references are not rebound to new uploads. Review the source's external-use permissions before using KB material as publishable evidence.

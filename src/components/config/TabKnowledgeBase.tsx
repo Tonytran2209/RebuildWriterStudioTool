@@ -154,6 +154,24 @@ export default function TabKnowledgeBase({
         ))}
       </div>
 
+      {(activeSubTab === "kb" || activeSubTab === "rules") && <section className="settings-preference-group rounded-xl border border-slate-200 bg-white p-4">
+        <h3 className="text-sm font-medium text-slate-800">Cho phép AI sử dụng tài liệu</h3>
+        <p className="mt-1 text-xs text-slate-500">Chọn tài liệu cho từng bước rồi Lưu thay đổi. Upload mới chưa tự cấp quyền cho AI.</p>
+        {sources.filter(source => source.content?.trim()).map(source => <div key={source.id} className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+          <span className="min-w-0 flex-1 break-words">{source.name}</span>
+          {([2, 3, 4] as const).map(step => <label key={step} className="inline-flex items-center gap-1.5">
+            <input type="checkbox" checked={(config.stepConfigs[step]?.fileAccess?.[activeSubTab] ?? []).includes(source.id)} onChange={event => {
+              const current = config.stepConfigs[step]
+              const access = current.fileAccess ?? { kb: [], rules: [] }
+              const ids = access[activeSubTab] ?? []
+              const next = event.target.checked ? [...new Set([...ids, source.id])] : ids.filter(id => id !== source.id)
+              onConfigChange({ ...config, stepConfigs: { ...config.stepConfigs, [step]: { ...current, fileAccess: { ...access, [activeSubTab]: next } } } })
+            }} />
+            {step === 2 ? "Ý tưởng" : step === 3 ? "Outline" : "Draft"}
+          </label>)}
+        </div>)}
+      </section>}
+
       {activeSubTab === "rules" ? (
         <div className="space-y-6">
         <SourceImportPanel category="rules" sources={sources} onChange={handleChange} railwayUrl={railwayUrl} />
