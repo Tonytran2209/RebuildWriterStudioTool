@@ -3,6 +3,9 @@ on:
   pull_request:
   push:
     branches: [main]
+concurrency:
+  group: writer-studio-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -39,7 +42,24 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Cache pinned Chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-${{ runner.arch }}-chromium-${{ hashFiles('package-lock.json') }}
+      - name: Prepare Chromium with bounded retry
+        timeout-minutes: 6
+        env:
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: "30000"
+        run: |
+          for attempt in 1 2; do
+            if timeout --kill-after=10s 150s npx --no-install playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "Chromium preparation attempt ${attempt} failed; retrying infrastructure only."
+          done
+          echo "::error title=CI infrastructure::Chromium preparation failed before browser tests. No code diagnosis was performed."
+          exit 1
       - run: npm run test:browser -- --reporter=list,html,./tests/agent-lab/evidence-reporter.cjs
       - uses: actions/upload-artifact@v4
         if: always()
