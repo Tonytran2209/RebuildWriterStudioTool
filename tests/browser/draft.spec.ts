@@ -151,16 +151,17 @@ for(const incomplete of [false,true])test(`qc-cache recheck calls reviewer for i
  await page.reload();expect(calls).toHaveLength(incomplete?2:1);
 });
 
-test('qc-recheck requests only missing semantic checks saved from generation',async({page})=>{
+test('qc-recheck refreshes changed evidence context then requests only missing semantic checks',async({page})=>{
  const calls=await mockQcFlow(page,'generation',true);
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
  await expect.poll(()=>calls.length).toBe(2);
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
  await page.reload();
  await page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/}).click();
- await expect.poll(()=>calls.length).toBe(3);
- expect(calls[2].systemPrompt).toContain('requested missing checks');
- expect(calls[2].prompt).toContain('MISSING CHECKS: brand-pov');
+ await expect.poll(()=>calls.length).toBe(4);
+ expect(calls[2].systemPrompt).toContain('Re-check the repaired draft');
+ expect(calls[3].systemPrompt).toContain('requested missing checks');
+ expect(calls[3].prompt).toContain('MISSING CHECKS: brand-pov');
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.map((c:any)=>c.id))).toEqual(['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov']);
 });
 
