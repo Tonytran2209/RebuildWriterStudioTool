@@ -1,4 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import * as pg from './postgres.ts';
+import * as files from './documentStorage.ts';
 
 /**
  * New Supabase key naming (supabase-js v2.x + @supabase/server):
@@ -94,6 +96,7 @@ export async function getAuthenticatedUser(accessToken: string) {
 // ── KV operations ────────────────────────────────────────────────────────────
 
 export async function kvGet<T = any>(key: string): Promise<T | null> {
+  if (pg.provider() === 'postgres') return (await pg.selectRows('kv_store', q => q.select('value').eq('key', key).limit(1)))[0]?.value ?? null;
   const { data, error } = await getClient()
     .from(TABLE)
     .select('value')
@@ -105,6 +108,7 @@ export async function kvGet<T = any>(key: string): Promise<T | null> {
 }
 
 export async function kvSet(key: string, value: unknown): Promise<void> {
+  if (pg.provider() === 'postgres') { await pg.insertRow('kv_store', { key, value }, 'key'); return; }
   const { error } = await getClient()
     .from(TABLE)
     .upsert({ key, value }, { onConflict: 'key' });
@@ -113,11 +117,13 @@ export async function kvSet(key: string, value: unknown): Promise<void> {
 }
 
 export async function kvDelete(key: string): Promise<void> {
+  if (pg.provider() === 'postgres') return pg.deleteRows('kv_store', 'key', key);
   const { error } = await getClient().from(TABLE).delete().eq('key', key);
   if (error) throw new Error(`kvDelete(${key}): ${error.message}`);
 }
 
 export async function kvGetByPrefix(prefix: string): Promise<{ key: string; value: any }[]> {
+  if (pg.provider() === 'postgres') return pg.selectRows('kv_store', q => q.select('key,value').like('key', prefix.replace(/[\\%_]/g, '\\$&') + '%'));
   const { data, error } = await getClient()
     .from(TABLE)
     .select('key, value')
@@ -129,6 +135,7 @@ export async function kvGetByPrefix(prefix: string): Promise<{ key: string; valu
 
 export async function checkConnection(): Promise<boolean> {
   try {
+    if (pg.provider() === 'postgres') { await pg.selectRows('kv_store', q => q.select('key').limit(1)); return true; }
     const { error } = await getClient().from(TABLE).select('key').limit(1);
     return !error;
   } catch {
@@ -141,6 +148,7 @@ export async function uploadDocumentBinary(
   data: Buffer,
   contentType: string,
 ): Promise<void> {
+  if (files.storageProvider() === 'filesystem') return files.upload(storagePath, data, contentType);
   const client = getClient();
   let { error } = await client.storage
     .from(DOCUMENT_BUCKET)
@@ -163,6 +171,7 @@ export async function uploadDocumentBinary(
 }
 
 export async function downloadDocumentBinary(storagePath: string): Promise<Blob> {
+  if (files.storageProvider() === 'filesystem') return files.download(storagePath);
   const { data, error } = await getClient().storage.from(DOCUMENT_BUCKET).download(storagePath);
   if (error || !data) {
     throw new Error(`Không thể tải file gốc từ Supabase Storage: ${error?.message ?? 'không có dữ liệu'}`);
@@ -172,6 +181,7 @@ export async function downloadDocumentBinary(storagePath: string): Promise<Blob>
 
 export async function deleteDocumentBinaries(storagePaths: string[]): Promise<void> {
   if (!storagePaths.length) return;
+  if (files.storageProvider() === 'filesystem') { for (const path of storagePaths) await files.remove(path); return; }
   const { error } = await getClient().storage.from(DOCUMENT_BUCKET).remove(storagePaths);
   if (error) throw new Error(`Không thể xóa file gốc khỏi Supabase Storage: ${error.message}`);
 }
@@ -199,11 +209,13 @@ export async function runReadOnlySelect(query: string): Promise<unknown[]> {
 }
 
 export async function tableAvailable(table: string): Promise<boolean> {
+  if (pg.provider() === 'postgres') return pg.available(table);
   const { error } = await getClient().from(table).select('*').limit(1);
   return !error;
 }
 
 export async function tableSelect<T = any>(table: string, configure?: (query: any) => any): Promise<T[]> {
+  if (pg.provider() === 'postgres') return pg.selectRows<T>(table, configure);
   let query: any = getClient().from(table).select('*');
   if (configure) query = configure(query);
   const { data, error } = await query;
@@ -212,23 +224,28 @@ export async function tableSelect<T = any>(table: string, configure?: (query: an
 }
 
 export async function tableInsert<T = any>(table: string, row: Record<string, unknown>): Promise<T> {
+  if (pg.provider() === 'postgres' && table === 'article_stage_runs') return await pg.insertStageRevision(row) as T;
+  if (pg.provider() === 'postgres') return await pg.insertRow(table, row) as T;
   const { data, error } = await getClient().from(table).insert(row).select('*').single();
   if (error) throw new Error(`${table}: ${error.message}`);
   return data as T;
 }
 
 export async function tableUpsert(table: string, row: Record<string, unknown>, onConflict: string): Promise<void> {
+  if (pg.provider() === 'postgres') { await pg.insertRow(table, row, onConflict); return; }
   const { error } = await getClient().from(table).upsert(row, { onConflict });
   if (error) throw new Error(`${table}: ${error.message}`);
 }
 
 export async function tableUpdate<T = any>(table: string, id: string, updates: Record<string, unknown>): Promise<T> {
+  if (pg.provider() === 'postgres') return await pg.updateRow(table, id, updates) as T;
   const { data, error } = await getClient().from(table).update(updates).eq('id', id).select('*').single();
   if (error) throw new Error(`${table}: ${error.message}`);
   return data as T;
 }
 
 export async function tableDeleteWhere(table: string, column: string, value: string): Promise<void> {
+  if (pg.provider() === 'postgres') return pg.deleteRows(table, column, value);
   const { error } = await getClient().from(table).delete().eq(column, value);
   if (error) throw new Error(`${table}: ${error.message}`);
 }

@@ -1,4 +1,6 @@
 import "dotenv/config"
+import { provider as databaseProvider, closeDatabase } from "./postgres.ts"
+import { storageProvider } from "./documentStorage.ts"
 import express from "express"
 import cors from "cors"
 import multer from "multer"
@@ -62,9 +64,20 @@ console.log(`[static] serving frontend from: ${DIST}`)
 
 const app = express()
 const PORT = process.env.PORT || 3000
+databaseProvider() // Reject invalid providers explicitly; DATABASE_URL never chooses the provider.
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || true }))
 app.use(express.json({ limit: "10mb" }))
+// Read endpoints can populate caches or projections, so freeze every API route
+// during the final snapshot/cutover, not just POST requests.
+app.use("/api", (_req, res, next) => {
+  if (process.env.WRITER_MAINTENANCE_MODE === "true") {
+    const smoke = process.env.WRITER_MAINTENANCE_ALLOW_ADMIN === "true";
+    const authAllowed = ["/auth/login", "/auth/refresh"].includes(_req.path);
+    if (!smoke || (_req.path.startsWith("/auth/") && !authAllowed)) return res.status(503).json({ error: "Writer Studio đang bảo trì dữ liệu. Vui lòng thử lại sau." })
+  }
+  next()
+})
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 1 },
@@ -172,6 +185,7 @@ app.use("/api", async (req: AuthenticatedRequest, res, next) => {
   try {
     const user = await getAuthenticatedUser(token)
     req.auth = { userId: user.id, email: user.email ?? "", role: userRole(user) }
+    if (process.env.WRITER_MAINTENANCE_MODE === "true" && req.auth.role !== "admin") return res.status(503).json({ error: "Writer Studio đang bảo trì dữ liệu." })
     // Users need read access to workflow context, but only admins may mutate
     // shared configuration, documents, or website inventory.
     const adminOnly = req.method !== "GET" && (req.path === "/config" || req.path.startsWith("/files") || req.path.startsWith("/website-inventory") || req.path.startsWith("/agent-library"))
@@ -3776,6 +3790,8 @@ app.use(express.static(DIST))
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
+    databaseProvider: databaseProvider(),
+    storageProvider: storageProvider(),
     version: "1.0.0",
     providers: getAvailableProviders(),
     seoResearch: seoResearchConfigured(),
@@ -3788,6 +3804,7 @@ app.get("/health", (_req, res) => {
 
 // Dependency diagnostics are kept separate from Railway's liveness probe.
 app.get("/health/dependencies", async (_req, res) => {
+  try {
   const supabaseOk = await checkConnection()
   const relationalContentPlans = supabaseOk
     ? await tableAvailable("content_plans")
@@ -3795,13 +3812,21 @@ app.get("/health/dependencies", async (_req, res) => {
   const threeStageSessions = supabaseOk
     ? await tableAvailable("article_stage_runs")
     : false
-  res.status(supabaseOk ? 200 : 503).json({
-    status: supabaseOk ? "ok" : "degraded",
-    supabase: supabaseOk,
+  const ready = supabaseOk && (databaseProvider() !== "postgres" || (relationalContentPlans && threeStageSessions))
+  res.status(ready ? 200 : 503).json({
+    status: ready ? "ok" : "degraded",
+    databaseProvider: databaseProvider(),
+    databaseConnected: supabaseOk,
+    supabase: databaseProvider() === "supabase" ? supabaseOk : null,
+    authProvider: "supabase",
+    storageProvider: storageProvider(),
     relationalContentPlans,
     threeStageSessions,
     supabaseUrl: process.env.SUPABASE_URL ?? null,
   })
+  } catch {
+    res.status(503).json({ status: "degraded", databaseProvider: databaseProvider(), databaseConnected: false })
+  }
 })
 
 app.post("/api/seo/research", async (req, res) => {
@@ -6027,19 +6052,11 @@ app.get("*", (_req, res) => {
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🚀 Writer Studio Backend running on port ${PORT}`)
   console.log(`   Providers: ${JSON.stringify(getAvailableProviders())}`)
-  console.log(
-    `   Supabase:  ${
-      !!(
-        process.env.SUPABASE_URL &&
-        (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY)
-      )
-        ? "✓ Connected"
-        : "✗ Not configured"
-    }\n`,
-  )
+  console.log(`   Database provider: ${databaseProvider()} (connection checked at /health/dependencies); Auth: Supabase; Files: ${storageProvider()}`)
+  if (process.env.WRITER_MAINTENANCE_MODE === "true" || process.env.RUN_LEGACY_PROJECTION_ON_START !== "true") return
   void (async () => {
     if (!(await tableAvailable("writer_articles"))) return
     const articles = await loadArticles()
@@ -6059,3 +6076,9 @@ app.listen(PORT, () => {
     console.error("[migration] relational projection failed:", error),
   )
 })
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    server.close(() => { void closeDatabase().finally(() => process.exit(0)) })
+    setTimeout(() => { void closeDatabase().finally(() => process.exit(0)) }, 10000).unref()
+  })
+}

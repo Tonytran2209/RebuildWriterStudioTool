@@ -1,7 +1,7 @@
 ---
 schema: agent-hub/data-model/v1
 projectId: writer-studio
-sourceOfTruth: supabase/migrations
+sourceOfTruth: supabase/migrations + backend/migrations
 ---
 
 # Database contract
@@ -30,6 +30,12 @@ sourceOfTruth: supabase/migrations
 - Agent Library chunks mirror a canonical Git version; they are not independently editable source documents.
 
 ## Migration rules
+
+- Database provider is explicit: DATABASE_PROVIDER=supabase (default) or postgres. DATABASE_URL alone never changes routing. PostgreSQL tables are isolated in writer_studio; Auth and Supabase Query remain on Supabase.
+- backend/migrations/001_writer_studio.sql is the destination baseline; npm run db:migrate is explicit, ledger/checksum protected and advisory-locked. No startup schema migration. Legacy projection is disabled unless explicitly opted in.
+- Shared-source row ownership must be confirmed by exact ID/key manifests; code/table names do not establish production ownership. Import is dry-run by default, uses a read-only source snapshot, and commits only with --apply after counts, full-row checksums and FK validation.
+- PostgreSQL stage revision allocation is transaction-locked and deduplicates input fingerprints so approve/backtrack/regenerate does not reuse a revision number.
+- Production cutover/rollback, file migration and remaining dependencies: docs/postgres-migration.md. No automatic reverse migration into shared Supabase.
 
 - All schema changes require a new ordered SQL migration; never rewrite an applied migration.
 - Additive, backward-compatible changes are preferred. Contract removals require a deprecation plan.

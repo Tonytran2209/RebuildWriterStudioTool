@@ -4,6 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "db:migrate": "npm --prefix backend run db:migrate",
+    "db:scope": "npm --prefix backend run db:scope --",
+    "db:import": "npm --prefix backend run db:import --",
+    "db:files": "npm --prefix backend run db:files --",
     "dev": "vite --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run build && npm --prefix backend run typecheck",

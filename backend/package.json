@@ -5,6 +5,10 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
+    "db:migrate": "tsx dbMigrate.ts",
+    "db:scope": "tsx dbScope.ts",
+    "db:import": "tsx dbImport.ts",
+    "db:files": "tsx dbFiles.ts",
     "start": "tsx index.ts",
     "dev": "tsx watch index.ts",
     "test": "node --import tsx --test *.test.ts",
@@ -27,14 +31,17 @@
     "multer": "^2.2.0",
     "openai": "^4.100.0",
     "pdfjs-dist": "^5.4.149",
+    "pg": "^8.23.1",
     "read-excel-file": "^9.3.5",
     "tsx": "^4.19.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.2",
     "@types/multer": "^2.2.0",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.7.0"
   }
 }
