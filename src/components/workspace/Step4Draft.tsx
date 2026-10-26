@@ -217,6 +217,16 @@ const semanticQualitySchema: Record<string, unknown> = {
   },
 };
 
+function semanticSchemaFor(ids: readonly string[]): Record<string, unknown> {
+  return {
+    type: 'object', additionalProperties: false, required: ['checks'],
+    properties: { checks: {
+      type: 'object', additionalProperties: false, required: [...ids],
+      properties: Object.fromEntries(ids.map(id => [id, semanticCheckSchema])),
+    } },
+  };
+}
+
 function buildSectionBudget(outline: NonNullable<Article['outline']>, wordTarget: number, conclusionPercent = 7) {
   const targetMin = Math.ceil(wordTarget * 0.95);
   const targetMax = Math.floor(wordTarget * 1.03);
@@ -336,7 +346,7 @@ function evaluateSeoChecklist(text: string, article: Article, targetWords: numbe
   return { items, failed: items.filter(item => !item.pass), primaryKeyword, markdownTitle, wordCount };
 }
 
-export function parseSemanticQuality(raw: string): QualityGateCheck[] {
+export function parsePartialSemanticQuality(raw: string): QualityGateCheck[] {
   const parsed = parseAIJson(raw) as Record<string, unknown> & { checks?: Array<Record<string, unknown>> | Record<string, Record<string, unknown>> };
   const required = new Set<string>(semanticCheckIds);
   // Structured-output support varies by provider. Some providers preserve the
@@ -381,6 +391,11 @@ export function parseSemanticQuality(raw: string): QualityGateCheck[] {
         : 'fail';
     return [{ id, label: String(item.label ?? id), kind: 'semantic' as const, status, reason: String(item.reason ?? '').trim(), evidence: String(item.evidence ?? '').trim(), location: String(item.location ?? '').trim(), recommendedAction: String(item.recommendedAction ?? '').trim(), autoFixAllowed: Boolean(item.autoFixAllowed), blocking: typeof item.blocking === 'boolean' ? item.blocking : undefined }];
   });
+  return checks;
+}
+
+export function parseSemanticQuality(raw: string): QualityGateCheck[] {
+  const checks = parsePartialSemanticQuality(raw);
   const present = new Set(checks.map(item => item.id));
   const missing = semanticCheckIds.filter(id => !present.has(id));
   if (missing.length) throw new Error(`Semantic reviewer chưa hoàn tất báo cáo; thiếu: ${missing.join(', ')}. Draft chưa bị đánh dấu fail.`);
@@ -519,6 +534,14 @@ export function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck
     recommendedAction: 'Review the saved draft or run Re-check & Fix manually.',
     autoFixAllowed: false,
   }];
+}
+
+function partialSemanticReviewChecks(raw: string, error: unknown): QualityGateCheck[] {
+  try {
+    return [...parsePartialSemanticQuality(raw), ...incompleteSemanticReviewChecks(error)];
+  } catch {
+    return incompleteSemanticReviewChecks(error);
+  }
 }
 
 function evidenceMappingChecks(
@@ -1025,7 +1048,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         try {
           return { response, checks: parseSemanticQuality(response.content), schemaComplete: true };
         } catch (error) {
-          return { response, checks: incompleteSemanticReviewChecks(error), schemaComplete: false };
+          return { response, checks: partialSemanticReviewChecks(response.content, error), schemaComplete: false };
         }
       };
       const semanticKey = semanticReviewFingerprint(article, assembledDraft, evidenceUsage)
@@ -1229,7 +1252,39 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         }
       }
 
-      const reviewSemantic = async (value: string) => {
+      const reviewSemantic = async (value: string, previous: QualityGateCheck[] = []) => {
+        const validPrevious = previous.filter(check => semanticCheckIds.some(id => id === check.id) && check.kind === 'semantic');
+        const missing = semanticCheckIds.filter(id => !validPrevious.some(check => check.id === id));
+        const completeMissing = async (partial: QualityGateCheck[]) => {
+          const needed = semanticCheckIds.filter(id => !partial.some(check => check.id === id));
+          if (!needed.length) return { checks: partial, schemaComplete: true };
+          const recovery = await callAI({
+            articleId: reviewArticle.id,
+            model, railwayUrl, stepNumber: 4, bypassCache: true, requestPurpose: 'recheck',
+            maxTokens: Math.max(650, needed.length * 320), temperature: 0,
+            jsonMode: true, jsonSchema: semanticSchemaFor(needed), skipDocumentContext: true,
+            systemPrompt: 'You are a strict publishing quality reviewer. Evaluate only the requested missing checks. Return concise JSON matching the schema. Do not rewrite the draft. Never assume evidence or brand alignment without support.',
+            prompt: [
+              `MISSING CHECKS: ${needed.join(', ')}`,
+              `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
+              `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+              `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
+              `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
+              `DRAFT: ${value}`,
+              EVIDENCE_REVIEW_INSTRUCTION,
+              `Return only these checks: ${needed.join(', ')}.`,
+            ].join('\n\n'),
+          });
+          const additions = parsePartialSemanticQuality(recovery.content).filter(check => needed.some(id => id === check.id));
+          const combined = [...partial, ...additions];
+          const remaining = semanticCheckIds.filter(id => !combined.some(check => check.id === id));
+          if (remaining.length) throw new Error(`Semantic reviewer chưa hoàn tất báo cáo; thiếu: ${remaining.join(', ')}. Draft chưa bị đánh dấu fail.`);
+          return { checks: combined, schemaComplete: true };
+        };
+        if (validPrevious.length && missing.length) {
+          try { return await completeMissing(validPrevious); }
+          catch (error) { return { checks: [...validPrevious, ...incompleteSemanticReviewChecks(error)], schemaComplete: false }; }
+        }
         const requestReview = () => callAI({
           articleId: reviewArticle.id,
           model,
@@ -1256,37 +1311,11 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         try {
           return { checks: parseSemanticQuality(response.content), schemaComplete: true };
         } catch (error) {
-          // Re-check & Fix is user-initiated, so one compact schema recovery is
-          // preferable to leaving an otherwise valid draft permanently blocked
-          // by an incomplete reviewer payload.
+          const partial = partialSemanticReviewChecks(response.content, error).filter(check => check.id !== 'semantic-review-schema');
           try {
-            const recovery = await callAI({
-              articleId: reviewArticle.id,
-              model,
-              railwayUrl,
-              stepNumber: 4,
-              bypassCache: true,
-              requestPurpose: 'recheck',
-              maxTokens: 1600,
-              temperature: 0,
-              jsonMode: true,
-              jsonSchema: semanticQualitySchema,
-              skipDocumentContext: true,
-              systemPrompt: 'You are a structured-output recovery reviewer. Return one complete JSON object matching the required schema exactly. Evaluate the supplied draft; do not rewrite it and do not omit any check.',
-              prompt: [
-                `PARSING ERROR: ${error instanceof Error ? error.message : String(error)}`,
-                `INCOMPLETE REVIEWER RESPONSE: ${response.content}`,
-                `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
-                `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
-                `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections)}`,
-                EVIDENCE_REVIEW_INSTRUCTION,
-                `DRAFT: ${value}`,
-                `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}. Keep every field concise.`,
-              ].join('\n\n'),
-            });
-            return { checks: parseSemanticQuality(recovery.content), schemaComplete: true };
+            return await completeMissing(partial);
           } catch (recoveryError) {
-            return { checks: incompleteSemanticReviewChecks(recoveryError), schemaComplete: false };
+            return { checks: [...partial, ...incompleteSemanticReviewChecks(recoveryError)], schemaComplete: false };
           }
         }
       };
@@ -1294,7 +1323,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       const semanticKey = semanticReviewFingerprint(reviewArticle, candidateDraft, reviewArticle.draftEvidenceUsage ?? {})
       let semanticReview = reviewArticle.semanticReviewFingerprint === semanticKey && completeSemanticChecks(reviewArticle.semanticReviewChecks)
         ? { checks: reviewArticle.semanticReviewChecks, schemaComplete: true, cached: true }
-        : await reviewSemantic(candidateDraft);
+        : await reviewSemantic(candidateDraft, reviewArticle.semanticReviewFingerprint === semanticKey ? reviewArticle.semanticReviewChecks ?? [] : []);
       let semantic = semanticReview.checks;
       const semanticFindings = semantic
         .filter(item => item.status !== 'pass')
@@ -1320,12 +1349,12 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           stage: 're-check',
           status: 'warning',
           title: 'Re-check paused: reviewer report incomplete',
-          detail: 'The semantic reviewer did not return a complete report. The draft was saved unchanged; no automatic repair or retry was run.',
+          detail: 'The semantic reviewer still did not return all required checks after a focused recovery request. The draft was saved unchanged; no content repair was run.',
           facts: { result: 'warning', reviewerSchemaComplete: false, passedChecks: report.checks.filter(item => item.status === 'pass').length, totalChecks: report.checks.length },
         });
         await saveReview({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace, semanticReviewFingerprint: semanticKey, semanticReviewChecks: semantic });
         if (editorRef.current) editorRef.current.innerText = displayDraft(candidateDraft);
-        notifyWorkspace('Re-check đã lưu draft. Reviewer trả báo cáo chưa đầy đủ nên hệ thống không tự repair hoặc lặp lại AI call.', 'warning');
+        notifyWorkspace('Re-check đã lưu draft. Reviewer vẫn trả báo cáo chưa đầy đủ sau khi kiểm tra bổ sung; bài viết chưa bị tự sửa.', 'warning');
         return;
       }
 
