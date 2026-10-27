@@ -168,15 +168,26 @@ test('qc-recheck refreshes changed evidence context then requests only missing s
 
 for(const status of ['pass','warning','fail'])test(`qc-status-display qc-evidence-details preserves reviewer ${status}`,async({page})=>{
  await openQcFixture(page,status);
+ // App supplies this ancestor; the isolated component fixture must use the same theme.
+ await page.locator('#root').evaluate(root=>root.classList.add('codex-dark'));
  const row=page.locator('[data-qc-check="evidence-support"]');
  await expect(row).toHaveAttribute('data-qc-status',status);
- await expect(row).toHaveClass(new RegExp(status==='pass'?'text-emerald-700':status==='warning'?'text-amber-700':'text-rose-700'));
- await expect(row.locator(`[data-qc-icon="${status}"]`)).toBeVisible();
+ const panel=page.locator('.universal-qc-panel');
+ await expect(panel.locator('h3')).toHaveCSS('color','rgb(255, 255, 255)');
+ await expect(panel.locator('.seo-score-tag')).toHaveCSS('color','rgb(255, 255, 255)');
+ await expect(panel.locator('.seo-score-tag')).toHaveCSS('background-color','rgb(34, 34, 34)');
+ await expect(panel.locator('.seo-score-tag')).toHaveCSS('border-top-color','rgb(58, 58, 58)');
+ await expect(row).toHaveCSS('color','rgb(255, 255, 255)');
+ for(const text of await row.locator('span').all())await expect(text).toHaveCSS('color','rgb(255, 255, 255)');
+ const icon=row.locator(`[data-qc-icon="${status}"]`);
+ await expect(icon).toBeVisible();
+ await expect(icon).toHaveCSS('color',status==='pass'?'rgb(52, 211, 153)':status==='warning'?'rgb(245, 158, 11)':'rgb(251, 113, 133)');
  await expect(row).toContainText(status==='pass'?/Pass|Đạt/:status==='warning'?/Warning|Cảnh báo/:/Fail|Thất bại/);
  if(status!=='pass'){
   await row.locator('summary').click();
   await expect(row.getByText('Fixture review finding:',{exact:false})).toBeVisible();
   await expect(row.getByText('Compare the claim',{exact:false})).toBeVisible();
+  for(const detail of await row.locator('p').all())await expect(detail).toHaveCSS('color','rgb(255, 255, 255)');
   expect(await row.evaluate(e=>e.scrollWidth<=e.clientWidth+1)).toBe(true);
  }
  const stale=page.locator('[data-qc-check="quality-review-stale"]');
