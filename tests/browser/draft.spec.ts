@@ -327,7 +327,7 @@ async function compactQcFixture(page:import('@playwright/test').Page){
  });
  await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
 }
-test('qc-compact independent collapsed findings preserve complete reason and action',async({page})=>{
+test('qc-compact independent collapsed findings preserve complete reason and action',async({page},info)=>{
  await compactQcFixture(page);
  const pass=page.locator('[data-qc-check="intent-satisfied"]');
  const warning=page.locator('[data-qc-check="reader-outcome"]');
@@ -344,7 +344,7 @@ test('qc-compact independent collapsed findings preserve complete reason and act
   const layout=await detail.evaluate(e=>{
    const style=getComputedStyle(e);
    const probe=document.createElement('div');
-   probe.style.cssText='position:absolute;width:36ch;visibility:hidden';
+   probe.style.cssText='position:absolute;width:60ch;visibility:hidden';
    e.appendChild(probe);
    const limit=probe.getBoundingClientRect().width;
    probe.remove();
@@ -365,6 +365,29 @@ test('qc-compact independent collapsed findings preserve complete reason and act
   expect(layout.border).toBe('solid');
   expect(layout.borderWidth).toBeGreaterThan(0);
   expect(layout.spacing).toBeGreaterThan(0);
+  // Controlled geometry checks the cap even when the real inspector is only 236px.
+  // This synthetic wide container is not a production layout reproduction.
+  const wide=await detail.evaluate(e=>{
+   const parent=e.parentElement!;
+   const originalStyle=parent.getAttribute('style');
+   try{
+    parent.style.width='800px';
+    const probe=document.createElement('div');
+    probe.style.cssText='position:absolute;width:36ch;visibility:hidden';
+    e.appendChild(probe);
+    const oldLimit=probe.getBoundingClientRect().width;
+    probe.style.width='60ch';
+    const limit=probe.getBoundingClientRect().width;
+    probe.remove();
+    return {width:e.getBoundingClientRect().width,oldLimit,limit,parentWidth:parent.getBoundingClientRect().width};
+   }finally{
+    if(originalStyle===null) parent.removeAttribute('style');
+    else parent.setAttribute('style',originalStyle);
+   }
+  });
+  expect(wide.width).toBeGreaterThan(wide.oldLimit+1);
+  expect(wide.width).toBeCloseTo(wide.limit,0);
+  expect(wide.width).toBeLessThan(wide.parentWidth);
   for(const paragraph of await row.locator('p').all()){
    await expect(paragraph).toHaveCSS('color','rgb(255, 255, 255)');
    expect(await paragraph.evaluate(e=>{
@@ -374,6 +397,7 @@ test('qc-compact independent collapsed findings preserve complete reason and act
    })).toBe(true);
   }
  }
+ await page.screenshot({path:info.outputPath('qc-expanded-details.png'),fullPage:true});
  await warning.locator('summary').click();
  await expect(warning.locator('details')).not.toHaveAttribute('open','');
  await expect(fail.locator('details')).toHaveAttribute('open','');
