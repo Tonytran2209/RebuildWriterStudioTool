@@ -24,7 +24,7 @@ test('Rules importer retains successful documents after a partial upload failure
     { name: 'another.md', mimeType: 'text/markdown', buffer: Buffer.from('Guide two') },
   ]);
   await expect(page.getByRole('status')).toContainText('2/3');
-  await expect(page.getByRole('alert')).toContainText('empty.txt: No readable text');
+  await expect(page.getByRole('alert').filter({hasText:'empty.txt: No readable text'})).toContainText('empty.txt: No readable text');
   await expect(page.getByTestId('library-records')).toContainText('file-3');
   const records = JSON.parse(await page.getByTestId('library-records').innerText());
   expect(records).toHaveLength(2);
