@@ -1734,7 +1734,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                         {heading}
                         <ChevronDown className="app-icon shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
                       </summary>
-                      <div className="ml-7 mr-1 mt-2 min-w-0 max-w-[60ch] space-y-2 border-l border-neutral-700 py-1 pl-3 font-normal">
+                      <div className="ml-7 mr-1 mt-2 min-w-0 max-w-[132ch] space-y-2 border-l border-neutral-700 py-1 pl-3 font-normal">
                         {item.reason && <p className="whitespace-pre-wrap">{item.reason}</p>}
                         {item.recommendedAction && <p className="whitespace-pre-wrap">{tr('Đề xuất', 'Recommended action')}: {item.recommendedAction}</p>}
                       </div>

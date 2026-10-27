@@ -344,7 +344,7 @@ test('qc-compact independent collapsed findings preserve complete reason and act
   const layout=await detail.evaluate(e=>{
    const style=getComputedStyle(e);
    const probe=document.createElement('div');
-   probe.style.cssText='position:absolute;width:60ch;visibility:hidden';
+   probe.style.cssText='position:absolute;width:132ch;visibility:hidden';
    e.appendChild(probe);
    const limit=probe.getBoundingClientRect().width;
    probe.remove();
@@ -371,12 +371,12 @@ test('qc-compact independent collapsed findings preserve complete reason and act
    const parent=e.parentElement!;
    const originalStyle=parent.getAttribute('style');
    try{
-    parent.style.width='800px';
+    parent.style.width='2000px';
     const probe=document.createElement('div');
-    probe.style.cssText='position:absolute;width:36ch;visibility:hidden';
+    probe.style.cssText='position:absolute;width:60ch;visibility:hidden';
     e.appendChild(probe);
     const oldLimit=probe.getBoundingClientRect().width;
-    probe.style.width='60ch';
+    probe.style.width='132ch';
     const limit=probe.getBoundingClientRect().width;
     probe.remove();
     return {width:e.getBoundingClientRect().width,oldLimit,limit,parentWidth:parent.getBoundingClientRect().width};
