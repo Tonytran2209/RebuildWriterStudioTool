@@ -30,6 +30,7 @@ jobs:
       - run: npm run check
 
   browser-check:
+    if: ${{ vars.LAB_BROWSER_TESTS != 'disabled' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
