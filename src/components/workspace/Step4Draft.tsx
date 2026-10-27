@@ -1723,7 +1723,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                       : item.status === 'warning'
                         ? <TriangleAlert data-qc-icon="warning" className="app-icon shrink-0 text-amber-700" aria-hidden="true" />
                         : <CircleX data-qc-icon="fail" className="app-icon shrink-0 text-rose-700" aria-hidden="true" />}
-                    <span className="min-w-0 flex-1">
+                    <span className="min-w-0 flex-1 font-semibold">
                       {item.label}
                       <span className="ml-1 font-medium">{item.status === 'pass' ? tr('Đạt', 'Pass') : item.status === 'warning' ? tr('Cảnh báo', 'Warning') : tr('Thất bại', 'Fail')}</span>
                     </span>
@@ -1734,7 +1734,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                         {heading}
                         <ChevronDown className="app-icon shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
                       </summary>
-                      <div className="min-w-0 space-y-1 pb-1 pl-7 pr-1">
+                      <div className="ml-7 mr-1 mt-2 min-w-0 max-w-[36ch] space-y-2 border-l border-neutral-700 py-1 pl-3 font-normal">
                         {item.reason && <p className="whitespace-pre-wrap">{item.reason}</p>}
                         {item.recommendedAction && <p className="whitespace-pre-wrap">{tr('Đề xuất', 'Recommended action')}: {item.recommendedAction}</p>}
                       </div>
