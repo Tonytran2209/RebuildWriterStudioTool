@@ -9,7 +9,7 @@ async function open(page:Page){
  });
  await page.route('**/*',route=>{
   const request=route.request();const url=new URL(request.url());
-  return request.method()!=='GET'||url.pathname.startsWith('/api/')||!['127.0.0.1','localhost'].includes(url.hostname)?route.abort():route.continue();
+  return request.method()!=='GET'||url.pathname.startsWith('/api/')||!['127.0.0.1','localhost'].includes(url.hostname)?route.abort():route.fallback();
  });
  await page.goto('/?reopen');
  await expect(page.locator('.core-idea-select-area')).toHaveCount(2);

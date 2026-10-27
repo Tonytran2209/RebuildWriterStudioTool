@@ -13,7 +13,7 @@ test('Rules importer retains successful documents after a partial upload failure
       if (uploads === 2) return route.fulfill({ status: 422, json: { error: 'No readable text' } });
       return route.fulfill({ json: { target: 'writer:files', record: { id: `file-${uploads}`, name: `guide-${uploads}.md`, category: 'rules', content: 'Writing guide', fileType: 'md' } } });
     }
-    return route.continue();
+    return route.fallback();
   });
   await page.goto('/?library');
   await expect(page.getByText(/File gốc: Volume Railway/)).toBeVisible();

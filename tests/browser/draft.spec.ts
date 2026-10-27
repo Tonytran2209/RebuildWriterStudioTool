@@ -3,7 +3,7 @@ import {formatDraftExport} from '../../backend/draftFormatter';
 test('Draft preview preserves body, full editing and stored source',async({page},info)=>{
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  // A fixture must never call a real backend or an AI provider.
- await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
+ await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.fallback():route.abort());
  await page.goto('/');
  const editButton=page.getByRole('button',{name:/Chỉnh sửa toàn bộ bản nháp|Edit full draft/});
  const editor=page.locator('[contenteditable="true"]');
@@ -48,7 +48,7 @@ test('Copy normalizes punctuation and preserves rich tables without mutating sou
      const input=route.request().postDataJSON();
      expect(input.draft).not.toContain('—');
      await route.fulfill({json:formatDraftExport(input.draft,input.title,input.outline)});
-   } else if(url.hostname==='127.0.0.1') await route.continue();
+   } else if(url.hostname==='127.0.0.1') await route.fallback();
    else await route.abort();
  });
  await page.goto('/');
@@ -67,7 +67,7 @@ test('Copy normalizes punctuation and preserves rich tables without mutating sou
 
 // These scenarios run in GitHub browser-check; the Mac LaunchAgent must not launch a browser.
 async function openQcFixture(page:import('@playwright/test').Page,status:string){
- await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
+ await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.fallback():route.abort());
  await page.goto(`/?qc=${status}`);
  await page.getByRole('button',{name:'QC',exact:true}).click();
 }
@@ -116,7 +116,7 @@ async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incom
  await page.route('**/*',async route=>{
   const url=new URL(route.request().url());
   if(url.hostname!=='127.0.0.1')return route.abort();
-  if(url.pathname!=='/api/generate')return route.continue();
+  if(url.pathname!=='/api/generate')return route.fallback();
   const body=route.request().postDataJSON();calls.push(body);
   const reviewer=/publishing quality reviewer|structured-output recovery reviewer/.test(body.systemPrompt);
   const requested=body.systemPrompt.includes('requested missing checks') ? ['brand-pov'] : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support',...(incomplete?[]:['brand-pov'])];

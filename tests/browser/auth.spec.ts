@@ -14,7 +14,7 @@ test('PostgreSQL auth restores cookie session after reload without persisting to
       return route.fulfill({json:payload});
     }
     if(url.pathname === '/api/auth/logout'){logouts++;return route.fulfill({json:{ok:true},headers:{'Set-Cookie':'writer_refresh=; Max-Age=0; Path=/api/auth'}});}
-    return route.continue();
+    return route.fallback();
   });
   await page.goto('/?auth');
   await page.getByLabel('Email',{exact:true}).fill('user@example.com');
@@ -44,7 +44,7 @@ test('Email confirmation submits one-time token explicitly and clears URL fragme
       expect(route.request().postDataJSON().token).toBe('ONE_TIME_TOKEN');
       confirmations++;return route.fulfill({json:{message:'Email verified fixture'}});
     }
-    return route.continue();
+    return route.fallback();
   });
   await page.goto('/?auth#type=verification&access_token=ONE_TIME_TOKEN');
   await expect(page).not.toHaveURL(/ONE_TIME_TOKEN/);
