@@ -1,0 +1,9 @@
+{
+  "protocol": "writer-ci-v1",
+  "workflow": ".github/workflows/check.yml",
+  "browserConfig": "playwright.config.ts",
+  "playwrightVersion": "1.64.1",
+  "fixtureBootstrap": "tests/browser/bootstrap.tsx",
+  "fixtureIsolation": "tests/browser/browser-fixture.ts",
+  "toolsMode": "pinned-base"
+}

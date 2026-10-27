@@ -1,4 +1,4 @@
-import {test,expect,type Page} from '@playwright/test';
+import {test,expect,type Page} from './browser-fixture';
 
 // Run by browser-check on both desktop and mobile; no local browser launch.
 async function open(page:Page){

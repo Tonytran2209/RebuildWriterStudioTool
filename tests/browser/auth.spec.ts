@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './browser-fixture';
 test('PostgreSQL auth restores cookie session after reload without persisting tokens', async ({ page }) => {
   let refreshes = 0, logouts = 0;
   await page.route('**/*', async route => {

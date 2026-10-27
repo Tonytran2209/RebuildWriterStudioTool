@@ -1,17 +1,15 @@
+import {mountFixture} from './bootstrap';
 import React,{useState,useEffect} from 'react';
 import LoginScreen from '../../src/components/LoginScreen';
 import TabKnowledgeBase from '../../src/components/config/TabKnowledgeBase';
 import * as auth from '../../src/lib/db';
-import {createRoot} from 'react-dom/client';
 import Step2CoreIdea from '../../src/components/workspace/Step2CoreIdea';
 import Step3Outline from '../../src/components/workspace/Step3Outline';
 import Step4Draft, {parseSemanticQuality, completeSemanticChecks, incompleteSemanticReviewChecks} from '../../src/components/workspace/Step4Draft';
 import {normalizeArticleSpec,articleSpecFingerprint} from '../../src/lib/articleSpec';
 import {INTRODUCTION_INSTRUCTION} from '../../src/lib/introductionPolicy';
 import {EVIDENCE_REVIEW_INSTRUCTION} from '../../src/lib/qualityPolicy';
-import {LanguageProvider} from '../../src/lib/i18n';
 import {DEFAULT_CONFIG,DEFAULT_MODELS} from '../../src/lib/defaultData';
-import '../../src/index.css';import '../../src/codex-theme.css';
 const original='# Browser fixture\n\n'+Array.from({length:9},(_,i)=>`Introduction line ${i+1} — unchanged source.`).join('\n')+'\n\n## Main body\nBODY_SENTINEL: This entire section remains visible.\n\n| Option | Benefit |\n| --- | --- |\n| **A — B** | [Details](https://example.com/details) |\n\n## Conclusion\nCONCLUSION_SENTINEL: Keep this section.';
 const qcIds=['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov'];
 const qcStatus=new URLSearchParams(location.search).get('qc');
@@ -61,4 +59,4 @@ function LibraryFixture(){
  const [config,setConfig]=useState(DEFAULT_CONFIG);
  return <main><TabKnowledgeBase files={files} onChange={setFiles} railwayUrl="http://127.0.0.1:4173" config={config} onConfigChange={setConfig}/><pre data-testid="library-records">{JSON.stringify(files)}</pre><pre data-testid="library-access">{JSON.stringify(config.stepConfigs[4].fileAccess)}</pre></main>;
 }
-createRoot(document.getElementById('root')!).render(<LanguageProvider>{new URLSearchParams(location.search).has('library')?<LibraryFixture/>:new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>}</LanguageProvider>);
+mountFixture(new URLSearchParams(location.search).has('library')?<LibraryFixture/>:new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>);

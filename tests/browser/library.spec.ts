@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './browser-fixture';
 
 test('Rules importer retains successful documents after a partial upload failure', async ({ page }) => {
   let uploads = 0;
