@@ -168,6 +168,8 @@ test('qc-recheck refreshes changed evidence context then requests only missing s
 
 for(const status of ['pass','warning','fail'])test(`qc-status-display qc-evidence-details preserves reviewer ${status}`,async({page})=>{
  await openQcFixture(page,status);
+ // App supplies this ancestor; the isolated component fixture must use the same theme.
+ await page.locator('#root').evaluate(root=>root.classList.add('codex-dark'));
  const row=page.locator('[data-qc-check="evidence-support"]');
  await expect(row).toHaveAttribute('data-qc-status',status);
  const panel=page.locator('.universal-qc-panel');
