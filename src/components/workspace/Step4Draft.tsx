@@ -1712,23 +1712,23 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             </section>}
 
             {/* Universal Quality Gate */}
-            {insightPanel === 'quality' && <section className="draft-insight-panel space-y-2.5 p-3">
+            {insightPanel === 'quality' && <section className="universal-qc-panel draft-insight-panel space-y-2.5 p-3">
               <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">Universal QC</h3><span className={`seo-score-tag rounded-full border px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'is-pass' : ''}`}>{displayedQualityChecks.filter(item => item.status === 'pass').length}/{displayedQualityChecks.length}</span></div>
               <div className="space-y-1.5">
                 {displayedQualityChecks.map(item => {
                   const hasDetails = item.status !== 'pass' && Boolean(item.reason?.trim() || item.recommendedAction?.trim());
                   const heading = <>
                     {item.status === 'pass'
-                      ? <Check data-qc-icon="pass" className="app-icon shrink-0" aria-hidden="true" />
+                      ? <Check data-qc-icon="pass" className="app-icon shrink-0 text-emerald-700" aria-hidden="true" />
                       : item.status === 'warning'
-                        ? <TriangleAlert data-qc-icon="warning" className="app-icon shrink-0" aria-hidden="true" />
-                        : <CircleX data-qc-icon="fail" className="app-icon shrink-0" aria-hidden="true" />}
+                        ? <TriangleAlert data-qc-icon="warning" className="app-icon shrink-0 text-amber-700" aria-hidden="true" />
+                        : <CircleX data-qc-icon="fail" className="app-icon shrink-0 text-rose-700" aria-hidden="true" />}
                     <span className="min-w-0 flex-1">
                       {item.label}
                       <span className="ml-1 font-medium">{item.status === 'pass' ? tr('Đạt', 'Pass') : item.status === 'warning' ? tr('Cảnh báo', 'Warning') : tr('Thất bại', 'Fail')}</span>
                     </span>
                   </>;
-                  return <div key={item.id} data-qc-check={item.id} data-qc-status={item.status} className={`min-w-0 break-words text-[10px] leading-snug [overflow-wrap:anywhere] ${item.status === 'pass' ? 'text-emerald-700' : item.status === 'warning' ? 'text-amber-700' : 'text-rose-700'}`}>
+                  return <div key={item.id} data-qc-check={item.id} data-qc-status={item.status} className="min-w-0 break-words text-[10px] leading-snug [overflow-wrap:anywhere]">
                     {hasDetails ? <details className="group min-w-0">
                       <summary className="flex min-w-0 cursor-pointer list-none items-start gap-2 rounded px-1 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 [&::-webkit-details-marker]:hidden">
                         {heading}

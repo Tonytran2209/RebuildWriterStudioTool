@@ -222,6 +222,17 @@
 .codex-dark .draft-editor .prose-editor { color: var(--cx-text) !important; font-size: .875rem; line-height: 1.75; }
 .codex-dark .draft-editor + div { background: #181818 !important; border: 1px solid var(--cx-border); border-radius: .75rem !important; }
 
+/* Universal QC keeps semantic color on status icons only. */
+.codex-dark .minimal-step-shell .universal-qc-panel,
+.codex-dark .minimal-step-shell .universal-qc-panel h3,
+.codex-dark .minimal-step-shell .universal-qc-panel .seo-score-tag {
+  color: #fff !important;
+}
+.codex-dark .minimal-step-shell .universal-qc-panel .seo-score-tag {
+  background: #222 !important;
+  border-color: #3a3a3a !important;
+}
+
 /* Settings */
 .codex-dark .minimal-settings { background: rgb(0 0 0 / 72%) !important; padding: 1.25rem !important; }
 .codex-dark .settings-shell {
