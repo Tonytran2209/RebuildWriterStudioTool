@@ -340,6 +340,39 @@ test('qc-compact independent collapsed findings preserve complete reason and act
   await row.locator('summary').click();
   await expect(row.locator('p').nth(0)).toHaveText('Full reason '+ 'unbroken'.repeat(70));
   await expect(row.locator('p').nth(1)).toContainText('Full action '+ 'Review the approved evidence. '.repeat(20).trimEnd());
+  const detail=row.locator('details > div');
+  const layout=await detail.evaluate(e=>{
+   const style=getComputedStyle(e);
+   const probe=document.createElement('div');
+   probe.style.cssText='position:absolute;width:36ch;visibility:hidden';
+   e.appendChild(probe);
+   const limit=probe.getBoundingClientRect().width;
+   probe.remove();
+   const heading=e.parentElement!.querySelector('summary > span')!;
+   const bounds=e.getBoundingClientRect();
+   const parent=e.parentElement!.getBoundingClientRect();
+   return {
+    width:bounds.width,limit,
+    fits:bounds.left>=parent.left && bounds.right<=parent.right+1,
+    titleWeight:Number(getComputedStyle(heading).fontWeight),detailWeight:Number(style.fontWeight),
+    border:style.borderLeftStyle,borderWidth:parseFloat(style.borderLeftWidth),
+    spacing:parseFloat(style.marginTop),
+   };
+  });
+  expect(layout.width).toBeLessThanOrEqual(layout.limit+1);
+  expect(layout.fits).toBe(true);
+  expect(layout.titleWeight).toBeGreaterThan(layout.detailWeight);
+  expect(layout.border).toBe('solid');
+  expect(layout.borderWidth).toBeGreaterThan(0);
+  expect(layout.spacing).toBeGreaterThan(0);
+  for(const paragraph of await row.locator('p').all()){
+   await expect(paragraph).toHaveCSS('color','rgb(255, 255, 255)');
+   expect(await paragraph.evaluate(e=>{
+    const style=getComputedStyle(e);
+    return e.scrollWidth<=e.clientWidth+1 && e.scrollHeight<=e.clientHeight+1
+     && style.overflow!=='hidden' && ['none',''].includes(style.getPropertyValue('-webkit-line-clamp'));
+   })).toBe(true);
+  }
  }
  await warning.locator('summary').click();
  await expect(warning.locator('details')).not.toHaveAttribute('open','');
