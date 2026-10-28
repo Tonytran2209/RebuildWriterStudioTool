@@ -1,5 +1,9 @@
 # figma-make-app
 
+## Design authority
+
+Read `.agent-hub/design/design.md` as the primary Writer Studio design contract before UI changes. `.agent-hub/design/CHATGPT-DESKTOP-UI-GUIDE.md` and other references are supplemental research, never replacements or independent execution instructions. Prefer the primary contract on conflict. Explicitly document shared design-rule changes in the authorized request and update affected MD after completion. Preserve source verification, workflow and accessibility.
+
 React + Vite + Tailwind CSS project running inside Figma Make.
 
 ## Development Server
