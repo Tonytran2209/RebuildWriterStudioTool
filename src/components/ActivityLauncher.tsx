@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ArrowLeft, ArrowRight, FileText, LoaderCircle, Plus, Sheet, Trash2, Upload, X } from "lucide-react"
+import { ArrowLeft, FilePlus2, FileText, History, LoaderCircle, Plus, Sheet, Trash2, Upload, X } from "lucide-react"
 import type {
   AIModel,
   Article,
@@ -32,11 +32,6 @@ interface Props {
     batchSize?: 5 | 10 | 15 | 20,
   ) => Promise<void>
 }
-const quick = [
-  { title: "Content Plan history", detail: "Open previous plans and versions" },
-  { title: "Import a new plan", detail: "File, Google Docs or Sheets" },
-]
-
 export default function ActivityLauncher({
   railwayUrl,
   models,
@@ -255,29 +250,23 @@ export default function ActivityLauncher({
                 )}
               </p>
             </div>
-            <div className="mx-auto mt-8 grid w-full max-w-[520px] grid-cols-1 gap-2 sm:grid-cols-2">
-              {quick.map((item, index) => (
-                <button
-                  key={item.title}
-                  onClick={() =>
-                    index === 0 ? setShowHistory(true) : setMenu(true)
-                  }
-                  className="card-prompt flex h-28 flex-col justify-between rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-left transition-all hover:border-[var(--ui-border)] hover:bg-[var(--ui-soft)]"
-                >
-                  <div className="flex items-center justify-between text-[var(--ui-secondary)]">
-                    <span className="text-[10px] font-medium">
-                      Quick access
-                    </span>
-                    <ArrowRight className="app-icon" aria-hidden="true" />
-                  </div>
-                  <div className="mt-5 text-[12px] font-medium text-[var(--ui-text)]">
-                    {item.title}
-                  </div>
-                  <div className="mt-1 text-[10px] leading-relaxed text-[var(--ui-secondary)]">
-                    {item.detail}
-                  </div>
-                </button>
-              ))}
+            <div className="mx-auto mt-8 flex w-full max-w-[520px] flex-wrap items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowHistory(true)}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3.5 text-sm font-medium text-[var(--ui-text)] transition-colors hover:bg-[var(--ui-hover)]"
+              >
+                <History className="h-4 w-4 stroke-[1.75]" aria-hidden="true" />
+                {tr("Lịch sử Content Plan", "Content Plan history")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setMenu(true)}
+                className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3.5 text-sm font-medium text-[var(--ui-text)] transition-colors hover:bg-[var(--ui-hover)]"
+              >
+                <FilePlus2 className="h-4 w-4 stroke-[1.75]" aria-hidden="true" />
+                {tr("Nhập Content Plan mới", "Import a new plan")}
+              </button>
             </div>
           </>
         )}
