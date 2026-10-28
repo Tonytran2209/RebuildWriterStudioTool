@@ -59,3 +59,6 @@ Writer Studio creates evidence-aware articles through the Core Idea, Outline and
 - Draft content must persist before it is reported as generated or reviewed.
 - AI output is untrusted until schema, deterministic and evidence checks pass.
 - Secrets, provider keys and Supabase service-role keys never enter frontend code or MD examples.
+
+## Hướng dẫn sử dụng
+Đọc [Hướng dẫn sử dụng Writer Studio](design/user-guide.md) cho thao tác của người dùng và các giới hạn đã đối chiếu source. Tài liệu thuộc library canonical; cập nhật cùng thay đổi workflow liên quan.

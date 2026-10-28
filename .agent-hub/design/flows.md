@@ -43,3 +43,6 @@ The SEO brief displays the required internal-link range alongside available appr
 # Document library uploads
 
 Knowledge & Rules exposes separate document importers for KB and Skills & Rules, alongside the workflow rule editor. Show configured storage destinations, sequential multi-file progress, per-file failures and successful records. Support DOCX/Markdown as well as existing formats. Uploads persist immediately; closing Settings refreshes server state. Unchanged library data must not be rewritten when saving unrelated settings. See docs/document-reupload.md.
+
+## Hướng dẫn thao tác
+[Hướng dẫn sử dụng Writer Studio](user-guide.md) mô tả Content Plan → Core Idea → Outline → Draft/QC, batch, copy/export và quản lý nguồn. Dùng source hiện tại để xác nhận khi triển khai thay đổi.
