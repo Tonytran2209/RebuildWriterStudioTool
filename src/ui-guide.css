@@ -1,0 +1,112 @@
+/* Writer Studio implementation of .agent-hub/design/CHATGPT-DESKTOP-UI-GUIDE.md.
+   These are Writer Studio tokens, not claimed OpenAI product tokens. */
+:root,
+:root[data-writer-theme='dark'] {
+  color-scheme: dark;
+  --ui-bg: #181818;
+  --ui-sidebar: #141414;
+  --ui-surface: #202020;
+  --ui-soft: #2a2a2a;
+  --ui-control: #2a2a2a;
+  --ui-hover: #333333;
+  --ui-selected: #3c3c3c;
+  --ui-text: #ffffff;
+  --ui-secondary: #b8b8b8;
+  --ui-muted: #a0a0a0;
+  --ui-border: #3b3b3b;
+  --ui-control-border: #858585;
+  --ui-focus: #78baff;
+  --ui-link: #78baff;
+  --ui-primary-bg: #f3f3f3;
+  --ui-primary-text: #171717;
+  --ui-overlay: rgb(0 0 0 / 56%);
+  --ui-shadow-popover: 0 8px 32px rgb(0 0 0 / 40%);
+}
+
+:root[data-writer-theme='light'] {
+  color-scheme: light;
+  --ui-bg: #ffffff;
+  --ui-sidebar: #f7f7f8;
+  --ui-surface: #ffffff;
+  --ui-soft: #f2f2f2;
+  --ui-control: #f2f2f2;
+  --ui-hover: #eaeaea;
+  --ui-selected: #e3e3e3;
+  --ui-text: #0d0d0d;
+  --ui-secondary: #5d5d5d;
+  --ui-muted: #6b6b6b;
+  --ui-border: #dedede;
+  --ui-control-border: #808080;
+  --ui-focus: #0066cc;
+  --ui-link: #005fcc;
+  --ui-primary-bg: #171717;
+  --ui-primary-text: #ffffff;
+  --ui-overlay: rgb(0 0 0 / 32%);
+  --ui-shadow-popover: 0 8px 32px rgb(0 0 0 / 12%);
+}
+
+html, body, #root { min-height: 100%; background: var(--ui-bg); }
+body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+:where(button, input, textarea, select) { font: inherit; }
+:where(button, a, input, textarea, select, [tabindex]):focus-visible,
+.codex-dark :where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--ui-focus) !important;
+  outline-offset: 2px !important;
+}
+:where(button, input, textarea, select):disabled { cursor: not-allowed; }
+.writer-app { min-width: 0; color: var(--ui-text); background: var(--ui-bg) !important; }
+.writer-app > :last-child { min-width: 0; }
+.writer-app .writer-sidebar { background: var(--ui-sidebar) !important; border-color: var(--ui-border) !important; color: var(--ui-secondary) !important; }
+.writer-app .sidebar-nav { min-height: 36px; color: var(--ui-secondary); }
+.writer-app .sidebar-nav:hover { background: var(--ui-hover); color: var(--ui-text); }
+.writer-app .sidebar-recent-card:hover { background: var(--ui-hover) !important; border-color: var(--ui-border) !important; }
+.writer-app .sidebar-recent-card:has([aria-current='page']) { background: var(--ui-selected) !important; border-color: var(--ui-border) !important; }
+.writer-app .sidebar-recent-card:has([aria-current='page']) button { color: var(--ui-text) !important; }
+.writer-app .writer-profile-popover { background: var(--ui-surface) !important; border-color: var(--ui-border) !important; color: var(--ui-text); box-shadow: var(--ui-shadow-popover); }
+.writer-app .writer-theme-options input { accent-color: var(--ui-focus); }
+.writer-app .continuous-workspace { background: var(--ui-bg); }
+.writer-app .minimal-step-nav { background: var(--ui-bg) !important; border-color: var(--ui-border) !important; }
+.writer-app .minimal-step-shell { border-color: var(--ui-border) !important; }
+.writer-app .minimal-settings .settings-content,
+.writer-app .minimal-settings .settings-main { min-width: 0; }
+.writer-app .minimal-settings { padding: 0 !important; background: var(--ui-bg) !important; }
+.writer-app .minimal-settings .settings-shell { max-width: none !important; height: 100dvh !important; border: 0 !important; border-radius: 0 !important; }
+.writer-app .activity-launcher,
+.writer-app .batch-workspace { background: var(--ui-bg) !important; color: var(--ui-text) !important; }
+.writer-app .batch-workspace article { border-color: var(--ui-border) !important; background: var(--ui-surface) !important; }
+.writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) { background: var(--ui-surface) !important; border-color: var(--ui-border) !important; color: var(--ui-text); }
+.writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(header, article, section) { border-color: var(--ui-border) !important; }
+:root[data-writer-theme='dark'] .writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(.bg-white, .bg-slate-50, .bg-slate-100) { background: var(--ui-soft) !important; }
+:root[data-writer-theme='dark'] .writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(.text-slate-800, .text-slate-700, .text-slate-900) { color: var(--ui-text) !important; }
+:root[data-writer-theme='dark'] .writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(.text-slate-400, .text-slate-500, .text-slate-600) { color: var(--ui-secondary) !important; }
+.writer-app .batch-workspace button:disabled { opacity: .45; }
+.writer-login { background: var(--ui-bg) !important; color: var(--ui-text) !important; }
+.writer-login form { background: var(--ui-surface) !important; border-color: var(--ui-border) !important; box-shadow: none !important; }
+.writer-login label { color: var(--ui-secondary) !important; }
+.writer-login input { border-color: var(--ui-control-border) !important; background: var(--ui-control) !important; color: var(--ui-text) !important; }
+.writer-login button[type='submit'] { background: var(--ui-primary-bg) !important; color: var(--ui-primary-text) !important; }
+
+/* The guide's reading width applies to prose; wide editors and data tables remain fluid. */
+.writer-app .draft-editor .prose-editor { font-size: 16px !important; line-height: 1.625 !important; }
+.writer-app :where(pre, table) { max-width: 100%; }
+.writer-app pre { overflow-x: auto; }
+.writer-app :where(button, a, input, textarea, select) { transition-duration: 120ms; }
+
+@media (max-width: 899px) {
+  .writer-app { flex-direction: column !important; }
+  .writer-app .writer-sidebar { width: 100% !important; flex: 0 0 auto; border-right: 0 !important; border-bottom: 1px solid var(--ui-border) !important; }
+  .writer-app .writer-sidebar[data-open='false'] { height: 56px !important; }
+  .writer-app .writer-sidebar[data-open='true'] { height: min(65dvh, 580px) !important; }
+  .writer-app .writer-sidebar .sidebar-icon-button.md\:hidden { display: inline-flex !important; }
+  .writer-app .continuous-workspace { padding: 16px !important; }
+}
+@media (max-width: 600px) {
+  .writer-app .sidebar-nav,
+  .writer-app .settings-nav-item { min-height: 44px; }
+  .writer-app .sidebar-icon-button { min-width: 44px; min-height: 44px; }
+  .writer-app .sidebar-recent-card > button:first-child { min-height: 44px; }
+  .writer-app .sidebar-recent-card > button:last-child { min-width: 44px; min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

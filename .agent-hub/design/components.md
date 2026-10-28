@@ -19,6 +19,10 @@ projectId: writer-studio
 
 ## Component contracts
 
+- Use `CHATGPT-DESKTOP-UI-GUIDE.md` and `src/ui-guide.css` for semantic colors, typography, spacing, focus, responsive behavior, and Light/Dark/System appearance. Preserve Writer Studio workflow and feature semantics.
+- Theme state is stored as `writer:theme-preference`; dialogs rendered through portals must use the same semantic tokens as the app shell.
+- Icon-only controls need an accessible name. Dialogs need a name, Escape handling, and focus restoration; touch targets are at least 44 px on narrow screens.
+
 - A component that starts an asynchronous operation owns the progress and local error display, but persistence status comes from the app shell.
 - A saved result is rendered from durable article state, not only a local response object.
 - Cards require a clear primary action and should not overload the row with equal-weight buttons.

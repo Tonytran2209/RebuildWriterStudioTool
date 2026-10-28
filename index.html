@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/f-trademark.svg" />
     <title>Writer Studio</title>
+    <script>
+      try {
+        const choice = localStorage.getItem('writer:theme-preference') || 'dark';
+        const dark = choice === 'dark' || (choice === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.writerTheme = dark ? 'dark' : 'light';
+      } catch { document.documentElement.dataset.writerTheme = 'dark'; }
+    </script>
     <!-- figma:head-end -->
   </head>
   <body>

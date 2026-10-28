@@ -4,6 +4,7 @@ import App from './App'
 import './index.css'
 import './codex-theme.css'
 import './settings-interactions.css'
+import './ui-guide.css'
 import { LanguageProvider } from './lib/i18n'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

@@ -25,6 +25,7 @@ import BatchActivity from "./components/BatchActivity"
 import LoginScreen from "./components/LoginScreen"
 import { clampArticleStep, gateArticleStep, gateStepCompletion } from "./lib/workflowGuards"
 import { isLegacyArticle } from "./lib/legacyCompatibility"
+import { useThemePreference } from "./lib/theme"
 
 function generateId() {
   return `art-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -51,6 +52,7 @@ type ArticleUpdateOptions = { silent?: boolean }
 
 export default function App() {
   const { tr } = useI18n()
+  const { preference: themePreference, setPreference: setThemePreference, theme } = useThemePreference()
   const [authSession, setAuthSession] = useState<db.AuthSession | null>(() => {
     if (hasPasswordRecoveryLink()) {
       db.clearAuthSession()
@@ -628,10 +630,10 @@ export default function App() {
 
   if (syncStatus === "loading") {
     return (
-      <div className="codex-dark h-dvh flex items-center justify-center bg-[#141414]">
+      <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} h-dvh flex items-center justify-center bg-[var(--ui-bg)]`}>
         <div className="text-center space-y-3">
           <BrandMark className="mx-auto h-10 w-10" />
-          <div className="text-sm font-medium text-[#e5e5e5]">
+          <div className="text-sm font-medium text-[var(--ui-text)]">
             {tr("Đang tải Writer Studio...", "Loading Writer Studio...")}
           </div>
           <div className="w-40 h-1 bg-[#222] rounded-full overflow-hidden mx-auto">
@@ -644,8 +646,8 @@ export default function App() {
 
   if (initialLoadError) {
     return (
-      <div className="codex-dark h-dvh flex items-center justify-center bg-[#141414] p-4 sm:p-6">
-        <div className="max-w-md w-full bg-[#1c1c1c] border border-[#2d2d2d] rounded-2xl p-6 text-center space-y-4">
+      <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} h-dvh flex items-center justify-center bg-[var(--ui-bg)] p-4 sm:p-6`}>
+        <div className="max-w-md w-full bg-[var(--ui-surface)] border border-[var(--ui-border)] rounded-2xl p-6 text-center space-y-4">
           <div className="w-12 h-12 rounded-xl border border-red-900/50 bg-red-950/30 text-red-400 flex items-center justify-center text-xl mx-auto">
             !
           </div>
@@ -678,7 +680,7 @@ export default function App() {
   }
 
   return (
-    <div className="codex-dark h-dvh flex flex-col md:flex-row overflow-hidden bg-[#141414]">
+    <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} writer-app h-dvh flex flex-col md:flex-row overflow-hidden bg-[var(--ui-bg)]`}>
       <Sidebar
         articles={articles}
         activeArticleId={activeId}
@@ -703,6 +705,8 @@ export default function App() {
         onOpenConfig={() => { void db.fetchFiles().then(latest => { setFiles(latest); setShowConfig(true) }).catch(error => notifyWorkspace(error.message, "error")) }}
         canManageSettings={authSession.user.role === "admin"}
         currentUser={authSession.user}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
         onSignOut={() => { void db.logout().then(() => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }).catch(error => notifyWorkspace(error.message, "error")) }}
         onSignOutAll={authSession.authProvider === "postgres" ? () => { void db.logout(true).then(() => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }).catch(error => notifyWorkspace(error.message, "error")) } : undefined}
         onToggleComplete={handleToggleComplete}
