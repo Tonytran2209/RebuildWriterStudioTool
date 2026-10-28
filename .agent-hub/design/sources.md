@@ -1,12 +1,14 @@
 ---
 schema: agent-hub/design-sources/v1
 projectId: writer-studio
-lastReviewed: 2026-10-14
+lastReviewed: 2026-10-28
 ---
 
 # Design reference sources
 
 ## Approved catalogue source
+
+[design.md](design.md) is the primary project design contract. [CHATGPT Desktop UI Guide](CHATGPT-DESKTOP-UI-GUIDE.md) is supplemental research, not a normative replacement. Its DOC/REF/SPEC labels describe evidence within that guide; none supersedes the project contract. Apply compatible ideas only within the current request. Shared design-rule changes must explicitly update `design.md`; refreshing a reference alone never triggers code changes or grants execution authority.
 
 | Field | Value |
 | --- | --- |

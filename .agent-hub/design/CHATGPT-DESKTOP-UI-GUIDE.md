@@ -1,6 +1,18 @@
+---
+schema: agent-hub/design-reference/v1
+projectId: writer-studio
+status: supplemental-reference
+primaryDesignContract: .agent-hub/design/design.md
+---
 # ChatGPT Desktop–inspired UI Guide cho Codex
 
 Phiên bản hướng dẫn: 1.0 · Ngày đối chiếu tài liệu: 28/10/2026 · Ngôn ngữ: Tiếng Việt.
+
+## Vai trò trong Writer Studio
+
+[design.md](design.md) là quy định thiết kế chính của project. File này là tài liệu tham khảo bổ sung để đề xuất UI hiện đại, rõ ràng và phù hợp hơn theo thời gian. Các ví dụ, token, screenshot và checklist không tự thay thế `design.md`, không cấp quyền sửa code và không yêu cầu áp dụng toàn bộ guide.
+
+Khi có khác biệt, tuân theo `design.md` và ghi lại đề xuất cùng lý do. Chỉ đưa pattern vào quy định chính khi request phù hợp cho phép thay đổi đó, có cập nhật `design.md` và kiểm chứng triển khai. Phân biệt tài liệu tham khảo, quy định đã thông qua và hành vi hiện có trong source.
 
 ## 1. Phạm vi và mức độ chính xác
 
@@ -12,7 +24,7 @@ Phân loại bằng chứng:
 - **[REF]**: giá trị xuất hiện trong phần minh họa tài liệu; không mặc định là token của mọi phiên bản app.
 - **[SPEC]**: quy tắc và thông số đề xuất của hướng dẫn này để có một hệ thống nhất quán, khả thi.
 
-Toàn bộ mục 3–13 là **[SPEC]**, trừ chỗ có ghi khác. Chưa đo trực tiếp screenshot của bản app đang cài; không tuyên bố khớp pixel. Khi có screenshot mục tiêu, đo lại và ưu tiên bằng chứng đó cho màu sắc, khoảng cách, typography và bố cục. Giữ tên, logo và nội dung của ứng dụng đích.
+Toàn bộ mục 3–13 là **[SPEC]**, trừ chỗ có ghi khác. Chưa đo trực tiếp screenshot của bản app đang cài; không tuyên bố khớp pixel. Khi có screenshot mục tiêu, đo lại để tham khảo màu sắc, khoảng cách, typography và bố cục; chỉ áp dụng phần phù hợp với `design.md` và phạm vi request. Giữ tên, logo và nội dung của ứng dụng đích.
 
 ## 2. Những gì nguồn chính thức xác nhận
 
@@ -353,26 +365,29 @@ Giữ bố cục phục vụ nhiệm vụ. Dashboard nhiều dữ liệu không 
 Sao chép đoạn dưới vào Codex và đính kèm file hướng dẫn này:
 
 ```text
-Hãy áp dụng CHATGPT-DESKTOP-UI-GUIDE.md cho giao diện ứng dụng hiện tại.
+Đọc .agent-hub/design/design.md làm quy định thiết kế chính.
+Dùng CHATGPT-DESKTOP-UI-GUIDE.md làm tài liệu tham khảo bổ sung cho request hiện tại.
 
 Mục tiêu: giao diện desktop lấy cảm hứng ChatGPT, trung tính, rõ ràng,
 gọn và tập trung vào nội dung. Dùng các token và component trong guide
-làm baseline; các thông số [SPEC] là đề xuất, không phải số đo OpenAI.
+để đề xuất phần phù hợp với design.md; các thông số [SPEC] là gợi ý,
+không phải quy định project hay số đo OpenAI.
 
 Trước khi sửa, đọc hướng dẫn repository, xem stack, route và hệ thống UI.
 Tái sử dụng component đang có. Giữ nguyên chức năng, dữ liệu, API contract
 và nhận diện thương hiệu của ứng dụng.
 
-Thực hiện app shell, typography, spacing, light/dark/system theme,
-navigation và các màn hình liên quan. Điều chỉnh layout theo nghiệp vụ;
+Chỉ thay đổi app shell, typography, spacing, theme, navigation hoặc màn hình
+thuộc phạm vi request; không tự triển khai lại toàn bộ UI. Điều chỉnh theo nghiệp vụ;
 chỉ dùng chat/composer nếu ứng dụng thực sự cần hội thoại.
 
 Triển khai đầy đủ trạng thái, responsive và keyboard accessibility.
 Kiểm tra bằng screenshot ở các kích thước trong guide và chạy kiểm tra
 hiện có phù hợp. Sửa lỗi layout và tương tác trước khi kết thúc.
 
-Nếu có screenshot mục tiêu được cung cấp, ưu tiên số đo từ ảnh cho
-hình thức, ghi rõ nền tảng/theme/viewport và phần chưa xác minh.
+Nếu có screenshot mục tiêu, dùng số đo làm tham khảo trong giới hạn design.md;
+ghi rõ nền tảng/theme/viewport và phần chưa xác minh. Nếu cần thay quy định
+chung, nêu rõ và cập nhật design.md trong cùng request được cho phép.
 Hoàn thành thay đổi trong phạm vi yêu cầu, sau đó báo cáo ngắn gọn
 những gì đã đổi, đã kiểm tra và các giới hạn còn lại.
 ```
