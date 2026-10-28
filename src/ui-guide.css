@@ -53,6 +53,14 @@ body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 
   outline: 2px solid var(--ui-focus) !important;
   outline-offset: 2px !important;
 }
+/* Keep the Content Plan focus neutral, including over legacy dark overrides. */
+.composer-textarea:focus,
+.composer-textarea:focus-visible,
+.codex-dark .composer-textarea:focus,
+.codex-dark .composer-textarea:focus-visible {
+  outline: 2px solid var(--ui-secondary) !important;
+  outline-offset: 2px !important;
+}
 :where(button, input, textarea, select):disabled { cursor: not-allowed; }
 .writer-app { min-width: 0; color: var(--ui-text); background: var(--ui-bg) !important; }
 .writer-app > :last-child { min-width: 0; }
