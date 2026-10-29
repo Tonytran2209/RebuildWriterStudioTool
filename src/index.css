@@ -2637,3 +2637,61 @@ html, body, #root {
   .workflow-rail-label { display: block; flex: 1 1 auto; }
   .workflow-rail-number { display: none; }
 }
+
+/* Image suggestions own their color pairs; avoid legacy utility theme remapping. */
+.image-placement-suggestions {
+  --image-control-bg: #242424;
+  --image-control-hover: #333333;
+  --image-control-text: #dedede;
+  --image-control-border: #858585;
+  --image-success-bg: #173c30;
+  --image-success-hover: #204c3d;
+  --image-success-text: #8ee6ba;
+  --image-warning-bg: #473819;
+  --image-warning-text: #ffe0a0;
+  --image-badge-bg: #303030;
+  --image-badge-text: #b9b9b9;
+  --image-focus: #b8b8b8;
+}
+.writer-light .image-placement-suggestions {
+  --image-control-bg: #f2f2f2;
+  --image-control-hover: #e3e3e3;
+  --image-control-text: #1f1f1f;
+  --image-control-border: #808080;
+  --image-success-bg: #e6f4ed;
+  --image-success-hover: #cce8da;
+  --image-success-text: #166044;
+  --image-warning-bg: #fff0d6;
+  --image-warning-text: #795000;
+  --image-badge-bg: #f2f2f2;
+  --image-badge-text: #555555;
+  --image-focus: #555555;
+}
+.image-placement-suggestions .image-placement-control {
+  background: var(--image-control-bg) !important;
+  color: var(--image-control-text) !important;
+  border-color: var(--image-control-border) !important;
+}
+.image-placement-suggestions .image-placement-control:hover {
+  background: var(--image-control-hover) !important;
+}
+.image-placement-suggestions .image-placement-badge {
+  background: var(--image-badge-bg) !important;
+  color: var(--image-badge-text) !important;
+}
+.image-placement-suggestions .image-placement-approve,
+.image-placement-suggestions .image-placement-status-approved {
+  background: var(--image-success-bg) !important;
+  color: var(--image-success-text) !important;
+}
+.image-placement-suggestions .image-placement-approve:hover {
+  background: var(--image-success-hover) !important;
+}
+.image-placement-suggestions .image-placement-status-suggested {
+  background: var(--image-warning-bg) !important;
+  color: var(--image-warning-text) !important;
+}
+.image-placement-suggestions .image-placement-control:focus-visible {
+  outline: 2px solid var(--image-focus) !important;
+  outline-offset: 2px !important;
+}
