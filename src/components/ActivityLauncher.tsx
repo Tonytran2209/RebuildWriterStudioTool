@@ -240,7 +240,7 @@ export default function ActivityLauncher({
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
                 <BrandMark className="h-7 w-7" />
               </div>
-              <h1 className="mt-6 text-[27px] font-medium tracking-[-.02em] text-[var(--ui-text)]">
+              <h1 className="activity-launcher-title mt-6 font-medium tracking-[-.02em] text-[var(--ui-text)]">
                 {tr("Bạn muốn tạo nội dung gì?", "What should we create?")}
               </h1>
               <p className="mt-2 text-sm text-[var(--ui-secondary)]">

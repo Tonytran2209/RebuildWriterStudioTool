@@ -99,6 +99,18 @@ body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 
 .writer-login input { border-color: var(--ui-control-border) !important; background: var(--ui-control) !important; color: var(--ui-text) !important; }
 .writer-login button[type='submit'] { background: var(--ui-primary-bg) !important; color: var(--ui-primary-text) !important; }
 
+/* Launcher greeting only: double each theme's previous size (27px light, 24px dark). */
+.writer-app .activity-launcher .activity-launcher-title {
+  font-size: 54px !important;
+  line-height: 1.25;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.writer-app.codex-dark .activity-launcher .activity-launcher-title {
+  font-size: 48px !important;
+}
+
 /* The guide's reading width applies to prose; wide editors and data tables remain fluid. */
 .writer-app .draft-editor .prose-editor { font-size: 16px !important; line-height: 1.625 !important; }
 .writer-app :where(pre, table) { max-width: 100%; }
