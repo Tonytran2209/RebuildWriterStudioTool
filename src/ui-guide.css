@@ -53,11 +53,16 @@ body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 
   outline: 2px solid var(--ui-focus) !important;
   outline-offset: 2px !important;
 }
-/* Keep the Content Plan focus neutral, including over legacy dark overrides. */
+/* Put Content Plan focus on its rounded container, not inside the text area.
+   Keep specificity above the generic and legacy dark focus rules. */
 .composer-textarea:focus,
 .composer-textarea:focus-visible,
 .codex-dark .composer-textarea:focus,
 .codex-dark .composer-textarea:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+.activity-launcher div:has(> .composer-textarea:focus) {
   outline: 2px solid var(--ui-secondary) !important;
   outline-offset: 2px !important;
 }
