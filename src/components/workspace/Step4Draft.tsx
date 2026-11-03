@@ -1,3 +1,4 @@
+import { outlineStructurePrompt, validateOutlineStructure } from '../../../shared/outlineStructures';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronDown, TriangleAlert, Check, CircleX, ClipboardCopy, Copy, Download, Eye, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, ImageSuggestion, QualityGateCheck } from '../../types';
@@ -685,17 +686,17 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const sourceFingerprintFor = (value: Article) => [
       buildWorkflowSourceFingerprint(bundle), model.provider, model.id, 'step4-draft-v7-flexible-word-target',
       value.selectedCoreIdeaId, value.topic, value.angle,
-      JSON.stringify(value.outline ?? []), value.tone, value.keywords, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, compiledWorkflowRules.fingerprint,
+      JSON.stringify(value.outlineStructure), JSON.stringify(value.outline ?? []), value.tone, value.keywords, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500, compiledWorkflowRules.fingerprint,
     ].join(':');
   const draftSourceFingerprint = useMemo(
     () => sourceFingerprintFor(article),
-    [article.angle, article.keywords, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, bundle, compiledWorkflowRules.fingerprint, config.stepConfigs, model.id, model.provider],
+    [article.angle, article.keywords, article.outlineStructure, article.draftNeedsRegeneration, article.outline, article.selectedCoreIdeaId, article.tone, article.topic, bundle, compiledWorkflowRules.fingerprint, config.stepConfigs, model.id, model.provider],
   );
   const wordCount = countWords(draft);
   const targetWords = Math.min(10000, Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500));
   const readability = calcReadability(draft);
   const progress = Math.min(Math.round((wordCount / targetWords) * 100), 100);
-  const draftIsStale = Boolean(draft && article.draftSourceFingerprint) && article.draftSourceFingerprint !== draftSourceFingerprint;
+  const draftIsStale = Boolean(draft) && (Boolean(article.draftNeedsRegeneration) || (Boolean(article.draftSourceFingerprint) && article.draftSourceFingerprint !== draftSourceFingerprint));
   useEffect(() => {
     if (draftIsStale && !generating) notifyWorkspace('Outline, tài liệu, prompting rules hoặc model đã thay đổi. Draft đã lưu vẫn được giữ nguyên cho đến khi viết lại.', 'warning');
   }, [draftIsStale, generating]);
@@ -806,6 +807,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     }];
     let rawResponseExcerpt = '';
     try {
+      if (article.outlineNeedsRegeneration) throw new Error('Regenerate the outline after changing its structure.');
+      const structureErrors = validateOutlineStructure(article.outline ?? [], article.outlineStructure);
+      if (structureErrors.length) throw new Error(structureErrors.join('\n'));
       const verifiedOutline = buildVerifiedOutlineContext(article.outline || []);
       const contextQuery = [
         article.topic,
@@ -862,7 +866,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         internalLinkInstruction(targetWords, internalLinkCandidates.length),
         '- Include one concise, practical example that helps the reader apply the comparison or decision guidance.',
         '- Every concrete factual claim must be supported by the evidence assigned to its outline section. If no evidence exists, frame the passage explicitly as practical synthesis rather than an established fact.',
-        ...(article.activityType === 'comparison-seo' && article.comparisonStructure === 'similarities-differences' ? ['- COMPARISON FORMAT: Include explicit Similarities and Differences H2 sections, then add a business experience/expertise insight section, practical selection guidance, and a CTA aligned to the Article Spec.'] : []),
+        outlineStructurePrompt(article.outlineStructure, 'draft'),
         '',
         'OUTLINE_STEP_3 VÀ EVIDENCE ĐÃ KIỂM CHỨNG:',
         JSON.stringify(verifiedOutline),
@@ -999,6 +1003,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       if (editorRef.current) editorRef.current.innerText = displayDraft(assembledDraft);
       const checkpointSaved = await onUpdate({
         draft: assembledDraft,
+        draftNeedsRegeneration: false,
         draftEvidenceUsage: evidenceUsage,
         qualityReport: null,
         draftSourceFingerprint,
@@ -1085,6 +1090,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       }
       const saved = await onUpdate({
         draft: assembledDraft,
+        draftNeedsRegeneration: false,
         draftEvidenceUsage: evidenceUsage,
         qualityReport: report,
         semanticReviewFingerprint: semanticKey,

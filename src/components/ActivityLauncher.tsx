@@ -1,3 +1,6 @@
+import OutlineStructureSelect from './OutlineStructureSelect';
+import type { OutlineStructureSnapshot } from '../../shared/outlineStructures';
+import type { DocumentFile } from '../types';
 import { useEffect, useRef, useState } from "react"
 import { ArrowLeft, FilePlus2, FileText, History, LoaderCircle, Plus, Sheet, Trash2, Upload, X } from "lucide-react"
 import type {
@@ -18,6 +21,8 @@ import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
 
 interface Props {
+  files: DocumentFile[];
+  outlineRuleIds: string[];
   railwayUrl: string
   models: AIModel[]
   modelId: string
@@ -30,10 +35,13 @@ interface Props {
     plan: ContentPlan,
     items: ContentPlanItem[],
     batchSize?: 5 | 10 | 15 | 20,
+    outlineStructure?: OutlineStructureSnapshot,
   ) => Promise<void>
 }
 export default function ActivityLauncher({
   railwayUrl,
+  files,
+  outlineRuleIds,
   models,
   modelId,
   recentArticles,
@@ -43,6 +51,7 @@ export default function ActivityLauncher({
   onCreate,
 }: Props) {
   const { language, tr } = useI18n()
+  const [outlineStructure, setOutlineStructure] = useState<OutlineStructureSnapshot | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const [plans, setPlans] = useState<ContentPlan[]>([])
   const [plan, setPlan] = useState<ContentPlan | null>(null)
@@ -189,6 +198,7 @@ export default function ActivityLauncher({
   }
   const generate = async () => {
     if (!plan || !chosen.length) return
+    if (chosen.length > 1 && !outlineStructure) { setError(tr("Chọn cấu trúc outline trước khi chạy batch.", "Choose an outline structure before running the batch.")); return; }
     const target = chosen.slice(0, 20)
     setBusy(true)
     try {
@@ -201,6 +211,7 @@ export default function ActivityLauncher({
               (size) => size >= target.length,
             ) as 5 | 10 | 15 | 20 ?? 20)
           : undefined,
+        target.length > 1 ? outlineStructure ?? undefined : undefined,
       )
     } finally {
       setBusy(false)
@@ -469,6 +480,8 @@ export default function ActivityLauncher({
                 </div>
               ))}
             </div>
+            {selected.length > 1 && <OutlineStructureSelect files={files} allowedIds={outlineRuleIds} value={outlineStructure} onChange={setOutlineStructure} disabled={busy} />}
+            {error && plan && <p role="alert" className="mt-3 text-sm text-amber-600">{error}</p>}
             {selected.length > 0 && (
               <div className="sticky bottom-2 mt-5 flex items-center justify-between rounded-xl border border-[var(--ui-border)] bg-[var(--ui-control)]/95 px-4 py-3 shadow-2xl backdrop-blur">
                 <div className="text-xs text-[var(--ui-secondary)]">
@@ -480,7 +493,7 @@ export default function ActivityLauncher({
                       )}
                 </div>
                 <button
-                  disabled={busy}
+                  disabled={busy || (selected.length > 1 && !outlineStructure)}
                   onClick={generate}
                   className="rounded-lg bg-[var(--ui-primary-bg)] px-4 py-2 text-[11px] font-semibold text-[var(--ui-primary-text)] disabled:opacity-40"
                 >

@@ -46,3 +46,7 @@ Knowledge & Rules exposes separate document importers for KB and Skills & Rules,
 
 ## Hướng dẫn thao tác
 [Hướng dẫn sử dụng Writer Studio](user-guide.md) mô tả Content Plan → Core Idea → Outline → Draft/QC, batch, copy/export và quản lý nguồn. Dùng source hiện tại để xác nhận khi triển khai thay đổi.
+
+## MD-driven outline selection (2026-11-03)
+
+Batch chooses its outline structure before running; single chooses at Draft Outline. Both selectors read only authorized Skills & Rules Markdown declarations, show source file and revision, and explain empty/invalid catalogs. Settings lists available definitions and errors. Store a frozen definition per article through outline and draft. Re-selection preserves previous output, marks it stale and requires outline regeneration; active batch selections are locked. See `../backend/outline-structures.md` for schema and lifecycle.

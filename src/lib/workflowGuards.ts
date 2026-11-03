@@ -61,6 +61,7 @@ export function gateArticleStep(article: Article, step: ArticleWorkflowStep): Wo
 }
 
 export function gateStepCompletion(article: Article, step: ArticleWorkflowStep): WorkflowGate {
+  if (step === 3 && article.outlineNeedsRegeneration) return blocked("Hãy tạo lại outline theo cấu trúc đã chọn.", "Regenerate the outline for the selected structure.");
   const access = gateArticleStep(article, step);
   if (!access.allowed) return access;
   if (step === 2 && (!selectedCoreIdea(article) || !article.articleSpec)) {

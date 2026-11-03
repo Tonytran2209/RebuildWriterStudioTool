@@ -1,3 +1,4 @@
+import type { OutlineStructureSnapshot } from '../shared/outlineStructures';
 import { useState, useEffect, useCallback, useRef } from "react"
 import type {
   AICallUsage,
@@ -268,6 +269,7 @@ export default function App() {
     plan: ContentPlan,
     items: ContentPlanItem[],
     batchSize?: 5 | 10 | 15 | 20,
+    outlineStructure?: OutlineStructureSnapshot,
   ) => {
     const activityId = `activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
     const isBatch = items.length > 1
@@ -304,6 +306,7 @@ export default function App() {
           contentPlanSourceItemId: item.id,
           contentPlanItemId: item.id,
           batchSize,
+          outlineStructure: isBatch ? outlineStructure : undefined,
           batchStatus: isBatch ? "queued" : undefined,
           contentType:
             type === "comparison-seo"
@@ -837,6 +840,8 @@ export default function App() {
         ) : (
           // Article selected from sidebar but not found (shouldn't happen)
           <ActivityLauncher
+            files={files}
+            outlineRuleIds={config.stepConfigs[3]?.fileAccess?.rules ?? []}
             railwayUrl={config.railwayUrl}
             models={config.models}
             modelId={config.stepConfigs[1]?.modelId ?? ""}
