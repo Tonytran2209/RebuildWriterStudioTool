@@ -1,3 +1,4 @@
+import SeoBrief from './SeoBrief';
 import { outlineStructurePrompt, validateOutlineStructure } from '../../../shared/outlineStructures';
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronDown, TriangleAlert, Check, CircleX, ClipboardCopy, Copy, Download, Eye, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
@@ -1613,11 +1614,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
 
             {/* Draft editor */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-5">
-              <section className="mb-4 rounded-lg border border-blue-100 bg-blue-50/60 p-3 text-xs text-slate-600">
-                <div className="mb-2 flex items-center justify-between gap-3"><h3 className="font-semibold text-slate-800">SEO brief</h3><span className="text-[10px] text-slate-500">{`${internalLinkPlan.target}–${internalLinkPlan.max} internal links required · ${internalLinkCandidates.length} approved candidates`}</span></div>
-                <div className="grid gap-1 sm:grid-cols-2"><span><b>Primary:</b> {getPrimaryKeyword(article) || '—'}</span><span><b>Intent:</b> {article.articleSpec?.primaryIntent ?? '—'}</span></div>
-                <div className="mt-2 flex flex-wrap gap-1.5">{(article.seoResearch?.keywords ?? []).slice(0, 10).map((item, index) => <span key={`${item.keyword}-${index}`} className="rounded-full border border-blue-200 bg-white px-2 py-0.5 text-[10px]"><b>#{index + 1}</b> {item.keyword}{item.intent ? ` · ${item.intent}` : ''}</span>)}</div>
-              </section>
+              <SeoBrief article={article} primaryKeyword={getPrimaryKeyword(article)} linkTarget={internalLinkPlan.target} linkMax={internalLinkPlan.max} approvedCandidates={internalLinkCandidates.length} />
               {generating ? (
                 <div className="space-y-3">
                   {[...Array(12)].map((_, i) => (
