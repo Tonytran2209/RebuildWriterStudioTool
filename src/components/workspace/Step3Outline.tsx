@@ -1,3 +1,5 @@
+import OutlineStructureSelect from '../OutlineStructureSelect';
+import { buildOutlineTask, validateOutlineStructure, outlineSelectionUpdates } from '../../../shared/outlineStructures';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, Eye, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
 import type {
@@ -212,9 +214,9 @@ export default function Step3Outline({
       article.contentType, article.topic, article.angle, article.keywords,
       article.targetAudience, article.tone, article.wordCount, article.selectedCoreIdeaId, compiledWorkflowRules.fingerprint,
       article.articleSpecFingerprint,
-      article.comparisonStructure,
+      JSON.stringify(article.outlineStructure),
     ].join(":"),
-    [article.angle, article.articleSpecFingerprint, article.comparisonStructure, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, model.id, model.provider],
+    [article.angle, article.articleSpecFingerprint, article.outlineStructure, article.contentType, article.keywords, article.selectedCoreIdeaId, article.targetAudience, article.tone, article.topic, article.wordCount, bundle, compiledWorkflowRules.fingerprint, model.id, model.provider],
   );
   const outlineIsStale = Boolean(outline.length) && article.outlineSourceFingerprint !== sourceFingerprint;
   useEffect(() => {
@@ -246,7 +248,7 @@ export default function Step3Outline({
     brandPov: article.articleSpec?.brandPov,
     ctaObjective: article.articleSpec?.ctaObjective,
   }), [article.articleSpec]);
-  const desiredSections = targetSectionCount(contextBrief.wordCount);
+  const desiredSections = Math.max(targetSectionCount(contextBrief.wordCount), article.outlineStructure?.requiredHeadings.length ?? 0);
   const configuredMinimumSections = Math.min(12, Math.max(4, Number(getWorkflowParameter(config, 'outline', 'outline-mapping', 'minimumSections') ?? 4)));
   const minimumSections = Math.max(configuredMinimumSections, desiredSections - 2);
   const contextQuery = [
@@ -263,6 +265,7 @@ export default function Step3Outline({
       setError(tr(prerequisite.reasonVi, prerequisite.reason));
       return;
     }
+    if (!article.outlineStructure) { setError(tr('Chọn cấu trúc outline từ Skills & Rules trước khi tạo.', 'Select an outline structure from Skills & Rules first.')); return; }
     if (!article.contentPlanInput?.trim() || !article.topic?.trim()) {
       setError("Bài viết chưa có topic được tổng hợp từ Content Plan hiện tại.");
       return;
@@ -283,34 +286,7 @@ export default function Step3Outline({
       const systemPrompt = buildRoleSystemPrompt(
         [
           canonicalAIOutputInstruction,
-          "Tạo dàn bài (outline) chi tiết với keyword mapping và search intent cho từng section.",
-          "- Knowledge Base cung cấp luận điểm và evidence cho từng mục.",
-          "- Content Plan hiện tại cung cấp topic, nhóm nội dung và keyword đã được phân loại cho article; không dùng kế hoạch legacy.",
-          "- Rules & Guidelines quyết định định dạng heading, độ sâu H2/H3, cách đặt tiêu đề, quy tắc SEO.",
-          "- Mỗi section PHẢI ghi rõ: keywords được nhắm tới, searchIntent và evidenceRefs trỏ tới evidenceRegistry dùng chung.",
-          "- Mỗi section phải có rationale giải thích vì sao section này cần thiết, vì sao đặt ở vị trí đó và evidence hỗ trợ quyết định như thế nào.",
-          "- Nếu có KB/Content Plan, mỗi section cần ít nhất 1 quote từ một trong hai nguồn. Nếu có Skills, cần thêm ít nhất 1 quote từ Skills. Bỏ qua nhóm đang trống.",
-          "- source phải đúng chính xác tên file được cấp; quote phải chép nguyên văn, không diễn giải.",
-          "",
-          "Mỗi quote chỉ khai báo MỘT LẦN trong evidenceRegistry; nhiều section dùng chung quote phải tham chiếu cùng ID để tiết kiệm output.",
-          "Trả về DUY NHẤT một JSON object hợp lệ, không markdown fences, không giải thích.",
-          "- JSON phải parse được bằng JSON.parse: dùng dấu phẩy giữa mọi field/phần tử và escape dấu ngoặc kép nằm trong chuỗi bằng \\\".",
-          "Schema:",
-          `{
-  "evidenceRegistry": {
-    "ev-1": { "source": string, "note": string, "quote": string, "role": "kb" | "content_plan" | "rules" }
-  },
-  "sections": [{
-  "heading": string (tiêu đề section, sẵn sàng dùng),
-  "level": "h2" | "h3",
-  "notes": string (1 câu ngắn mô tả nội dung, tối đa 120 ký tự),
-  "rationale": string (2-3 câu giải thích lý do chọn section, vị trí và căn cứ tài liệu),
-  "keywords": string[] (2-5 từ khóa nhắm tới),
-  "searchIntent": "informational" | "commercial" | "transactional" | "navigational",
-  "evidenceRefs": string[] (ID tồn tại trong evidenceRegistry),
-  "ruleRefs": string[]
-  }]
-}`,
+          "Create an evidence-grounded outline using the shared task contract and frozen MD structure in the request.",
         ].join("\n"),
         documentPromptRules,
       );
@@ -329,9 +305,7 @@ export default function Step3Outline({
         `- Số từ mục tiêu: ${contextBrief.wordCount}`,
         `- Primary keyword: ${contextBrief.primaryKeyword}`,
         `- Secondary keywords: ${contextBrief.secondaryKeywords.join(", ")}`,
-        ...(article.activityType === "comparison-seo" && article.comparisonStructure === "similarities-differences" ? [
-          "- COMPARISON STRUCTURE (mandatory): Build a decision-useful comparison with dedicated H2 sections for Similarities and Differences, followed by expert/first-hand business insight, use-case guidance, and a CTA matched to the Article Spec. Do not use a generic pros-and-cons-only structure.",
-        ] : []),
+        buildOutlineTask({ spec: compactArticleSpec, direction: selectedCoreIdea, structure: article.outlineStructure, desiredSections, minimumSections }),
         ...(trustedCoreIdeaEvidence.length ? [
           "",
           "EVIDENCE STEP 2 ĐÃ ĐƯỢC XÁC MINH (có thể tái sử dụng bằng quote/source tương ứng):",
@@ -404,6 +378,8 @@ export default function Step3Outline({
         + `Đã đọc ${normalized.rawSectionCount} section, ${normalized.registryCount} evidence registry và ${trustedCoreIdeaEvidence.length} evidence kế thừa từ Step 2.`,
       );
       sections = mapMustCoverTopics(sections, article.articleSpec?.mustCover ?? []);
+      const structureErrors = validateOutlineStructure(sections, article.outlineStructure);
+      if (structureErrors.length) throw new Error(structureErrors.join('\n'));
       const partialResult = sections.length < minimumSections;
       const trace: AIProcessTraceEvent[] = [
         { id: 'step3-handoff', stage: 'input', status: 'completed', title: '1. Nhận Content Plan và kết quả Bước 1', detail: 'Khóa nhóm nội dung, Core Idea, angle, audience, tone, word count và bộ keyword đã chọn để làm đầu vào outline.', facts: { contentType: contextBrief.contentType, topic: contextBrief.topic, primaryKeyword: contextBrief.primaryKeyword, secondaryKeywords: contextBrief.secondaryKeywords.length } },
@@ -414,6 +390,8 @@ export default function Step3Outline({
       ];
       const saved = await onUpdate({
         outline: sections,
+        outlineNeedsRegeneration: false,
+        draftNeedsRegeneration: true,
         outlineSourceFingerprint: sourceFingerprint,
         outlineScannedAt: generatedAt,
         step3ProcessTrace: trace,
@@ -528,14 +506,8 @@ export default function Step3Outline({
                 </p>
               </div>
             </div>
-            {article.activityType === "comparison-seo" && <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3">
-              <label className="block text-xs font-semibold text-slate-700">{tr("Cấu trúc bài Comparison", "Comparison structure")}</label>
-              <select value={article.comparisonStructure ?? "standard"} onChange={event => void onUpdate({ comparisonStructure: event.target.value as "standard" | "similarities-differences", draft: "", draftSourceFingerprint: null })} className="mt-2 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs text-slate-700 outline-none focus:ring-2 focus:ring-blue-400">
-                <option value="standard">{tr("Tiêu chuẩn", "Standard")}</option>
-                <option value="similarities-differences">Similarities / Differences + Insights + CTA</option>
-              </select>
-              <p className="mt-1.5 text-[11px] text-slate-500">{tr("Tùy chọn này sẽ yêu cầu outline có phần tương đồng, khác biệt, insight doanh nghiệp và CTA.", "This requires similarities, differences, business insight, and a CTA in the outline.")}</p>
-            </div>}
+            <OutlineStructureSelect files={files} allowedIds={config.stepConfigs[3]?.fileAccess?.rules ?? []} value={article.outlineStructure} disabled={generating || (article.activityKind === "batch" && !["completed", "failed"].includes(article.batchStatus ?? "queued"))} onChange={outlineStructure => void onUpdate(outlineSelectionUpdates(outlineStructure))} />
+            {article.outlineNeedsRegeneration && <p role="status" className="text-xs">{tr('Cấu trúc đã đổi. Hãy tạo lại outline trước khi viết draft. Kết quả cũ vẫn được giữ.', 'Structure changed. Regenerate the outline before drafting. Previous output is preserved.')}</p>}
             <StepUsage step={2} usage={article.aiUsageByStep?.[3]} />
 
             {generating && (

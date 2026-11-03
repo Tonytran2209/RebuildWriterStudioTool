@@ -1,3 +1,4 @@
+import { OUTLINE_OPERATIONAL_STAGES } from '../../shared/outlineStructures';
 import type { AppConfig, WorkflowExecutionMode, WorkflowRuleId, WorkflowRuleSetting, WorkflowRuleSnapshot } from '../types';
 
 export interface WorkflowParameterDefinition { id: string; label: string; labelVi: string; type: 'number' | 'boolean'; defaultValue: number | boolean; min?: number; max?: number; step?: number }
@@ -36,6 +37,11 @@ export const WORKFLOW_RULE_DEFINITIONS: WorkflowRuleDefinition[] = [
     { id:'controlled-persistence', title:'Controlled persistence', titleVi:'Lưu có kiểm soát', detail:'Reuse matching cache and save accepted results plus audit traces to Supabase.', detailVi:'Dùng cache phù hợp và lưu kết quả cùng audit trace vào Supabase.', locked:true },
   ]},
 ];
+
+for (const stage of WORKFLOW_RULE_DEFINITIONS.find(rule => rule.id === 'outline')!.stages) {
+  const shared = OUTLINE_OPERATIONAL_STAGES.find(item => item.id === stage.id);
+  if (shared) stage.detail = shared.instruction;
+}
 
 export function getWorkflowRuleSetting(config: AppConfig, id: WorkflowRuleId): WorkflowRuleSetting {
   const saved = config.workflowRules?.[id];

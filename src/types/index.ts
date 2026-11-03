@@ -1,3 +1,4 @@
+import type { OutlineStructureSnapshot } from '../../shared/outlineStructures.ts';
 export type AIProvider = "anthropic" | "openai" | "google" | "mistral" | "together" | "groq" | "deepseek"
 
 export interface AIModel {
@@ -386,6 +387,10 @@ export interface Article {
   outlineScannedAt?: string | null
   step3ProcessTrace?: AIProcessTraceEvent[]
   step3SuggestedKeywords?: string[]
+  outlineStructure?: OutlineStructureSnapshot | null
+  outlineNeedsRegeneration?: boolean
+  draftNeedsRegeneration?: boolean
+  /** Legacy storage only; layout comes from outlineStructure. */
   comparisonStructure?: "standard" | "similarities-differences"
   // Step 4 data
   draft?: string

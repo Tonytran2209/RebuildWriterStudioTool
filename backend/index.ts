@@ -1,3 +1,4 @@
+import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
 import "dotenv/config"
 import { authProvider, AuthService, AuthError } from "./authService.ts"
 import { postgresAuthRouter, assertAuthConfig, appOrigin } from "./authRoutes.ts"
@@ -1106,6 +1107,8 @@ async function runBatchModel(
   if (!getAvailableProviders()[model.provider])
     throw new Error(`${model.provider} API is not configured.`)
   const compiledRules = compileBackendWorkflowRules(config, step, "batch")
+  const structureGuidance = step === 3 || step === 4 ? outlineStructurePrompt(article.outlineStructure, step === 3 ? "outline" : "draft") : ""
+  prompt = [prompt, structureGuidance].filter(Boolean).join("\n\n")
   const effectivePrompt = compiledRules.taskGuidance
     ? `${prompt}\n\n${compiledRules.taskGuidance}`
     : prompt
@@ -2233,6 +2236,7 @@ async function runBatchArticle(
     ),
   )
   const desiredOutlineSections = Math.max(
+    article.outlineStructure?.requiredHeadings?.length ?? 0,
     minimumOutlineSections,
     maxDraftWords <= 1000 ? 6 : maxDraftWords <= 1800 ? 8 : 10,
   )
@@ -2491,7 +2495,8 @@ async function runBatchArticle(
       await saveArticleCheckpoint(article, { batchStatus: "paused" })
       return
     }
-    if (!article.outline?.length || !batchOutlineHasEvidence(article.outline)) {
+    if (article.outlineNeedsRegeneration || !article.outline?.length || !batchOutlineHasEvidence(article.outline)) {
+      if (!article.outlineStructure) throw new Error("Choose an outline structure from Skills & Rules before generating a batch outline.")
       if (!selectedArticleIdea(article))
         throw new Error(
           "Batch Step 2 did not produce a selected Core Idea; outline generation was blocked.",
@@ -2505,7 +2510,7 @@ async function runBatchArticle(
         `${article.topic ?? ""} ${article.keywords ?? ""}`,
         article.id,
       )
-      const existingOutline = Array.isArray(article.outline)
+      const existingOutline = !article.outlineNeedsRegeneration && Array.isArray(article.outline)
         ? article.outline.map((section: any) => ({
             id: section.id,
             heading: section.heading,
@@ -2517,13 +2522,11 @@ async function runBatchArticle(
           }))
         : []
       const outlinePrompt = [
+        buildOutlineTask({ spec: article.articleSpec, direction: idea, structure: article.outlineStructure, desiredSections: desiredOutlineSections, minimumSections: minimumOutlineSections }),
         existingOutline.length
           ? `Enrich this approved outline with verified evidence without changing section IDs, headings, order, or level: ${JSON.stringify(existingOutline)}.`
           : `Create a detailed outline that satisfies this immutable Article Spec: ${JSON.stringify(article.articleSpec)}.`,
-        `Selected direction: ${JSON.stringify(idea)}`,
-        "Use only exact quotes copied from the supplied reference documents. Never invent or paraphrase evidence quotes.",
-        "For every section, include at least one evidence quote from Knowledge Base or the current Content Plan when those sources are available, plus at least one Rules quote when Rules sources are available.",
-        `Return only JSON: {"evidenceRegistry":{"ev-1":{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}},"sections":[{"id":string,"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational","evidenceRefs":string[],"evidence":[{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}],"ruleRefs":string[]}]}. ${existingOutline.length ? "Return every existing section." : `Create approximately ${desiredOutlineSections} sections and never fewer than ${minimumOutlineSections}.`} Map verified evidence to every section.`,
+        existingOutline.length ? "Return every existing section with its ID, heading, level and order unchanged." : "",
       ].join("\n")
       const response = await runBatchModel(
         article,
@@ -2617,8 +2620,12 @@ async function runBatchArticle(
         throw new Error(
           "Batch outline has no evidence quote verified against the supplied sources. Draft generation was stopped before semantic QC.",
         )
+      const structureErrors = validateOutlineStructure(sections, article.outlineStructure)
+      if (structureErrors.length) throw new Error(structureErrors.join("\n"))
       article = await saveArticleCheckpoint(article, {
         outline: sections,
+        outlineNeedsRegeneration: false,
+        draftNeedsRegeneration: true,
         outlineScannedAt: new Date().toISOString(),
         currentStep: 4,
         aiUsageByStep: {
@@ -2640,6 +2647,8 @@ async function runBatchArticle(
       await saveArticleCheckpoint(article, { batchStatus: "paused" })
       return
     }
+    const structureErrors = validateOutlineStructure(article.outline ?? [], article.outlineStructure)
+    if (structureErrors.length) throw new Error(structureErrors.join("\n"))
     let feasibility = batchOutlineFeasibility(article, maxDraftWords)
     if (!feasibility.feasible) {
       const outlineContext = await resolveStepContext(
@@ -2655,7 +2664,7 @@ async function runBatchArticle(
           `Merge overlapping sections and simplify the outline to approximately ${desiredOutlineSections} sections without changing the Article Spec, primary query, reader outcome, must-cover coverage, or supported claims.`,
           `CURRENT VERIFIED OUTLINE: ${JSON.stringify(batchVerifiedOutline(article.outline ?? []))}`,
           "Use only exact evidence quotes from the supplied documents. Preserve useful evidence by remapping it to the merged section.",
-          'Return only JSON: {"evidenceRegistry":{"ev-1":{"source":string,"note":string,"quote":string,"role":"kb"|"content_plan"|"rules"}},"sections":[{"id":string,"heading":string,"notes":string,"rationale":string,"level":"h2"|"h3","keywords":string[],"searchIntent":"informational"|"commercial"|"transactional"|"navigational","evidenceRefs":string[],"ruleRefs":string[]}]}.',
+          OUTLINE_RESPONSE_CONTRACT,
         ].join("\n\n"),
         true,
         5000,
@@ -2674,6 +2683,8 @@ async function runBatchArticle(
         throw new Error(
           "Batch could not compact the outline into the configured word target with verified evidence.",
         )
+      const structureErrors = validateOutlineStructure(compactedSections, article.outlineStructure)
+      if (structureErrors.length) throw new Error(structureErrors.join("\n"))
       const compactedFeasibility = batchOutlineFeasibility(
         { ...article, outline: compactedSections },
         maxDraftWords,
@@ -2715,7 +2726,7 @@ async function runBatchArticle(
       throw new Error(
         "Batch stopped before draft generation: the Article Spec requires an internal link, but Website Inventory has no relevant approved URL. Approve a matching inventory page or update the Article Spec before retrying.",
       )
-    if (!article.draft?.trim() || article.qualityReport?.status !== "pass") {
+    if (article.draftNeedsRegeneration || !article.draft?.trim() || article.qualityReport?.status !== "pass") {
       const draftPrerequisite = articleStepPrerequisite(article, 4)
       if (draftPrerequisite) throw new Error(draftPrerequisite)
       const effectiveDraftWords = maxDraftWords
@@ -2728,7 +2739,7 @@ async function runBatchArticle(
       let response: any = null
       const initialDraftResponses: any[] = []
       let assembled: { draft: string; evidenceUsage: Record<string, string[]>; parsed: any }
-      if (String(article.draft ?? "").trim()) {
+      if (!article.draftNeedsRegeneration && String(article.draft ?? "").trim()) {
         assembled = {
           draft: String(article.draft),
           evidenceUsage: remapEvidenceUsage(batchVerifiedOutline(article.outline ?? [], false).evidenceRegistry, verifiedOutline.sections, verifiedOutline.evidenceRegistry, article.draftEvidenceUsage ?? {}),
@@ -2747,9 +2758,7 @@ async function runBatchArticle(
             `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(approvedInternalLinkCandidates)}`,
             internalLinkInstruction(effectiveDraftWords, approvedInternalLinkCandidates.length),
             INTRODUCTION_INSTRUCTION,
-            article.activityType === "comparison-seo" && article.comparisonStructure === "similarities-differences"
-              ? "COMPARISON FORMAT: Include explicit Similarities and Differences H2 sections, then business experience/expertise, practical selection guidance, and a CTA aligned to the Article Spec."
-              : "",
+            outlineStructurePrompt(article.outlineStructure, "draft"),
             `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
             "Knowledge Base is the only source for concrete facts, figures, evidence and product claims. If a concrete claim has no approved evidence, omit it or replace it with general explanatory prose.",
             "Sections marked editorial-guidance may offer general analysis or decision guidance only. Never invent measurements, clinical outcomes or product claims to satisfy a missing source. If the Article Spec requires such a claim, flag the missing evidence.",
@@ -2796,6 +2805,7 @@ async function runBatchArticle(
       )
       article = await saveArticleCheckpoint(article, {
         draft: assembledDraft,
+        draftNeedsRegeneration: false,
         draftEvidenceUsage: assembled.evidenceUsage,
         qualityReport: null,
         draftScannedAt: new Date().toISOString(),
@@ -3925,7 +3935,7 @@ app.post("/api/generate", async (req, res) => {
   const {
     modelId,
     provider,
-    prompt,
+    prompt: submittedPrompt,
     systemPrompt,
     stepNumber,
     maxTokens,
@@ -3940,6 +3950,8 @@ app.post("/api/generate", async (req, res) => {
     pricing,
     articleId,
   } = req.body
+
+  let prompt = submittedPrompt
 
   if (
     !modelId ||
@@ -3978,6 +3990,13 @@ app.post("/api/generate", async (req, res) => {
     const article = await kvGet<any>(`${ARTICLE_PREFIX}${String(articleId)}`)
     if (!article)
       return res.status(404).json({ error: "Article không tồn tại." })
+    if (stepNumber === 3 && !article.outlineStructure)
+      return res.status(409).json({ error: "Select an outline structure from Skills & Rules before generating." })
+    if (stepNumber === 4) {
+      const errors = validateOutlineStructure(article.outline ?? [], article.outlineStructure)
+      if (article.outlineNeedsRegeneration || errors.length) return res.status(409).json({ error: errors.join("; ") || "Regenerate the outline after changing structure." })
+    }
+    if (stepNumber === 3 || stepNumber === 4) prompt = [prompt, outlineStructurePrompt(article.outlineStructure, stepNumber === 3 ? "outline" : "draft")].filter(Boolean).join("\n\n")
     const batchMutationError = activeBatchManualMutationError(article)
     if (batchMutationError) {
       return res
@@ -4965,12 +4984,19 @@ app.get("/api/articles/:id/stages", async (req, res) => {
   }
 })
 
+async function canonicalOutlineSelection(selection: any) {
+  const [files, config] = await Promise.all([kvGet<any[]>("writer:files"), kvGet<any>("writer:config")])
+  return resolveOutlineSelection(files ?? [], config?.stepConfigs?.[3]?.fileAccess?.rules ?? [], selection)
+}
+
 app.post("/api/articles", async (req, res) => {
   try {
     const now = new Date().toISOString()
     const article = { ...req.body, updatedAt: now }
     if (!article.id)
       return res.status(400).json({ error: "Article id là bắt buộc." })
+    if (article.outlineStructure) article.outlineStructure = await canonicalOutlineSelection(article.outlineStructure)
+    if (article.activityKind === "batch" && !article.outlineStructure) return res.status(422).json({ error: "Choose a Markdown outline structure before starting a batch." })
     article.currentStep = clampStoredArticleStep(article)
     if (article.contentPlanId && article.contentPlanSourceItemId && await tableAvailable("writer_articles")) {
       const conflicts = await tableSelect<any>("writer_articles", (query) =>
@@ -5141,6 +5167,16 @@ app.put("/api/articles/:id", async (req, res) => {
           ...updates,
           id,
           updatedAt: new Date().toISOString(),
+        }
+        if (Object.prototype.hasOwnProperty.call(updates, "outlineStructure") && activeBatchManualMutationError(existing)) throw new Error(activeBatchManualMutationError(existing)!)
+        if (Object.prototype.hasOwnProperty.call(updates, "outlineStructure") && JSON.stringify(updates.outlineStructure) !== JSON.stringify(existing.outlineStructure)) {
+          Object.assign(next, outlineSelectionUpdates(await canonicalOutlineSelection(updates.outlineStructure)))
+        }
+        if (updates.outline && JSON.stringify(updates.outline) !== JSON.stringify(existing.outline)) {
+          next.draftNeedsRegeneration = true
+          next.qualityReport = null
+          const errors = validateOutlineStructure(next.outline ?? [], next.outlineStructure)
+          if (errors.length && updates.outlineNeedsRegeneration === false) throw new Error(errors.join("; "))
         }
         if (Object.prototype.hasOwnProperty.call(updates, "currentStep")) {
           const requestedStep = Math.min(
