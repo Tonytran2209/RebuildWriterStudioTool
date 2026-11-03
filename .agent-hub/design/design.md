@@ -44,7 +44,7 @@ Use neutral grays as the default. Semantic color is reserved for system state: e
 
 - Use the system sans stack declared in `src/ui-guide.css`; use monospace only for tokens, counts, IDs and technical metadata. The approved defaults are 14px UI text and 16px long-form reading text; reference examples do not change these defaults.
 - Prefer compact hierarchy: app H1 is 24px/500; workspace H2 is 16px/500; H3 is 14px/500.
-- Launcher greeting exception (REQ-F11599E3): the main empty-workspace greeting uses 48px in Dark and 54px in Light, doubling its previous theme-specific size while retaining weight 500 and line-height 1.25. System follows the resolved theme. Keep these sizes on narrow screens and wrap naturally without clipping or overlapping the composer; other headings retain their existing hierarchy.
+- Launcher greeting exception (REQ-040C6C78, superseding REQ-F11599E3): reduce the main empty-workspace greeting to 32px on desktop (>=900px), 28px on tablet (601-899px), and 24px on mobile (<=600px), consistently in Light, Dark and System. Retain weight 500 and line-height 1.25, and wrap naturally without clipping or overlapping the composer; other headings retain their existing hierarchy.
 - Use a 4px spacing rhythm. Primary cards and workflow groups use 12px radius; controls use 8–12px radius; pills are reserved for statuses and tags.
 - Prefer borders over shadows. Avoid gradients, glass effects, large illustrations and decorative motion in operational screens.
 
