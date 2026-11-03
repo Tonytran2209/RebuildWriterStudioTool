@@ -1,3 +1,4 @@
+import { outlineQualityChecks } from './outlineQuality';
 import type { Article, ImageSuggestion, QualityGateCheck, UniversalQualityReport, WebsiteContentRecord } from "../types";
 import { articleSpecFingerprint } from "./articleSpec";
 import { introductionCheck } from "./introductionPolicy";
@@ -87,6 +88,7 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
   const missingCoverage = missingMustCoverTopics(article.outline ?? [], spec?.mustCover ?? [], draft);
   const checks: QualityGateCheck[] = [
     introductionCheck(draft),
+    ...outlineQualityChecks(article, draft),
     { id: "complete-structure", label: "Complete article structure", kind: "deterministic", status: /^#\s+/m.test(draft) && /^##\s+/m.test(draft) ? "pass" : "fail", reason: "Draft must contain one H1 and at least one H2.", autoFixAllowed: true },
     { id: "duplicate-headings", label: "No consecutive duplicate headings", kind: "deterministic", status: duplicateHeadings.length ? "fail" : "pass", reason: duplicateHeadings.length ? `Repeated heading immediately before its prose: ${duplicateHeadings.join(", ")}` : "Each section heading appears once before its prose.", autoFixAllowed: true },
     { id: "word-budget", label: "English word target range", kind: "deterministic", status: count >= acceptedMin && count <= acceptedMax ? "pass" : "fail", reason: `${count} English words; target ${wordTarget}, accepted range ${acceptedMin}–${acceptedMax}.`, autoFixAllowed: true },

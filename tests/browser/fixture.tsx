@@ -8,7 +8,7 @@ import Step3Outline from '../../src/components/workspace/Step3Outline';
 import Step4Draft, {parseSemanticQuality, completeSemanticChecks, incompleteSemanticReviewChecks} from '../../src/components/workspace/Step4Draft';
 import {normalizeArticleSpec,articleSpecFingerprint} from '../../src/lib/articleSpec';
 import {INTRODUCTION_INSTRUCTION} from '../../src/lib/introductionPolicy';
-import {EVIDENCE_REVIEW_INSTRUCTION} from '../../src/lib/qualityPolicy';
+import {semanticReviewInputFingerprint,EVIDENCE_REVIEW_INSTRUCTION} from '../../src/lib/qualityPolicy';
 import {DEFAULT_CONFIG,DEFAULT_MODELS} from '../../src/lib/defaultData';
 const original='# Browser fixture\n\n'+Array.from({length:9},(_,i)=>`Introduction line ${i+1} — unchanged source.`).join('\n')+'\n\n## Main body\nBODY_SENTINEL: This entire section remains visible.\n\n| Option | Benefit |\n| --- | --- |\n| **A — B** | [Details](https://example.com/details) |\n\n## Conclusion\nCONCLUSION_SENTINEL: Keep this section.';
 const qcIds=['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov'];
@@ -20,9 +20,7 @@ const payload={title:'Fixture practical guide',introduction:intro,sections,concl
 const flowDraft='# '+payload.title+'\n\n'+intro+'\n\n'+sections.map(s=>'## '+s.heading+'\n\n'+s.content).join('\n\n')+'\n\n## Conclusion\n\n'+payload.conclusion;
 const fixtureSpec=normalizeArticleSpec({primaryQuery:'fixture',mustCover:[]},{topic:'Browser fixture'});
 const fixtureSpecFingerprint=articleSpecFingerprint(fixtureSpec);
-let cacheHash=2166136261;
-for(const char of [EVIDENCE_REVIEW_INSTRUCTION,INTRODUCTION_INSTRUCTION,flowDraft,fixtureSpecFingerprint,JSON.stringify({}),JSON.stringify(sections)].join('\u0000')){cacheHash^=char.charCodeAt(0);cacheHash=Math.imul(cacheHash,16777619);}
-const incompleteCacheFingerprint=`semantic-v1-${(cacheHash>>>0).toString(36)}`;
+const incompleteCacheFingerprint=semanticReviewInputFingerprint({articleSpec:fixtureSpec,outline:sections as any},flowDraft,{});
 const flowConfig={...DEFAULT_CONFIG,stepConfigs:{...DEFAULT_CONFIG.stepConfigs,4:{...DEFAULT_CONFIG.stepConfigs[4],maxDraftWords:900}},websiteInventory:sections.map((_,i)=>({id:'link-'+i,title:'Practical guide '+i,url:`https://example.com/guide-${i}`,eligibleForInternalLink:true,status:'active'}))};
 const fixtureFiles = new URLSearchParams(location.search).has('kb') ? [{id:'fixture-kb',name:'Expert knowledge.md',category:'kb',content:'The fixture production process begins with script review, followed by storyboard approval and final production.',scanStatus:'ready',fileType:'md',size:'1 KB',uploadedAt:'2026-10-23'}] : [];
 Object.assign(window,{qcFlow:{payload,flowDraft}});

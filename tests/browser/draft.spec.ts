@@ -85,7 +85,7 @@ test('qc-schema accepts six checks and preserves saved draft on incomplete schem
  });
  expect(result.complete).toBe(true);
  expect(result.warning[0]).toMatchObject({status:'warning',autoFixAllowed:false});
- await expect(page.getByText('Semantic review incomplete',{exact:false}).first()).toBeVisible();
+ await expect(page.getByText(/Semantic review incomplete|Đánh giá semantic chưa hoàn tất/).first()).toBeVisible();
  expect(await page.getByTestId('stored-source').textContent()).toBe(before);
 });
 test('qc-cache rejects incomplete, duplicate and schema-warning cache entries',async({page})=>{
@@ -107,7 +107,7 @@ for(const status of ['pass','warning','fail','incomplete'])test(`qc-reload prese
  await expect(panel).toHaveText(before!);
  expect(await page.getByTestId('stored-source').textContent()).toBe(draft);
  await page.getByRole('button',{name:'Change QC configuration'}).click();
- await expect(panel.getByText('QC needs re-check',{exact:false}).first()).toBeVisible();
+ await expect(panel.getByText(/Review needs updating|Đánh giá cần cập nhật/).first()).toBeVisible();
 });
 
 // Exercise the real component handlers and HTTP boundary; no live AI or storage.
@@ -137,7 +137,7 @@ for(const incomplete of [false,true])test(`qc-schema generation saves checkpoint
  expect(saved.draft).toContain('Fixture practical guide');
  if(incomplete)expect(saved.semanticReviewChecks.at(-1).id).toBe('semantic-review-schema');
  await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
- if(incomplete)await expect(page.getByText('Semantic review incomplete',{exact:false}).first()).toBeVisible();
+ if(incomplete)await expect(page.getByText(/Semantic review incomplete|Đánh giá semantic chưa hoàn tất/).first()).toBeVisible();
  expect(calls).toHaveLength(2);
 });
 for(const incomplete of [false,true])test(`qc-cache recheck calls reviewer for incomplete cache without rewrite (${incomplete?'incomplete':'complete'})`,async({page})=>{
@@ -251,7 +251,7 @@ test('qc-display-preservation generated report survives reload and viewing prese
 test('qc-batch shared review fingerprint survives legacy spec metadata and missing browser generation fingerprint',async({page})=>{
  const calls=await mockQcFlow(page,'generation');
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-9-/);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-10-/);
  await page.evaluate(()=>{
    const saved=JSON.parse(sessionStorage.getItem('qc-fixture')!);
    saved.articleSpecFingerprint='legacy-backend-sha256';saved.activityKind='batch';
@@ -267,7 +267,7 @@ test('qc-batch shared review fingerprint survives legacy spec metadata and missi
 test('qc-advisory warning permits completion but evidence warnings remain blocking',async({page})=>{
  await mockQcFlow(page,'generation');
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-9-/);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-10-/);
  const complete=page.getByRole('button',{name:/Đánh dấu hoàn thành|Mark complete/});
  await page.evaluate(()=>{
    const saved=JSON.parse(sessionStorage.getItem('qc-fixture')!);
@@ -301,7 +301,7 @@ test('qc-evidence missing KB does not trigger an unsupported rewrite or repeated
 test('qc-evidence recheck retrieves current section KB without manufacturing usage',async({page})=>{
  const calls=await mockQcFlow(page,'recheck',false,false,true);
  await page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/}).click();
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-9-/);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-10-/);
  const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));
  expect(saved.outline.every((s:any)=>s.evidence.some((e:any)=>e.role==='kb' && e.quote.includes('script review')))).toBe(true);
  expect(Object.values(saved.draftEvidenceUsage).every((refs:any)=>refs.length===0)).toBe(true);

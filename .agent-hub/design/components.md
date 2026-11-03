@@ -44,3 +44,7 @@ Use a shared, visibly required structure picker for single and batch workflows: 
 ## Draft SEO brief (2026-11-03)
 
 Use a neutral token-based SEO brief above the draft. Feature the primary keyword and search intent separately; distinguish selected secondary queries from additional research terms, deduplicate display entries without mutating stored SEO data, and render readable numbered rows rather than dense pills. Show all available terms, preserve full keyword wrapping, and place internal-link requirements and approved candidate counts in a secondary footer. Stack groups and intent on mobile; support Light/Dark/System. Export and generation contracts remain unchanged.
+
+## QC process clarity (2026-11-03)
+
+Distinguish content findings from incomplete/outdated review process. Explain whether the report is missing, uses old QC rules, or no longer matches reviewed inputs; show pending-review wording and a visible explicit Re-check action. Preserve draft content and completion blocking for stale/incomplete reviews. Semantic evaluation uses the article’s frozen MD structure, not a generic comparison template; the introduction contract stays independent of body structure and responsive pixel line count.

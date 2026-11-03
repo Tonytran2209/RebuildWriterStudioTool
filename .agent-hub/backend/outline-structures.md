@@ -42,3 +42,13 @@ The local library file inspected on 2026-11-03 yields seven choices: Type A: For
 ## Verification
 
 Run `node --test shared/outlineStructures.test.ts`, frontend/backend TypeScript checks and the production build. Regression coverage includes MD-only/authorized sources, malformed declarations, duplicate IDs, frozen revisions and heading order/levels. Browser-check empty catalog, populated single/batch selectors, selection source display and stale-output notices without production AI calls.
+
+## Universal QC v10
+
+Both execution modes share `outlineReviewInstruction`, `outlineQualityChecks` and `semanticReviewInputFingerprint`. Reader-outcome checks the selected frozen MD layout without imposing another form's sections; all six semantic check IDs remain stable. Explicit MD required headings and approved H2/H3 heading order/levels are deterministic checks on the outline and assembled draft. H3 needs an H2 parent; no arbitrary H3 quota is imposed. Generic conclusion assembly remains permitted.
+
+The introduction contract remains one 60–85 English-word paragraph, approximately 5–6 desktop reading lines; responsive visual line count is never a deterministic failure. Single/batch generation, recovery and review preserve this authority.
+
+QC identity includes the frozen definition, outline, evidence mapping, draft, spec, target and other source/rule inputs. The current contents of the selected generator MD are excluded: the frozen snapshot already supplies that input. Editing/replacing that MD does not silently invalidate an unchanged article; explicitly selecting its new version does. Other evidence source changes still invalidate QC. QC v9 reports require a one-time explicit re-check after upgrading.
+
+Incomplete/malformed semantic responses are review-process states, not invented content failures. Preserve the draft, mark a blocking `semantic-review-schema` warning, name missing checks and offer explicit Re-check & Fix. Batch persists process reports and semantic identities/checks for browser continuation; provider/schema failures cannot mark an article complete. Advisory content warnings remain non-blocking except evidence and explicit blocking violations. No paid automatic browser retries are added; explicit re-check may request missing checks.

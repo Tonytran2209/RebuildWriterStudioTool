@@ -1,3 +1,4 @@
+import { outlineReviewInstruction, outlineQualityChecks } from '../src/lib/outlineQuality.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
 import "dotenv/config"
 import { authProvider, AuthService, AuthError } from "./authService.ts"
@@ -49,7 +50,7 @@ import { jsonrepair } from "jsonrepair"
 import { resolveArticleProjection } from "./articleProjection.ts"
 import { formatDraftExport } from "./draftFormatter.ts"
 import { internalLinkInstruction, internalLinkChecks, addMissingInternalLinks } from "../src/lib/internalLinkPolicy.ts"
-import { canonicalSpecFingerprint, qualityInputFingerprint, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION } from "../src/lib/qualityPolicy.ts"
+import { canonicalSpecFingerprint, qualityInputFingerprint, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS } from "../src/lib/qualityPolicy.ts"
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from "../src/lib/evidencePolicy.ts"
 import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionCheck } from "../src/lib/introductionPolicy.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
@@ -1700,25 +1701,18 @@ function batchUniversalChecks(
       autoFixAllowed: true,
     },
   ]
-  return [...checks, ...internalLinkChecks(text, approved, targetWords)]
+  return [...checks, ...outlineQualityChecks(article, text), ...internalLinkChecks(text, approved, targetWords)]
 }
 
 function parseBatchSemanticChecks(raw: string) {
   const payload = parseJsonObject(raw)
-  const requiredIds = [
-    "intent-satisfied",
-    "reader-outcome",
-    "intro-quality",
-    "keyword-naturalness",
-    "evidence-support",
-    "brand-pov",
-  ]
+  const requiredIds = SEMANTIC_IDS
   const required = new Set(requiredIds)
   const entries = Array.isArray(payload.checks)
     ? payload.checks.map((item: any) => [String(item.id ?? ""), item])
     : Object.entries(payload.checks ?? {})
   const checks = entries
-    .filter(([id]: any[]) => required.has(String(id)))
+    .filter(([id, item]: any[]) => required.has(String(id) as typeof SEMANTIC_IDS[number]) && item && ["pass", "warning", "fail"].includes(item.status))
     .map(([id, item]: any[]) => ({
       id: String(id),
       label: String(item.label ?? id),
@@ -1737,6 +1731,7 @@ function parseBatchSemanticChecks(raw: string) {
       blocking: typeof item.blocking === "boolean" ? item.blocking : undefined,
     }))
   const present = new Set(checks.map((item: any) => item.id))
+  if (present.size !== checks.length) throw new Error("Semantic reviewer returned duplicate check IDs.")
   const missing = requiredIds.filter((id) => !present.has(id))
   if (missing.length)
     throw new Error(
@@ -1788,6 +1783,7 @@ function batchSemanticReviewInstruction(article: any, draft: string) {
   return [
     EVIDENCE_REVIEW_INSTRUCTION,
     INTRODUCTION_INSTRUCTION,
+    outlineReviewInstruction(article),
     "For keyword-naturalness, pass when the primary query is present in the H1/body and reads grammatically in context.",
     "Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.",
     "Fail only for material keyword stuffing that blocks publication.",
@@ -3011,10 +3007,23 @@ async function runBatchArticle(
         draftResponses.push(review)
         return review
       }
+      const saveIncompleteReview = async (error: unknown): Promise<never> => {
+        const processCheck = semanticReviewIncomplete(error)
+        article = await saveArticleCheckpoint(article, {
+          draft: assembledDraft,
+          draftEvidenceUsage: assembled.evidenceUsage,
+          semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage),
+          semanticReviewChecks: [],
+          qualityReport: { version: QUALITY_VERSION, status: "warning", checkedAt: new Date().toISOString(), articleSpecFingerprint: canonicalSpecFingerprint(article.articleSpec), inputFingerprint: qualityInputFingerprint(article, assembledDraft, effectiveDraftWords, qualityFiles, runtimeConfig.workflowRules), checks: [...deterministic, processCheck] },
+          aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? "unknown", item))].slice(-50) },
+        })
+        draftResponses.length = 0
+        throw new Error(`Review process incomplete; saved draft preserved. ${processCheck.reason} Use Re-check & Fix to complete the missing checks.`)
+      }
       let review = await requestSemanticReview(
         assembledDraft,
         assembled.evidenceUsage,
-      )
+      ).catch(saveIncompleteReview)
       let semantic
       try {
         semantic = reconcileBatchSemanticChecks(
@@ -3026,11 +3035,13 @@ async function runBatchArticle(
           assembledDraft,
           assembled.evidenceUsage,
           true,
-        )
+        ).catch(saveIncompleteReview)
+        try {
         semantic = reconcileBatchSemanticChecks(
           parseBatchSemanticChecks(review.content),
           deterministic,
         )
+        } catch (error) { return await saveIncompleteReview(error) }
       }
       let checks = [...deterministic, ...semantic]
       let report = {
@@ -3086,7 +3097,7 @@ async function runBatchArticle(
           const verification = await requestSemanticReview(
             assembledDraft,
             assembled.evidenceUsage,
-          )
+          ).catch(saveIncompleteReview)
           try {
             semantic = reconcileBatchSemanticChecks(
               parseBatchSemanticChecks(verification.content),
@@ -3097,11 +3108,13 @@ async function runBatchArticle(
               assembledDraft,
               assembled.evidenceUsage,
               true,
-            )
+            ).catch(saveIncompleteReview)
+            try {
             semantic = reconcileBatchSemanticChecks(
               parseBatchSemanticChecks(recoveredVerification.content),
               deterministic,
             )
+            } catch (error) { return await saveIncompleteReview(error) }
           }
         }
         checks = [...deterministic, ...semantic]
@@ -3119,6 +3132,8 @@ async function runBatchArticle(
           draft: assembledDraft,
           draftEvidenceUsage: assembled.evidenceUsage,
           qualityReport: report,
+          semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage),
+          semanticReviewChecks: semantic,
           aiUsageByStep: {
             ...article.aiUsageByStep,
             4: [
@@ -3137,6 +3152,8 @@ async function runBatchArticle(
         draft: assembledDraft,
         draftEvidenceUsage: assembled.evidenceUsage,
         qualityReport: report,
+        semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage),
+        semanticReviewChecks: semantic,
         draftScannedAt: new Date().toISOString(),
         currentStep: 4,
         status: "done",

@@ -1,3 +1,5 @@
+import { outlineReviewInstruction } from '../../lib/outlineQuality';
+import { semanticReviewInputFingerprint, missingSemanticChecks, semanticReviewIncomplete, SEMANTIC_IDS, QUALITY_VERSION } from '../../lib/qualityPolicy';
 import SeoBrief from './SeoBrief';
 import { outlineStructurePrompt, validateOutlineStructure } from '../../../shared/outlineStructures';
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -142,6 +144,7 @@ function semanticReviewInstruction(article: Article, draft: string) {
   return [
     EVIDENCE_REVIEW_INSTRUCTION,
     INTRODUCTION_INSTRUCTION,
+    outlineReviewInstruction(article),
     'For keyword-naturalness, pass when the primary query is present in the H1/body and reads grammatically in context.',
     'Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.',
     'Fail only for material keyword stuffing that blocks publication.',
@@ -188,7 +191,7 @@ function mergeStructuredDraft(base: StructuredDraftPayload, repair: StructuredDr
   };
 }
 
-const semanticCheckIds = ['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov'] as const;
+const semanticCheckIds = SEMANTIC_IDS;
 
 const semanticCheckSchema = {
   type: 'object',
@@ -387,7 +390,9 @@ export function parsePartialSemanticQuality(raw: string): QualityGateCheck[] {
     : Object.entries(rawChecks as Record<string, Record<string, unknown>>).map(([id, item]) => [normalizeId(id), item] as const)
   const checks = entries.flatMap(([id, item]) => {
     if (!id || !required.has(id)) return [];
+    if (!item || typeof item !== 'object') return [];
     const rawStatus = String(item.status ?? '').trim().toLocaleLowerCase()
+    if (!['pass','passed','ok','warning','warn','fail','failed'].includes(rawStatus)) return [];
     const status: QualityGateCheck['status'] = ['pass', 'passed', 'ok'].includes(rawStatus)
       ? 'pass'
       : ['warning', 'warn'].includes(rawStatus)
@@ -401,6 +406,7 @@ export function parsePartialSemanticQuality(raw: string): QualityGateCheck[] {
 export function parseSemanticQuality(raw: string): QualityGateCheck[] {
   const checks = parsePartialSemanticQuality(raw);
   const present = new Set(checks.map(item => item.id));
+  if (present.size !== checks.length) throw new Error("Semantic reviewer returned duplicate check IDs; complete review required.");
   const missing = semanticCheckIds.filter(id => !present.has(id));
   if (missing.length) throw new Error(`Semantic reviewer chưa hoàn tất báo cáo; thiếu: ${missing.join(', ')}. Draft chưa bị đánh dấu fail.`);
   return checks;
@@ -509,40 +515,20 @@ function insertImagePlaceholder(draft: string, suggestion: ImageSuggestion) {
   return `${draft.slice(0, insertAt).trimEnd()}\n\n${placeholder}\n\n${draft.slice(insertAt).trimStart()}`.trim()
 }
 
-function semanticReviewFingerprint(article: Article, draft: string, usage: Record<string, string[]>) {
-  const input = [EVIDENCE_REVIEW_INSTRUCTION, INTRODUCTION_INSTRUCTION, draft, article.articleSpec ? canonicalSpecFingerprint(article.articleSpec) : '', JSON.stringify(usage), JSON.stringify(article.outline ?? [])].join('\u0000')
-  let hash = 2166136261
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return `semantic-v1-${(hash >>> 0).toString(36)}`
-}
+const semanticReviewFingerprint = semanticReviewInputFingerprint;
 
 export function completeSemanticChecks(checks: QualityGateCheck[] | null | undefined): checks is QualityGateCheck[] {
-  return Boolean(checks && checks.length === semanticCheckIds.length && semanticCheckIds.every(id =>
-    checks.some(check => check.id === id && check.kind === 'semantic' && ['pass', 'warning', 'fail'].includes(check.status)),
-  ));
+  return Boolean(checks && checks.length === SEMANTIC_IDS.length && missingSemanticChecks(checks).length === 0 && !checks.some(check => check.id === 'semantic-review-schema'));
 }
 
-export function incompleteSemanticReviewChecks(error: unknown): QualityGateCheck[] {
-  const reason = `Semantic reviewer response was incomplete: ${error instanceof Error ? error.message : String(error)}`;
-  return [{
-    id: 'semantic-review-schema',
-    label: 'Semantic review incomplete',
-    kind: 'semantic' as const,
-    status: 'warning' as const,
-    reason,
-    evidence: '',
-    location: '',
-    recommendedAction: 'Review the saved draft or run Re-check & Fix manually.',
-    autoFixAllowed: false,
-  }];
+export function incompleteSemanticReviewChecks(error: unknown, checks: QualityGateCheck[] = []): QualityGateCheck[] {
+  return [semanticReviewIncomplete(error, checks)];
 }
 
 function partialSemanticReviewChecks(raw: string, error: unknown): QualityGateCheck[] {
   try {
-    return [...parsePartialSemanticQuality(raw), ...incompleteSemanticReviewChecks(error)];
+    const partial = parsePartialSemanticQuality(raw);
+    return [...partial, ...incompleteSemanticReviewChecks(error, partial)];
   } catch {
     return incompleteSemanticReviewChecks(error);
   }
@@ -719,10 +705,16 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const displayedQualityChecks: QualityGateCheck[] = [...baseQualityChecks];
   if (draft && !reportIsCurrent) displayedQualityChecks.push({
     id: 'quality-review-stale', label: 'QC needs re-check', kind: 'semantic', status: 'warning', autoFixAllowed: false,
-    reason: 'Saved draft preserved. The current draft and configuration need Re-check & Fix before QC can pass.',
+    blocking: true,
+    reason: !savedQualityReport
+      ? tr('Chưa có báo cáo QC cho bản nháp đã lưu. Đây là trạng thái kiểm tra, không phải kết luận nội dung sai.', 'No QC report exists for the saved draft. This is a review-process state, not a content failure.')
+      : savedQualityReport.version !== QUALITY_VERSION
+        ? tr('Báo cáo đã lưu dùng bộ quy tắc QC cũ. Cần kiểm tra lại theo cấu trúc outline hiện tại; bản nháp được giữ nguyên.', 'The saved report uses an earlier QC contract. Re-check against the current outline structure; the draft is preserved.')
+        : tr('Báo cáo đã lưu chưa khớp bản nháp, Article Spec, outline, cấu trúc MD đã chọn hoặc nguồn evidence hiện tại. Cần cập nhật đánh giá.', 'The saved report does not match the current draft, Article Spec, outline, selected MD snapshot or evidence sources. Review needs updating.'),
+    recommendedAction: tr('Chạy Kiểm tra lại để cập nhật đánh giá. Báo cáo cũ không được dùng để duyệt nội dung đã thay đổi.', 'Run Re-check & Fix to update the review. An old report cannot approve changed content.'),
   });
   if (draft && !completeSemanticChecks(baseQualityChecks.filter(item => item.kind === 'semantic')) && !baseQualityChecks.some(item => item.id === 'semantic-review-schema')) {
-    displayedQualityChecks.push(...incompleteSemanticReviewChecks('Run Re-check & Fix to complete all six semantic checks.'));
+    displayedQualityChecks.push(semanticReviewIncomplete('Run Re-check & Fix to complete the report.', baseQualityChecks));
   }
   const seoChecklistPassed = Boolean(draft) && reportIsCurrent && qualityAllowsCompletion(displayedQualityChecks);
   const imageSuggestions = article.imageSuggestions ?? []
@@ -1130,6 +1122,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
 
   const handleRecheckAndFix = async () => {
     if (!draft.trim() || generationInFlight.current) return;
+    if (article.outlineNeedsRegeneration) { setError(tr('Hãy tạo lại outline và draft theo cấu trúc đã chọn trước khi kiểm tra QC.', 'Regenerate the outline and draft for the selected structure before QC.')); return; }
     generationInFlight.current = true;
     setRepairing(true);
     setError('');
@@ -1280,7 +1273,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
               `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
               `DRAFT: ${value}`,
-              EVIDENCE_REVIEW_INSTRUCTION,
+              semanticReviewInstruction(reviewArticle, value),
               `Return only these checks: ${needed.join(', ')}.`,
             ].join('\n\n'),
           });
@@ -1292,7 +1285,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         };
         if (validPrevious.length && missing.length) {
           try { return await completeMissing(validPrevious); }
-          catch (error) { return { checks: [...validPrevious, ...incompleteSemanticReviewChecks(error)], schemaComplete: false }; }
+          catch (error) { return { checks: [...validPrevious, ...incompleteSemanticReviewChecks(error, validPrevious)], schemaComplete: false }; }
         }
         const requestReview = () => callAI({
           articleId: reviewArticle.id,
@@ -1717,6 +1710,11 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             {/* Universal Quality Gate */}
             {insightPanel === 'quality' && <section className="universal-qc-panel draft-insight-panel space-y-2.5 p-3">
               <div className="flex items-center justify-between"><h3 className="text-[11px] font-medium text-slate-800">Universal QC</h3><span className={`seo-score-tag rounded-full border px-2 py-0.5 text-[9px] font-medium ${seoChecklistPassed ? 'is-pass' : ''}`}>{displayedQualityChecks.filter(item => item.status === 'pass').length}/{displayedQualityChecks.length}</span></div>
+              {displayedQualityChecks.some(item => ['quality-review-stale', 'semantic-review-schema'].includes(item.id)) && <div role="status" className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs leading-relaxed">
+                <p className="font-medium">{tr('Chưa thể hoàn thành: quy trình kiểm tra chưa đủ hoặc cần cập nhật', 'Completion pending: review is incomplete or needs updating')}</p>
+                <p className="mt-1 text-[var(--ui-secondary)]">{tr('Đây là trạng thái kiểm tra, không tự kết luận bài viết sai. Bản nháp đã được giữ nguyên.', 'This is a review-process status, not a content failure. The saved draft is preserved.')}</p>
+                <button type="button" disabled={generating || repairing || !draft || article.outlineNeedsRegeneration} onClick={() => void handleRecheckAndFix()} className="mt-2 min-h-11 rounded-lg border border-[var(--ui-control-border)] px-3">{repairing ? tr('Đang kiểm tra…', 'Reviewing…') : tr('Kiểm tra lại và hoàn tất đánh giá', 'Re-check and complete review')}</button>
+              </div>}
               <div className="space-y-1.5">
                 {displayedQualityChecks.map(item => {
                   const hasDetails = item.status !== 'pass' && Boolean(item.reason?.trim() || item.recommendedAction?.trim());
@@ -1727,8 +1725,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                         ? <TriangleAlert data-qc-icon="warning" className="app-icon shrink-0 text-amber-700" aria-hidden="true" />
                         : <CircleX data-qc-icon="fail" className="app-icon shrink-0 text-rose-700" aria-hidden="true" />}
                     <span className="min-w-0 flex-1 font-semibold">
-                      {item.label}
-                      <span className="ml-1 font-medium">{item.status === 'pass' ? tr('Đạt', 'Pass') : item.status === 'warning' ? tr('Cảnh báo', 'Warning') : tr('Thất bại', 'Fail')}</span>
+                      {item.id === 'quality-review-stale' ? tr('Đánh giá cần cập nhật', 'Review needs updating') : item.id === 'semantic-review-schema' ? tr('Đánh giá semantic chưa hoàn tất', 'Semantic review incomplete') : item.label}
+                      <span className="ml-1 font-medium">{item.status === 'pass' ? tr('Đạt', 'Pass') : item.status === 'warning' ? (['quality-review-stale', 'semantic-review-schema'].includes(item.id) ? tr('Chờ kiểm tra', 'Review pending') : tr('Cảnh báo nội dung', 'Content warning')) : tr('Thất bại', 'Fail')}</span>
                     </span>
                   </>;
                   return <div key={item.id} data-qc-check={item.id} data-qc-status={item.status} className="min-w-0 break-words text-[10px] leading-snug [overflow-wrap:anywhere]">
