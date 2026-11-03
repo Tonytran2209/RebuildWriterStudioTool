@@ -1,4 +1,3 @@
-import { readOutlineStructures } from '../../../shared/outlineStructures';
 import { useEffect, useState } from 'react';
 import type { AppConfig, Article, DocumentFile } from '../../types';
 import { pingRailway } from '../../lib/db';
@@ -14,7 +13,6 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
   const enabledModels = config.models.filter(model => model.enabled);
   const readyKb = files.filter(file => file.category === 'kb' && isDocumentReady(file));
   const readySkills = files.filter(file => file.category === 'rules' && isDocumentReady(file));
-  const outlineCatalog = readOutlineStructures(files, config.stepConfigs[3]?.fileAccess?.rules ?? []);
   const workflowSteps = [2, 3, 4] as const;
   const usageSummary = Object.fromEntries(workflowSteps.map(step => [String(step), articles.flatMap(article => article.aiUsageByStep?.[step] ?? [])]));
 
@@ -48,13 +46,6 @@ export default function TabStepSetup({ config, files, articles, onChange }: Prop
       </div>
     </section>
 
-    <section>
-      <h2 className="mb-3 text-sm font-medium">{tr('Cấu trúc outline từ Skills & Rules', 'Outline structures from Skills & Rules')}</h2>
-      <p className="mb-3 text-xs">{tr('Batch chọn trước khi chạy; single chọn ở Draft Outline. Danh sách lấy từ 02-outline-generator.md hoặc khối outline-structures trong MD.', 'Batch chooses before running; single chooses at Draft Outline. Definitions come from 02-outline-generator.md or outline-structures blocks in Markdown.')}</p>
-      {outlineCatalog.structures.map(item => <p key={item.id} className="mb-2 text-sm">{item.name} — {item.sourceName} · {item.id}<br /><span className="text-xs">{item.description}</span></p>)}
-      {!outlineCatalog.structures.length && <p role="status" className="text-sm">{tr('Chưa có cấu trúc hợp lệ được cấp quyền cho Draft Outline.', 'No valid structures authorized for Draft Outline.')}</p>}
-      {outlineCatalog.errors.map(error => <p key={error} role="alert" className="text-xs text-amber-600">{error}</p>)}
-    </section>
     <section>
       <h2 className="mb-1 text-sm font-medium text-slate-800">{tr('Model theo workflow', 'Workflow models')}</h2>
       <p className="mb-3 text-xs leading-5 text-slate-400">{tr('Chọn model cho từng bước và theo dõi usage đã ghi nhận.', 'Choose a model for each step and review recorded usage.')}</p>

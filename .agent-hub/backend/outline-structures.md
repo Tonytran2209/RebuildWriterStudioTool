@@ -31,7 +31,7 @@ The local library file inspected on 2026-11-03 yields seven choices: Type A: For
 ## Lifecycle
 
 - `shared/outlineStructures.ts` owns parsing, provenance, deterministic source revision hash, outline task assembly, stage-specific structure guidance and ordered heading validation. `OUTLINE_OPERATIONAL_STAGES` is shared by frontend/backend registries; it defines execution contracts, not content layouts.
-- Settings shows authorized definitions and parse/duplicate errors. Duplicate IDs are excluded, never chosen arbitrarily. Empty catalog blocks new outline creation and explains how to load MD.
+- Workflow AI omits the outline catalog; uploaded Markdown in Knowledge & Rules remains its authority. Batch/single selectors show authorized definitions and parse/duplicate errors. Duplicate IDs are excluded, never chosen arbitrarily. Empty catalog blocks new outline creation and explains how to load MD.
 - Batch selects a structure before activity creation. Every article receives an independent JSON snapshot; backend resolves the submitted selection against the current authorized catalog. Single selects at Draft Outline.
 - Snapshot contains the full definition, source ID/name and content hash. The hash detects revisions; it is not a security signature. Updating MD does not mutate running or saved articles. Re-select an updated definition explicitly to adopt it.
 - Single and batch use the shared task/structure builders. MD layout supplements immutable Article Spec, evidence and JSON contracts. System workflow instructions continue to govern language, source safety and persistence.
