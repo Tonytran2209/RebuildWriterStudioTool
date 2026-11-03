@@ -28,3 +28,7 @@ projectId: writer-studio
 - Cards require a clear primary action and should not overload the row with equal-weight buttons.
 - Status badges convey state, not navigation or primary actions.
 - Empty states explain the prerequisite and provide the next safe action.
+
+## Workspace ruler (2026-11-03)
+
+User-requested workspace refinement: center article content in a maximum 900px reading column, with a sticky vertical ruler at the left canvas edge. Major ticks navigate to available Article Spec, Outline and Draft sections; minor ticks magnify near the pointer. Show the step title and durable completion/availability state on hover and keyboard focus. Preserve neutral theme tokens, 44px-high step targets, visible focus and reduced-motion support. Mobile retains a compact ruler and fluid reading column. Active navigation is not an AI-running indicator.

@@ -100,7 +100,7 @@ export default function App() {
     const target = workflowStepRefs.current.get(step)
     if (!target) return
     setVisibleWorkflowStep(step)
-    target.scrollIntoView({ behavior: "smooth", block: "start" })
+    target.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })
   }, [])
 
   useEffect(() => {
@@ -783,8 +783,8 @@ export default function App() {
               }}
             />
             <main className="continuous-workspace flex-1 min-h-0 overflow-y-auto p-2.5 md:p-5">
-              <div className="mx-auto grid w-full max-w-6xl grid-cols-[minmax(0,1fr)_2.25rem] gap-2 sm:grid-cols-[minmax(0,1fr)_2.5rem] sm:gap-3 lg:grid-cols-[minmax(0,1fr)_6.5rem] lg:gap-4">
-                <div className="min-w-0 space-y-6">
+              <div className="workflow-layout">
+                <div className="workflow-content min-w-0 space-y-6">
                   <section ref={(node) => { if (node) workflowStepRefs.current.set(2, node); else workflowStepRefs.current.delete(2) }} data-workflow-step="2" className="workflow-section scroll-mt-4">
                     <Step2CoreIdea
                       embedded
