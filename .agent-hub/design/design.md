@@ -66,3 +66,7 @@ Use neutral grays as the default. Semantic color is reserved for system state: e
 
 - Do not copy a third-party visual identity, logo, proprietary typography or exact layout.
 - Do not apply a reference-source pattern when it conflicts with the neutral Writer Studio system, accessibility, workflow clarity or existing user data.
+
+## Workspace ruler (2026-11-03)
+
+User-requested workspace refinement: center article content in a maximum 900px reading column, with a sticky vertical ruler at the left canvas edge. Major ticks navigate to available Article Spec, Outline and Draft sections; minor ticks magnify near the pointer. Show the step title and durable completion/availability state on hover and keyboard focus. Preserve neutral theme tokens, 44px-high step targets, visible focus and reduced-motion support. Mobile retains a compact ruler and fluid reading column. Active navigation is not an AI-running indicator.

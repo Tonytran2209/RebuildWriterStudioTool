@@ -2396,135 +2396,101 @@ html, body, #root {
   min-width: 0;
 }
 
-.workflow-rail {
-  position: sticky;
-  top: 1rem;
-  width: 2.25rem;
-  padding-top: .15rem;
+/* A quiet ruler stays at the canvas edge; the reading column stays centered. */
+.workflow-layout {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: start;
+  min-height: 100%;
+  gap: 12px;
 }
-
-.workflow-rail-item {
-  min-height: 4.35rem;
-}
-
-.workflow-rail-item:last-child { min-height: 1.5rem; }
-
-.workflow-rail-button {
-  display: flex;
+.workflow-content {
+  grid-column: 2;
+  grid-row: 1;
   width: 100%;
-  min-height: 1.75rem;
+  max-width: 900px;
+  margin-inline: auto;
+  padding-block: 24px 96px;
+  overflow-wrap: anywhere;
+}
+.workflow-ruler {
+  grid-column: 1;
+  grid-row: 1;
+  position: sticky;
+  top: 32px;
+  z-index: 20;
+  width: 44px;
+  margin-top: 24px;
+  color: var(--ui-secondary);
+}
+.workflow-ruler ol { list-style: none; margin: 0; padding: 0; }
+.workflow-ruler-stop {
+  position: relative;
+  display: flex;
   align-items: center;
-  gap: .4rem;
-  padding: .25rem .35rem;
+  width: 44px;
+  height: 44px;
   border: 0;
   background: transparent;
-  color: #777;
-  text-align: left;
-  transition: color 140ms ease;
+  color: inherit;
+  cursor: pointer;
 }
-
-.workflow-rail-button:disabled { opacity: .35; cursor: default; }
-
-.workflow-rail-status {
-  position: relative;
-  width: 1.1rem;
-  height: 1.1rem;
-  flex: 0 0 1.1rem;
+.workflow-ruler-stop[aria-disabled="true"] { cursor: default; }
+.workflow-ruler-major {
+  display: block;
+  width: 20px;
+  height: 3px;
+  background: var(--ui-muted);
+  transform-origin: left center;
+  transform: scaleX(var(--ruler-scale, 1));
+  transition: transform 160ms ease, background 160ms ease;
 }
-
-.workflow-rail-marker,
-.workflow-rail-check,
-.workflow-rail-pending {
+.workflow-ruler-stop.is-complete .workflow-ruler-major { background: var(--ui-secondary); }
+.workflow-ruler-stop.is-active .workflow-ruler-major { width: 28px; background: var(--ui-text); }
+.workflow-ruler-stop:focus-visible { outline: 2px solid var(--ui-secondary); outline-offset: 2px; border-radius: 4px; }
+.workflow-ruler-minors { display: flex; flex-direction: column; gap: 10px; padding-block: 0; }
+.workflow-ruler-minors i {
+  display: block;
+  width: 8px;
+  height: 3px;
+  background: var(--ui-border);
+  transform-origin: left center;
+  transition: transform 160ms ease;
+}
+.workflow-ruler-tooltip {
   position: absolute;
-  inset: 50% auto auto 50%;
-  transform: translate(-50%, -50%);
-  transition: opacity 190ms ease, transform 190ms ease;
+  left: 52px;
+  top: 50%;
+  transform: translate(-4px, -50%);
+  min-width: 160px;
+  max-width: min(240px, calc(100vw - 100px));
+  padding: 12px 16px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  background: var(--ui-surface);
+  color: var(--ui-text);
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease, visibility 160ms;
 }
-
-.workflow-rail-marker {
-  width: 1.1rem;
-  height: 2px;
-  border-radius: 999px;
-  background: #444;
+.workflow-ruler-title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; }
+.workflow-ruler-state { display: block; margin-top: 4px; font-size: 12px; color: var(--ui-secondary); }
+.workflow-ruler-stop:hover .workflow-ruler-tooltip,
+.workflow-ruler-stop:focus .workflow-ruler-tooltip { opacity: 1; visibility: visible; transform: translate(0, -50%); }
+@media (max-width: 640px) {
+  .workflow-layout { grid-template-columns: 32px minmax(0, 1fr); gap: 8px; }
+  .workflow-ruler { width: 32px; top: 16px; }
+  .workflow-ruler-stop { width: 32px; }
+  .workflow-ruler-major { width: 14px; }
+  .workflow-ruler-stop.is-active .workflow-ruler-major { width: 18px; }
+  .workflow-ruler-tooltip { left: 40px; }
+  .workflow-content { padding-block: 8px 64px; }
 }
-
-.workflow-rail-check {
-  width: .9rem;
-  height: .9rem;
-  color: #e7e7e7;
-  stroke-width: 2.35;
-}
-
-.workflow-rail-pending {
-  width: .9rem;
-  height: .9rem;
-  color: #f2f2f2;
-  stroke-width: 1.9;
-  animation: workflow-rail-spin 1.15s linear infinite;
-}
-
-.workflow-rail-status.is-idle .workflow-rail-marker { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-.workflow-rail-status.is-idle .workflow-rail-check,
-.workflow-rail-status.is-idle .workflow-rail-pending { opacity: 0; transform: translate(-50%, -50%) scale(.55); }
-.workflow-rail-status.is-pending .workflow-rail-marker { opacity: 0; transform: translate(-50%, -50%) scale(.45); }
-.workflow-rail-status.is-pending .workflow-rail-pending { opacity: 1; }
-.workflow-rail-status.is-pending .workflow-rail-check { opacity: 0; transform: translate(-50%, -50%) scale(.55); }
-.workflow-rail-status.is-complete .workflow-rail-marker,
-.workflow-rail-status.is-complete .workflow-rail-pending { opacity: 0; transform: translate(-50%, -50%) scale(.55); }
-.workflow-rail-status.is-complete .workflow-rail-check { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-
-@keyframes workflow-rail-spin {
-  from { transform: translate(-50%, -50%) rotate(0deg); }
-  to { transform: translate(-50%, -50%) rotate(360deg); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .workflow-rail-pending { animation: none; }
-}
-
-.workflow-rail-label {
-  display: none;
-  min-width: 0;
-  color: #666;
-  font-size: .6rem;
-  line-height: 1.15;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.workflow-rail-number {
-  display: block;
-  width: .55rem;
-  flex: 0 0 .55rem;
-  color: #666;
-  font-size: .6rem;
-  line-height: 1;
-  text-align: center;
-}
-.workflow-rail-button.is-active { background: transparent; color: #f2f2f2; }
-.workflow-rail-button.is-active .workflow-rail-check { color: #f2f2f2; }
-.workflow-rail-button.is-active .workflow-rail-label { color: #f2f2f2; font-weight: 500; }
-.workflow-rail-button.is-active .workflow-rail-number { color: #f2f2f2; font-weight: 600; }
-.workflow-rail-button.is-complete .workflow-rail-check { color: #e7e7e7; }
-.workflow-rail-button.is-complete .workflow-rail-label { color: #e7e7e7; }
-.workflow-rail-button.is-complete .workflow-rail-number { color: #d8d8d8; }
-.workflow-rail-button.is-active.is-complete .workflow-rail-check { color: #f0f0f0; }
-.workflow-rail-button.has-warning .workflow-rail-marker { background: #777; }
-
-.workflow-rail-ticks {
-  display: flex;
-  height: 2.9rem;
-  flex-direction: column;
-  justify-content: space-evenly;
-  padding-left: .45rem;
-}
-
-.workflow-rail-ticks i {
-  display: block;
-  width: .38rem;
-  height: 2px;
-  border-radius: 999px;
-  background: #3f3f3f;
+  .continuous-workspace { scroll-behavior: auto; }
+  .workflow-ruler * { transition: none !important; }
 }
 
 .draft-keyword-mark {
@@ -2563,16 +2529,6 @@ html, body, #root {
 }
 
 .writer-light .draft-keyword-mark { background: #deded9; color: #30302d; }
-.writer-light .workflow-rail-marker { background: #c8c8c2; }
-.writer-light .workflow-rail-button.is-complete .workflow-rail-check { color: #30302d; }
-.writer-light .workflow-rail-button.is-complete .workflow-rail-label { color: #30302d; }
-.writer-light .workflow-rail-button.is-active { background: transparent; }
-.writer-light .workflow-rail-button.is-active .workflow-rail-label { color: #242422; }
-.writer-light .workflow-rail-button.is-active .workflow-rail-check { color: #30302d; }
-.writer-light .workflow-rail-button.is-active .workflow-rail-pending { color: #30302d; }
-.writer-light .workflow-rail-button.is-active .workflow-rail-marker { border-color: #30302d; background: transparent; }
-.writer-light .workflow-rail-button.is-active .workflow-rail-number { color: #242422; }
-.writer-light .workflow-rail-ticks i { background: #d8d8d2; }
 
 .continuous-step > .minimal-step-shell {
   border: 0 !important;
@@ -2632,11 +2588,6 @@ html, body, #root {
 .writer-light .draft-insight-tab:hover { background: #f1f1ee; color: #30302d; }
 .writer-light .draft-insight-tab.is-active { background: #e8e8e4; color: #242422; }
 
-@media (min-width: 1024px) {
-  .workflow-rail { width: 6.5rem; }
-  .workflow-rail-label { display: block; flex: 1 1 auto; }
-  .workflow-rail-number { display: none; }
-}
 
 /* Image suggestions own their color pairs; avoid legacy utility theme remapping. */
 .image-placement-suggestions {
