@@ -489,7 +489,7 @@ export default function Step3Outline({
   const isCurrentStep = (article.currentStep ?? 2) <= 3;
   const needsOutlineApproval = isCurrentStep && article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved';
   const canContinueToDraft = isCurrentStep && gateStepCompletion(article, 3).allowed && !needsOutlineApproval;
-  const stepActionDisabled = generating || (needsOutlineApproval ? !outline.length : !canContinueToDraft && !prerequisite.allowed);
+  const stepActionDisabled = (!canContinueToDraft && !needsOutlineApproval && !article.outlineStructure) || generating || (needsOutlineApproval ? !outline.length : !canContinueToDraft && !prerequisite.allowed);
 
   return (
     <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
@@ -631,7 +631,8 @@ export default function Step3Outline({
           {tr('Quay lại', 'Back')}
         </button>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col items-start gap-2">
+          {!article.outlineStructure && !canContinueToDraft && !needsOutlineApproval && <p className="text-xs text-[var(--ui-secondary)]">{tr("Chọn cấu trúc outline ở trên để bắt đầu.", "Choose an outline structure above to begin.")}</p>}
           <button
             onClick={needsOutlineApproval
               ? () => void onUpdate({ editorialApproval: { status: 'approved', approvedAt: new Date().toISOString(), outlineFingerprint: article.outlineSourceFingerprint ?? undefined } })
