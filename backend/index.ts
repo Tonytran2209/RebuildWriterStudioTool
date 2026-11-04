@@ -1,3 +1,4 @@
+import {monitoring} from './monitoring.ts';
 import { outlineReviewInstruction, outlineQualityChecks } from '../src/lib/outlineQuality.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
 import "dotenv/config"
@@ -69,6 +70,8 @@ const DIST = process.env.DIST_PATH
 console.log(`[static] serving frontend from: ${DIST}`)
 
 const app = express()
+app.use(monitoring.middleware)
+app.get('/internal/monitoring', (req,res) => monitoring.handler(req,res))
 const PORT = process.env.PORT || 3000
 assertAuthConfig()
 const authService = authProvider() === "postgres" ? new AuthService() : null

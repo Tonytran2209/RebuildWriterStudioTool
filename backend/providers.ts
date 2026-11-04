@@ -1,3 +1,4 @@
+import {monitoring} from './monitoring.ts';
 /**
  * AI provider adapters — each returns { content, model, usage }
  * All providers share the same input signature.
@@ -319,6 +320,10 @@ async function callGroq(req: GenerateRequest): Promise<GenerateResponse> {
 // ── Dispatcher ───────────────────────────────────────────────────────────────
 
 export async function generate(req: GenerateRequest): Promise<GenerateResponse> {
+  return monitoring.trackAI(req, () => generateProvider(req));
+}
+
+async function generateProvider(req: GenerateRequest): Promise<GenerateResponse> {
   const canonicalRequest: GenerateRequest = {
     ...req,
     systemPrompt: [
