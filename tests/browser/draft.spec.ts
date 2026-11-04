@@ -191,7 +191,7 @@ for(const status of ['pass','warning','fail'])test(`qc-status-display qc-evidenc
  const stale=page.locator('[data-qc-check="quality-review-stale"]');
  await expect(stale).toHaveAttribute('data-qc-status','warning');
  await expect(stale.locator('[data-qc-icon="warning"]')).toBeVisible();
- await expect(stale).toContainText(/Warning|Cảnh báo/);
+ await expect(stale).toContainText(/Pending review|Chờ kiểm tra/);
  await expect(stale.locator('[data-qc-icon="fail"]')).toHaveCount(0);
 });
 
