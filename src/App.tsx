@@ -10,6 +10,7 @@ import type {
 } from "./types"
 import { DEFAULT_CONFIG, mergeWithLatestModelCatalog } from "./lib/defaultData"
 import * as db from "./lib/db"
+import { fetchContentPlans } from "./lib/contentPlans"
 import Sidebar from "./components/Sidebar"
 import BrandMark from "./components/BrandMark"
 import StepNav from "./components/StepNav"
@@ -69,6 +70,24 @@ export default function App() {
   }, [])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
+  const [contentPlans, setContentPlans] = useState<ContentPlan[]>([])
+  const campaignRevision = useRef(0)
+  const campaignScope = `${authSession?.user.id ?? ""}:${config.railwayUrl}`
+  const campaignScopeRef = useRef(campaignScope)
+  campaignScopeRef.current = campaignScope
+  const receiveContentPlans = useCallback((plans: ContentPlan[], removedId?: string) => {
+    campaignRevision.current++
+    setContentPlans(current => [...plans, ...current.filter(plan => plan.id !== removedId && !plans.some(next => next.id === plan.id))])
+  }, [])
+  useEffect(() => {
+    let active = true
+    const revision = ++campaignRevision.current
+    setContentPlans([])
+    if (authSession) void fetchContentPlans(config.railwayUrl).then(plans => {
+      if (active && revision === campaignRevision.current) setContentPlans(plans)
+    }).catch(() => { /* Article navigation remains available without metadata. */ })
+    return () => { active = false }
+  }, [campaignScope])
   const [files, setFiles] = useState<DocumentFile[]>([])
   const [showConfig, setShowConfig] = useState(false)
   const [showBatchOverview, setShowBatchOverview] = useState(true)
@@ -686,6 +705,7 @@ export default function App() {
     <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} writer-app h-dvh flex flex-col md:flex-row overflow-hidden bg-[var(--ui-bg)]`}>
       <Sidebar
         articles={articles}
+        contentPlans={contentPlans}
         activeArticleId={activeId}
         onSelectArticle={(id) => {
           setActiveId(id)
@@ -845,6 +865,7 @@ export default function App() {
             railwayUrl={config.railwayUrl}
             models={config.models}
             modelId={config.stepConfigs[1]?.modelId ?? ""}
+            onContentPlansChange={(plans, removedId) => { if (campaignScopeRef.current === campaignScope) receiveContentPlans(plans, removedId) }}
             recentArticles={articles}
             initialHistoryOpen={launcherHistoryOpen}
             onOpenArticle={(id) => {

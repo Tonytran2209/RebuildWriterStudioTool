@@ -80,3 +80,9 @@ Phần mở đầu được hiển thị đầy đủ. Quy tắc viết hướng
 | Cấu hình model và thư viện | `src/components/config/ConfigModal.tsx` |
 
 Khi thay đổi hành vi, cập nhật hướng dẫn này cùng flow/API canonical liên quan. Tài liệu mô tả cách sử dụng, không cấp quyền sửa code/deploy hoặc thay thế việc kiểm tra source hiện tại.
+
+## Campaign trong sidebar (REQ-460AEC3E)
+
+Sidebar hiển thị campaign theo từng Content Plan đã thêm, mặc định thu gọn. Bấm tên campaign hoặc dùng Enter/Space để xem bài bên trong, rồi chọn bài để mở lại; bài batch vẫn mở luồng batch hiện có. Campaign chưa có bài hiển thị trạng thái rỗng. Tìm kiếm tự hiển thị bài phù hợp trong campaign. Trạng thái mở/đóng chỉ lưu trong phiên giao diện.
+
+Campaign cập nhật ngay sau import thành công, kể cả khi phân loại tiếp theo lỗi. Nếu metadata chưa tải được, bài vẫn truy cập qua nhóm “Campaign chưa có thông tin”; bài không gắn Content Plan vẫn ở sidebar. Hàng bài trong campaign không có nút xóa để tránh nhầm phạm vi xóa batch; các xác nhận và thao tác xóa hiện có giữ nguyên.

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react"
 import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, LogOut, Mail, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
-import type { Article } from "../types"
+import type { Article, ContentPlan } from "../types"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
 import { isLegacyArticle } from "../lib/legacyCompatibility"
 import type { ThemePreference } from "../lib/theme"
 
 interface Props {
+  contentPlans?: ContentPlan[]
   articles: Article[]
   activeArticleId: string | null
   onSelectArticle: (id: string) => void
@@ -26,6 +27,7 @@ interface Props {
 }
 export default function Sidebar({
   articles,
+  contentPlans = [],
   activeArticleId,
   onSelectArticle,
   onNewArticle,
@@ -62,8 +64,17 @@ export default function Sidebar({
       document.removeEventListener("keydown", closeOnEscape)
     }
   }, [])
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const query = search.trim().toLowerCase()
+  const campaigns = new Map(contentPlans.map(plan => [plan.id, { id: plan.id, name: plan.name, articles: [] as Article[] }]))
+  for (const article of articles) {
+    if (!article.contentPlanId) continue
+    if (!campaigns.has(article.contentPlanId)) campaigns.set(article.contentPlanId, { id: article.contentPlanId, name: tr("Campaign chưa có thông tin", "Campaign details unavailable"), articles: [] })
+    campaigns.get(article.contentPlanId)!.articles.push(article)
+  }
+  const visibleCampaigns = [...campaigns.values()].filter(campaign => !query || campaign.name.toLowerCase().includes(query) || campaign.articles.some(article => (article.topic || article.title).toLowerCase().includes(query)))
   const recent = Array.from(
-    articles.reduce((groups, article) => {
+    articles.filter(article => !article.contentPlanId).reduce((groups, article) => {
       const key = article.activityKind === "batch" && article.activityId
         ? `batch:${article.activityId}`
         : `article:${article.id}`
@@ -128,7 +139,7 @@ export default function Sidebar({
       <div className="px-3 pb-1">
         <div className="flex items-center gap-2 px-1 text-[12px] font-medium text-[var(--ui-secondary)]">
           <Clock3 className="app-icon" aria-hidden="true" />
-          <span>{tr("Bài đã tạo", "Recents")}</span>
+          <span>{tr("Campaign", "Campaigns")}</span>
         </div>
         {showSearch && (
           <input
@@ -142,6 +153,26 @@ export default function Sidebar({
         )}
       </div>
       <div className="sidebar-recent-list min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+        {visibleCampaigns.map(campaign => {
+          const isOpen = Boolean(query) || expanded.has(campaign.id)
+          const matching = campaign.articles.filter(article => !query || campaign.name.toLowerCase().includes(query) || (article.topic || article.title).toLowerCase().includes(query))
+          return <section key={campaign.id}>
+            <button type="button" aria-expanded={isOpen} aria-controls={`campaign-${campaign.id}`} title={campaign.name}
+              onClick={() => setExpanded(current => { const next = new Set(current); if (next.has(campaign.id)) next.delete(campaign.id); else next.add(campaign.id); return next })}
+              className="sidebar-nav min-h-11 w-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-text)]">
+              <ChevronDown aria-hidden="true" className={`app-icon shrink-0 ${isOpen ? "" : "-rotate-90"}`} />
+              <span className="truncate">{campaign.name}</span><span className="ml-auto text-xs text-[var(--ui-secondary)]">{campaign.articles.length}</span>
+            </button>
+            {isOpen && <div id={`campaign-${campaign.id}`} className="ml-4 border-l border-[var(--ui-border)] pl-1">
+              {matching.map(article => <button key={article.id} title={article.topic || article.title} onClick={() => onSelectArticle(article.id)} aria-current={activeArticleId === article.id ? "page" : undefined}
+                className={`sidebar-nav min-h-11 w-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-text)] ${activeArticleId === article.id ? "bg-[var(--ui-selected)]" : ""}`}>
+                <span className="truncate">{article.topic || article.title}</span>
+                {(article.status === "done" || article.completedAt || article.batchStatus === "completed") && <CircleCheck className="app-icon ml-auto shrink-0 text-emerald-400" aria-label={tr("Đã hoàn tất", "Completed")} />}
+              </button>)}
+              {!matching.length && <p className="px-2 py-3 text-xs text-[var(--ui-secondary)]">{tr("Chưa có bài viết", "No articles yet")}</p>}
+            </div>}
+          </section>
+        })}
         {recent.map(({ key, article, articles: groupArticles }) => {
           const isBatch = groupArticles.length > 1 || article.activityKind === "batch"
           const active = groupArticles.some((item) => item.id === activeArticleId)
@@ -189,7 +220,7 @@ export default function Sidebar({
             </div>
           )
         })}
-        {!recent.length && (
+        {!recent.length && !visibleCampaigns.length && (
           <div className="px-2 py-8 text-center text-[11px] text-[var(--ui-secondary)]">
             {tr("Chưa có bài viết", "No recent articles")}
           </div>

@@ -21,6 +21,7 @@ import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
 
 interface Props {
+  onContentPlansChange?: (plans: ContentPlan[], removedId?: string) => void
   files: DocumentFile[];
   outlineRuleIds: string[];
   railwayUrl: string
@@ -40,6 +41,7 @@ interface Props {
 }
 export default function ActivityLauncher({
   railwayUrl,
+  onContentPlansChange,
   files,
   outlineRuleIds,
   models,
@@ -73,16 +75,19 @@ export default function ActivityLauncher({
   const [error, setError] = useState<string | null>(null)
   const [deletingPlanId, setDeletingPlanId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
+  const plansRevision = useRef(0)
+  const onPlansChange = useRef(onContentPlansChange)
+  onPlansChange.current = onContentPlansChange
   useEffect(() => {
     let active = true
+    const revision = plansRevision.current
     setError(null)
     fetchContentPlans(railwayUrl)
       .then((loadedPlans) => {
-        if (active) setPlans(loadedPlans)
+        if (active && revision === plansRevision.current) { setPlans(loadedPlans); onPlansChange.current?.(loadedPlans) }
       })
       .catch((cause) => {
-        if (active) {
-          setPlans([])
+        if (active && revision === plansRevision.current) {
           setError(cause instanceof Error ? cause.message : String(cause))
         }
       })
@@ -118,6 +123,8 @@ export default function ActivityLauncher({
     setError(null)
     try {
       await deleteContentPlan(item.id, railwayUrl)
+      plansRevision.current++
+      onContentPlansChange?.([], item.id)
       setPlans(current => current.filter(planItem => planItem.id !== item.id))
       setPlan(current => current?.id === item.id ? null : current)
       setSelected([])
@@ -159,6 +166,9 @@ export default function ActivityLauncher({
         },
         railwayUrl,
       )
+      plansRevision.current++
+      setPlans(current => [imported, ...current.filter(item => item.id !== imported.id)])
+      onContentPlansChange?.([imported])
       if (extractionTimer) window.clearTimeout(extractionTimer)
       setAnalysisPhase("extract")
       setAnalysisProgress((value) => Math.max(value, 38))
@@ -168,6 +178,8 @@ export default function ActivityLauncher({
       const classified = await classifyContentPlan(imported.id, railwayUrl)
       setAnalysisPhase("save")
       setAnalysisProgress(96)
+      plansRevision.current++
+      onContentPlansChange?.([classified])
       setPlan(classified)
       setPlans((current) => [
         classified,
