@@ -56,6 +56,10 @@ for (const theme of ['light', 'dark'] as const) {
         await control.hover();
         await expectReadable(control);
         await control.focus();
+        // Focus-visible follows keyboard modality, not a programmatic focus after hover.
+        await page.keyboard.press('Shift+Tab');
+        await page.keyboard.press('Tab');
+        await expect(control).toBeFocused();
         expect(await control.evaluate(e => getComputedStyle(e).outlineStyle)).toBe('solid');
         expect(await control.evaluate(e => parseFloat(getComputedStyle(e).outlineWidth))).toBeGreaterThanOrEqual(2);
       }
@@ -76,8 +80,10 @@ for (const theme of ['light', 'dark'] as const) {
       const reactPath = '/node_modules/.vite/deps/react.js';
       const domPath = '/node_modules/.vite/deps/react-dom_client.js';
       const themePath = '/src/lib/theme.ts';
-      const React = await import(reactPath);
-      const {createRoot} = await import(domPath);
+      const ReactModule = await import(reactPath);
+      const React = ReactModule.default ?? ReactModule;
+      const ReactDOM = await import(domPath);
+      const createRoot = ReactDOM.createRoot ?? ReactDOM.default.createRoot;
       const {useThemePreference} = await import(themePath);
       const host = document.createElement('div'); document.body.append(host);
       function ThemeProbe() { useThemePreference(); return null; }
