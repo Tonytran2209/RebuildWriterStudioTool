@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+// Completed child buttons include the status icon's accessible label.
 const plan = (id:string,name:string) => ({id,name,version:1,status:'ready',createdAt:'2026-11-01',items:[]});
 async function open(page:any,theme='dark') {
  await page.addInitScript(()=>localStorage.setItem('writer:language','en'));
@@ -12,12 +13,12 @@ for(const theme of ['light','dark']) test(`campaign disclosure and navigation in
  await open(page,theme);
  const campaign=page.getByRole('button',{name:'Added campaign'});
  await expect(campaign).toHaveAttribute('aria-expanded','false');
- await expect(page.getByRole('button',{name:'Single article',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Single article Completed',exact:true})).toHaveCount(0);
  await campaign.focus(); await page.keyboard.press('Enter');
  await expect(campaign).toHaveAttribute('aria-expanded','true');
  await page.getByRole('button',{name:'Batch article',exact:true}).click();
  await expect(page.getByTestId('campaign-selected')).toHaveText('batch');
- await page.getByRole('button',{name:'Single article',exact:true}).click();
+ await page.getByRole('button',{name:'Single article Completed',exact:true}).click();
  await expect(page.getByTestId('campaign-selected')).toHaveText('single');
  await campaign.focus(); await page.keyboard.press('Space');
  await expect(campaign).toHaveAttribute('aria-expanded','false');
@@ -25,7 +26,7 @@ for(const theme of ['light','dark']) test(`campaign disclosure and navigation in
  await expect(page.getByText('No articles yet',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Search',exact:true}).click();
  await page.getByRole('textbox',{name:'Search articles'}).fill('Single');
- await expect(page.getByRole('button',{name:'Single article',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Single article Completed',exact:true})).toBeVisible();
  await page.getByRole('textbox',{name:'Search articles'}).fill('');
  await page.getByRole('button',{name:'Campaign details unavailable'}).click();
  await expect(page.getByRole('button',{name:'Missing metadata article'})).toBeVisible();
@@ -38,7 +39,7 @@ test('metadata failure preserves article access',async({page})=>{
  const fallback=page.getByRole('button',{name:'Campaign details unavailable'});
  await expect(fallback).toHaveCount(2);
  await fallback.first().click();
- await page.getByRole('button',{name:'Single article',exact:true}).click();
+ await page.getByRole('button',{name:'Single article Completed',exact:true}).click();
  await expect(page.getByTestId('campaign-selected')).toHaveText('single');
 });
 test('import survives classification failure and delayed history',async({page})=>{
