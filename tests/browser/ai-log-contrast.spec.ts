@@ -45,8 +45,9 @@ for (const preference of ['dark', 'light', 'system'] as const) {
       document.body.classList.remove('codex-dark', 'writer-light');
       document.querySelector('main')!.classList.add('codex-dark');
       // Use the real theme hook so System resolution and live preference updates are covered.
-      const React = await import('/node_modules/.vite/deps/react.js');
-      const {createRoot} = await import('/node_modules/.vite/deps/react-dom_client.js');
+      // Dynamic browser imports do not receive Vite's static CJS named-import rewrite.
+      const {default: React} = await import('/node_modules/.vite/deps/react.js');
+      const {default: ReactDOMClient} = await import('/node_modules/.vite/deps/react-dom_client.js');
       const {useThemePreference} = await import('/src/lib/theme.ts');
       localStorage.setItem('writer:theme-preference', preference);
       function ThemeFixture() {
@@ -55,7 +56,7 @@ for (const preference of ['dark', 'light', 'system'] as const) {
         return null;
       }
       const host = document.createElement('div'); document.body.append(host);
-      createRoot(host).render(React.createElement(ThemeFixture));
+      ReactDOMClient.createRoot(host).render(React.createElement(ThemeFixture));
     }, preference);
     const initial = preference === 'light' ? 'light' : 'dark';
     await expect(page.locator('html')).toHaveAttribute('data-writer-theme', initial);
