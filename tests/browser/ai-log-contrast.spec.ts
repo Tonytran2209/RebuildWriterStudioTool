@@ -27,6 +27,7 @@ async function expectReadable(locator: Locator) {
 for (const theme of ['light', 'dark'] as const) {
   test(`AI log portal contrast and unchanged content in ${theme}`, async ({page}) => {
     await page.addInitScript(() => {
+      localStorage.setItem('writer:language', 'en');
       const events = Array.from({length: 24}, (_, i) => ({
         id: `event-${i}`, stage: 'validation', status: ['completed', 'warning', 'error', 'running'][i % 4],
         title: `Audit event ${i}`, detail: 'Long supporting evidence detail. '.repeat(12),
@@ -43,7 +44,7 @@ for (const theme of ['light', 'dark'] as const) {
     }, theme);
     const saved = await page.evaluate(() => sessionStorage.getItem('qc-fixture'));
     const open = async () => {
-      await page.locator('.ai-log-button').click();
+      await page.getByRole('button', {name: 'View AI log', exact: true}).click();
       await expect(page.getByRole('dialog', {name: 'Draft generation log'})).toBeVisible();
     };
     await open();
