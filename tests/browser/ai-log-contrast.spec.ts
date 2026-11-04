@@ -23,6 +23,7 @@ async function readable(locator: Locator) {
 
 for (const preference of ['dark', 'light', 'system'] as const) {
   test(`portal AI log follows ${preference} appearance and preserves saved data`, async ({page}) => {
+    await page.addInitScript(() => localStorage.setItem('writer:language', 'en'));
     await page.emulateMedia({colorScheme: 'dark'});
     await page.goto('/?qc=pass');
     await expect(page.getByTestId('stored-source')).toBeAttached();
