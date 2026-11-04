@@ -92,6 +92,33 @@ body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 
 :root[data-writer-theme='dark'] .writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(.bg-white, .bg-slate-50, .bg-slate-100) { background: var(--ui-soft) !important; }
 :root[data-writer-theme='dark'] .writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(.text-slate-800, .text-slate-700, .text-slate-900) { color: var(--ui-text) !important; }
 :root[data-writer-theme='dark'] .writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(.text-slate-400, .text-slate-500, .text-slate-600) { color: var(--ui-secondary) !important; }
+/* Portal AI logs follow root appearance without a legacy .codex-dark ancestor. */
+.writer-dialog-theme .ai-log-modal :is(.ai-log-timeline, .ai-log-event) {
+  background: var(--ui-surface) !important;
+  border-color: var(--ui-border) !important;
+}
+.writer-dialog-theme .ai-log-modal :is(.ai-log-fact, .ai-log-step, .ai-log-close, .ai-log-source) {
+  background: var(--ui-control) !important;
+  border-color: var(--ui-border) !important;
+  color: var(--ui-secondary) !important;
+}
+.writer-dialog-theme .ai-log-modal :is(.text-slate-800, .text-slate-700, .text-slate-900) { color: var(--ui-text) !important; }
+.writer-dialog-theme .ai-log-modal :is(.text-slate-400, .text-slate-500, .text-slate-600) { color: var(--ui-secondary) !important; }
+.writer-dialog-theme .ai-log-modal .border-slate-200 { border-color: var(--ui-border) !important; }
+.writer-dialog-theme .ai-log-modal .ai-log-source { color: var(--ui-link) !important; }
+.writer-dialog-theme .ai-log-modal :is(.ai-log-close, .ai-log-source):hover {
+  background: var(--ui-hover) !important;
+  color: var(--ui-text) !important;
+}
+.writer-dialog-theme .ai-log-modal .ai-log-step.is-completed { color: #047857 !important; background: #ecfdf5 !important; border-color: #a7f3d0 !important; }
+.writer-dialog-theme .ai-log-modal .ai-log-step.is-warning { color: #a16207 !important; background: #fffbeb !important; border-color: #fde68a !important; }
+.writer-dialog-theme .ai-log-modal .ai-log-step.is-error { color: #be123c !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
+:root[data-writer-theme='dark'] .writer-dialog-theme .ai-log-modal .ai-log-step.is-completed { color: #34d399 !important; background: #17362c !important; border-color: #245a49 !important; }
+:root[data-writer-theme='dark'] .writer-dialog-theme .ai-log-modal .ai-log-step.is-warning { color: #fbbf24 !important; background: #33280f !important; border-color: #5a4618 !important; }
+:root[data-writer-theme='dark'] .writer-dialog-theme .ai-log-modal .ai-log-step.is-error { color: #fb7185 !important; background: #351a20 !important; border-color: #5f2935 !important; }
+@media (max-width: 600px) {
+  .writer-dialog-theme .ai-log-modal .ai-log-close { min-width: 44px; min-height: 44px; }
+}
 .writer-app .batch-workspace button:disabled { opacity: .45; }
 .writer-login { background: var(--ui-bg) !important; color: var(--ui-text) !important; }
 .writer-login form { background: var(--ui-surface) !important; border-color: var(--ui-border) !important; box-shadow: none !important; }
