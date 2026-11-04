@@ -1013,7 +1013,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         ...evidenceMappingChecks(article, evidenceUsage, verifiedOutline),
       ];
       if (deterministic.some(item => item.status === 'fail')) {
-        const report = qualityReport({ ...article, draft: assembledDraft }, deterministic, targetWords, files, config.workflowRules);
+        const report = qualityReport({ ...article, draft: assembledDraft, draftEvidenceUsage: evidenceUsage }, deterministic, targetWords, files, config.workflowRules);
         const detail = `Draft đã được lưu nhưng Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => `${item.label} — ${item.reason}`).join('; ')}.`;
         processTrace.push({ id: `draft-qc-${Date.now()}`, stage: 'validation', status: 'warning', title: 'Draft saved; QC needs attention', detail });
         const saved = await onUpdate({ qualityReport: report, step4ProcessTrace: processTrace });
@@ -1056,7 +1056,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         ? { checks: article.semanticReviewChecks, schemaComplete: true, cached: true }
         : await runSemanticReview(assembledDraft, evidenceUsage);
       const semantic = semanticReview.checks;
-      let report = qualityReport({ ...article, draft: assembledDraft }, [...deterministic, ...semantic], targetWords, files, config.workflowRules);
+      let report = qualityReport({ ...article, draft: assembledDraft, draftEvidenceUsage: evidenceUsage }, [...deterministic, ...semantic], targetWords, files, config.workflowRules);
       processTrace.push({
         id: `draft-semantic-${Date.now()}`,
         stage: 'validation',
