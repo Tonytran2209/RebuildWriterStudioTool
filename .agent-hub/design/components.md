@@ -7,9 +7,9 @@ projectId: writer-studio
 
 | Surface | Source | Responsibilities | Required states |
 | --- | --- | --- | --- |
-| App shell | `src/App.tsx` | Auth, selected article, persistence state, batch polling | loading, auth, empty, sync error |
-| Sidebar | `src/components/Sidebar.tsx` | Project/article selection and batch grouping | active, batch running, completed, failed |
-| Launcher | `src/components/ActivityLauncher.tsx` | Start single or batch work from content plans | empty, validation, submitting |
+| App shell | `src/App.tsx` | Auth, selected article, persistence state, batch polling, campaign metadata | loading, auth, empty, sync error |
+| Sidebar | `src/components/Sidebar.tsx` | Campaign disclosure and article selection; legacy batch grouping | collapsed, expanded, empty, metadata fallback, active, batch running, completed, failed |
+| Launcher | `src/components/ActivityLauncher.tsx` | Start single or batch work from content plans; report metadata updates to App | empty, validation, submitting, import saved/classification error |
 | Core Idea | `workspace/Step2CoreIdea.tsx` | Article spec and idea selection | generating, selected, validation error |
 | Outline | `workspace/Step3Outline.tsx` | Evidence-grounded structure editing | generating, partial, saved, error |
 | Draft | `workspace/Step4Draft.tsx` | Draft editing, QC, images and re-check | generating, persisted, warning, repair, error |
@@ -48,3 +48,7 @@ Use a neutral token-based SEO brief above the draft. Feature the primary keyword
 ## QC process clarity (2026-11-03)
 
 Distinguish content findings from incomplete/outdated review process. Explain whether the report is missing, uses old QC rules, or no longer matches reviewed inputs; show pending-review wording and a visible explicit Re-check action. Preserve draft content and completion blocking for stale/incomplete reviews. Semantic evaluation uses the article’s frozen MD structure, not a generic comparison template; the introduction contract stays independent of body structure and responsive pixel line count.
+
+## Campaign sidebar (REQ-460AEC3E)
+
+App loads Content Plan metadata independently of articles and ignores superseded responses. Launcher reports successful history loads, imports (before classification) and existing plan deletions to App. Sidebar groups by Content Plan id, including empty campaigns and metadata fallbacks, with collapsed native button disclosures, visible focus and 44px targets. Search exposes matching articles. Child selection keeps the existing single/batch callback; child rows have no delete control because the existing handler may delete an entire batch. Ungrouped articles retain their existing controls.

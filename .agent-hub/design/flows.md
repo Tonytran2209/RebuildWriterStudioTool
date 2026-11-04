@@ -58,3 +58,7 @@ Use a shared, visibly required structure picker for single and batch workflows: 
 ## QC process clarity (2026-11-03)
 
 Distinguish content findings from incomplete/outdated review process. Explain whether the report is missing, uses old QC rules, or no longer matches reviewed inputs; show pending-review wording and a visible explicit Re-check action. Preserve draft content and completion blocking for stale/incomplete reviews. Semantic evaluation uses the article’s frozen MD structure, not a generic comparison template; the introduction contract stays independent of body structure and responsive pixel line count.
+
+## Campaign navigation (REQ-460AEC3E)
+
+Campaigns correspond to Content Plan ids, without merging series versions. Initially collapsed groups reveal saved articles on click, Enter or Space; search exposes matching campaign/article results. Expansion is local UI state only. Metadata loads independently; errors retain article access through fallback groups. Ignore stale history responses after import/delete and stale App loads after metadata updates or scope changes. Publish imported plans before classification so classification errors do not hide durable imports. Selecting an article retains existing batch navigation and persistence behavior. Disclosure never writes or deletes data.

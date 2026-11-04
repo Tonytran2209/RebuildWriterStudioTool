@@ -1,3 +1,5 @@
+import Sidebar from '../../src/components/Sidebar';
+import ActivityLauncher from '../../src/components/ActivityLauncher';
 import {mountFixture} from './bootstrap';
 import React,{useState,useEffect} from 'react';
 import LoginScreen from '../../src/components/LoginScreen';
@@ -57,4 +59,16 @@ function LibraryFixture(){
  const [config,setConfig]=useState(DEFAULT_CONFIG);
  return <main><TabKnowledgeBase files={files} onChange={setFiles} railwayUrl="http://127.0.0.1:4173" config={config} onConfigChange={setConfig}/><pre data-testid="library-records">{JSON.stringify(files)}</pre><pre data-testid="library-access">{JSON.stringify(config.stepConfigs[4].fileAccess)}</pre></main>;
 }
-mountFixture(new URLSearchParams(location.search).has('library')?<LibraryFixture/>:new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>);
+// Synthetic component contract fixture; does not represent production records.
+function CampaignFixture(){
+ const [plans,setPlans]=useState<any[]>([]);
+ const [selected,setSelected]=useState('');
+ const [deleted,setDeleted]=useState('');
+ const articles:any[]=[{id:'single',title:'Single article',contentPlanId:'campaign-a',status:'done'},{id:'batch',title:'Batch article',contentPlanId:'campaign-a',activityKind:'batch',activityId:'batch-run'},{id:'missing',title:'Missing metadata article',contentPlanId:'missing-plan'},{id:'legacy',title:'Ungrouped article'}];
+ return <div className="writer-app flex min-h-screen flex-col md:flex-row">
+ <Sidebar articles={articles} contentPlans={plans} activeArticleId={selected} onSelectArticle={setSelected} onNewArticle={()=>{}} onOpenConfig={()=>{}} canManageSettings={false} currentUser={{email:'fixture@example.com',role:'user'}} themePreference="dark" onThemeChange={()=>{}} onSignOut={()=>{}} onToggleComplete={()=>{}} completionSavingId={null} onDeleteArticle={a=>setDeleted(a.id)} deletingArticleId={null}/>
+ <main className="min-w-0 flex-1"><output data-testid="campaign-selected">{selected}</output><output data-testid="campaign-deleted">{deleted}</output>
+ <ActivityLauncher files={[]} outlineRuleIds={[]} railwayUrl="http://127.0.0.1:4173" models={DEFAULT_MODELS} modelId={DEFAULT_MODELS[0].id} recentArticles={articles} onOpenArticle={setSelected} onModelChange={()=>{}} onCreate={async()=>{}} onContentPlansChange={(loaded,removed)=>setPlans(current=>[...loaded,...current.filter(p=>p.id!==removed&&!loaded.some(n=>n.id===p.id))])}/>
+ </main></div>;
+}
+mountFixture(new URLSearchParams(location.search).has('campaigns')?<CampaignFixture/>:new URLSearchParams(location.search).has('library')?<LibraryFixture/>:new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>);
