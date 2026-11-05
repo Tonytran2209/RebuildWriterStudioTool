@@ -39,3 +39,9 @@ Railway Express (`backend/index.ts`) owns authentication, provider calls, articl
 - API or workflow changes require matching updates to `backend/api-contracts.md` and affected UI flow documentation.
 - Preserve legacy-compatible step numbers 2/3/4 in storage unless a migration request is explicitly approved.
 - Do not add unbounded retries, parallel mutation paths or silent fallback models.
+
+## Test execution boundaries
+
+SQL persistence regressions belong in `backend/*.test.ts` and run with `npm --prefix backend test`; `backend/generationVersions.test.ts` covers immutable stage snapshots, generation retry deduplication, identical outputs and independent stage numbering using isolated PGlite. This suite uses backend dependencies and never connects to production.
+
+Browser specs under `tests/browser/` use the browser fixture and mocked API responses. Do not import backend modules, PostgreSQL adapters, `pg` or PGlite into a browser spec, even behind a test-runner selection variable: static imports execute before test registration. Browser CI intentionally installs only frontend dependencies. Keep SQL assertions in the backend suite and history-selection/reload/error behavior in browser tests.
