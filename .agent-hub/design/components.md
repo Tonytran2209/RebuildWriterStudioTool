@@ -56,3 +56,7 @@ App loads Content Plan metadata independently of articles and ignores superseded
 ## Outline and draft history (REQ-44E4C670)
 
 Each step has a neutral history disclosure with a labelled native select (44px targets), loading, empty, error and retry states. Fetch history only when opened. Render selected immutable output in a separate read-only region, including full outline snapshot details; keep the live editor mounted below. Identify legacy rows without generation/date metadata using explicit fallback labels. Ignore superseded responses on article changes; sessionStorage selection is scoped by article and step. No shared design-rule change.
+
+## Draft history toolbar (REQ-67FCA523)
+
+Draft uses a 44px History icon button immediately left of Regenerate draft (or Generate article), with a localized accessible name, hover/focus tooltip, visible focus and expanded state. The closed disclosure has no separate history frame; its open read-only panel stays above the continuously mounted editor. One GenerationHistory instance owns loading, selection and sessionStorage. Outline retains its text disclosure. Toolbar actions wrap on narrow screens while History and Generate/Regenerate remain together on the same row. Shared design rules and data contracts are unchanged.

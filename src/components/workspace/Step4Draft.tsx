@@ -1557,8 +1557,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   };
 
   return (
-    <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
-      <GenerationHistory articleId={article.id} stage="draft" generationId={article.draftGenerationId} />
+    <GenerationHistory articleId={article.id} stage="draft" generationId={article.draftGenerationId}>
+    {(historyTrigger, historyPanel) => <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
+      {historyPanel}
       <div className={`draft-workspace-shell minimal-step-shell flex flex-col ${embedded ? '' : 'min-h-0 flex-1'}`}>
         <div className={`mx-auto flex w-full max-w-4xl flex-col gap-3 p-2 sm:p-3 ${embedded ? '' : 'min-h-0 flex-1 overflow-y-auto lg:flex-row lg:overflow-hidden'}`}>
 
@@ -1570,7 +1571,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 <h2 className="text-sm font-bold text-slate-800">{tr('Bước 3: Bản nháp & Kiểm tra', 'Step 3: First Draft & Audit')}</h2>
                 <p className="text-[10px] text-slate-400">{article.title || 'Bài viết mới'}</p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="flex min-w-0 items-center gap-2">
+                {historyTrigger}
                 <button
                   type="button"
                   onClick={() => void handleGenerate(Boolean(draft))}
@@ -1583,6 +1586,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                       ? <><RefreshCw className="app-icon" aria-hidden="true" /><span>{tr('Tạo lại Draft', 'Regenerate draft')}</span></>
                       : <><Sparkles className="app-icon" aria-hidden="true" /><span>{tr('Tạo bài viết', 'Generate article')}</span></>}
                 </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowAudit(true)}
@@ -1832,6 +1836,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           )}
         </ProcessTraceModal>
       )}
-    </div>
+    </div>}
+    </GenerationHistory>
   );
 }

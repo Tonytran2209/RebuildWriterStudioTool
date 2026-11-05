@@ -1,8 +1,8 @@
 import { getArticleStages, type ArticleStageVersion } from "../../lib/db";
 import OutlineStructureSelect from '../OutlineStructureSelect';
 import { buildOutlineTask, validateOutlineStructure, outlineSelectionUpdates } from '../../../shared/outlineStructures';
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, Eye, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, Eye, History, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -887,8 +887,9 @@ function SectionRow({
 }
 
 // Read-only history is deliberately separate from the live workflow/editor.
-export function GenerationHistory({ articleId, stage, generationId }: { articleId: string; stage: "outline" | "draft"; generationId?: string }) {
+export function GenerationHistory({ articleId, stage, generationId, children }: { articleId: string; stage: "outline" | "draft"; generationId?: string; children?: (trigger: ReactNode, panel: ReactNode) => ReactNode }) {
   const { tr } = useI18n();
+  const panelId = useId();
   const key = `writer:version:${articleId}:${stage}`;
   const [state, setState] = useState<{ key: string; versions: ArticleStageVersion[]; loading: boolean; error: string }>({ key: "", versions: [], loading: true, error: "" });
   const [selection, setSelection] = useState({ key, id: "" });
@@ -925,9 +926,17 @@ export function GenerationHistory({ articleId, stage, generationId }: { articleI
   }, [articleId, stage, generationId, reload, key, expanded]);
   const versions = state.key === key ? state.versions : [];
   const selected = versions.find(row => row.id === (selection.key === key ? selection.id : ""));
-  return <section className="rounded-xl border border-[var(--ui-border)] p-3 space-y-2 text-[var(--ui-text)]" aria-label={tr("Lịch sử phiên bản", "Version history")}>
-    <button type="button" className="min-h-11 text-sm font-medium underline" aria-expanded={expanded} onClick={() => setOpenedKey(expanded ? "" : key)}>{stage === "outline" ? tr("Lịch sử outline", "Outline history") : tr("Lịch sử draft", "Draft history")}</button>
-    {expanded && <>
+  const label = stage === "outline" ? tr("Lịch sử outline", "Outline history") : tr("Lịch sử draft", "Draft history");
+  const trigger = <span className={children ? "group relative inline-flex shrink-0" : undefined}>
+    <button type="button"
+      className={children ? "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] text-[var(--ui-text)] hover:bg-[var(--ui-surface)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-text)]" : "min-h-11 text-sm font-medium underline"}
+      aria-label={label} title={children ? label : undefined} aria-expanded={expanded} aria-controls={expanded ? panelId : undefined}
+      onClick={() => setOpenedKey(expanded ? "" : key)}>
+      {children ? <History className="app-icon" aria-hidden="true" /> : label}
+    </button>
+    {children && <span role="tooltip" className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1 text-xs text-[var(--ui-text)] group-hover:block group-focus-within:block">{label}</span>}
+  </span>;
+  const content = <>
     <label className="block text-sm font-medium">
       {stage === "outline" ? tr("Phiên bản outline", "Outline version") : tr("Phiên bản draft", "Draft version")}
       <select className="block min-h-11 w-full rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] px-3 mt-2" value={selected?.id ?? ""} disabled={state.key !== key || state.loading} onChange={event => {
@@ -946,6 +955,10 @@ export function GenerationHistory({ articleId, stage, generationId }: { articleI
       <p role="status" className="text-xs">{tr("Chỉ xem lịch sử. Editor, QC và xuất bài vẫn dùng bản hiện hành bên dưới.", "Read-only history. The editor, QC and export still use the current version below.")}</p>
       {stage === "draft" ? <pre className="whitespace-pre-wrap break-words font-sans">{selected.output_snapshot?.markdown}</pre> : selected.output_snapshot?.sections?.map((section, index) => <div key={index} className="whitespace-pre-wrap break-words"><h3 className="font-medium">{section.heading}</h3><p>{section.notes}</p><details><summary>{tr("Chi tiết snapshot", "Snapshot details")}</summary><pre className="whitespace-pre-wrap break-words font-sans text-xs">{JSON.stringify(section, null, 2)}</pre></details></div>)}
     </div>}
-    </>}
+  </>;
+  const panel = expanded ? <section id={panelId} className="rounded-xl border border-[var(--ui-border)] p-3 space-y-2 text-[var(--ui-text)]" aria-label={tr("Lịch sử phiên bản", "Version history")}>{content}</section> : null;
+  return children ? children(trigger, panel) : <section id={panelId} className="rounded-xl border border-[var(--ui-border)] p-3 space-y-2 text-[var(--ui-text)]" aria-label={tr("Lịch sử phiên bản", "Version history")}>
+    {trigger}
+    {expanded && content}
   </section>;
 }
