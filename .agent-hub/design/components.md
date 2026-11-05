@@ -52,3 +52,7 @@ Distinguish content findings from incomplete/outdated review process. Explain wh
 ## Campaign sidebar (REQ-460AEC3E)
 
 App loads Content Plan metadata independently of articles and ignores superseded responses. Launcher reports successful history loads, imports (before classification) and existing plan deletions to App. Sidebar groups by Content Plan id, including empty campaigns and metadata fallbacks, with collapsed native button disclosures, visible focus and 44px targets. Search exposes matching articles. Child selection keeps the existing single/batch callback; child rows have no delete control because the existing handler may delete an entire batch. Ungrouped articles retain their existing controls.
+
+## Outline and draft history (REQ-44E4C670)
+
+Each step has a neutral history disclosure with a labelled native select (44px targets), loading, empty, error and retry states. Fetch history only when opened. Render selected immutable output in a separate read-only region, including full outline snapshot details; keep the live editor mounted below. Identify legacy rows without generation/date metadata using explicit fallback labels. Ignore superseded responses on article changes; sessionStorage selection is scoped by article and step. No shared design-rule change.

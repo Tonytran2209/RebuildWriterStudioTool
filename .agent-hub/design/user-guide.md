@@ -86,3 +86,9 @@ Khi thay đổi hành vi, cập nhật hướng dẫn này cùng flow/API canoni
 Sidebar hiển thị campaign theo từng Content Plan đã thêm, mặc định thu gọn. Bấm tên campaign hoặc dùng Enter/Space để xem bài bên trong, rồi chọn bài để mở lại; bài batch vẫn mở luồng batch hiện có. Campaign chưa có bài hiển thị trạng thái rỗng. Tìm kiếm tự hiển thị bài phù hợp trong campaign. Trạng thái mở/đóng chỉ lưu trong phiên giao diện.
 
 Campaign cập nhật ngay sau import thành công, kể cả khi phân loại tiếp theo lỗi. Nếu metadata chưa tải được, bài vẫn truy cập qua nhóm “Campaign chưa có thông tin”; bài không gắn Content Plan vẫn ở sidebar. Hàng bài trong campaign không có nút xóa để tránh nhầm phạm vi xóa batch; các xác nhận và thao tác xóa hiện có giữ nguyên.
+
+## Xem các phiên bản outline và draft (REQ-44E4C670)
+
+Mở **Lịch sử outline / Lịch sử draft**, rồi chọn phiên bản để đọc kết quả đã lưu của lượt generate. Hai lượt có nội dung giống nhau vẫn có phiên bản riêng. Bản cũ thiếu metadata được ghi là lịch sử cũ; không thể khôi phục lịch sử chưa từng được lưu.
+
+Phần lịch sử chỉ để xem, nằm riêng phía trên bản hiện hành. Chọn **Bản hiện hành** để bỏ phần xem lịch sử. Editor, QC, copy và xuất bài vẫn dùng bản hiện hành bên dưới, không dùng phiên bản đang xem. Lựa chọn được nhớ theo bài và bước trong sessionStorage; không phải thao tác khôi phục. Nếu tải lịch sử lỗi, dùng **Tải lại lịch sử**; không cần generate lại. Lỗi lưu checkpoint không được báo là generate đã lưu thành công.

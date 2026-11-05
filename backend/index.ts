@@ -705,12 +705,31 @@ function batchUsage(step: 1 | 2 | 3 | 4, provider: string, response: any) {
   }
 }
 
+// Capture once at the generation checkpoint; later edits/QC retain this frozen payload.
+function freezeGenerationSnapshots(existing: any, next: any) {
+  next.generationSnapshots = { ...existing.generationSnapshots }
+  for (const stage of ["outline", "draft"] as const) {
+    const id = next[`${stage}GenerationId`]
+    if (!id || id === existing[`${stage}GenerationId`]) continue
+    if (typeof id !== "string" || id.length > 200) throw new Error("Invalid generation ID")
+    const output = stage === "outline" ? { sections: next.outline } : { markdown: next.draft }
+    next.generationSnapshots[stage] = JSON.parse(JSON.stringify({
+      ...output, generationId: id, generatedAt: new Date().toISOString(),
+      evidenceUsage: next.draftEvidenceUsage, sourceFingerprint: next[`${stage}SourceFingerprint`],
+      outline: next.outline, articleSpec: next.articleSpec, outlineStructure: next.outlineStructure,
+    }))
+  }
+}
+
 async function saveArticleCheckpoint(
   article: any,
   updates: Record<string, any>,
 ) {
   const next = { ...article, ...updates, updatedAt: new Date().toISOString() }
   if (article.activityKind === "batch" && article.activityId && deletedBatchIds.has(article.activityId)) return next
+  freezeGenerationSnapshots(article, next)
+  await projectArticleStageRuns(article)
+  await projectArticleStageRuns(next)
   await kvSet(`${ARTICLE_PREFIX}${article.id}`, next)
   await projectArticle(next)
   return next
@@ -946,7 +965,10 @@ function normalizeBatchArticleSpec(raw: any, article: any, idea: any) {
 }
 
 async function projectArticleStageRuns(article: any) {
-  if (!(await tableAvailable("article_stage_runs"))) return
+  if (!(await tableAvailable("article_stage_runs"))) {
+    if (article.outlineGenerationId || article.draftGenerationId) throw new Error("Generation history storage is unavailable")
+    return
+  }
   const stages = [
     {
       stage: "core_idea",
@@ -988,10 +1010,12 @@ async function projectArticleStageRuns(article: any) {
   ]
   for (const entry of stages) {
     if (!entry.output) continue
-    const fingerprint = snapshotFingerprint({
-      input: entry.input,
-      output: entry.output,
-    })
+    const frozen = article.generationSnapshots?.[entry.stage]
+    const generationId = frozen?.generationId
+    // Legacy snapshots are a single baseline, never inferred generation events.
+    const fingerprint = snapshotFingerprint(entry.stage === "core_idea"
+      ? { input: entry.input, output: entry.output }
+      : { stage: entry.stage, generationId: generationId ?? "legacy-baseline" })
     const existing = await tableSelect<any>("article_stage_runs", (query) =>
       query
         .select("id")
@@ -1020,7 +1044,7 @@ async function projectArticleStageRuns(article: any) {
       status: "completed",
       input_fingerprint: fingerprint,
       input_snapshot: entry.input,
-      output_snapshot: entry.output,
+      output_snapshot: frozen ?? entry.output,
       model: latest?.model ?? null,
       prompt_version: null,
       input_tokens: latest?.inputTokens ?? 0,
@@ -2626,6 +2650,7 @@ async function runBatchArticle(
       if (structureErrors.length) throw new Error(structureErrors.join("\n"))
       article = await saveArticleCheckpoint(article, {
         outline: sections,
+        outlineGenerationId: crypto.randomUUID(),
         outlineNeedsRegeneration: false,
         draftNeedsRegeneration: true,
         outlineScannedAt: new Date().toISOString(),
@@ -2807,6 +2832,7 @@ async function runBatchArticle(
       )
       article = await saveArticleCheckpoint(article, {
         draft: assembledDraft,
+        draftGenerationId: initialDraftResponses.length ? crypto.randomUUID() : article.draftGenerationId,
         draftNeedsRegeneration: false,
         draftEvidenceUsage: assembled.evidenceUsage,
         qualityReport: null,
@@ -5214,6 +5240,9 @@ app.put("/api/articles/:id", async (req, res) => {
           }
           next.currentStep = requestedStep
         }
+        freezeGenerationSnapshots(existing, next)
+        await projectArticleStageRuns(existing)
+        await projectArticleStageRuns(next)
         await kvSet(`${ARTICLE_PREFIX}${id}`, next)
         // A deliberate idea selection is the highest-signal feedback available
         // in the manual workflow. Keep only a compact, non-evidentiary card so

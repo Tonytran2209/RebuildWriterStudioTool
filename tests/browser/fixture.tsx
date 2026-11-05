@@ -39,13 +39,14 @@ function ReopenFixture(){
  const [state,setState]=useState<any>(()=>JSON.parse(sessionStorage.getItem('reopen-state')||'null')||{articles:reopenArticles,index:0,updates:[]});
  useEffect(()=>{sessionStorage.setItem('reopen-state',JSON.stringify(state));},[state]);
  const article=state.articles[state.index];
- const props={article,config:DEFAULT_CONFIG,files:[],model:DEFAULT_MODELS[0],railwayUrl:'http://127.0.0.1:4173',onUpdate:async(p:any)=>{setState((s:any)=>({...s,updates:[...s.updates,p]}));return true;},onPrev:()=>{},onNext:()=>{}};
+ const props={article,config:DEFAULT_CONFIG,files:[],model:DEFAULT_MODELS[0],railwayUrl:'http://127.0.0.1:4173',onUpdate:async(p:any)=>{const versionFixture=new URLSearchParams(location.search).has("versions");setState((s:any)=>({...s,articles:versionFixture?s.articles.map((a:any)=>a.id===article.id?{...a,...p}:a):s.articles,updates:[...s.updates,versionFixture?{articleId:article.id,patch:p}:p]}));return true;},onPrev:()=>{},onNext:()=>{}};
  return <main>
   {state.articles.map((a:any,index:number)=><button key={a.id} onClick={()=>setState((s:any)=>({...s,index}))}>Open {index}</button>)}
   <button onClick={()=>setState((s:any)=>({...s,articles:s.articles.map((a:any,index:number)=>index===s.index?{...a,selectedCoreIdeaId:'two',title:'Tiêu đề cập nhật cùng ID'}:a)}))}>Update snapshot</button>
   <pre data-testid="reopen-state">{JSON.stringify(state)}</pre>
   <section data-testid="reopen-core"><Step2CoreIdea {...props}/></section>
   <section data-testid="reopen-outline"><Step3Outline {...props}/></section>
+  {new URLSearchParams(location.search).has("versions") && <Step4Draft {...props} onToggleComplete={()=>{}}/>}
  </main>;
 }
 function AuthFixture(){
