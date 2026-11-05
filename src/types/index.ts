@@ -382,6 +382,8 @@ export interface Article {
   articleSpecFingerprint?: string | null
   step2ProcessTrace?: AIProcessTraceEvent[]
   // Step 3 data
+  outlineGeneration?: { generationId: string; createdAt: string; sections: OutlineSection[] }
+  draftGeneration?: { generationId: string; createdAt: string; markdown: string }
   outline?: OutlineSection[]
   outlineSourceFingerprint?: string | null
   outlineScannedAt?: string | null
@@ -549,4 +551,12 @@ export interface ActionDataSource {
   airtableKey?: string
   airtableBase?: string
   airtableTable?: string
+}
+
+export interface ArticleStageVersion {
+  id: string
+  stage: string
+  revision_number: number
+  created_at: string
+  output_snapshot: { sections?: OutlineSection[]; markdown?: string; generationId?: string }
 }

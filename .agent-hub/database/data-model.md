@@ -48,3 +48,8 @@ sourceOfTruth: supabase/migrations + backend/migrations
 ## Universal QC review metadata
 
 Article JSON payloads retain optional `qualityReport.inputFingerprint` (qc-9) alongside the existing specification fingerprint. This identifies exactly which content and source inputs were reviewed. Existing reports are preserved and treated as requiring an explicit re-check; no relational schema migration or automatic rewrite is needed. New/rechecked specifications use the same canonical spec-2 fingerprint in the browser and backend. `QualityGateCheck.blocking` may mark a warning as blocking, but cannot waive evidence, incomplete-review or stale-review warnings. Outline sections may store `grounding: evidence-led | editorial-guidance`; this restricts guidance-only prose and does not prove factual support.
+
+
+## Generation version history (REQ-44E4C670)
+
+Optional outlineGeneration/draftGeneration JSON metadata stores a stable generationId, timestamp and frozen sections/markdown at the initial saved checkpoint. New stage fingerprints use stage + generationId; output_snapshot includes the metadata. Existing revisions remain append-only and readable through sections/markdown. Legacy records without metadata retain legacy fingerprint behavior; do not infer one legacy row per generation. No schema migration, backfill, retention change or rewrite of prior revisions.

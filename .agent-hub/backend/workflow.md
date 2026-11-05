@@ -39,3 +39,8 @@ Railway Express (`backend/index.ts`) owns authentication, provider calls, articl
 - API or workflow changes require matching updates to `backend/api-contracts.md` and affected UI flow documentation.
 - Preserve legacy-compatible step numbers 2/3/4 in storage unless a migration request is explicitly approved.
 - Do not add unbounded retries, parallel mutation paths or silent fallback models.
+
+
+## Generation version history (REQ-44E4C670)
+
+Single and batch outline/draft checkpoints freeze generation output and timestamp with a new generationId. Projection fingerprints the stage plus generationId; retries deduplicate while identical output from different generations creates separate revisions. Autosave, repair and QC retain the original generation snapshot; these operations do not create additional generation versions. Outline regeneration may clear the working draft but retains draftGeneration and existing stage rows. History availability is separate from article checkpoint persistence: unavailable projection storage must not be presented as confirmed history. No orchestration, ownership or migration change.

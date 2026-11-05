@@ -968,7 +968,7 @@ async function projectArticleStageRuns(article: any) {
     {
       stage: "outline",
       legacyStep: 3,
-      output: article.outline?.length ? { sections: article.outline } : null,
+      output: article.outlineGeneration ?? (article.outline?.length ? { sections: article.outline } : null),
       input: {
         selectedCoreIdeaId: article.selectedCoreIdeaId,
         suggestions: article.coreIdeaSuggestions,
@@ -978,7 +978,7 @@ async function projectArticleStageRuns(article: any) {
     {
       stage: "draft",
       legacyStep: 4,
-      output: article.draft?.trim() ? { markdown: article.draft } : null,
+      output: article.draftGeneration ?? (article.draft?.trim() ? { markdown: article.draft } : null),
       input: {
         outline: article.outline,
         selectedCoreIdeaId: article.selectedCoreIdeaId,
@@ -988,10 +988,10 @@ async function projectArticleStageRuns(article: any) {
   ]
   for (const entry of stages) {
     if (!entry.output) continue
-    const fingerprint = snapshotFingerprint({
-      input: entry.input,
-      output: entry.output,
-    })
+    const generation = entry.stage === "outline" ? article.outlineGeneration : entry.stage === "draft" ? article.draftGeneration : null
+    const fingerprint = snapshotFingerprint(generation?.generationId
+      ? { stage: entry.stage, generationId: generation.generationId }
+      : { input: entry.input, output: entry.output })
     const existing = await tableSelect<any>("article_stage_runs", (query) =>
       query
         .select("id")
@@ -1026,7 +1026,7 @@ async function projectArticleStageRuns(article: any) {
       input_tokens: latest?.inputTokens ?? 0,
       output_tokens: latest?.outputTokens ?? 0,
       cost_usd: latest?.costUsd ?? null,
-      created_at: article.updatedAt,
+      created_at: generation?.createdAt ?? article.updatedAt,
     })
   }
 }
@@ -2626,6 +2626,7 @@ async function runBatchArticle(
       if (structureErrors.length) throw new Error(structureErrors.join("\n"))
       article = await saveArticleCheckpoint(article, {
         outline: sections,
+        outlineGeneration: { generationId: crypto.randomUUID(), createdAt: new Date().toISOString(), sections },
         outlineNeedsRegeneration: false,
         draftNeedsRegeneration: true,
         outlineScannedAt: new Date().toISOString(),
@@ -2807,6 +2808,7 @@ async function runBatchArticle(
       )
       article = await saveArticleCheckpoint(article, {
         draft: assembledDraft,
+        draftGeneration: { generationId: crypto.randomUUID(), createdAt: new Date().toISOString(), markdown: assembledDraft },
         draftNeedsRegeneration: false,
         draftEvidenceUsage: assembled.evidenceUsage,
         qualityReport: null,
@@ -5001,7 +5003,7 @@ app.get("/api/articles/:id/stages", async (req, res) => {
       )
       return res.json({ articleId: article.id, stages })
     }
-    res.json({ articleId: article.id, stages: [] })
+    res.status(503).json({ code: "STAGE_HISTORY_UNAVAILABLE", error: "Lịch sử phiên bản chưa khả dụng; không thể xác nhận đã lưu lịch sử." })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }

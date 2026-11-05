@@ -1,3 +1,5 @@
+import { fetchArticleStages } from "../../lib/db";
+import type { ArticleStageVersion } from "../../types";
 import OutlineStructureSelect from '../OutlineStructureSelect';
 import { buildOutlineTask, validateOutlineStructure, outlineSelectionUpdates } from '../../../shared/outlineStructures';
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -390,6 +392,7 @@ export default function Step3Outline({
       ];
       const saved = await onUpdate({
         outline: sections,
+        outlineGeneration: { generationId: crypto.randomUUID(), createdAt: generatedAt, sections },
         outlineNeedsRegeneration: false,
         draftNeedsRegeneration: true,
         outlineSourceFingerprint: sourceFingerprint,
@@ -497,6 +500,7 @@ export default function Step3Outline({
         <div className={`${embedded ? '' : 'flex-1 overflow-y-auto'} p-3.5 sm:p-5 md:p-6`}>
           <div className="mx-auto max-w-4xl space-y-5">
 
+            <GenerationHistory key={article.id} article={article} stage="outline" refreshKey={generating} />
             {/* Header */}
             <div className="outline-toolbar flex flex-col justify-between gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:gap-4">
               <div className="min-w-0">
@@ -880,4 +884,55 @@ function SectionRow({
       {showAudit && <ProcessTraceModal title={section.heading} events={processTrace} onClose={() => setShowAudit(false)}><div className="outline-audit-content space-y-4"><div className="outline-audit-summary rounded-lg border p-4"><div className="outline-audit-label">{tr('Lý do tạo section', 'Section rationale')}</div><p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">{section.rationale || tr('Chưa có rationale trong kết quả đã lưu.', 'No rationale in the saved result.')}</p></div><div><div className="outline-audit-label mb-2">{tr('Dẫn chứng của section', 'Section evidence')}</div><div className="space-y-2">{section.evidence?.map((e, i) => <div key={`${e.source}-${i}`} className="outline-audit-evidence rounded-lg border p-3 text-[10px]"><b>{e.role?.toUpperCase()} · {e.source}</b>{e.quote && <blockquote className="mt-1.5 whitespace-pre-wrap border-l-2 pl-2">“{e.quote}”</blockquote>}{e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}</div></div></div></ProcessTraceModal>}
     </div>
   );
+}
+
+// Separate read-only region: never binds history to the working editor or its autosave.
+export function GenerationHistory({ article, stage, refreshKey }: { article: Article; stage: "outline" | "draft"; refreshKey?: boolean }) {
+  const [enabled, setEnabled] = useState(false);
+  const [versions, setVersions] = useState<ArticleStageVersion[]>([]);
+  const [selected, setSelected] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const generationId = (stage === "outline" ? article.outlineGeneration : article.draftGeneration)?.generationId;
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    setLoading(true); setError(""); setSelected(""); setVersions([]);
+    fetchArticleStages(article.id).then(rows => {
+      if (!active) return;
+      const matching = rows.filter(row => row.stage === stage).sort((a, b) => b.revision_number - a.revision_number);
+      setVersions(matching);
+      if (generationId && !matching.some(row => row.output_snapshot.generationId === generationId)) {
+        setError("Phiên bản của lượt tạo hiện tại chưa được xác nhận đã lưu trong lịch sử.");
+      }
+    }).catch(() => { if (active) setError("Không tải được lịch sử phiên bản. Nội dung hiện hành được giữ nguyên."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [article.id, stage, generationId, retry, refreshKey, enabled]);
+  const version = versions.find(row => row.id === selected);
+  return <section aria-label={`Lịch sử ${stage}`} className="space-y-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-[var(--ui-text)]">
+    <button type="button" className="min-h-11" aria-expanded={enabled} onClick={() => setEnabled(value => !value)}>Xem lịch sử {stage}</button>
+    {enabled && <>
+    <label className="flex flex-col gap-2 text-sm">Phiên bản {stage}
+      <select className="min-h-11 w-full rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] px-3" value={selected} disabled={loading} onChange={event => setSelected(event.target.value)}>
+        <option value="">Bản hiện hành — tiếp tục chỉnh sửa bên dưới</option>
+        {versions.map(row => <option key={row.id} value={row.id}>Phiên bản {row.revision_number} · {new Date(row.created_at).toLocaleString()}</option>)}
+      </select>
+    </label>
+    {loading && <p role="status">Đang tải lịch sử…</p>}
+    {error && <p role="alert">{error}</p>}
+    {!loading && !error && !versions.length && <p>Chưa có phiên bản đã lưu.</p>}
+    <button type="button" className="min-h-11 underline" disabled={loading} onClick={() => setRetry(value => value + 1)}>Tải lại lịch sử</button>
+    {version && <div data-testid="generation-preview" className="space-y-3">
+      <p className="text-sm">Bản lịch sử chỉ đọc. QC, đầu vào bước tiếp theo, copy và xuất vẫn dùng bản hiện hành bên dưới.</p>
+      {stage === "draft" ? <pre className="whitespace-pre-wrap break-words font-sans text-base">{version.output_snapshot.markdown}</pre> : version.output_snapshot.sections?.map(section => <div key={section.id}><h3 className="font-medium">{section.heading}</h3><p className="whitespace-pre-wrap break-words">{section.notes}</p>
+        {section.rationale && <p className="whitespace-pre-wrap break-words">{section.rationale}</p>}
+        {section.keywords?.length ? <p>Keywords: {section.keywords.join(', ')}</p> : null}
+        {section.searchIntent && <p>Search intent: {section.searchIntent}</p>}
+        {(section.evidence?.length || section.ruleRefs?.length) ? <details><summary>Nguồn đã lưu</summary><pre className="whitespace-pre-wrap break-words text-xs">{JSON.stringify({ evidence: section.evidence, ruleRefs: section.ruleRefs }, null, 2)}</pre></details> : null}
+      </div>)}
+    </div>}
+    </>}
+  </section>;
 }

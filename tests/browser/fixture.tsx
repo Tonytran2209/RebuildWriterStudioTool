@@ -59,6 +59,14 @@ function LibraryFixture(){
  const [config,setConfig]=useState(DEFAULT_CONFIG);
  return <main><TabKnowledgeBase files={files} onChange={setFiles} railwayUrl="http://127.0.0.1:4173" config={config} onConfigChange={setConfig}/><pre data-testid="library-records">{JSON.stringify(files)}</pre><pre data-testid="library-access">{JSON.stringify(config.stepConfigs[4].fileAccess)}</pre></main>;
 }
+// Synthetic generation history records; no production sample is represented.
+function VersionsFixture(){
+ const [index,setIndex]=useState(0);
+ const [article,setArticle]=useState<any>({...reopenArticles[0],id:'versions-0'});
+ const [updates,setUpdates]=useState<any[]>([]);
+ const props={article,config:DEFAULT_CONFIG,files:[],model:DEFAULT_MODELS[0],railwayUrl:'',onUpdate:async(p:any)=>{setUpdates(v=>[...v,p]);setArticle((a:any)=>({...a,...p}));return true;},onPrev:()=>{},onNext:()=>{}};
+ return <main><button onClick={()=>{setIndex(index+1);setArticle({...reopenArticles[0],id:'versions-'+(index+1)});}}>Switch article</button><pre data-testid="version-updates">{JSON.stringify(updates)}</pre><pre data-testid="version-current">{article.draft}</pre><Step3Outline {...props}/><Step4Draft {...props} onToggleComplete={()=>{}}/></main>;
+}
 // Synthetic component contract fixture; does not represent production records.
 function CampaignFixture(){
  const [plans,setPlans]=useState<any[]>([]);
@@ -71,4 +79,4 @@ function CampaignFixture(){
  <ActivityLauncher files={[]} outlineRuleIds={[]} railwayUrl="http://127.0.0.1:4173" models={DEFAULT_MODELS} modelId={DEFAULT_MODELS[0].id} recentArticles={articles} onOpenArticle={setSelected} onModelChange={()=>{}} onCreate={async()=>{}} onContentPlansChange={(loaded,removed)=>setPlans(current=>[...loaded,...current.filter(p=>p.id!==removed&&!loaded.some(n=>n.id===p.id))])}/>
  </main></div>;
 }
-mountFixture(new URLSearchParams(location.search).has('campaigns')?<CampaignFixture/>:new URLSearchParams(location.search).has('library')?<LibraryFixture/>:new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>);
+mountFixture(new URLSearchParams(location.search).has('versions')?<VersionsFixture/>:new URLSearchParams(location.search).has('campaigns')?<CampaignFixture/>:new URLSearchParams(location.search).has('library')?<LibraryFixture/>:new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>);

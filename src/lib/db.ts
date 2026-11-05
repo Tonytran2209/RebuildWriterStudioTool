@@ -1,4 +1,4 @@
-import type { Article, AppConfig, DocumentFile, WebsiteContentRecord } from "../types"
+import type { Article, ArticleStageVersion, AppConfig, DocumentFile, WebsiteContentRecord } from "../types"
 
 const AUTH_STORAGE_KEY = "writer:auth-session"
 
@@ -446,4 +446,9 @@ export async function pingRailway(
   } catch {
     return { ok: false }
   }
+}
+
+export async function fetchArticleStages(id: string): Promise<ArticleStageVersion[]> {
+  const result = await railwayRequest<{ stages: ArticleStageVersion[] }>(`/api/articles/${encodeURIComponent(id)}/stages`)
+  return result.stages
 }

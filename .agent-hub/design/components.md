@@ -52,3 +52,8 @@ Distinguish content findings from incomplete/outdated review process. Explain wh
 ## Campaign sidebar (REQ-460AEC3E)
 
 App loads Content Plan metadata independently of articles and ignores superseded responses. Launcher reports successful history loads, imports (before classification) and existing plan deletions to App. Sidebar groups by Content Plan id, including empty campaigns and metadata fallbacks, with collapsed native button disclosures, visible focus and 44px targets. Search exposes matching articles. Child selection keeps the existing single/batch callback; child rows have no delete control because the existing handler may delete an entire batch. Ungrouped articles retain their existing controls.
+
+
+## Generation version history (REQ-44E4C670)
+
+Outline and Draft provide a neutral, keyboard-accessible native version selector in an expandable history region, with timestamp/revision labels, loading, empty, unavailable/unconfirmed and retry states. History is a separate read-only region; it never binds to the current editor, attaches current QC to old output, or changes current actions. Changing articles clears the viewer and ignores superseded responses. History reloads after generation settles, and can be refreshed manually for batch checkpoints.

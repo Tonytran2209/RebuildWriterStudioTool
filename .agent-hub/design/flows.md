@@ -62,3 +62,8 @@ Distinguish content findings from incomplete/outdated review process. Explain wh
 ## Campaign navigation (REQ-460AEC3E)
 
 Campaigns correspond to Content Plan ids, without merging series versions. Initially collapsed groups reveal saved articles on click, Enter or Space; search exposes matching campaign/article results. Expansion is local UI state only. Metadata loads independently; errors retain article access through fallback groups. Ignore stale history responses after import/delete and stale App loads after metadata updates or scope changes. Publish imported plans before classification so classification errors do not hide durable imports. Selecting an article retains existing batch navigation and persistence behavior. Disclosure never writes or deletes data.
+
+
+## Generation version history (REQ-44E4C670)
+
+Open Outline/Draft history and select a saved revision to read its frozen generation output. The current editor remains available separately; history selection does not save, restore, regenerate, change next-step inputs, QC, completion, or copy/export. Pending edits remain in the current editor. Reload reads durable stage rows; switching articles discards old responses. Failed generation/save preserves existing historical rows. A history error or absent current generation is shown explicitly with a read retry, without another AI call.

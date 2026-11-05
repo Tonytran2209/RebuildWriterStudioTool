@@ -1,3 +1,4 @@
+import { GenerationHistory } from "./Step3Outline";
 import { outlineReviewInstruction } from '../../lib/outlineQuality';
 import { semanticReviewInputFingerprint, missingSemanticChecks, semanticReviewIncomplete, SEMANTIC_IDS, QUALITY_VERSION } from '../../lib/qualityPolicy';
 import SeoBrief from './SeoBrief';
@@ -996,6 +997,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       if (editorRef.current) editorRef.current.innerText = displayDraft(assembledDraft);
       const checkpointSaved = await onUpdate({
         draft: assembledDraft,
+        draftGeneration: { generationId: crypto.randomUUID(), createdAt: new Date().toISOString(), markdown: assembledDraft },
         draftNeedsRegeneration: false,
         draftEvidenceUsage: evidenceUsage,
         qualityReport: null,
@@ -1543,6 +1545,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
 
   return (
     <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
+      <GenerationHistory key={article.id} article={article} stage="draft" refreshKey={generating} />
       <div className={`draft-workspace-shell minimal-step-shell flex flex-col ${embedded ? '' : 'min-h-0 flex-1'}`}>
         <div className={`mx-auto flex w-full max-w-4xl flex-col gap-3 p-2 sm:p-3 ${embedded ? '' : 'min-h-0 flex-1 overflow-y-auto lg:flex-row lg:overflow-hidden'}`}>
 
