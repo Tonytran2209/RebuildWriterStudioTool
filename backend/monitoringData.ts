@@ -61,7 +61,10 @@ export async function readMonitoringData(
         ),
         scope: "relational records",
       }
+    const usageQueries: string[] = []
     if (await exists("writer_ai_usage")) {
+      usageQueries.push(`SELECT called_at AS recorded_at, input_tokens, output_tokens, cost_usd
+        FROM writer_studio.writer_ai_usage WHERE called_at >= $1 AND NOT cache_hit`)
       const rows = (
         await client.query(
           `SELECT provider,model,step,count(*)::int AS records,count(*) FILTER(WHERE cache_hit)::int AS cache_hits,count(*) FILTER(WHERE NOT cache_hit)::int AS calls,COALESCE(sum(input_tokens) FILTER(WHERE NOT cache_hit),0)::float8 AS input_tokens,COALESCE(sum(cached_input_tokens) FILTER(WHERE NOT cache_hit),0)::float8 AS cached_input_tokens,COALESCE(sum(output_tokens) FILTER(WHERE NOT cache_hit),0)::float8 AS output_tokens,sum(cost_usd) FILTER(WHERE NOT cache_hit)::float8 AS known_cost_usd,count(*) FILTER(WHERE NOT cache_hit AND cost_usd IS NOT NULL)::int AS priced_calls FROM writer_studio.writer_ai_usage WHERE called_at >= $1 GROUP BY provider,model,step`,
@@ -93,6 +96,17 @@ export async function readMonitoringData(
       else inventory[table] = null
     }
     await client.query("COMMIT")
+    if (ledger && usageQueries.length) {
+      ledger.timeline = (await client.query(`
+        SELECT date_trunc('hour', recorded_at, 'UTC') AS hour,
+          count(*)::int AS calls,
+          count(*) FILTER (WHERE input_tokens IS NOT NULL AND output_tokens IS NOT NULL)::int AS "usageSamples",
+          count(cost_usd)::int AS "pricedCalls",
+          sum(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0))::float8 AS "totalTokens",
+          sum(cost_usd)::float8 AS "knownCostUsd"
+        FROM (${usageQueries.join(" UNION ALL ")}) usage
+        GROUP BY 1 ORDER BY 1`, [since])).rows
+    }
     return {
       buckets: buckets.slice(0, 10000),
       taskRows:taskRows.slice(0,1000),

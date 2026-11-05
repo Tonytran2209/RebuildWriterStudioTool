@@ -40,6 +40,8 @@ test("read-only aggregates deduplicate actual storage precedence and separate ca
     assert.equal(row.cache_hits, 1)
     assert.equal(row.input_tokens, 100)
     assert.equal(row.known_cost_usd, 0.001)
+    assert.equal(result.ledger.timeline.reduce((n: number, hour: any) => n + hour.calls, 0), 2)
+    assert.equal(result.ledger.timeline.reduce((n: number, hour: any) => n + hour.pricedCalls, 0), 1)
     assert.ok(!JSON.stringify(result).includes("private"))
     assert.equal(
       result.ledger.models.find((m: any) => m.model === "unknown")
