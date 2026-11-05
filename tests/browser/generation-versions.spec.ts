@@ -76,3 +76,45 @@ test('history keeps pending editor changes and navigation autosaves only to its 
   expect(state.articles[1].draft).toBe('Saved draft 1');
   expect(state.updates.every((update: any) => update.articleId === 'reopen-0')).toBe(true);
 });
+
+for (const theme of ['light', 'dark', 'system']) {
+  test(`draft toolbar history disclosure preserves editor identity in ${theme}`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.addInitScript(preference => localStorage.setItem('writer:theme-preference', preference), theme);
+    await page.route('**/api/**', route => route.request().url().endsWith('/stages')
+      ? route.fulfill({ json: { stages: versions } })
+      : route.fulfill({ status: 401, json: {} }));
+    await page.goto('/?reopen&versions');
+    const history = page.getByRole('button', { name: /Lịch sử draft|Draft history/ });
+    const toolbar = page.locator('.draft-toolbar');
+    const generate = toolbar.getByRole('button', { name: /Tạo lại Draft|Regenerate draft/ });
+    await expect(history).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('combobox', { name: /Phiên bản draft|Draft version/ })).toHaveCount(0);
+    expect(await history.locator('svg').count()).toBe(1);
+    expect(await history.textContent()).toBe('');
+    expect(await toolbar.locator('button').evaluateAll(buttons => buttons[0].getAttribute('aria-label'))).toMatch(/Lịch sử draft|Draft history/);
+    const historyBox = (await history.boundingBox())!;
+    const generateBox = (await generate.boundingBox())!;
+    expect(historyBox.width).toBeGreaterThanOrEqual(44);
+    expect(historyBox.height).toBeGreaterThanOrEqual(44);
+    expect(historyBox.x + historyBox.width).toBeLessThanOrEqual(generateBox.x);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.getByRole('button', { name: /Chỉnh sửa toàn bộ bản nháp|Edit full draft/ }).click();
+    const editor = page.locator('[contenteditable="true"]');
+    const originalEditor = await editor.elementHandle();
+    await editor.fill('Pending toolbar history edit');
+    await history.focus();
+    await expect(history.locator('..').getByRole('tooltip')).toBeVisible();
+    await history.press('Enter');
+    await expect(history).toHaveAttribute('aria-expanded', 'true');
+    await page.getByRole('combobox', { name: /Phiên bản draft|Draft version/ }).selectOption('draft-1');
+    await expect(page.getByTestId('draft-history-preview')).toBeVisible();
+    await expect(editor).toHaveText('Pending toolbar history edit');
+    expect(await editor.evaluate((node, original) => node === original, originalEditor)).toBe(true);
+    await history.press('Space');
+    await expect(history).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByTestId('draft-history-preview')).toHaveCount(0);
+    await expect(editor).toHaveText('Pending toolbar history edit');
+    expect(await editor.evaluate((node, original) => node === original, originalEditor)).toBe(true);
+  });
+}
