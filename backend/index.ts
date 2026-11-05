@@ -1193,7 +1193,10 @@ async function runBatchModel(
  * Recovery uses a distinct cache purpose, so a malformed primary reply is
  * never replayed as the recovery result.
  */
-async function runBatchJsonObject(
+async function runBatchJsonObject(...args:Parameters<typeof runBatchJsonObjectImpl>) {
+  return monitoring.task({kind:'batch-stage',label:'Writer step '+args[1],entityId:String(args[0].id)},()=>runBatchJsonObjectImpl(...args));
+}
+async function runBatchJsonObjectImpl(
   article: any,
   step: 2 | 3 | 4,
   prompt: string,

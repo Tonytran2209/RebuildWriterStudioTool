@@ -32,6 +32,9 @@ export async function readMonitoringData(
         [since],
       )
     ).rows
+    const taskRows=(await client.query("SELECT key,value FROM writer_studio.kv_store WHERE key LIKE 'lab-task:v1:%' AND value->>'startedAt'>=$1 ORDER BY value->>'startedAt' DESC LIMIT 1001",[since])).rows;
+    let historicalTasks:any[]=[];
+    if(await exists('article_stage_runs')) historicalTasks=(await client.query(`SELECT id::text AS id,article_id AS "entityId",stage AS label,status,created_at AS "startedAt",input_tokens AS "inputTokens",output_tokens AS "outputTokens",cost_usd::float8 AS "knownCostUsd",model FROM writer_studio.article_stage_runs WHERE created_at >= $1 ORDER BY created_at DESC LIMIT 1001`,[since])).rows.map(r=>({...r,kind:'historical-stage',coverage:'Saved final-result usage; may omit retries and cache attribution'}));
     let articles: any = null,
       plans: any = null,
       ledger: any = null
@@ -92,6 +95,9 @@ export async function readMonitoringData(
     await client.query("COMMIT")
     return {
       buckets: buckets.slice(0, 10000),
+      taskRows:taskRows.slice(0,1000),
+      historicalTasks:historicalTasks.slice(0,1000),
+      taskReadComplete:taskRows.length<=1000&&historicalTasks.length<=1000,
       database: {
         status: "ready",
         responseMs: performance.now() - start,
