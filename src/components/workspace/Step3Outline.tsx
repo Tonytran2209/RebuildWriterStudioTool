@@ -929,7 +929,7 @@ export function GenerationHistory({ articleId, stage, generationId, children }: 
   const label = stage === "outline" ? tr("Lịch sử outline", "Outline history") : tr("Lịch sử draft", "Draft history");
   const trigger = <span className={children ? "group relative inline-flex shrink-0" : undefined}>
     <button type="button"
-      className={children ? "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] text-[var(--ui-text)] hover:bg-[var(--ui-surface)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-text)]" : "min-h-11 text-sm font-medium underline"}
+      className={children ? "draft-toolbar-action" : "min-h-11 text-sm font-medium underline"}
       aria-label={label} title={children ? label : undefined} aria-expanded={expanded} aria-controls={expanded ? panelId : undefined}
       onClick={() => setOpenedKey(expanded ? "" : key)}>
       {children ? <History className="app-icon" aria-hidden="true" /> : label}

@@ -1559,7 +1559,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   return (
     <GenerationHistory articleId={article.id} stage="draft" generationId={article.draftGenerationId}>
     {(historyTrigger, historyPanel) => <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
-      {historyPanel}
       <div className={`draft-workspace-shell minimal-step-shell flex flex-col ${embedded ? '' : 'min-h-0 flex-1'}`}>
         <div className={`mx-auto flex w-full max-w-4xl flex-col gap-3 p-2 sm:p-3 ${embedded ? '' : 'min-h-0 flex-1 overflow-y-auto lg:flex-row lg:overflow-hidden'}`}>
 
@@ -1573,7 +1572,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <div className="flex min-w-0 items-center gap-2">
-                {historyTrigger}
                 <button
                   type="button"
                   onClick={() => void handleGenerate(Boolean(draft))}
@@ -1586,6 +1584,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                       ? <><RefreshCw className="app-icon" aria-hidden="true" /><span>{tr('Tạo lại Draft', 'Regenerate draft')}</span></>
                       : <><Sparkles className="app-icon" aria-hidden="true" /><span>{tr('Tạo bài viết', 'Generate article')}</span></>}
                 </button>
+                {historyTrigger}
                 </div>
                 <button
                   type="button"
@@ -1621,6 +1620,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 </button>
               </div>
             </div>
+            <div className="draft-history-panel min-w-0 shrink-0">{historyPanel}</div>
             <div className="px-3 pt-2 sm:px-4">
               <StepUsage step={3} usage={article.aiUsageByStep?.[4]} />
             </div>
