@@ -1,4 +1,4 @@
-import { test, expect } from './browser-fixture';
+import { test, expect, setTheme } from './browser-fixture';
 
 // Synthetic API records verify the viewing contract, not production reproduction.
 const versions = ['outline', 'draft'].flatMap(stage => [1, 2].map(revision => ({
@@ -85,6 +85,16 @@ for (const theme of ['light', 'dark', 'system']) {
       ? route.fulfill({ json: { stages: versions } })
       : route.fulfill({ status: 401, json: {} }));
     await page.goto('/?reopen&versions');
+    // The reopen fixture exposes raw JSON diagnostics outside the product UI.
+    // Keep those diagnostics readable without letting their preformatted line widen the page.
+    await page.getByTestId('reopen-state').evaluate(node => {
+      node.style.whiteSpace = 'pre-wrap';
+      node.style.overflowWrap = 'anywhere';
+    });
+    // Bootstrap selects appearance via URL rather than mounting the App theme hook.
+    const resolvedTheme = theme === 'system' ? 'dark' : theme as 'light' | 'dark';
+    await setTheme(page, resolvedTheme);
+    await expect(page.locator('body')).toHaveClass(new RegExp(resolvedTheme === 'dark' ? 'codex-dark' : 'writer-light'));
     const history = page.getByRole('button', { name: /Lịch sử draft|Draft history/ });
     const toolbar = page.locator('.draft-toolbar');
     const generate = toolbar.getByRole('button', { name: /Tạo lại Draft|Regenerate draft/ });
@@ -98,6 +108,7 @@ for (const theme of ['light', 'dark', 'system']) {
     expect(historyBox.width).toBeGreaterThanOrEqual(44);
     expect(historyBox.height).toBeGreaterThanOrEqual(44);
     expect(historyBox.x + historyBox.width).toBeLessThanOrEqual(generateBox.x);
+    expect(Math.max(historyBox.y, generateBox.y)).toBeLessThan(Math.min(historyBox.y + historyBox.height, generateBox.y + generateBox.height));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole('button', { name: /Chỉnh sửa toàn bộ bản nháp|Edit full draft/ }).click();
     const editor = page.locator('[contenteditable="true"]');

@@ -1572,6 +1572,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 <p className="text-[10px] text-slate-400">{article.title || 'Bài viết mới'}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="flex min-w-0 items-center gap-2">
                 {historyTrigger}
                 <button
                   type="button"
@@ -1585,6 +1586,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                       ? <><RefreshCw className="app-icon" aria-hidden="true" /><span>{tr('Tạo lại Draft', 'Regenerate draft')}</span></>
                       : <><Sparkles className="app-icon" aria-hidden="true" /><span>{tr('Tạo bài viết', 'Generate article')}</span></>}
                 </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShowAudit(true)}
