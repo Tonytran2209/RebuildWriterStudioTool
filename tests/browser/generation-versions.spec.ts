@@ -144,3 +144,52 @@ for (const theme of ['light', 'dark', 'system']) {
     expect(await editor.evaluate((node, original) => node === original, originalEditor)).toBe(true);
   });
 }
+
+for (const theme of ['light', 'dark', 'system']) {
+  test(`outline history whole card and sibling controls in ${theme}`, async ({ page }) => {
+    let loads = 0;
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.route('**/api/**', route => {
+      if (route.request().url().endsWith('/stages')) {
+        loads++;
+        return route.fulfill({ json: { stages: versions } });
+      }
+      return route.fulfill({ status: 401, json: {} });
+    });
+    await page.goto('/?reopen&versions');
+    await setTheme(page, theme === 'light' ? 'light' : 'dark');
+    const before = await page.getByTestId('reopen-state').textContent();
+    const trigger = page.getByRole('button', { name: /Lịch sử outline|Outline history/ });
+    const card = trigger.locator('xpath=ancestor::section[1]');
+    const select = card.getByRole('combobox', { name: /Phiên bản outline|Outline version/ });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(loads).toBe(0);
+    await expect(trigger.locator('svg')).toHaveCount(2);
+    const box = (await trigger.boundingBox())!;
+    const cardBox = (await card.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(Math.abs(box.width - cardBox.width)).toBeLessThanOrEqual(2);
+    expect(Math.abs(box.height - cardBox.height)).toBeLessThanOrEqual(2);
+    // Click padding at the far right, away from the text and chevron.
+    await trigger.click({ position: { x: box.width - 4, y: box.height / 2 } });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(select.locator('option')).toHaveCount(3);
+    await select.selectOption('outline-1');
+    await card.getByText(/Chi tiết snapshot|Snapshot details/, { exact: true }).click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await card.getByRole('button', { name: /Tải lại lịch sử|Reload history/ }).click();
+    await expect(select).toBeEnabled();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await trigger.focus();
+    await trigger.press('Space');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await trigger.press('Enter');
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    await expect(trigger).toBeFocused();
+    await expect(select).toBeVisible();
+    await trigger.click();
+    await trigger.locator('svg').first().click();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(await page.getByTestId('reopen-state').textContent()).toBe(before);
+  });
+}
