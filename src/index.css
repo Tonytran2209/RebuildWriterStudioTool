@@ -2717,3 +2717,23 @@ html, body, #root {
   .seo-brief-links { padding: 12px 16px; }
   .seo-brief-candidates { margin-left: 0; flex-basis: 100%; padding-left: 23px; }
 }
+
+/* Draft history shares the AI log control; keep touch sizing local to Draft. */
+.draft-history-panel > section {
+  margin: 0.75rem;
+  min-width: 0;
+  max-height: 50dvh;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  background: var(--ui-surface);
+}
+
+.draft-history-panel select { min-width: 0; max-width: 100%; }
+
+@media (max-width: 600px) {
+  .draft-toolbar .draft-toolbar-action {
+    width: 2.75rem;
+    height: 2.75rem;
+    flex-basis: 2.75rem;
+  }
+}

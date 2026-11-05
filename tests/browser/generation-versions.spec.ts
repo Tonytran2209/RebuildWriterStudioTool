@@ -102,12 +102,19 @@ for (const theme of ['light', 'dark', 'system']) {
     await expect(page.getByRole('combobox', { name: /Phiên bản draft|Draft version/ })).toHaveCount(0);
     expect(await history.locator('svg').count()).toBe(1);
     expect(await history.textContent()).toBe('');
-    expect(await toolbar.locator('button').evaluateAll(buttons => buttons[0].getAttribute('aria-label'))).toMatch(/Lịch sử draft|Draft history/);
+    expect(await toolbar.locator('button').evaluateAll(buttons => buttons[1].getAttribute('aria-label'))).toMatch(/Lịch sử draft|Draft history/);
     const historyBox = (await history.boundingBox())!;
     const generateBox = (await generate.boundingBox())!;
-    expect(historyBox.width).toBeGreaterThanOrEqual(44);
-    expect(historyBox.height).toBeGreaterThanOrEqual(44);
-    expect(historyBox.x + historyBox.width).toBeLessThanOrEqual(generateBox.x);
+    const minimumTarget = page.viewportSize()!.width <= 600 ? 44 : 32;
+    expect(historyBox.width).toBeGreaterThanOrEqual(minimumTarget);
+    expect(historyBox.height).toBeGreaterThanOrEqual(minimumTarget);
+    expect(generateBox.x + generateBox.width).toBeLessThanOrEqual(historyBox.x);
+    const styleOf = (node: HTMLElement | SVGElement) => {
+      const style = getComputedStyle(node);
+      return [style.width, style.height, style.border, style.borderRadius, style.color, style.backgroundColor];
+    };
+    const aiLog = toolbar.getByRole('button', { name: /Xem nhật ký AI|View AI log/ });
+    expect(await history.evaluate(styleOf)).toEqual(await aiLog.evaluate(styleOf));
     expect(Math.max(historyBox.y, generateBox.y)).toBeLessThan(Math.min(historyBox.y + historyBox.height, generateBox.y + generateBox.height));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole('button', { name: /Chỉnh sửa toàn bộ bản nháp|Edit full draft/ }).click();
@@ -120,6 +127,14 @@ for (const theme of ['light', 'dark', 'system']) {
     await expect(history).toHaveAttribute('aria-expanded', 'true');
     await page.getByRole('combobox', { name: /Phiên bản draft|Draft version/ }).selectOption('draft-1');
     await expect(page.getByTestId('draft-history-preview')).toBeVisible();
+    const panel = page.locator('.draft-editor > .draft-history-panel > section');
+    await expect(panel).toBeVisible();
+    const panelBox = (await panel.boundingBox())!;
+    const toolbarBox = (await toolbar.boundingBox())!;
+    expect(panelBox.y).toBeGreaterThanOrEqual(toolbarBox.y + toolbarBox.height);
+    expect(panelBox.y + panelBox.height).toBeLessThanOrEqual((await editor.boundingBox())!.y);
+    expect(await panel.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expect(editor).toHaveText('Pending toolbar history edit');
     expect(await editor.evaluate((node, original) => node === original, originalEditor)).toBe(true);
     await history.press('Space');
