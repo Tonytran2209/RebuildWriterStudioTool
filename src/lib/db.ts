@@ -447,3 +447,15 @@ export async function pingRailway(
     return { ok: false }
   }
 }
+
+export interface ArticleStageVersion {
+  id: string
+  stage: string
+  revision_number: number
+  created_at?: string
+  output_snapshot?: { generationId?: string; generatedAt?: string; markdown?: string; sections?: Article["outline"] }
+}
+export async function getArticleStages(id: string): Promise<ArticleStageVersion[]> {
+  const result = await railwayRequest<{ stages: ArticleStageVersion[] }>(`/api/articles/${encodeURIComponent(id)}/stages`)
+  return Array.isArray(result.stages) ? result.stages : []
+}

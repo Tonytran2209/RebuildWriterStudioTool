@@ -1,3 +1,4 @@
+import { getArticleStages, type ArticleStageVersion } from "../../lib/db";
 import OutlineStructureSelect from '../OutlineStructureSelect';
 import { buildOutlineTask, validateOutlineStructure, outlineSelectionUpdates } from '../../../shared/outlineStructures';
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -390,6 +391,7 @@ export default function Step3Outline({
       ];
       const saved = await onUpdate({
         outline: sections,
+        outlineGenerationId: crypto.randomUUID(),
         outlineNeedsRegeneration: false,
         draftNeedsRegeneration: true,
         outlineSourceFingerprint: sourceFingerprint,
@@ -403,6 +405,7 @@ export default function Step3Outline({
         currentStep: 3,
       });
       if (!saved) throw new Error('Outline Bước 2 chưa được lưu vào Supabase.');
+      window.dispatchEvent(new CustomEvent('writer:generation-saved', { detail: { articleId: article.id, stage: 'outline' } }));
       if (partialResult) {
         setWarning(`Đã lưu ${sections.length}/${minimumSections} section tối thiểu vượt qua kiểm chứng. Bạn có thể chỉnh sửa thủ công hoặc nhấn “Tạo lại” để thử bổ sung.`);
       } else {
@@ -508,6 +511,7 @@ export default function Step3Outline({
             </div>
             <OutlineStructureSelect files={files} allowedIds={config.stepConfigs[3]?.fileAccess?.rules ?? []} value={article.outlineStructure} disabled={generating || (article.activityKind === "batch" && !["completed", "failed"].includes(article.batchStatus ?? "queued"))} onChange={outlineStructure => void onUpdate(outlineSelectionUpdates(outlineStructure))} />
             {article.outlineNeedsRegeneration && <p role="status" className="text-xs">{tr('Cấu trúc đã đổi. Hãy tạo lại outline trước khi viết draft. Kết quả cũ vẫn được giữ.', 'Structure changed. Regenerate the outline before drafting. Previous output is preserved.')}</p>}
+            <GenerationHistory articleId={article.id} stage="outline" generationId={article.outlineGenerationId} />
             <StepUsage step={2} usage={article.aiUsageByStep?.[3]} />
 
             {generating && (
@@ -880,4 +884,68 @@ function SectionRow({
       {showAudit && <ProcessTraceModal title={section.heading} events={processTrace} onClose={() => setShowAudit(false)}><div className="outline-audit-content space-y-4"><div className="outline-audit-summary rounded-lg border p-4"><div className="outline-audit-label">{tr('Lý do tạo section', 'Section rationale')}</div><p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">{section.rationale || tr('Chưa có rationale trong kết quả đã lưu.', 'No rationale in the saved result.')}</p></div><div><div className="outline-audit-label mb-2">{tr('Dẫn chứng của section', 'Section evidence')}</div><div className="space-y-2">{section.evidence?.map((e, i) => <div key={`${e.source}-${i}`} className="outline-audit-evidence rounded-lg border p-3 text-[10px]"><b>{e.role?.toUpperCase()} · {e.source}</b>{e.quote && <blockquote className="mt-1.5 whitespace-pre-wrap border-l-2 pl-2">“{e.quote}”</blockquote>}{e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}</div></div></div></ProcessTraceModal>}
     </div>
   );
+}
+
+// Read-only history is deliberately separate from the live workflow/editor.
+export function GenerationHistory({ articleId, stage, generationId }: { articleId: string; stage: "outline" | "draft"; generationId?: string }) {
+  const { tr } = useI18n();
+  const key = `writer:version:${articleId}:${stage}`;
+  const [state, setState] = useState<{ key: string; versions: ArticleStageVersion[]; loading: boolean; error: string }>({ key: "", versions: [], loading: true, error: "" });
+  const [selection, setSelection] = useState({ key, id: "" });
+  const [reload, setReload] = useState(0);
+  const [openedKey, setOpenedKey] = useState(() => {
+    try { return sessionStorage.getItem(key) ? key : ""; } catch { return ""; }
+  });
+  const expanded = openedKey === key;
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.articleId === articleId && detail?.stage === stage) setReload(value => value + 1);
+    };
+    window.addEventListener('writer:generation-saved', refresh);
+    return () => window.removeEventListener('writer:generation-saved', refresh);
+  }, [articleId, stage]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    let active = true;
+    setState({ key, versions: [], loading: true, error: "" });
+    let saved = "";
+    try { saved = sessionStorage.getItem(key) ?? ""; } catch { /* Storage is optional. */ }
+    setSelection({ key, id: saved });
+    getArticleStages(articleId).then(rows => {
+      if (!active) return;
+      const versions = rows.filter(row => row.stage === stage && row.output_snapshot &&
+        (stage === "draft" ? typeof row.output_snapshot.markdown === "string" : Array.isArray(row.output_snapshot.sections)))
+        .sort((a, b) => b.revision_number - a.revision_number);
+      setState({ key, versions, loading: false, error: "" });
+      if (!versions.some(row => row.id === saved)) setSelection({ key, id: "" });
+    }).catch(() => { if (active) setState({ key, versions: [], loading: false, error: tr("Không tải được lịch sử. Bản hiện hành vẫn được giữ.", "Could not load history. The current version is preserved.") }); });
+    return () => { active = false; };
+  }, [articleId, stage, generationId, reload, key, expanded]);
+  const versions = state.key === key ? state.versions : [];
+  const selected = versions.find(row => row.id === (selection.key === key ? selection.id : ""));
+  return <section className="rounded-xl border border-[var(--ui-border)] p-3 space-y-2 text-[var(--ui-text)]" aria-label={tr("Lịch sử phiên bản", "Version history")}>
+    <button type="button" className="min-h-11 text-sm font-medium underline" aria-expanded={expanded} onClick={() => setOpenedKey(expanded ? "" : key)}>{stage === "outline" ? tr("Lịch sử outline", "Outline history") : tr("Lịch sử draft", "Draft history")}</button>
+    {expanded && <>
+    <label className="block text-sm font-medium">
+      {stage === "outline" ? tr("Phiên bản outline", "Outline version") : tr("Phiên bản draft", "Draft version")}
+      <select className="block min-h-11 w-full rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] px-3 mt-2" value={selected?.id ?? ""} disabled={state.key !== key || state.loading} onChange={event => {
+        const id = event.target.value; setSelection({ key, id });
+        try { sessionStorage.setItem(key, id); } catch { /* Storage is optional. */ }
+      }}>
+        <option value="">{tr("Bản hiện hành (chỉnh sửa bên dưới)", "Current version (edit below)")}</option>
+        {versions.map(row => <option key={row.id} value={row.id}>{tr("Phiên bản", "Version")} {row.revision_number} · {row.output_snapshot?.generationId ? tr("Lượt generate", "Generation") : tr("Lịch sử cũ", "Legacy history")} · {row.created_at && !Number.isNaN(Date.parse(row.created_at)) ? new Date(row.created_at).toLocaleString() : tr("Không có ngày", "Date unavailable")}</option>)}
+      </select>
+    </label>
+    {(state.key !== key || state.loading) && <p role="status">{tr("Đang tải lịch sử…", "Loading history…")}</p>}
+    {state.error && <p role="alert">{state.error}</p>}
+    {!state.loading && !state.error && versions.length === 0 && <p className="text-xs">{tr("Chưa có phiên bản đã lưu.", "No saved versions yet.")}</p>}
+    <button type="button" className="min-h-11 underline" onClick={() => setReload(value => value + 1)}>{tr("Tải lại lịch sử", "Reload history")}</button>
+    {selected && <div className="space-y-3" data-testid={`${stage}-history-preview`}>
+      <p role="status" className="text-xs">{tr("Chỉ xem lịch sử. Editor, QC và xuất bài vẫn dùng bản hiện hành bên dưới.", "Read-only history. The editor, QC and export still use the current version below.")}</p>
+      {stage === "draft" ? <pre className="whitespace-pre-wrap break-words font-sans">{selected.output_snapshot?.markdown}</pre> : selected.output_snapshot?.sections?.map((section, index) => <div key={index} className="whitespace-pre-wrap break-words"><h3 className="font-medium">{section.heading}</h3><p>{section.notes}</p><details><summary>{tr("Chi tiết snapshot", "Snapshot details")}</summary><pre className="whitespace-pre-wrap break-words font-sans text-xs">{JSON.stringify(section, null, 2)}</pre></details></div>)}
+    </div>}
+    </>}
+  </section>;
 }

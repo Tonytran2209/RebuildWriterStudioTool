@@ -393,6 +393,8 @@ export interface Article {
   /** Legacy storage only; layout comes from outlineStructure. */
   comparisonStructure?: "standard" | "similarities-differences"
   // Step 4 data
+  outlineGenerationId?: string
+  draftGenerationId?: string
   draft?: string
   draftSourceFingerprint?: string | null
   draftScannedAt?: string | null

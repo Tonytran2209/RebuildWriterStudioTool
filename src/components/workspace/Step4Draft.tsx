@@ -1,3 +1,4 @@
+import { GenerationHistory } from "./Step3Outline";
 import { outlineReviewInstruction } from '../../lib/outlineQuality';
 import { semanticReviewInputFingerprint, missingSemanticChecks, semanticReviewIncomplete, SEMANTIC_IDS, QUALITY_VERSION } from '../../lib/qualityPolicy';
 import SeoBrief from './SeoBrief';
@@ -651,10 +652,14 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDraft = useRef<string | null>(null);
   const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
+  useEffect(() => {
+    onUpdateRef.current = onUpdate;
+  }, [onUpdate]);
 
   const recoveryKey = `writer:draft-recovery:${article.id}`;
-  const [recoveryDraft, setRecoveryDraft] = useState(() => sessionStorage.getItem(recoveryKey) ?? '');
+  const [recoveryDrafts, setRecoveryDrafts] = useState<Record<string, string>>({});
+  const recoveryDraft = recoveryDrafts[recoveryKey] ?? sessionStorage.getItem(recoveryKey) ?? '';
+  const setRecoveryDraft = (text: string) => setRecoveryDrafts(previous => ({ ...previous, [recoveryKey]: text }));
   const draft = article.draft || recoveryDraft;
   // This is intentionally an uncontrolled editor. Rendering keyword-mark spans inside a
   // contentEditable element while also changing its innerText imperatively can leave React
@@ -667,7 +672,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   // a draft that arrived during the loading state is copied into the newly
   // mounted editor as soon as generation finishes (also covers batch polling).
   }, [draft, generating]);
-  useEffect(() => { setEditingDraft(false); }, [article.id]);
+  useEffect(() => {
+    setEditingDraft(false);
+    setRecoveryDraft(sessionStorage.getItem(recoveryKey) ?? '');
+  }, [article.id, recoveryKey]);
   const preview = draftPreviewParts(displayDraft(pendingDraft.current ?? draft));
   const prerequisite = gateArticleStep(article, 4);
   const sourceFingerprintFor = (value: Article) => [
@@ -996,6 +1004,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       if (editorRef.current) editorRef.current.innerText = displayDraft(assembledDraft);
       const checkpointSaved = await onUpdate({
         draft: assembledDraft,
+        draftGenerationId: crypto.randomUUID(),
         draftNeedsRegeneration: false,
         draftEvidenceUsage: evidenceUsage,
         qualityReport: null,
@@ -1006,6 +1015,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 4: compiledWorkflowRules.snapshot },
       });
       if (!checkpointSaved) throw new Error('Draft đã được giữ tạm trên thiết bị nhưng chưa thể lưu checkpoint vào Supabase. Hãy kiểm tra kết nối rồi thử lưu lại; không cần gọi AI lại ngay.');
+      window.dispatchEvent(new CustomEvent('writer:generation-saved', { detail: { articleId: article.id, stage: 'draft' } }));
       const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
       if (validation.failed.length) throw new Error(`Draft đã được lưu để chỉnh sửa nhưng chưa đạt 100% SEO checklist (${validation.wordCount}/${targetWords} từ): ${validation.failed.map(item => item.label).join(', ')}.`);
       let deterministic = [
@@ -1492,10 +1502,15 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     }
   };
 
-  useEffect(() => () => {
-    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
-    if (pendingDraft.current !== null) onUpdateRef.current({ draft: pendingDraft.current, qualityReport: null, draftSourceFingerprint: null });
-  }, []);
+  useEffect(() => {
+    const saveOwner = onUpdate;
+    return () => {
+      if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
+      if (pendingDraft.current !== null) void saveOwner({ draft: pendingDraft.current, qualityReport: null, draftSourceFingerprint: null });
+      pendingDraft.current = null;
+      draftSaveTimer.current = null;
+    };
+  }, [article.id]);
 
   const handleCopy = async () => {
     try {
@@ -1543,6 +1558,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
 
   return (
     <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
+      <GenerationHistory articleId={article.id} stage="draft" generationId={article.draftGenerationId} />
       <div className={`draft-workspace-shell minimal-step-shell flex flex-col ${embedded ? '' : 'min-h-0 flex-1'}`}>
         <div className={`mx-auto flex w-full max-w-4xl flex-col gap-3 p-2 sm:p-3 ${embedded ? '' : 'min-h-0 flex-1 overflow-y-auto lg:flex-row lg:overflow-hidden'}`}>
 
