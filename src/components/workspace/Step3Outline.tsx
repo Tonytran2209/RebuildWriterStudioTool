@@ -927,12 +927,16 @@ export function GenerationHistory({ articleId, stage, generationId, children }: 
   const versions = state.key === key ? state.versions : [];
   const selected = versions.find(row => row.id === (selection.key === key ? selection.id : ""));
   const label = stage === "outline" ? tr("Lịch sử outline", "Outline history") : tr("Lịch sử draft", "Draft history");
-  const trigger = <span className={children ? "group relative inline-flex shrink-0" : undefined}>
+  const trigger = <span className={children ? "group relative inline-flex shrink-0" : "block"}>
     <button type="button"
-      className={children ? "draft-toolbar-action" : "min-h-11 text-sm font-medium underline"}
+      className={children ? "draft-toolbar-action" : "flex min-h-11 w-full items-center gap-2 rounded-xl p-3 text-left text-sm font-medium hover:bg-[var(--ui-control)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-text)]"}
       aria-label={label} title={children ? label : undefined} aria-expanded={expanded} aria-controls={expanded ? panelId : undefined}
       onClick={() => setOpenedKey(expanded ? "" : key)}>
-      {children ? <History className="app-icon" aria-hidden="true" /> : label}
+      {children ? <History className="app-icon" aria-hidden="true" /> : <>
+        <History className="app-icon shrink-0" aria-hidden="true" />
+        <span className="min-w-0 flex-1">{label}</span>
+        {expanded ? <ChevronUp className="app-icon shrink-0" aria-hidden="true" /> : <ChevronDown className="app-icon shrink-0" aria-hidden="true" />}
+      </>}
     </button>
     {children && <span role="tooltip" className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-1 text-xs text-[var(--ui-text)] group-hover:block group-focus-within:block">{label}</span>}
   </span>;
@@ -957,8 +961,8 @@ export function GenerationHistory({ articleId, stage, generationId, children }: 
     </div>}
   </>;
   const panel = expanded ? <section id={panelId} className="rounded-xl border border-[var(--ui-border)] p-3 space-y-2 text-[var(--ui-text)]" aria-label={tr("Lịch sử phiên bản", "Version history")}>{content}</section> : null;
-  return children ? children(trigger, panel) : <section id={panelId} className="rounded-xl border border-[var(--ui-border)] p-3 space-y-2 text-[var(--ui-text)]" aria-label={tr("Lịch sử phiên bản", "Version history")}>
+  return children ? children(trigger, panel) : <section className="rounded-xl border border-[var(--ui-border)] text-[var(--ui-text)]" aria-label={tr("Lịch sử phiên bản", "Version history")}>
     {trigger}
-    {expanded && content}
+    {expanded && <div id={panelId} className="space-y-2 px-3 pb-3">{content}</div>}
   </section>;
 }
