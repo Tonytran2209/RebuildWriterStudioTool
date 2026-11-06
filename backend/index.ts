@@ -1,4 +1,4 @@
-import {monitoring} from './monitoring.ts';
+import {jobFailure, monitoring} from './monitoring.ts';
 import { outlineReviewInstruction, outlineQualityChecks } from '../src/lib/outlineQuality.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
 import "dotenv/config"
@@ -223,6 +223,8 @@ app.use("/api", async (req: AuthenticatedRequest, res, next) => {
     res.status(401).json({ error: error instanceof Error ? error.message : "Phiên đăng nhập không hợp lệ." })
   }
 })
+
+app.post("/api/monitoring/ui-sample", monitoring.browserSample)
 
 const ARTICLE_PREFIX = "writer:article:"
 const LEARNING_DECISIONS_KEY = "writer:learning:decision-cards:v1"
@@ -3212,12 +3214,14 @@ async function runBatchArticle(
         completedAt: article.completedAt ?? new Date().toISOString(),
       })
     }
+    return "valid" as const
   } catch (error: any) {
     await saveArticleCheckpoint(article, {
       batchStatus: "failed",
       batchError: error?.message ?? String(error),
       status: "review",
     })
+    return jobFailure(error)
   }
 }
 
@@ -3244,9 +3248,18 @@ async function runBatch(activityId: string) {
           !["completed", "failed"].includes(article.batchStatus),
       )
       if (!articles.length) break
-      await runWithConcurrency(articles, 2, (article) =>
-        runBatchArticle(article, controller),
-      )
+      await runWithConcurrency(articles, 2, async (article) => {
+        const start = performance.now()
+        const job = "Writer batch article"
+        const workload = article.activityType === "editorial-originality" ? "1 editorial article" : "1 SEO article"
+        try {
+          const outcome = await runBatchArticle(article, controller)
+          if (outcome) monitoring.recordJob(job, workload, start, outcome)
+        } catch (error) {
+          monitoring.recordJob(job, workload, start, jobFailure(error))
+          throw error
+        }
+      })
       const queuedDuringRun = (await loadArticles()).some(
         (article) =>
           article.activityId === activityId &&

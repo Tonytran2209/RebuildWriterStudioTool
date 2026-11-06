@@ -114,7 +114,11 @@ for (const theme of ['light', 'dark', 'system']) {
       return [style.width, style.height, style.border, style.borderRadius, style.color, style.backgroundColor];
     };
     const aiLog = toolbar.getByRole('button', { name: /Xem nhật ký AI|View AI log/ });
-    expect(await history.evaluate(styleOf)).toEqual(await aiLog.evaluate(styleOf));
+    // Theme tokens can still be transitioning when the toolbar first becomes visible.
+    await expect.poll(async () => {
+      const [historyStyle, logStyle] = await Promise.all([history.evaluate(styleOf), aiLog.evaluate(styleOf)]);
+      return { historyStyle, logStyle, matches: JSON.stringify(historyStyle) === JSON.stringify(logStyle) };
+    }).toMatchObject({ matches: true });
     expect(Math.max(historyBox.y, generateBox.y)).toBeLessThan(Math.min(historyBox.y + historyBox.height, generateBox.y + generateBox.height));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole('button', { name: /Chỉnh sửa toàn bộ bản nháp|Edit full draft/ }).click();
