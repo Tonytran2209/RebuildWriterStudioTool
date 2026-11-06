@@ -12,8 +12,10 @@ test("read-only aggregates deduplicate actual storage precedence and separate ca
  CREATE TABLE writer_studio.writer_articles(id text,status text,payload jsonb);
  CREATE TABLE writer_studio.writer_ai_usage(provider text,model text,step int,input_tokens int,cached_input_tokens int,output_tokens int,cost_usd numeric,cache_hit boolean,called_at timestamptz);
  INSERT INTO writer_studio.writer_articles VALUES ('a','draft','{}'),('b','done','{}');
- ALTER TABLE writer_studio.writer_articles ADD COLUMN content_group text, ADD COLUMN batch_status text, ADD COLUMN draft text, ADD COLUMN completed_at timestamptz, ADD COLUMN updated_at timestamptz, ADD COLUMN error_message text;
- UPDATE writer_studio.writer_articles SET batch_status='completed', completed_at='2025-01-01T00:00:01Z', payload='{"batchStartedAt":"2025-01-01T00:00:00Z"}', draft='private' WHERE id='b';
+ ALTER TABLE writer_studio.writer_articles ADD COLUMN activity_id text, ADD COLUMN content_group text, ADD COLUMN batch_status text, ADD COLUMN draft text, ADD COLUMN completed_at timestamptz, ADD COLUMN updated_at timestamptz, ADD COLUMN error_message text;
+ UPDATE writer_studio.writer_articles SET activity_id='batch', batch_status='completed', completed_at='2025-01-01T00:00:01Z', payload='{"batchStartedAt":"2025-01-01T00:00:00Z"}', draft='private' WHERE id='b';
+ CREATE TABLE writer_studio.batch_job_items(id text, batch_job_id text, article_id text, status text, updated_at timestamptz, error_message text);
+ INSERT INTO writer_studio.batch_job_items VALUES ('item','batch','b','completed','2025-01-01T00:00:01Z',null);
  INSERT INTO writer_studio.kv_store VALUES ('writer:article:a','{"id":"a","status":"done","content":"private"}'),('writer:articles','[{"id":"a","status":"draft"},{"id":"c","status":"draft"}]');
  INSERT INTO writer_studio.writer_ai_usage VALUES ('test','model',1,100,10,20,0.001,false,now()),('test','model',1,100,10,20,0,true,now()),('test','unknown',2,10,0,2,null,false,now());`)
     const client = {
@@ -38,6 +40,7 @@ test("read-only aggregates deduplicate actual storage precedence and separate ca
     assert.equal(result.plans, null)
     assert.equal(result.complete, true)
     assert.equal(result.jobHistory?.validCompletions, 1)
+    assert.equal(result.jobHistoryAllTime?.executed, 1)
     assert.equal(result.jobHistory?.completion[0].p95Ms, 1000)
     const row = result.ledger.models.find((m: any) => m.model === "model")
     assert.equal(row.calls, 1)
