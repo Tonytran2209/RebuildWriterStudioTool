@@ -10,6 +10,7 @@ export async function readMonitoringData(
     return {
       buckets: [],
       inventory: undefined,
+      contentWorkload: null,
       jobHistory: null,
       jobHistoryAllTime: null,
       database: { status: "unsupported" },
@@ -118,6 +119,25 @@ export async function readMonitoringData(
          ORDER BY "recordedAt" DESC NULLS LAST, b.id LIMIT $1`, [jobLimit + 1],
       )).rows, since, jobLimit)
       : { jobHistory: null, jobHistoryAllTime: null }
+    const contentWorkload = await exists("batch_job_items") && await exists("writer_articles")
+      ? {
+          kind: "seo-batch",
+          ...(await client.query(`
+            WITH seo AS (
+              SELECT CASE WHEN a.draft ~ '[^[:space:]]' THEN
+                cardinality(regexp_split_to_array(regexp_replace(a.draft, '^[[:space:]]+|[[:space:]]+$', '', 'g'), '[[:space:]]+'))
+              END AS words
+              FROM writer_studio.batch_job_items b
+              JOIN writer_studio.writer_articles a ON a.id = b.article_id AND a.activity_id = b.batch_job_id
+              WHERE b.status = 'completed'
+                AND (a.content_group = 'comparison_seo' OR a.payload->>'activityType' = 'comparison-seo')
+            )
+            SELECT count(*)::int AS articles, count(words)::int AS "lengthSamples",
+              avg(words)::float8 AS "averageWords", min(words) AS "minWords", max(words) AS "maxWords"
+            FROM seo
+          `)).rows[0],
+        }
+      : null
     await client.query("COMMIT")
     if (ledger && usageQueries.length) {
       ledger.timeline = (await client.query(`
@@ -133,6 +153,7 @@ export async function readMonitoringData(
     return {
       buckets: buckets.slice(0, 10000),
       ...history,
+      contentWorkload,
       taskRows:taskRows.slice(0,1000),
       historicalTasks:historicalTasks.slice(0,1000),
       taskReadComplete:taskRows.length<=1000&&historicalTasks.length<=1000,
