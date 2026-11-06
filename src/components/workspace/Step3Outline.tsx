@@ -2,7 +2,7 @@ import { sendOutlinePerformanceSample } from "../../lib/performanceTelemetry";
 import { getArticleStages, type ArticleStageVersion } from "../../lib/db";
 import OutlineStructureSelect from '../OutlineStructureSelect';
 import { buildOutlineTask, validateOutlineStructure, outlineSelectionUpdates } from '../../../shared/outlineStructures';
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, Eye, History, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
 import type {
   Article,
@@ -191,7 +191,7 @@ export default function Step3Outline({
   const [newSectionLevel, setNewSectionLevel] = useState<"h2" | "h3">("h2");
   const generationInFlight = useRef(false);
   const generationTiming = useRef<{ start: number; clickSent: boolean; saved: boolean } | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const timing = generationTiming.current;
     if (!timing) return;
     if (generating && !timing.clickSent) {
@@ -273,8 +273,9 @@ export default function Step3Outline({
     ...contextBrief.secondaryKeywords,
   ].filter(Boolean).join(" ");
 
-  const handleGenerate = async (manual = false) => {
-    const startedAt = performance.now();
+  const handleGenerate = async (manual: boolean, eventTime: number) => {
+    const now = performance.now();
+    const startedAt = eventTime > 0 && eventTime <= now ? eventTime : now;
     if (generationInFlight.current) return;
     if (!prerequisite.allowed) {
       setError(tr(prerequisite.reasonVi, prerequisite.reason));
@@ -656,7 +657,7 @@ export default function Step3Outline({
           <button
             onClick={needsOutlineApproval
               ? () => void onUpdate({ editorialApproval: { status: 'approved', approvedAt: new Date().toISOString(), outlineFingerprint: article.outlineSourceFingerprint ?? undefined } })
-              : canContinueToDraft ? onNext : () => void handleGenerate(Boolean(outline.length))}
+              : canContinueToDraft ? onNext : (event) => void handleGenerate(Boolean(outline.length), event.timeStamp)}
             disabled={stepActionDisabled}
             className="workflow-endpoint-button"
           >
