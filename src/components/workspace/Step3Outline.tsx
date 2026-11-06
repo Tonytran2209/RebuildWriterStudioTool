@@ -1,3 +1,4 @@
+import { sendOutlinePerformanceSample } from "../../lib/performanceTelemetry";
 import { getArticleStages, type ArticleStageVersion } from "../../lib/db";
 import OutlineStructureSelect from '../OutlineStructureSelect';
 import { buildOutlineTask, validateOutlineStructure, outlineSelectionUpdates } from '../../../shared/outlineStructures';
@@ -189,6 +190,18 @@ export default function Step3Outline({
   const [newSectionHeading, setNewSectionHeading] = useState("");
   const [newSectionLevel, setNewSectionLevel] = useState<"h2" | "h3">("h2");
   const generationInFlight = useRef(false);
+  const generationTiming = useRef<{ start: number; clickSent: boolean; saved: boolean } | null>(null);
+  useEffect(() => {
+    const timing = generationTiming.current;
+    if (!timing) return;
+    if (generating && !timing.clickSent) {
+      timing.clickSent = true;
+      sendOutlinePerformanceSample("clickLatency", timing.start);
+    } else if (!generating) {
+      generationTiming.current = null;
+      if (timing.saved) sendOutlinePerformanceSample("responseTime", timing.start);
+    }
+  }, [generating]);
   const outline = article.outline || [];
   const prerequisite = gateArticleStep(article, 3);
 
@@ -261,6 +274,7 @@ export default function Step3Outline({
   ].filter(Boolean).join(" ");
 
   const handleGenerate = async (manual = false) => {
+    const startedAt = performance.now();
     if (generationInFlight.current) return;
     if (!prerequisite.allowed) {
       setError(tr(prerequisite.reasonVi, prerequisite.reason));
@@ -280,6 +294,7 @@ export default function Step3Outline({
       return;
     }
     generationInFlight.current = true;
+    generationTiming.current = { start: startedAt, clickSent: false, saved: false };
     setGenerating(true);
     setError(null);
     setWarning(null);
@@ -405,6 +420,7 @@ export default function Step3Outline({
         currentStep: 3,
       });
       if (!saved) throw new Error('Outline Bước 2 chưa được lưu vào Supabase.');
+      if (generationTiming.current) generationTiming.current.saved = true;
       window.dispatchEvent(new CustomEvent('writer:generation-saved', { detail: { articleId: article.id, stage: 'outline' } }));
       if (partialResult) {
         setWarning(`Đã lưu ${sections.length}/${minimumSections} section tối thiểu vượt qua kiểm chứng. Bạn có thể chỉnh sửa thủ công hoặc nhấn “Tạo lại” để thử bổ sung.`);
