@@ -1,3 +1,4 @@
+import { summarizeJobHistory } from "./jobHistory.ts"
 import { performance } from "node:perf_hooks"
 import { database } from "./postgres.ts"
 // Fixed aggregate SQL only. No article content, user identity or credentials leave this module.
@@ -95,6 +96,22 @@ export async function readMonitoringData(
         ).rows
       else inventory[table] = null
     }
+    // Writer keeps the latest terminal state per batch article, not every retry.
+    const jobLimit = 10000
+    const jobHistory = await exists("writer_articles") ? summarizeJobHistory((await client.query(
+      `SELECT 'Writer batch article' AS job,
+         CASE WHEN content_group = 'editorial_originality' THEN '1 editorial article' ELSE '1 SEO article' END AS workload,
+         batch_status AS status,
+         (batch_status = 'completed' AND status = 'done' AND completed_at IS NOT NULL AND NULLIF(btrim(draft), '') IS NOT NULL) AS valid,
+         payload->>'batchStartedAt' AS "startedAt",
+         CASE WHEN batch_status = 'completed' THEN completed_at END AS "endedAt",
+         error_message AS error
+       FROM writer_studio.writer_articles
+       WHERE batch_status IN ('completed', 'failed')
+         AND (CASE WHEN batch_status = 'completed' THEN completed_at ELSE updated_at END) >= $1
+       ORDER BY (CASE WHEN batch_status = 'completed' THEN completed_at ELSE updated_at END) DESC, id
+       LIMIT $2`, [since, jobLimit + 1],
+    )).rows, jobLimit) : null
     await client.query("COMMIT")
     if (ledger && usageQueries.length) {
       ledger.timeline = (await client.query(`
@@ -109,6 +126,7 @@ export async function readMonitoringData(
     }
     return {
       buckets: buckets.slice(0, 10000),
+      jobHistory,
       taskRows:taskRows.slice(0,1000),
       historicalTasks:historicalTasks.slice(0,1000),
       taskReadComplete:taskRows.length<=1000&&historicalTasks.length<=1000,
