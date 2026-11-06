@@ -1,4 +1,4 @@
-import { summarizeJobHistory } from "./jobHistory.ts"
+import { jobHistoryWindows } from "./jobHistory.ts"
 import { performance } from "node:perf_hooks"
 import { database } from "./postgres.ts"
 // Fixed aggregate SQL only. No article content, user identity or credentials leave this module.
@@ -9,6 +9,9 @@ export async function readMonitoringData(
   if (process.env.DATABASE_PROVIDER !== "postgres")
     return {
       buckets: [],
+      inventory: undefined,
+      jobHistory: null,
+      jobHistoryAllTime: null,
       database: { status: "unsupported" },
       articles: null,
       plans: null,
@@ -98,20 +101,23 @@ export async function readMonitoringData(
     }
     // Writer keeps the latest terminal state per batch article, not every retry.
     const jobLimit = 10000
-    const jobHistory = await exists("writer_articles") ? summarizeJobHistory((await client.query(
-      `SELECT 'Writer batch article' AS job,
-         CASE WHEN content_group = 'editorial_originality' THEN '1 editorial article' ELSE '1 SEO article' END AS workload,
-         batch_status AS status,
-         (batch_status = 'completed' AND status = 'done' AND completed_at IS NOT NULL AND NULLIF(btrim(draft), '') IS NOT NULL) AS valid,
-         payload->>'batchStartedAt' AS "startedAt",
-         CASE WHEN batch_status = 'completed' THEN completed_at END AS "endedAt",
-         error_message AS error
-       FROM writer_studio.writer_articles
-       WHERE batch_status IN ('completed', 'failed')
-         AND (CASE WHEN batch_status = 'completed' THEN completed_at ELSE updated_at END) >= $1
-       ORDER BY (CASE WHEN batch_status = 'completed' THEN completed_at ELSE updated_at END) DESC, id
-       LIMIT $2`, [since, jobLimit + 1],
-    )).rows, jobLimit) : null
+    const history = await exists("batch_job_items") && await exists("writer_articles")
+      ? jobHistoryWindows((await client.query(
+        `SELECT 'Writer batch article' AS job,
+           CASE a.content_group WHEN 'editorial_originality' THEN '1 editorial article'
+             WHEN 'comparison_seo' THEN '1 SEO article' ELSE '1 batch article' END AS workload,
+           b.status,
+           (b.status = 'completed' AND a.status = 'done' AND NULLIF(btrim(a.draft), '') IS NOT NULL) AS valid,
+           a.payload->>'batchStartedAt' AS "startedAt",
+           CASE WHEN b.status = 'completed' THEN a.completed_at END AS "endedAt",
+           CASE WHEN b.status = 'completed' THEN COALESCE(a.completed_at, b.updated_at) ELSE b.updated_at END AS "recordedAt",
+           b.error_message AS error
+         FROM writer_studio.batch_job_items b
+         LEFT JOIN writer_studio.writer_articles a ON a.id = b.article_id AND a.activity_id = b.batch_job_id
+         WHERE b.status IN ('completed', 'failed')
+         ORDER BY "recordedAt" DESC NULLS LAST, b.id LIMIT $1`, [jobLimit + 1],
+      )).rows, since, jobLimit)
+      : { jobHistory: null, jobHistoryAllTime: null }
     await client.query("COMMIT")
     if (ledger && usageQueries.length) {
       ledger.timeline = (await client.query(`
@@ -126,7 +132,7 @@ export async function readMonitoringData(
     }
     return {
       buckets: buckets.slice(0, 10000),
-      jobHistory,
+      ...history,
       taskRows:taskRows.slice(0,1000),
       historicalTasks:historicalTasks.slice(0,1000),
       taskReadComplete:taskRows.length<=1000&&historicalTasks.length<=1000,
