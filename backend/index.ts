@@ -51,7 +51,7 @@ import { jsonrepair } from "jsonrepair"
 import { resolveArticleProjection } from "./articleProjection.ts"
 import { formatDraftExport } from "./draftFormatter.ts"
 import { internalLinkInstruction, internalLinkChecks, addMissingInternalLinks } from "../src/lib/internalLinkPolicy.ts"
-import { canonicalSpecFingerprint, qualityInputFingerprint, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS } from "../src/lib/qualityPolicy.ts"
+import { canonicalSpecFingerprint, qualityInputFingerprint, outlineContentChanged, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS } from "../src/lib/qualityPolicy.ts"
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from "../src/lib/evidencePolicy.ts"
 import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionCheck } from "../src/lib/introductionPolicy.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
@@ -5235,8 +5235,12 @@ app.put("/api/articles/:id", async (req, res) => {
           Object.assign(next, outlineSelectionUpdates(await canonicalOutlineSelection(updates.outlineStructure)))
         }
         if (updates.outline && JSON.stringify(updates.outline) !== JSON.stringify(existing.outline)) {
-          next.draftNeedsRegeneration = true
-          next.qualityReport = null
+          if (outlineContentChanged(existing.outline, updates.outline)) {
+            next.draftNeedsRegeneration = true
+            next.qualityReport = null
+          } else if (!updates.qualityReport) {
+            next.qualityReport = null
+          }
           const errors = validateOutlineStructure(next.outline ?? [], next.outlineStructure)
           if (errors.length && updates.outlineNeedsRegeneration === false) throw new Error(errors.join("; "))
         }

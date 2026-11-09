@@ -2,7 +2,7 @@ import { outlineQualityChecks } from './outlineQuality';
 import type { Article, ImageSuggestion, QualityGateCheck, UniversalQualityReport, WebsiteContentRecord } from "../types";
 import { articleSpecFingerprint } from "./articleSpec";
 import { introductionCheck } from "./introductionPolicy";
-import { QUALITY_VERSION, qualityInputFingerprint } from './qualityPolicy';
+import { QUALITY_VERSION, qualityInputFingerprint, draftWithoutImagePlaceholders } from './qualityPolicy';
 import type { DocumentFile } from '../types';
 import { internalLinkChecks } from './internalLinkPolicy';
 import { missingMustCoverTopics } from './mustCoverPolicy';
@@ -76,6 +76,7 @@ export function auditInternalLinks(article: Article, draft: string, inventory: W
 }
 
 export function deterministicQualityChecks(article: Article, draft: string, effectiveWordLimit: number, inventory: WebsiteContentRecord[] = [], sourceNames: string[] = []): QualityGateCheck[] {
+  draft = draftWithoutImagePlaceholders(draft);
   const spec = article.articleSpec;
   const body = normalized(draft);
   const wordTarget = Math.min(10000, Math.max(800, effectiveWordLimit || 1500));

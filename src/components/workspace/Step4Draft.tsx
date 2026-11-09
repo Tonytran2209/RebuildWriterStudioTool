@@ -1,6 +1,6 @@
 import { GenerationHistory } from "./Step3Outline";
 import { outlineReviewInstruction } from '../../lib/outlineQuality';
-import { semanticReviewInputFingerprint, missingSemanticChecks, semanticReviewIncomplete, SEMANTIC_IDS, QUALITY_VERSION } from '../../lib/qualityPolicy';
+import { draftWithoutImagePlaceholders, semanticReviewInputFingerprint, missingSemanticChecks, semanticReviewIncomplete, SEMANTIC_IDS, QUALITY_VERSION } from '../../lib/qualityPolicy';
 import SeoBrief from './SeoBrief';
 import { outlineStructurePrompt, validateOutlineStructure } from '../../../shared/outlineStructures';
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -337,6 +337,7 @@ function getPrimaryKeyword(article: Article) {
 }
 
 function evaluateSeoChecklist(text: string, article: Article, targetWords: number) {
+  text = draftWithoutImagePlaceholders(text);
   const wordCount = countWords(text);
   const primaryKeyword = getPrimaryKeyword(article);
   const normalizedKeyword = primaryKeyword.toLocaleLowerCase();
@@ -507,13 +508,15 @@ function insertImagePlaceholder(draft: string, suggestion: ImageSuggestion) {
   const escapedHeading = suggestion.afterHeading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const heading = new RegExp(`^#{2,3}\\s+${escapedHeading}\\s*$`, 'im').exec(draft)
   const placeholder = `![${suggestion.altText}](${placeholderUrl})`
-  if (!heading || heading.index === undefined) return `${draft.trim()}\n\n${placeholder}`
-  const sectionStart = heading.index + heading[0].length
-  const nextHeading = /^#{2,3}\s+/gm
-  nextHeading.lastIndex = sectionStart
-  const next = nextHeading.exec(draft)
-  const insertAt = next?.index ?? draft.length
-  return `${draft.slice(0, insertAt).trimEnd()}\n\n${placeholder}\n\n${draft.slice(insertAt).trimStart()}`.trim()
+  let insertAt = draft.length
+  if (heading?.index !== undefined) {
+    const nextHeading = /^#{2,3}\s+/gm
+    nextHeading.lastIndex = heading.index + heading[0].length
+    insertAt = nextHeading.exec(draft)?.index ?? draft.length
+  }
+  // Insert before the existing separator so removing the marker restores the original prose exactly.
+  const sectionEnd = draft.slice(0, insertAt).trimEnd().length
+  return `${draft.slice(0, sectionEnd)}\n\n${placeholder}${draft.slice(sectionEnd)}`
 }
 
 const semanticReviewFingerprint = semanticReviewInputFingerprint;
@@ -728,28 +731,26 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const imageSuggestions = article.imageSuggestions ?? []
   const createImageSuggestions = () => {
     const suggestions = buildImageSuggestions(article, draft)
-    void onUpdate({ imageSuggestions: suggestions, qualityReport: null })
+    void onUpdate({ imageSuggestions: suggestions })
     notifyWorkspace(suggestions.length ? `${suggestions.length} image suggestions are ready for review.` : 'No suitable sections of at least 100 words were found for image suggestions.', suggestions.length ? 'success' : 'warning')
   }
   const setImageSuggestionStatus = (id: string, status: ImageSuggestion['status']) => {
-    void onUpdate({ imageSuggestions: imageSuggestions.map(item => item.id === id ? { ...item, status } : item), qualityReport: null })
+    void onUpdate({ imageSuggestions: imageSuggestions.map(item => item.id === id ? { ...item, status } : item) })
   }
-  const approveImageSuggestion = (suggestion: ImageSuggestion) => {
+  const approveImageSuggestion = async (suggestion: ImageSuggestion) => {
     const nextDraft = insertImagePlaceholder(draft, suggestion)
-    if (editorRef.current) editorRef.current.innerText = displayDraft(nextDraft)
-    void onUpdate({
+    const saved = await onUpdate({
       draft: nextDraft,
       imageSuggestions: imageSuggestions.map(item => item.id === suggestion.id ? { ...item, status: 'approved' } : item),
-      qualityReport: null,
-      semanticReviewFingerprint: null,
-      semanticReviewChecks: null,
     })
+    if (!saved) return;
+    if (editorRef.current) editorRef.current.innerText = displayDraft(nextDraft);
     notifyWorkspace('Image placeholder added after the selected section.', 'success')
   }
   const editImageSuggestion = (suggestion: ImageSuggestion) => {
     const brief = window.prompt('Image brief', suggestion.brief)
     if (brief === null) return
-    void onUpdate({ imageSuggestions: imageSuggestions.map(item => item.id === suggestion.id ? { ...item, brief: brief.trim() || item.brief } : item), qualityReport: null })
+    void onUpdate({ imageSuggestions: imageSuggestions.map(item => item.id === suggestion.id ? { ...item, brief: brief.trim() || item.brief } : item) })
   }
 
   useEffect(() => {
@@ -1147,11 +1148,16 @@ export default function Step4Draft({ embedded = false, article, config, files, m
     const freshContext = buildVerifiedOutlineContext(outline);
     const usage = remapEvidenceUsage(oldContext.evidenceRegistry, freshContext.sections, freshContext.evidenceRegistry, article.draftEvidenceUsage ?? {});
     const reviewArticle = { ...article, outline, draftEvidenceUsage: usage };
-    const saveReview = (updates: Partial<Article>) => onUpdate({
-      ...updates, outline, draftEvidenceUsage: usage,
-      ...(updates.draftSourceFingerprint ? { draftSourceFingerprint: sourceFingerprintFor(reviewArticle) } : {}),
-      articleSpecFingerprint: article.articleSpec ? canonicalSpecFingerprint(article.articleSpec) : article.articleSpecFingerprint,
-    });
+    const saveReview = async (updates: Partial<Article>) => {
+      const saved = await onUpdate({
+        ...updates,
+        outline,
+        draftEvidenceUsage: usage,
+        ...(updates.draftSourceFingerprint ? { draftSourceFingerprint: sourceFingerprintFor(reviewArticle) } : {}),
+        articleSpecFingerprint: article.articleSpec ? canonicalSpecFingerprint(article.articleSpec) : article.articleSpecFingerprint,
+      });
+      if (!saved) throw new Error(tr('Không lưu được báo cáo QC. Hãy thử kiểm tra lại.', 'Could not save the QC report. Please try again.'));
+    };
     const processTrace: AIProcessTraceEvent[] = [...(reviewArticle.step4ProcessTrace ?? []), {
       id: `draft-recheck-request-${Date.now()}`,
       stage: 're-check',
@@ -1282,7 +1288,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
               `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
               `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
-              `DRAFT: ${value}`,
+              `DRAFT: ${draftWithoutImagePlaceholders(value)}`,
               semanticReviewInstruction(reviewArticle, value),
               `Return only these checks: ${needed.join(', ')}.`,
             ].join('\n\n'),
@@ -1314,7 +1320,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
-            `DRAFT: ${value}`,
+            `DRAFT: ${draftWithoutImagePlaceholders(value)}`,
             semanticReviewInstruction(reviewArticle, value),
             `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}.`,
           ].join('\n\n'),
@@ -1482,7 +1488,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         title: 'Re-check requires attention',
         detail: err instanceof Error ? err.message : String(err),
       });
-      try { await saveReview({ step4ProcessTrace: processTrace }); } catch { /* Preserve the original error. */ }
+      try { await onUpdate({ step4ProcessTrace: processTrace }); } catch { /* Preserve the original error. */ }
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       generationInFlight.current = false;
@@ -1661,13 +1667,13 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               {draft && <section className="image-placement-suggestions mt-5 rounded-xl border border-[#303030] bg-[#1b1b1b] p-3.5 text-xs text-[#c4c4c4] shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div><h3 className="font-medium text-[#f1f1f1]">Image placement suggestions</h3><p className="mt-0.5 text-[10px] text-[#888]">Visual context only · never a substitute for evidence or claims</p></div>
-                  <button onClick={createImageSuggestions} className="image-placement-control rounded-lg border px-2.5 py-1.5 text-[10px] font-medium transition"><Image className="mr-1 inline h-3.5 w-3.5" />{imageSuggestions.length ? 'Refresh' : 'Suggest images'}</button>
+                  <button disabled={generating || repairing} onClick={createImageSuggestions} className="image-placement-control rounded-lg border px-2.5 py-1.5 text-[10px] font-medium transition"><Image className="mr-1 inline h-3.5 w-3.5" />{imageSuggestions.length ? 'Refresh' : 'Suggest images'}</button>
                 </div>
                 {imageSuggestions.length > 0 && <div className="mt-3 grid gap-2 lg:grid-cols-2">{imageSuggestions.map(suggestion => <div key={suggestion.id} className="rounded-lg border border-[#303030] bg-[#202020] p-3">
                   <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="image-placement-badge rounded-md px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">{suggestion.type}</span><span className="text-[10px] text-[#777]">After section</span></div><p className="mt-1.5 truncate text-[11px] font-medium text-[#ececec]">{suggestion.afterHeading}</p></div><span className={`image-placement-badge image-placement-status-${suggestion.status} rounded-full px-2 py-0.5 text-[9px]`}>{suggestion.status}</span></div>
                   <p className="mt-2 max-h-8 overflow-hidden text-[10px] leading-relaxed text-[#a7a7a7]">{suggestion.purpose}</p><p className="mt-1 text-[10px] text-[#777]">Alt: {suggestion.altText}</p>
                   <details className="mt-2 text-[10px] text-[#858585]"><summary className="cursor-pointer select-none hover:text-[#ccc]">View image brief</summary><p className="mt-1.5 leading-relaxed">{suggestion.brief}</p></details>
-                  {suggestion.status === 'suggested' && <div className="mt-3 flex gap-1.5"><button onClick={() => approveImageSuggestion(suggestion)} className="image-placement-control image-placement-approve rounded-md border px-2 py-1 text-[10px] font-medium">Approve</button><button onClick={() => editImageSuggestion(suggestion)} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Edit</button><button onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Dismiss</button></div>}
+                  {suggestion.status === 'suggested' && <div className="mt-3 flex gap-1.5"><button disabled={generating || repairing} onClick={() => approveImageSuggestion(suggestion)} className="image-placement-control image-placement-approve rounded-md border px-2 py-1 text-[10px] font-medium">Approve</button><button disabled={generating || repairing} onClick={() => editImageSuggestion(suggestion)} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Edit</button><button disabled={generating || repairing} onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Dismiss</button></div>}
                 </div>)}</div>}
               </section>}
             </div>
