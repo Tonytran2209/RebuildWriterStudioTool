@@ -429,3 +429,17 @@ test('qc-disclosure-accessibility keyboard pointer touch and long content fit vi
  await expect(row.locator('details')).not.toHaveAttribute('open','');
  await session.detach();
 });
+
+test('approving an image preserves a passing QC report across reload', async ({ page }) => {
+  const calls = await mockQcFlow(page, 'generation');
+  await page.getByRole('button', { name: /Tạo bài viết|Generate article/ }).click();
+  const complete = page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ });
+  await expect(complete).toBeEnabled();
+  await page.getByRole('button', { name: 'Suggest images' }).click();
+  await page.getByRole('button', { name: 'Approve', exact: true }).first().click();
+  await expect(page.getByTestId('stored-source')).toContainText('image-placeholder://');
+  await expect(complete).toBeEnabled();
+  await page.reload();
+  await expect(complete).toBeEnabled();
+  expect(calls).toHaveLength(2);
+});

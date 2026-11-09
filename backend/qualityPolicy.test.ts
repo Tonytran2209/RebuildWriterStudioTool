@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canonicalSpecFingerprint, qualityInputFingerprint, blocksPublication, qualityAllowsCompletion, SEMANTIC_IDS } from '../src/lib/qualityPolicy.ts'
+import { canonicalSpecFingerprint, qualityInputFingerprint, semanticReviewInputFingerprint, draftWithoutImagePlaceholders, outlineContentChanged, blocksPublication, qualityAllowsCompletion, SEMANTIC_IDS } from '../src/lib/qualityPolicy.ts'
 import { isClaimEvidence, knowledgeExcerpts, sectionEvidence, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from '../src/lib/evidencePolicy.ts'
 import type { ArticleSpec, Article, DocumentFile, QualityGateCheck, EvidenceRef } from '../src/types/index.ts'
 
@@ -69,4 +69,23 @@ test('advisory warnings can complete, but unsupported evidence and incomplete or
   }
   assert.equal(qualityAllowsCompletion(checks.slice(0, 5)), false)
   assert.equal(qualityAllowsCompletion([...checks, { ...checks[0], status: 'fail' }]), false)
+})
+
+test('image approval leaves QC and semantic identities unchanged while prose edits invalidate them', () => {
+  const draft = '# Title\n\nIntroduction\n\n## First\n\nBody\n\n## Conclusion\n\nClosing'
+  const image = '![Illustration: [example]](image-placeholder://image-1)'
+  const decorated = draft.replace('\n\n## Conclusion', '\n\n' + image + '\n\n## Conclusion') + '\n\n' + image
+  assert.equal(draftWithoutImagePlaceholders(decorated), draft)
+  assert.equal(qualityInputFingerprint(article, decorated, 1500), qualityInputFingerprint(article, draft, 1500))
+  assert.equal(semanticReviewInputFingerprint(article, decorated), semanticReviewInputFingerprint(article, draft))
+  assert.notEqual(qualityInputFingerprint(article, decorated.replace('Body', 'Changed'), 1500), qualityInputFingerprint(article, draft, 1500))
+  assert.notEqual(draftWithoutImagePlaceholders('![Image](https://example.org/image.png)'), '')
+})
+
+test('refreshing outline evidence during re-check preserves the reviewed structure', () => {
+  const original: NonNullable<Article['outline']> = [{ id: 'one', heading: 'First', level: 'h2', notes: '' }]
+  const enriched = original.map(section => ({ ...section, evidence: [kb], grounding: 'evidence-led' as const }))
+  assert.equal(outlineContentChanged(original, enriched), false)
+  assert.equal(outlineContentChanged(original, enriched.map(section => ({ ...section, heading: 'Changed' }))), true)
+  assert.notEqual(qualityInputFingerprint({ outline: original }, 'Draft', 1500), qualityInputFingerprint({ outline: enriched }, 'Draft', 1500))
 })
