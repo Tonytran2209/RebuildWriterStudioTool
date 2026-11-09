@@ -1,4 +1,5 @@
 import {jobFailure, monitoring} from './monitoring.ts';
+import { batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
 import { outlineReviewInstruction, outlineQualityChecks } from '../src/lib/outlineQuality.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
 import "dotenv/config"
@@ -2220,18 +2221,6 @@ function assembleBatchDraft(raw: string, article: any) {
     declaredEvidenceUsage,
   )
   return { draft, evidenceUsage, parsed }
-}
-
-// Sub-jobs of one batch article, from taking it from the Content Plan to a checked draft.
-type BatchStepKey = "plan" | "seo" | "spec" | "outline" | "draft" | "quality"
-type BatchStepRun = { key: BatchStepKey; label: string; startedAt: string; endedAt: string | null; status: "running" | "completed" | "failed" }
-const batchStepLabels: Record<BatchStepKey, string> = {
-  plan: "Nhận bài từ Content Plan",
-  seo: "Nghiên cứu từ khóa SEO",
-  spec: "Article Spec & Core Idea",
-  outline: "Lập outline",
-  draft: "Viết draft",
-  quality: "Kiểm tra chất lượng",
 }
 
 async function runBatchArticle(
