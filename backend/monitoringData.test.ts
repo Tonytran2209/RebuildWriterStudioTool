@@ -13,7 +13,11 @@ test("read-only aggregates deduplicate actual storage precedence and separate ca
  CREATE TABLE writer_studio.writer_ai_usage(provider text,model text,step int,input_tokens int,cached_input_tokens int,output_tokens int,cost_usd numeric,cache_hit boolean,called_at timestamptz);
  INSERT INTO writer_studio.writer_articles VALUES ('a','draft','{}'),('b','done','{}');
  ALTER TABLE writer_studio.writer_articles ADD COLUMN title text, ADD COLUMN activity_id text, ADD COLUMN content_group text, ADD COLUMN batch_status text, ADD COLUMN draft text, ADD COLUMN completed_at timestamptz, ADD COLUMN updated_at timestamptz, ADD COLUMN error_message text;
- UPDATE writer_studio.writer_articles SET title='So sánh CRM cho SME', activity_id='batch', content_group='comparison_seo', batch_status='completed', completed_at='2025-01-01T00:00:01Z', payload='{"batchStartedAt":"2025-01-01T00:00:00Z"}', draft='private' WHERE id='b';
+ UPDATE writer_studio.writer_articles SET title='So sánh CRM cho SME', activity_id='batch', content_group='comparison_seo', batch_status='completed', completed_at=date_trunc('second', now()) - interval '1 hour', draft='private',
+   payload=jsonb_build_object('batchStartedAt', date_trunc('second', now()) - interval '1 hour 1 second', 'batchStepRuns', jsonb_build_array(
+     jsonb_build_object('key','plan','label','Nhận bài từ Content Plan','startedAt', date_trunc('second', now()) - interval '1 hour 1 second','endedAt', date_trunc('second', now()) - interval '1 hour 1 second' + interval '200 milliseconds','status','completed'),
+     jsonb_build_object('key','draft','label','Viết draft','startedAt', date_trunc('second', now()) - interval '1 hour 1 second' + interval '200 milliseconds','endedAt', date_trunc('second', now()) - interval '1 hour','status','completed'),
+     jsonb_build_object('key','quality','label','Kiểm tra chất lượng','startedAt', date_trunc('second', now()) - interval '1 hour','endedAt', null,'status','running'))) WHERE id='b';
  CREATE TABLE writer_studio.batch_job_items(id text, batch_job_id text, article_id text, status text, updated_at timestamptz, error_message text);
  INSERT INTO writer_studio.batch_job_items VALUES ('item','batch','b','completed','2025-01-01T00:00:01Z',null);
  CREATE TABLE writer_studio.batch_jobs(id text, content_plan_id uuid, status text, total_items int, failed_items int, updated_at timestamptz);
@@ -46,12 +50,18 @@ test("read-only aggregates deduplicate actual storage precedence and separate ca
     assert.equal(result.contentWorkload?.articles, 1)
     assert.equal(result.contentWorkload?.averageWords, 1)
     assert.equal(result.jobHistory?.completion[0].p95Ms, 1000)
-    // jobRuns: the batch is the parent run of its articles; workloads name the plan and article.
+    // jobRuns: each article is a run named by its article; saved step timings are its sub-jobs.
     const runs = (result as any).jobRuns?.runs ?? []
-    const parent = runs.find((r: any) => r.job === "Writer batch")
-    assert.deepEqual(parent && { runId: parent.runId, workload: parent.workload, status: parent.status, startedAt: parent.startedAt },
-      { runId: "batch:batch", workload: "1 bài", status: "success", startedAt: "2025-01-01T00:00:00.000Z" })
-    assert.equal(runs.some((r: any) => r.job === "Writer batch article"), false, "the 2025 article ended outside the 61-day window")
+    assert.equal(runs.some((r: any) => r.job === "Writer batch"), false, "articles are no longer nested under the batch")
+    const article = runs.find((r: any) => r.job === "Writer batch article")
+    assert.deepEqual(article && { runId: article.runId, workload: article.workload, status: article.status, parentRunId: article.parentRunId },
+      { runId: "item", workload: "1 SEO article · So sánh CRM cho SME", status: "success", parentRunId: undefined })
+    const steps = runs.filter((r: any) => r.parentRunId === "item")
+    assert.deepEqual(steps.map((r: any) => [r.job, r.parent, r.workload, Date.parse(r.endedAt) - Date.parse(r.startedAt)]).sort(), [
+      ["Nhận bài từ Content Plan", "Writer batch article", "1 SEO article · So sánh CRM cho SME", 200],
+      ["Viết draft", "Writer batch article", "1 SEO article · So sánh CRM cho SME", 800],
+    ], "a running step is not reported")
+    assert.equal(result.jobHistoryAllTime?.executed, 1, "steps are not counted as jobs")
     const row = result.ledger.models.find((m: any) => m.model === "model")
     assert.equal(row.calls, 1)
     assert.equal(row.cache_hits, 1)

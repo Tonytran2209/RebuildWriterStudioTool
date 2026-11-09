@@ -2222,11 +2222,39 @@ function assembleBatchDraft(raw: string, article: any) {
   return { draft, evidenceUsage, parsed }
 }
 
+// Sub-jobs of one batch article, from taking it from the Content Plan to a checked draft.
+type BatchStepKey = "plan" | "seo" | "spec" | "outline" | "draft" | "quality"
+type BatchStepRun = { key: BatchStepKey; label: string; startedAt: string; endedAt: string | null; status: "running" | "completed" | "failed" }
+const batchStepLabels: Record<BatchStepKey, string> = {
+  plan: "Nhận bài từ Content Plan",
+  seo: "Nghiên cứu từ khóa SEO",
+  spec: "Article Spec & Core Idea",
+  outline: "Lập outline",
+  draft: "Viết draft",
+  quality: "Kiểm tra chất lượng",
+}
+
 async function runBatchArticle(
   initial: any,
   controller: { paused: boolean; running: boolean },
 ) {
   let article = initial
+  // Step timings of this attempt, sent to AI Agent Lab as sub-jobs of the article run.
+  // A resumed attempt records only the steps it actually runs.
+  const stepRuns: BatchStepRun[] = []
+  const beginStep = (key: BatchStepKey) => {
+    endStep("completed")
+    stepRuns.push({ key, label: batchStepLabels[key], startedAt: new Date().toISOString(), endedAt: null, status: "running" })
+  }
+  const endStep = (status: "completed" | "failed") => {
+    const current = stepRuns.at(-1)
+    if (current?.status === "running") Object.assign(current, { endedAt: new Date().toISOString(), status })
+  }
+  const saveStepCheckpoint = (target: any, updates: Record<string, any>) => {
+    if (updates.status === "done" || updates.batchStatus === "completed") endStep("completed")
+    if (updates.batchStatus === "failed") endStep("failed")
+    return saveArticleCheckpoint(target, { ...updates, batchStepRuns: stepRuns.map((step) => ({ ...step })) })
+  }
   const contentMode =
     article.activityType === "editorial-originality"
       ? "Editorial/Originality"
@@ -2310,9 +2338,10 @@ async function runBatchArticle(
   })
   try {
     if (controller.paused) return
+    beginStep("plan")
     const planError = articleStepPrerequisite(article, 2)
     if (planError) throw new Error(planError)
-    article = await saveArticleCheckpoint(article, {
+    article = await saveStepCheckpoint(article, {
       batchStatus: "running",
       batchError: null,
       batchStartedAt: article.batchStartedAt ?? new Date().toISOString(),
@@ -2321,7 +2350,7 @@ async function runBatchArticle(
     if (article.articleSpec) {
       const sanitizedSpec = sanitizeBatchArticleSpec(article.articleSpec)
       if (JSON.stringify(sanitizedSpec.mustCover) !== JSON.stringify(article.articleSpec.mustCover)) {
-        article = await saveArticleCheckpoint(article, {
+        article = await saveStepCheckpoint(article, {
           articleSpec: sanitizedSpec,
           articleSpecFingerprint: canonicalSpecFingerprint(sanitizedSpec),
         })
@@ -2333,6 +2362,7 @@ async function runBatchArticle(
       !article.articleSpec ||
       !article.articleSpecFingerprint
     ) {
+      beginStep("seo")
       let seoResearch = article.seoResearch
       let seoUsage: any = null
       if (!seoResearch) {
@@ -2366,7 +2396,7 @@ async function runBatchArticle(
             cacheHit: false,
           })
           await kvSet(seoKey, seoResearch)
-          article = await saveArticleCheckpoint(article, {
+          article = await saveStepCheckpoint(article, {
             seoResearch,
             aiUsageByStep: {
               ...article.aiUsageByStep,
@@ -2376,6 +2406,7 @@ async function runBatchArticle(
           seoUsage = null
         }
       }
+      beginStep("spec")
       const batchJson = await runBatchJsonObject(
         article,
         2,
@@ -2491,7 +2522,7 @@ async function runBatchArticle(
       }
       if (seoUsage)
         step2Usage[2] = [seoUsage, ...(step2Usage[2] ?? [])].slice(-50)
-      article = await saveArticleCheckpoint(article, {
+      article = await saveStepCheckpoint(article, {
         seoResearch,
         articleSpec,
         articleSpecFingerprint,
@@ -2520,10 +2551,11 @@ async function runBatchArticle(
       })
     }
     if (controller.paused) {
-      await saveArticleCheckpoint(article, { batchStatus: "paused" })
+      await saveStepCheckpoint(article, { batchStatus: "paused" })
       return
     }
     if (article.outlineNeedsRegeneration || !article.outline?.length || !batchOutlineHasEvidence(article.outline)) {
+      beginStep("outline")
       if (!article.outlineStructure) throw new Error("Choose an outline structure from Skills & Rules before generating a batch outline.")
       if (!selectedArticleIdea(article))
         throw new Error(
@@ -2650,7 +2682,7 @@ async function runBatchArticle(
         )
       const structureErrors = validateOutlineStructure(sections, article.outlineStructure)
       if (structureErrors.length) throw new Error(structureErrors.join("\n"))
-      article = await saveArticleCheckpoint(article, {
+      article = await saveStepCheckpoint(article, {
         outline: sections,
         outlineGenerationId: crypto.randomUUID(),
         outlineNeedsRegeneration: false,
@@ -2673,7 +2705,7 @@ async function runBatchArticle(
       })
     }
     if (controller.paused) {
-      await saveArticleCheckpoint(article, { batchStatus: "paused" })
+      await saveStepCheckpoint(article, { batchStatus: "paused" })
       return
     }
     const structureErrors = validateOutlineStructure(article.outline ?? [], article.outlineStructure)
@@ -2722,7 +2754,7 @@ async function runBatchArticle(
         throw new Error(
           `Outline still requires approximately ${compactedFeasibility.minimumRequired} words after automatic compaction; target remains ${maxDraftWords}.`,
         )
-      article = await saveArticleCheckpoint(article, {
+      article = await saveStepCheckpoint(article, {
         outline: compactedSections,
         outlineScannedAt: new Date().toISOString(),
         draft: "",
@@ -2735,9 +2767,10 @@ async function runBatchArticle(
     // Do not spend draft-generation credits on an outline whose Article Spec contract is
     // not visibly mapped. Persist the missing requirements onto the most
     // relevant approved section, then validate the generated prose separately.
+    beginStep("draft")
     const missingOutlineCoverage = batchMissingOutlineCoverage(article)
     if (missingOutlineCoverage.length) {
-      article = await saveArticleCheckpoint(article, {
+      article = await saveStepCheckpoint(article, {
         outline: attachBatchOutlineCoverage(article.outline ?? [], missingOutlineCoverage),
         outlineScannedAt: new Date().toISOString(),
         qualityReport: null,
@@ -2833,7 +2866,7 @@ async function runBatchArticle(
         runtimeConfig?.websiteInventory ?? [],
         effectiveDraftWords,
       )
-      article = await saveArticleCheckpoint(article, {
+      article = await saveStepCheckpoint(article, {
         draft: assembledDraft,
         draftGenerationId: initialDraftResponses.length ? crypto.randomUUID() : article.draftGenerationId,
         draftNeedsRegeneration: false,
@@ -2858,6 +2891,7 @@ async function runBatchArticle(
         },
       })
       draftResponses.length = 0
+      beginStep("quality")
       const qualityFiles = (await kvGet<any[]>("writer:files")) ?? []
       const internalNames = qualityFiles
         .filter(
@@ -2991,7 +3025,7 @@ async function runBatchArticle(
           version: QUALITY_VERSION, status: "fail", checkedAt: new Date().toISOString(),
           articleSpecFingerprint: article.articleSpecFingerprint, checks: deterministic,
         }
-        article = await saveArticleCheckpoint(article, {
+        article = await saveStepCheckpoint(article, {
           draft: assembledDraft,
           draftEvidenceUsage: assembled.evidenceUsage,
           qualityReport: report,
@@ -3044,7 +3078,7 @@ async function runBatchArticle(
       }
       const saveIncompleteReview = async (error: unknown): Promise<never> => {
         const processCheck = semanticReviewIncomplete(error)
-        article = await saveArticleCheckpoint(article, {
+        article = await saveStepCheckpoint(article, {
           draft: assembledDraft,
           draftEvidenceUsage: assembled.evidenceUsage,
           semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage),
@@ -3163,7 +3197,7 @@ async function runBatchArticle(
         }
       }
       if (report.status === "fail" || report.checks.some(blocksPublication)) {
-        article = await saveArticleCheckpoint(article, {
+        article = await saveStepCheckpoint(article, {
           draft: assembledDraft,
           draftEvidenceUsage: assembled.evidenceUsage,
           qualityReport: report,
@@ -3183,7 +3217,7 @@ async function runBatchArticle(
           `${missingEvidence ? "Add relevant Knowledge Base evidence or qualify the unsupported claim. " : ""}Targeted batch recovery was saved, but Universal QC is still ${report.status}: ${checks.filter((item) => item.status !== "pass").map((item) => `${item.label}: ${item.reason}`).join("; ")}`,
         )
       }
-      article = await saveArticleCheckpoint(article, {
+      article = await saveStepCheckpoint(article, {
         draft: assembledDraft,
         draftEvidenceUsage: assembled.evidenceUsage,
         qualityReport: report,
@@ -3209,7 +3243,7 @@ async function runBatchArticle(
         },
       })
     } else if (article.batchStatus !== "completed") {
-      article = await saveArticleCheckpoint(article, {
+      article = await saveStepCheckpoint(article, {
         status: "done",
         batchStatus: "completed",
         completedAt: article.completedAt ?? new Date().toISOString(),
@@ -3217,7 +3251,7 @@ async function runBatchArticle(
     }
     return "valid" as const
   } catch (error: any) {
-    await saveArticleCheckpoint(article, {
+    await saveStepCheckpoint(article, {
       batchStatus: "failed",
       batchError: error?.message ?? String(error),
       status: "review",
