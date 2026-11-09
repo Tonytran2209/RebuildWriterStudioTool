@@ -34,6 +34,11 @@ export interface AICallUsage {
   costUsd: number | null
   cacheHit: boolean
   calledAt: string
+  // Monitoring (AI Agent Lab): when the call started, how long it took as seen by the browser, and
+  // why it was made ("generation", "recheck", "seo-research", ...). Older records lack them.
+  startedAt?: string
+  durationMs?: number
+  purpose?: string
 }
 
 export type FileCategory = "kb" | "rules"

@@ -174,3 +174,68 @@ export function jobHistoryWindows(rows: JobRecord[], since: string, limit: numbe
     jobHistoryAllTime: summarizeJobHistory(rows, limit),
   }
 }
+
+type UsageCall = { step?: unknown; purpose?: unknown; model?: unknown; calledAt?: unknown; startedAt?: unknown; durationMs?: unknown }
+type Interval = [number, number]
+
+// Length of the union of intervals: parallel calls are not double-counted, pauses are not counted.
+function unionMs(intervals: Interval[]) {
+  let total = 0, end = -Infinity
+  for (const [a, b] of [...intervals].sort((x, y) => x[0] - y[0])) {
+    if (b <= end) continue
+    total += b - Math.max(a, end)
+    end = b
+  }
+  return total
+}
+
+const singleStepOf = (call: UsageCall): { key: string; label: string } | null => {
+  const purpose = String(call.purpose ?? "")
+  if (call.step === 2) return purpose === "seo-research" || /web-search/i.test(String(call.model ?? ""))
+    ? { key: "seo", label: "Nghiên cứu từ khóa SEO" } : { key: "spec", label: "Article Spec & Core Idea" }
+  if (call.step === 3) return { key: "outline", label: "Lập outline" }
+  if (call.step === 4) return purpose === "recheck" ? { key: "quality", label: "Kiểm tra chất lượng" } : { key: "draft", label: "Viết draft" }
+  return null
+}
+
+// A step-by-step (single) article: the user runs each step, with reading and review in between.
+// Each step is its last session of AI calls (a gap over 10 minutes starts a new session) and its
+// time is the processing time of those calls. The article run's time is the sum of its steps, not
+// the wall-clock time including human review. Calls saved before timing existed have no duration:
+// the article is then listed without time or steps.
+export function singleArticleRuns(article: { runId: string; job: string; workload: string; usage: unknown; endedAt: unknown }): ParentRun[] {
+  const calls = (article.usage && typeof article.usage === "object" ? Object.values(article.usage as Record<string, unknown>) : [])
+    .flatMap((value) => (Array.isArray(value) ? value : [])) as UsageCall[]
+  const groups = new Map<string, { label: string; calls: { start: number | null; end: number }[] }>()
+  for (const call of calls.slice(-400)) {
+    const step = singleStepOf(call), end = Date.parse(String(call.calledAt ?? ""))
+    if (!step || !Number.isFinite(end)) continue
+    const duration = Number(call.durationMs), start = Number.isFinite(duration) && duration >= 0 ? end - duration : null
+    const group = groups.get(step.key) ?? { label: step.label, calls: [] }
+    group.calls.push({ start, end })
+    groups.set(step.key, group)
+  }
+  const steps: ParentRun[] = []
+  let lastEnd = -Infinity, total = 0, measured = groups.size > 0
+  for (const [key, group] of groups) {
+    const sorted = group.calls.sort((a, b) => a.end - b.end)
+    let first = sorted.length - 1
+    while (first > 0 && (sorted[first].start ?? sorted[first].end) - sorted[first - 1].end <= 10 * 60000) first--
+    const session = sorted.slice(first)
+    const end = session.at(-1)!.end
+    lastEnd = Math.max(lastEnd, end)
+    if (session.some((c) => c.start === null)) { measured = false; continue }
+    const ms = unionMs(session.map((c) => [c.start!, c.end] as Interval))
+    total += ms
+    steps.push({ job: group.label, runId: article.runId + ":" + key, workload: article.workload, status: "success",
+      startedAt: new Date(end - ms).toISOString(), endedAt: new Date(end).toISOString(), parentRunId: article.runId, parent: article.job })
+  }
+  const fallbackEnd = Date.parse(iso(article.endedAt as string) ?? "")
+  const endedAt = Number.isFinite(lastEnd) ? lastEnd : fallbackEnd
+  if (!Number.isFinite(endedAt)) return []
+  return [
+    { job: article.job, runId: article.runId, workload: article.workload, status: "success",
+      startedAt: measured && total > 0 ? new Date(endedAt - total).toISOString() : null, endedAt: new Date(endedAt).toISOString() },
+    ...(measured ? steps : []),
+  ]
+}

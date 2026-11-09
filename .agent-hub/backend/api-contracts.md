@@ -52,7 +52,22 @@ The endpoint returns aggregate inventory, database round-trip/pool state, curren
 
 New dispatcher/HTTP counters begin at installation. Hourly per-instance snapshots use existing KV keys `lab-monitor:v1:<UTC hour>:<instance UUID>`; a best-effort five-second flush never fails business operations. A crash can lose the last five seconds. Reports select up to 10,000 buckets from a maximum 30-day window and mark truncated reads incomplete. Stored snapshots are not business records; retention cleanup is not yet automated. Current-process resources do not represent all replicas or container limits. Histogram percentiles are bucket upper bounds, not exact sample quantiles. SDK internal retries are not separately counted.
 
-`jobRuns` (AI Agent Lab run history) lists each terminal batch article as one `Writer batch article` run. Its workload is `1 SEO article · <article title>` (or `1 editorial article · …`), and batch articles are no longer nested under a batch run. The sub-jobs of each article come from `payload.batchStepRuns`, the step timings `runBatchArticle` saves at each checkpoint of the latest attempt. The steps are Nhận bài từ Content Plan, Nghiên cứu từ khóa SEO, Article Spec & Core Idea, Lập outline, Viết draft and Kiểm tra chất lượng. Each step is sent with `parentRunId` = the article run and `parent: "Writer batch article"`. The report also declares this pipeline as `profile` (`profile-v1`, `mainJob.job` + `mainJob.steps`, defined in `backend/batchSteps.ts`). AI Agent Lab therefore lists all six sub-jobs even before they have measured runs. The profile has no `mainJob.title`, so Lab's technical report keeps its content-workload card. Only finished steps with a saved start and end are reported. A resumed attempt records only the steps it runs.
+The Main Job of every article, batch or step-by-step, is named `Writer article` at report time, so earlier batch history is reported under the same name. The report profile declares `jobTargets: {"Writer article": 10}`.
+
+**Step-by-step (single) articles.** Articles that are not batch items and have a non-empty draft from the last 61 days are also sent in `jobRuns` (only there, never in `jobHistory`). Each is a `Writer article` run with workload `1 SEO article (từng bước) · <title>` or `1 editorial article (từng bước) · …`.
+- **Timing source.** The browser now records `startedAt`, `durationMs` and `purpose` on every AI usage record (`/api/generate`, plus `/api/seo/research`, which is now recorded as a step-2 call), stored in the article's `aiUsageByStep`.
+- **Sub-jobs.** Each is the last session of its step's calls; a gap over 10 minutes starts a new session. The step's time is the union of its calls' durations.
+  - step 2 `seo-research` / web-search → Nghiên cứu từ khóa SEO
+  - other step 2 → Article Spec & Core Idea
+  - step 3 → Lập outline
+  - step 4 → Viết draft
+  - step 4 `recheck` → Kiểm tra chất lượng
+- **Run time.** The run's time is the sum of its steps (processing time, not human review time). Its `startedAt` is that sum before the last call.
+- **No "Nhận bài từ Content Plan".** The single flow does no server work when the user picks an article.
+- **Older calls.** Calls saved before timing existed have no duration, so those articles are listed with `startedAt: null` (no time) and no sub-jobs.
+- Single runs are reported as successful; the flow has no terminal failure state.
+
+`jobRuns` (AI Agent Lab run history) lists each terminal batch article as one `Writer article` run. Its workload is `1 SEO article · <article title>` (or `1 editorial article · …`), and batch articles are no longer nested under a batch run. The sub-jobs of each article come from `payload.batchStepRuns`, the step timings `runBatchArticle` saves at each checkpoint of the latest attempt. The steps are Nhận bài từ Content Plan, Nghiên cứu từ khóa SEO, Article Spec & Core Idea, Lập outline, Viết draft and Kiểm tra chất lượng. Each step is sent with `parentRunId` = the article run and `parent: "Writer batch article"`. The report also declares this pipeline as `profile` (`profile-v1`, `mainJob.job` + `mainJob.steps`, defined in `backend/batchSteps.ts`). AI Agent Lab therefore lists all six sub-jobs even before they have measured runs. The profile has no `mainJob.title`, so Lab's technical report keeps its content-workload card. Only finished steps with a saved start and end are reported. A resumed attempt records only the steps it runs.
 
 Articles completed in the last 61 days without `batchStepRuns` get **estimated** sub-jobs flagged `estimated: true`. They are built from the last `writer_ai_usage.called_at` per step within the article run:
 - web-search model in step 2 → Nghiên cứu từ khóa SEO

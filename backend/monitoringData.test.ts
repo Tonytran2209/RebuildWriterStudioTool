@@ -53,13 +53,13 @@ test("read-only aggregates deduplicate actual storage precedence and separate ca
     // jobRuns: each article is a run named by its article; saved step timings are its sub-jobs.
     const runs = (result as any).jobRuns?.runs ?? []
     assert.equal(runs.some((r: any) => r.job === "Writer batch"), false, "articles are no longer nested under the batch")
-    const article = runs.find((r: any) => r.job === "Writer batch article")
+    const article = runs.find((r: any) => r.job === "Writer article")
     assert.deepEqual(article && { runId: article.runId, workload: article.workload, status: article.status, parentRunId: article.parentRunId },
       { runId: "item", workload: "1 SEO article · So sánh CRM cho SME", status: "success", parentRunId: undefined })
     const steps = runs.filter((r: any) => r.parentRunId === "item")
     assert.deepEqual(steps.map((r: any) => [r.job, r.parent, r.workload, Date.parse(r.endedAt) - Date.parse(r.startedAt)]).sort(), [
-      ["Nhận bài từ Content Plan", "Writer batch article", "1 SEO article · So sánh CRM cho SME", 200],
-      ["Viết draft", "Writer batch article", "1 SEO article · So sánh CRM cho SME", 800],
+      ["Nhận bài từ Content Plan", "Writer article", "1 SEO article · So sánh CRM cho SME", 200],
+      ["Viết draft", "Writer article", "1 SEO article · So sánh CRM cho SME", 800],
     ], "a running step is not reported")
     assert.equal(result.jobHistoryAllTime?.executed, 1, "steps are not counted as jobs")
     const row = result.ledger.models.find((m: any) => m.model === "model")
@@ -114,6 +114,52 @@ test("articles without saved step timings get estimated sub-jobs from AI call ti
     ])
     assert.equal(runs.some((r: any) => r.parentRunId === "i-new"), false, "an article with saved step timings is never estimated")
     assert.equal(result.jobHistoryAllTime?.executed, 2, "estimated steps are not counted as jobs")
+  } finally {
+    if (previous === undefined) delete process.env.DATABASE_PROVIDER
+    else process.env.DATABASE_PROVIDER = previous
+    await db.close()
+  }
+})
+
+test("step-by-step articles are reported as runs with measured steps and summed processing time", async () => {
+  const db = new PGlite()
+  const previous = process.env.DATABASE_PROVIDER
+  process.env.DATABASE_PROVIDER = "postgres"
+  try {
+    await db.exec(`CREATE SCHEMA writer_studio;
+ CREATE TABLE writer_studio.kv_store(key text primary key,value jsonb);
+ CREATE TABLE writer_studio.writer_articles(id text,status text,payload jsonb,title text,activity_id text,content_group text,draft text,completed_at timestamptz,updated_at timestamptz);
+ CREATE TABLE writer_studio.batch_job_items(id text, batch_job_id text, article_id text, status text, updated_at timestamptz, error_message text);
+ INSERT INTO writer_studio.writer_articles VALUES
+   ('s1','review',jsonb_build_object('activityKind','single','aiUsageByStep',jsonb_build_object(
+      '2', jsonb_build_array(
+        jsonb_build_object('step',2,'purpose','seo-research','calledAt',to_char(now() - interval '50 minutes','YYYY-MM-DD"T"HH24:MI:SS"Z"'),'durationMs',8000),
+        jsonb_build_object('step',2,'purpose','generation','calledAt',to_char(now() - interval '49 minutes','YYYY-MM-DD"T"HH24:MI:SS"Z"'),'durationMs',30000)),
+      '4', jsonb_build_array(
+        jsonb_build_object('step',4,'purpose','generation','calledAt',to_char(now() - interval '20 minutes','YYYY-MM-DD"T"HH24:MI:SS"Z"'),'durationMs',60000),
+        jsonb_build_object('step',4,'purpose','recheck','calledAt',to_char(now() - interval '10 minutes','YYYY-MM-DD"T"HH24:MI:SS"Z"'),'durationMs',12000)))),
+    'Single article','act','comparison_seo','draft text',null,now()),
+   ('s-old','review',jsonb_build_object('aiUsageByStep',jsonb_build_object('3', jsonb_build_array(
+      jsonb_build_object('step',3,'calledAt',to_char(now() - interval '2 days','YYYY-MM-DD"T"HH24:MI:SS"Z"'))))),
+    'Old single','act2','editorial_originality','draft',null,now() - interval '2 days'),
+   ('s-nodraft','review','{}','No draft','act3','comparison_seo','',null,now()),
+   ('b1','done','{"activityKind":"batch"}','Batch','b','comparison_seo','text',now(),now());
+ INSERT INTO writer_studio.batch_job_items VALUES ('i1','b','b1','completed',now(),null);`)
+    const client = { query: async (sql: string, values?: any[]) => db.query(sql, values), release: () => {} }
+    const pool = { connect: async () => client, totalCount: 1, idleCount: 0, waitingCount: 0 }
+    const result: any = await readMonitoringData("2020-01-01T00:00:00.000Z", pool as any)
+    const runs = result.jobRuns?.runs ?? []
+    const single = runs.find((r: any) => r.runId === "single:s1")
+    assert.equal(single.job, "Writer article")
+    assert.equal(single.workload, "1 SEO article (từng bước) · Single article")
+    assert.equal(Date.parse(single.endedAt) - Date.parse(single.startedAt), 110000, "8s + 30s + 60s + 12s of processing, not the 40 minutes of review")
+    const steps = runs.filter((r: any) => r.parentRunId === "single:s1")
+    assert.deepEqual(steps.map((r: any) => [r.job, Date.parse(r.endedAt) - Date.parse(r.startedAt)]).sort(), [
+      ["Article Spec & Core Idea", 30000], ["Kiểm tra chất lượng", 12000], ["Nghiên cứu từ khóa SEO", 8000], ["Viết draft", 60000]])
+    const old = runs.find((r: any) => r.runId === "single:s-old")
+    assert.deepEqual([old.workload, old.startedAt], ["1 editorial article (từng bước) · Old single", null], "calls without timing: listed, no time or steps")
+    assert.equal(runs.some((r: any) => r.parentRunId === "single:s-old"), false)
+    assert.equal(runs.some((r: any) => r.runId === "single:s-nodraft" || r.runId === "single:b1"), false, "no draft or batch articles are not single runs")
   } finally {
     if (previous === undefined) delete process.env.DATABASE_PROVIDER
     else process.env.DATABASE_PROVIDER = previous

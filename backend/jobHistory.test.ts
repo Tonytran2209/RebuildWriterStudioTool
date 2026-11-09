@@ -110,3 +110,23 @@ test("old articles get estimated sub-jobs from the last AI call of each step", a
   assert.deepEqual(estimatedStepRuns(null, article), [])
   assert.deepEqual(estimatedStepRuns(marks, { ...article, endedAt: null }), [])
 })
+
+test("single article sessions use the last run of each step and merge parallel calls", async () => {
+  const { singleArticleRuns } = await import("./jobHistory.ts")
+  const at = (minute: number, seconds = 0) => new Date(Date.UTC(2026, 10, 9, 10, minute, seconds)).toISOString()
+  const runs = singleArticleRuns({ runId: "single:a", job: "Writer article", workload: "1 SEO article (từng bước) · A", endedAt: at(59), usage: {
+    3: [
+      { step: 3, calledAt: at(0, 40), durationMs: 40000 },
+      { step: 3, calledAt: at(30, 50), durationMs: 50000 },
+    ],
+    4: [
+      { step: 4, calledAt: at(40, 30), durationMs: 30000 },
+      { step: 4, calledAt: at(40, 40), durationMs: 40000 },
+    ],
+  } })
+  const byJob = Object.fromEntries(runs.map((r) => [r.job, Date.parse(r.endedAt!) - Date.parse(r.startedAt!)]))
+  assert.equal(byJob["Lập outline"], 50000, "the regenerated outline (new session) replaces the first one")
+  assert.equal(byJob["Viết draft"], 40000, "parallel draft calls overlap and count once")
+  assert.equal(byJob["Writer article"], 90000)
+  assert.deepEqual(singleArticleRuns({ runId: "x", job: "Writer article", workload: "w", endedAt: null, usage: null }), [])
+})

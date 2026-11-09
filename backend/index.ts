@@ -1,5 +1,5 @@
 import {jobFailure, monitoring} from './monitoring.ts';
-import { batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
+import { BATCH_ARTICLE_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
 import { outlineReviewInstruction, outlineQualityChecks } from '../src/lib/outlineQuality.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
 import "dotenv/config"
@@ -3274,7 +3274,7 @@ async function runBatch(activityId: string) {
       if (!articles.length) break
       await runWithConcurrency(articles, 2, async (article) => {
         const start = performance.now()
-        const job = "Writer batch article"
+        const job = BATCH_ARTICLE_JOB
         const workload = article.activityType === "editorial-originality" ? "1 editorial article" : "1 SEO article"
         try {
           const outcome = await runBatchArticle(article, controller)
