@@ -1,4 +1,5 @@
-import { articleStepRuns, estimatedStepRuns, jobHistoryWindows } from "./jobHistory.ts"
+import { articleStepRuns, estimatedStepRuns, jobHistoryWindows, singleArticleRuns } from "./jobHistory.ts"
+import { ARTICLE_JOB } from "./batchSteps.ts"
 import { performance } from "node:perf_hooks"
 import { database } from "./postgres.ts"
 // Fixed aggregate SQL only. No article content, user identity or credentials leave this module.
@@ -123,7 +124,7 @@ export async function readMonitoringData(
       : "NULL::jsonb"
     const articleRows = await exists("batch_job_items") && await exists("writer_articles")
       ? (await client.query(
-        `SELECT 'Writer batch article' AS job,
+        `SELECT $2::text AS job,
            b.id::text AS "runId", a.title AS title, a.payload->'batchStepRuns' AS steps, ${callMarks} AS "callMarks",
            CASE a.content_group WHEN 'editorial_originality' THEN '1 editorial article'
              WHEN 'comparison_seo' THEN '1 SEO article' ELSE '1 batch article' END AS workload,
@@ -136,16 +137,40 @@ export async function readMonitoringData(
          FROM writer_studio.batch_job_items b
          LEFT JOIN writer_studio.writer_articles a ON a.id = b.article_id AND a.activity_id = b.batch_job_id
          WHERE b.status IN ('completed', 'failed')
-         ORDER BY "recordedAt" DESC NULLS LAST, b.id LIMIT $1`, [jobLimit + 1],
+         ORDER BY "recordedAt" DESC NULLS LAST, b.id LIMIT $1`, [jobLimit + 1, ARTICLE_JOB],
       )).rows
       : null
+    // Step-by-step (single) articles with a draft, last 61 days. Reported only in jobRuns.
+    const singleColumns = await exists("writer_articles") && Number((await client.query(
+      `SELECT count(*)::int AS n FROM information_schema.columns
+       WHERE table_schema = 'writer_studio' AND table_name = 'writer_articles'
+         AND column_name IN ('id', 'title', 'content_group', 'payload', 'draft', 'completed_at', 'updated_at')`,
+    )).rows[0].n) === 7
+    const singleRows = singleColumns
+      ? (await client.query(
+        `SELECT a.id::text AS id, a.title,
+           CASE a.content_group WHEN 'editorial_originality' THEN '1 editorial article (từng bước)'
+             ELSE '1 SEO article (từng bước)' END AS workload,
+           a.payload->'aiUsageByStep' AS usage, COALESCE(a.completed_at, a.updated_at) AS "endedAt"
+         FROM writer_studio.writer_articles a
+         WHERE COALESCE(a.payload->>'activityKind', '') <> 'batch'
+           ${await exists("batch_job_items") ? "AND NOT EXISTS (SELECT 1 FROM writer_studio.batch_job_items b WHERE b.article_id = a.id)" : ""}
+           AND NULLIF(btrim(a.draft), '') IS NOT NULL
+           AND COALESCE(a.completed_at, a.updated_at) >= now() - interval '61 days'
+         ORDER BY COALESCE(a.completed_at, a.updated_at) DESC LIMIT 1000`,
+      )).rows
+      : []
+    const singleRuns = singleRows.flatMap((row: any) => singleArticleRuns({
+      runId: "single:" + row.id, job: ARTICLE_JOB, usage: row.usage, endedAt: row.endedAt,
+      workload: row.title?.trim() ? (row.workload + " · " + row.title.trim()).slice(0, 200) : row.workload,
+    }))
     const history = articleRows
       ? jobHistoryWindows(articleRows, since, jobLimit, Date.now(), articleRows.flatMap((row: any) => {
           const article = { runId: row.runId, job: row.job, workload: row.title?.trim() ? (row.workload + " · " + row.title.trim()).slice(0, 200) : row.workload }
           // Measured steps when saved; otherwise steps estimated from AI call times.
           return row.steps ? articleStepRuns(row.steps, article)
             : estimatedStepRuns(row.callMarks, { ...article, startedAt: row.startedAt, endedAt: row.endedAt })
-        }))
+        }).concat(singleRuns))
       : { jobHistory: null, jobHistoryAllTime: null }
     const contentWorkload = await exists("batch_job_items") && await exists("writer_articles")
       ? {

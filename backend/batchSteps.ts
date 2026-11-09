@@ -10,11 +10,16 @@ export const batchStepLabels: Record<BatchStepKey, string> = {
   draft: "Viết draft",
   quality: "Kiểm tra chất lượng",
 }
-export const BATCH_ARTICLE_JOB = "Writer batch article"
+// Main Job for every article, batch or step-by-step (single). Named at report time, so history of
+// earlier batch articles is reported under the same name.
+export const ARTICLE_JOB = "Writer article"
+export const BATCH_ARTICLE_JOB = ARTICLE_JOB
 
 // app-monitoring profile-v1: the Main Job and its sub-jobs in pipeline order. No title, so AI Agent
 // Lab keeps showing the content-workload card in its technical report.
 export const labProfile = {
   version: "profile-v1",
-  mainJob: { job: BATCH_ARTICLE_JOB, steps: Object.values(batchStepLabels) },
+  mainJob: { job: ARTICLE_JOB, steps: Object.values(batchStepLabels) },
+  // Kept from AI Agent Lab's earlier built-in target for batch articles.
+  jobTargets: { [ARTICLE_JOB]: 10 },
 }

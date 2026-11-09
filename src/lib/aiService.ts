@@ -127,6 +127,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
     || 'https://rebuildwriterstudiotool-production.up.railway.app';
 
   if (railwayUrl) {
+    const startedAt = Date.now();
     try {
       const res = await authenticatedRailwayFetch('/api/generate', {
         method: 'POST',
@@ -173,6 +174,9 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
         costUsd: response.cacheHit ? 0 : response.costUsd ?? null,
         cacheHit: Boolean(response.cacheHit),
         calledAt: new Date().toISOString(),
+        startedAt: new Date(startedAt).toISOString(),
+        durationMs: Date.now() - startedAt,
+        purpose: requestPurpose || 'generation',
       };
       window.dispatchEvent(new CustomEvent<AICallUsage>('writer:ai-usage', { detail: usage }));
       return response;
@@ -195,6 +199,7 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
 
 export async function researchSeoKeywords(seeds: string[], articleId: string, railwayUrl?: string, keywordCount = 10): Promise<SeoResearchResult> {
   const baseUrl = railwayUrl || localStorage.getItem('writer:railwayUrl') || 'https://rebuildwriterstudiotool-production.up.railway.app';
+  const startedAt = Date.now();
   const response = await authenticatedRailwayFetch('/api/seo/research', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -202,5 +207,28 @@ export async function researchSeoKeywords(seeds: string[], articleId: string, ra
   }, baseUrl);
   const payload = await response.json().catch(() => ({ error: response.statusText })) as SeoResearchResult & AIErrorPayload;
   if (!response.ok) throw new Error(formatAIError(payload, 'openai', payload.modelId ?? 'gpt-5.4-mini'));
+  // Record the research as a step-2 call, like the batch runner, so its time is measured.
+  const research = payload as SeoResearchResult & { usage?: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number } };
+  const cacheHit = Boolean(research.cacheHit);
+  const inputTokens = cacheHit ? 0 : Number(research.usage?.inputTokens ?? 0);
+  const outputTokens = cacheHit ? 0 : Number(research.usage?.outputTokens ?? 0);
+  const usage: AICallUsage = {
+    id: `usage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    articleId,
+    step: 2,
+    provider: 'openai',
+    model: 'gpt-5.4-mini-web-search',
+    inputTokens,
+    cachedInputTokens: cacheHit ? 0 : Number(research.usage?.cachedInputTokens ?? 0),
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+    costUsd: cacheHit ? 0 : null,
+    cacheHit,
+    calledAt: new Date().toISOString(),
+    startedAt: new Date(startedAt).toISOString(),
+    durationMs: Date.now() - startedAt,
+    purpose: 'seo-research',
+  };
+  window.dispatchEvent(new CustomEvent<AICallUsage>('writer:ai-usage', { detail: usage }));
   return payload;
 }
