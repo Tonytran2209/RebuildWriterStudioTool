@@ -24,7 +24,7 @@ import { auditInternalLinks, deterministicQualityChecks, internalLinkBudget, qua
 import { ProcessTraceModal } from './ProcessTrace';
 import { notifyWorkspace } from './WorkspaceNotification';
 import { StepUsage } from './StepUsage';
-import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionCheck } from '../../lib/introductionPolicy';
+import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionReviewInstruction, introductionCheck } from '../../lib/introductionPolicy';
 import { normalizeDraftOutput, normalizeDraftHtml } from '../../lib/draftExport';
 import { canonicalSpecFingerprint, qualityInputFingerprint, qualityAllowsCompletion, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION } from '../../lib/qualityPolicy';
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage } from '../../lib/evidencePolicy';
@@ -144,7 +144,7 @@ function semanticReviewInstruction(article: Article, draft: string) {
   const density = keyword ? (exactMatches / Math.max(countWords(draft), 1)) * 100 : 0;
   return [
     EVIDENCE_REVIEW_INSTRUCTION,
-    INTRODUCTION_INSTRUCTION,
+    introductionReviewInstruction(draftWithoutImagePlaceholders(draft)),
     outlineReviewInstruction(article),
     'For keyword-naturalness, pass when the primary query is present in the H1/body and reads grammatically in context.',
     'Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.',
@@ -971,7 +971,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           requestPurpose: 'recheck', skipDocumentContext: true,
           maxTokens: 500, temperature: 0.1, jsonMode: true,
           jsonSchema: repairSchemaFor(['introduction']),
-          systemPrompt: `${INTRODUCTION_INSTRUCTION}\nRepair only the introduction. Preserve supported meaning; return JSON containing introduction only.`,
+          systemPrompt: `${INTRODUCTION_INSTRUCTION}\nRepair only the introduction. Aim for 70–75 words to leave room within the accepted range. Preserve supported meaning; return JSON containing introduction only.`,
           prompt: `TOPIC: ${article.topic}\nPRIMARY QUERY: ${getPrimaryKeyword(article)}\nCURRENT INTRODUCTION: ${parsed.introduction}`,
         });
         const repaired = parseAIJson(introRepair.content) as StructuredDraftPayload;
@@ -1039,7 +1039,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           railwayUrl,
           stepNumber: 4,
           bypassCache: manual || Boolean(article.qualityReport && article.qualityReport.status !== 'pass'),
-          maxTokens: 1400,
+          maxTokens: 2400,
           temperature: 0,
           jsonMode: true,
           jsonSchema: semanticQualitySchema,
@@ -1059,7 +1059,9 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         try {
           return { response, checks: parseSemanticQuality(response.content), schemaComplete: true };
         } catch (error) {
-          return { response, checks: partialSemanticReviewChecks(response.content, error), schemaComplete: false };
+          const partial = partialSemanticReviewChecks(response.content, error)
+            .filter(check => check.id !== 'semantic-review-schema');
+          return completeMissingSemanticChecks(article, candidate, candidateUsage, verifiedOutline, partial);
         }
       };
       const semanticKey = semanticReviewFingerprint(article, assembledDraft, evidenceUsage)
@@ -1081,7 +1083,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           stage: 'validation',
           status: 'warning',
           title: 'Semantic review incomplete',
-          detail: 'The reviewer response was incomplete. The draft was saved without an automatic retry; use Re-check & Fix only when you choose to spend another AI call.',
+          detail: 'The report remains incomplete after requesting missing checks. The draft and valid findings were saved. Re-check & Fix can request the remaining checks.',
         });
       } else if (report.status !== 'pass') {
         processTrace.push({
@@ -1129,6 +1131,52 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       generationInFlight.current = false;
       setGenerating(false);
     }
+  };
+
+  const completeMissingSemanticChecks = async (
+    reviewArticle: Article, value: string, usage: Record<string, string[]>,
+    verifiedOutline: ReturnType<typeof buildVerifiedOutlineContext>, partial: QualityGateCheck[],
+  ) => {
+    const checks = [...partial];
+    const incomplete = (error: unknown) => ({
+      checks: [...checks, ...incompleteSemanticReviewChecks(error, checks)],
+      schemaComplete: false,
+    });
+    // Keep partial progress. A second recovery call is useful only if
+    // the first supplied at least one missing check.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const needed = missingSemanticChecks(checks);
+      if (!needed.length) return { checks, schemaComplete: true };
+      try {
+        const recovery = await callAI({
+          articleId: reviewArticle.id,
+          model, railwayUrl, stepNumber: 4, bypassCache: true, requestPurpose: 'recheck',
+          maxTokens: Math.max(1000, needed.length * 420), temperature: 0,
+          jsonMode: true, jsonSchema: semanticSchemaFor(needed), skipDocumentContext: true,
+          systemPrompt: `You are a strict publishing quality reviewer. Evaluate only the requested missing checks. ${semanticLinkBoundary} Return concise JSON matching the schema. Do not rewrite the draft. Never assume evidence or brand alignment without support.`,
+          prompt: [
+            `MISSING CHECKS: ${needed.join(', ')}`,
+            `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
+            `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+            `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
+            `DRAFT EVIDENCE USAGE: ${JSON.stringify(usage)}`,
+            `DRAFT: ${draftWithoutImagePlaceholders(value)}`,
+            semanticReviewInstruction(reviewArticle, value),
+            `Return a checks object with exactly these keys: ${needed.join(', ')}. Include a status and concise reason for each key, including when evidence is insufficient.`,
+          ].join('\n\n'),
+        });
+        const additions = parsePartialSemanticQuality(recovery.content)
+          .filter(check => needed.some(id => id === check.id));
+        for (const check of additions) {
+          if (!checks.some(existing => existing.id === check.id)) checks.push(check);
+        }
+        if (!additions.length) break;
+      } catch (error) {
+        return incomplete(error);
+      }
+    }
+    if (!missingSemanticChecks(checks).length) return { checks, schemaComplete: true };
+    return incomplete('The reviewer returned a partial report. Re-check will request the remaining items.');
   };
 
   const handleRecheckAndFix = async () => {
@@ -1273,49 +1321,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       const reviewSemantic = async (value: string, previous: QualityGateCheck[] = []) => {
         const validPrevious = previous.filter(check => semanticCheckIds.some(id => id === check.id) && check.kind === 'semantic');
         const missing = semanticCheckIds.filter(id => !validPrevious.some(check => check.id === id));
-        const completeMissing = async (partial: QualityGateCheck[]) => {
-          const checks = [...partial];
-          const incomplete = (error: unknown) => ({
-            checks: [...checks, ...incompleteSemanticReviewChecks(error, checks)],
-            schemaComplete: false,
-          });
-          // Keep partial progress. A second recovery call is useful only if
-          // the first supplied at least one missing check.
-          for (let attempt = 0; attempt < 2; attempt++) {
-            const needed = missingSemanticChecks(checks);
-            if (!needed.length) return { checks, schemaComplete: true };
-            try {
-              const recovery = await callAI({
-                articleId: reviewArticle.id,
-                model, railwayUrl, stepNumber: 4, bypassCache: true, requestPurpose: 'recheck',
-                maxTokens: Math.max(1000, needed.length * 420), temperature: 0,
-                jsonMode: true, jsonSchema: semanticSchemaFor(needed), skipDocumentContext: true,
-                systemPrompt: `You are a strict publishing quality reviewer. Evaluate only the requested missing checks. ${semanticLinkBoundary} Return concise JSON matching the schema. Do not rewrite the draft. Never assume evidence or brand alignment without support.`,
-                prompt: [
-                  `MISSING CHECKS: ${needed.join(', ')}`,
-                  `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
-                  `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
-                  `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
-                  `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
-                  `DRAFT: ${draftWithoutImagePlaceholders(value)}`,
-                  semanticReviewInstruction(reviewArticle, value),
-                  `Return a checks object with exactly these keys: ${needed.join(', ')}. Include a status and concise reason for each key, including when evidence is insufficient.`,
-                ].join('\n\n'),
-              });
-              const additions = parsePartialSemanticQuality(recovery.content)
-                .filter(check => needed.some(id => id === check.id));
-              for (const check of additions) {
-                if (!checks.some(existing => existing.id === check.id)) checks.push(check);
-              }
-              if (!additions.length) break;
-            } catch (error) {
-              return incomplete(error);
-            }
-          }
-          if (!missingSemanticChecks(checks).length) return { checks, schemaComplete: true };
-          return incomplete('The reviewer returned a partial report. Re-check will request the remaining items.');
-        };
-        if (validPrevious.length && missing.length) return completeMissing(validPrevious);
+        if (validPrevious.length && missing.length) return completeMissingSemanticChecks(reviewArticle, value, reviewArticle.draftEvidenceUsage ?? {}, verifiedOutline, validPrevious);
         const requestReview = () => callAI({
           articleId: reviewArticle.id,
           model,
@@ -1323,7 +1329,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           stepNumber: 4,
           bypassCache: true,
           requestPurpose: 'recheck',
-          maxTokens: 1400,
+          maxTokens: 2400,
           temperature: 0,
           jsonMode: true,
           jsonSchema: semanticQualitySchema,
@@ -1343,7 +1349,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           return { checks: parseSemanticQuality(response.content), schemaComplete: true };
         } catch (error) {
           const partial = partialSemanticReviewChecks(response.content, error).filter(check => check.id !== 'semantic-review-schema');
-          return completeMissing(partial);
+          return completeMissingSemanticChecks(reviewArticle, value, reviewArticle.draftEvidenceUsage ?? {}, verifiedOutline, partial);
         }
       };
 

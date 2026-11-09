@@ -1,5 +1,5 @@
 import { outlineReviewInstruction } from './outlineQuality.ts';
-import { INTRODUCTION_INSTRUCTION } from './introductionPolicy.ts';
+import { INTRODUCTION_INSTRUCTION, INTRODUCTION_REVIEW_CONTRACT } from './introductionPolicy.ts';
 import type { Article, ArticleSpec, DocumentFile, QualityGateCheck } from '../types/index.ts';
 
 export const QUALITY_VERSION = 10;
@@ -57,7 +57,7 @@ export const EVIDENCE_REVIEW_INSTRUCTION = 'EVIDENCE CONTRACT: Content Plan esta
 
 /** One semantic cache identity for browser and server; includes the frozen MD definition. */
 export function semanticReviewInputFingerprint(article: Partial<Article>, draft: string, usage: Record<string, string[]> = {}) {
-  return `semantic-${QUALITY_VERSION}-${fingerprint({ evidenceContract: EVIDENCE_REVIEW_INSTRUCTION, introductionContract: INTRODUCTION_INSTRUCTION, structureContract: outlineReviewInstruction(article), draft: draftWithoutImagePlaceholders(draft), spec: article.articleSpec ? canonicalSpecFingerprint(article.articleSpec) : null, outline: article.outline ?? [], structure: article.outlineStructure ?? null, usage })}`;
+  return `semantic-${QUALITY_VERSION}-${fingerprint({ evidenceContract: EVIDENCE_REVIEW_INSTRUCTION, introductionContract: INTRODUCTION_INSTRUCTION, introductionReviewContract: INTRODUCTION_REVIEW_CONTRACT, structureContract: outlineReviewInstruction(article), draft: draftWithoutImagePlaceholders(draft), spec: article.articleSpec ? canonicalSpecFingerprint(article.articleSpec) : null, outline: article.outline ?? [], structure: article.outlineStructure ?? null, usage })}`;
 }
 export function missingSemanticChecks(checks: Array<Pick<QualityGateCheck, 'id' | 'kind' | 'status'>>) {
   return SEMANTIC_IDS.filter(id => !checks.some(check => check.id === id && check.kind === 'semantic' && ['pass', 'warning', 'fail'].includes(check.status)));

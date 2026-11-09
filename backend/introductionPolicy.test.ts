@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { introductionCheck } from "../src/lib/introductionPolicy.ts"
+import { introductionCheck, introductionReviewInstruction } from "../src/lib/introductionPolicy.ts"
 
 const prose = (count: number) => Array(count).fill("reader").join(" ")
 const draft = (intro: string) => `# Article title\n\n${intro}\n\n## First section\n${prose(200)}`
@@ -17,4 +17,9 @@ test("rejects multiple paragraphs even within the word budget", () => {
 test("counts visible Markdown anchor text and tolerates soft line wraps and CRLF", () => {
   const intro = `${prose(59)}\n[reader](https://example.com/a-long-url)`
   assert.equal(introductionCheck(draft(intro).replace(/\n/g, "\r\n")).status, "pass")
+})
+
+test("semantic reviewer receives the measured count for valid and short introductions", () => {
+  assert.match(introductionReviewInstruction(draft(prose(60))), /PASS\. 60 words/)
+  assert.match(introductionReviewInstruction(draft(prose(54))), /FAIL\. 54 words/)
 })

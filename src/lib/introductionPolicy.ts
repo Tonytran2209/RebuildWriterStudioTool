@@ -18,3 +18,10 @@ export function introductionCheck(draft: string) {
     recommendedAction: INTRODUCTION_INSTRUCTION, autoFixAllowed: true,
   };
 }
+
+export const INTRODUCTION_REVIEW_CONTRACT = 'Treat the deterministic introduction measurement as authoritative for length and paragraph count. Do not estimate word count or fail intro-quality for length when the measurement passes. For intro-quality, evaluate the reader pain point, immediate answer, practical insight and reader benefit.';
+
+export function introductionReviewInstruction(draft: string) {
+  const check = introductionCheck(draft);
+  return `DETERMINISTIC INTRODUCTION MEASUREMENT: ${check.status.toUpperCase()}. ${check.reason}\n${INTRODUCTION_REVIEW_CONTRACT}`;
+}

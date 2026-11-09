@@ -123,7 +123,7 @@ async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incom
     ? body.prompt.includes('MISSING CHECKS: evidence-support, brand-pov') ? ['evidence-support']
       : body.prompt.includes('MISSING CHECKS: brand-pov') ? ['brand-pov']
         : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness']
-    : body.systemPrompt.includes('requested missing checks') ? ['brand-pov'] : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support',...(incomplete?[]:['brand-pov'])];
+    : body.systemPrompt.includes('requested missing checks') ? (mode === 'generation' && incomplete && calls.length === 3 ? [] : ['brand-pov']) : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support',...(incomplete?[]:['brand-pov'])];
   const content=reviewer ? JSON.stringify({checks:Object.fromEntries(requested.map(id=>[id,{status:evidenceWarning && id==='evidence-support'?'warning':'pass',reason:'Reviewed fixture',autoFixAllowed:evidenceWarning && id==='evidence-support'}]))}) : await page.evaluate(()=>JSON.stringify((window as any).qcFlow.payload));
   if(reviewer){const checkpoint=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));expect(checkpoint.draft).toContain('Fixture practical guide');}
   await route.fulfill({json:{content,model:'fixture',usage:{inputTokens:0,outputTokens:0}}});
@@ -133,7 +133,7 @@ async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incom
 for(const incomplete of [false,true])test(`qc-schema generation saves checkpoint before reviewer and preserves ${incomplete?'incomplete':'complete'} report`,async({page})=>{
  const calls=await mockQcFlow(page,'generation',incomplete);
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
- await expect.poll(()=>calls.length).toBe(2);
+ await expect.poll(()=>calls.length).toBe(incomplete?3:2);
  expect(calls[1].systemPrompt).toContain('Never evaluate URLs, internal links, link targets, or Website Inventory in a semantic check');
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-updates')||'[]').filter((p:any)=>p.semanticReviewChecks).length)).toBe(1);
@@ -142,7 +142,7 @@ for(const incomplete of [false,true])test(`qc-schema generation saves checkpoint
  if(incomplete)expect(saved.semanticReviewChecks.at(-1).id).toBe('semantic-review-schema');
  await page.reload();await page.getByRole('button',{name:'QC',exact:true}).click();
  if(incomplete)await expect(page.getByText(/Semantic review incomplete|Đánh giá semantic chưa hoàn tất/).first()).toBeVisible();
- expect(calls).toHaveLength(2);
+ expect(calls).toHaveLength(incomplete?3:2);
 });
 for(const incomplete of [false,true])test(`qc-cache recheck calls reviewer for incomplete cache without rewrite (${incomplete?'incomplete':'complete'})`,async({page})=>{
  const calls=await mockQcFlow(page,'recheck',incomplete);
@@ -159,14 +159,14 @@ for(const incomplete of [false,true])test(`qc-cache recheck calls reviewer for i
 test('qc-recheck refreshes changed evidence context then requests only missing semantic checks',async({page})=>{
  const calls=await mockQcFlow(page,'generation',true);
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
- await expect.poll(()=>calls.length).toBe(2);
+ await expect.poll(()=>calls.length).toBe(3);
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
  await page.reload();
  await page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/}).click();
- await expect.poll(()=>calls.length).toBe(4);
- expect(calls[2].systemPrompt).toContain('Re-check the repaired draft');
- expect(calls[3].systemPrompt).toContain('requested missing checks');
- expect(calls[3].prompt).toContain('MISSING CHECKS: brand-pov');
+ await expect.poll(()=>calls.length).toBe(5);
+ expect(calls[3].systemPrompt).toContain('Re-check the repaired draft');
+ expect(calls[4].systemPrompt).toContain('requested missing checks');
+ expect(calls[4].prompt).toContain('MISSING CHECKS: brand-pov');
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.map((c:any)=>c.id))).toEqual(['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov']);
 });
 
@@ -458,4 +458,16 @@ test('re-check retains partial recovery and requests only the remaining semantic
   await expect.poll(() => page.evaluate(() => JSON.parse(sessionStorage.getItem('qc-fixture') || '{}').semanticReviewChecks?.length)).toBe(6);
   await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
   expect(await page.getByTestId('stored-source').textContent()).toBe(draft);
+});
+
+test('regenerating a draft fills missing semantic checks and supplies the measured introduction length', async ({ page }) => {
+  const calls = await mockQcFlow(page, 'recheck', false, false, false, true);
+  await page.getByRole('button', { name: /Tạo lại Draft|Regenerate draft/ }).click();
+  await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
+  expect(calls).toHaveLength(4);
+  expect(calls[1].prompt).toContain('DETERMINISTIC INTRODUCTION MEASUREMENT: PASS. 78 words');
+  expect(calls[2].prompt).toContain('MISSING CHECKS: evidence-support, brand-pov');
+  expect(calls[3].prompt).toContain('MISSING CHECKS: brand-pov');
+  await page.reload();
+  await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
 });

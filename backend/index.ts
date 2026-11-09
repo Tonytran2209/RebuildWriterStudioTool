@@ -53,7 +53,7 @@ import { formatDraftExport } from "./draftFormatter.ts"
 import { internalLinkInstruction, internalLinkChecks, addMissingInternalLinks } from "../src/lib/internalLinkPolicy.ts"
 import { canonicalSpecFingerprint, qualityInputFingerprint, outlineContentChanged, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS } from "../src/lib/qualityPolicy.ts"
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from "../src/lib/evidencePolicy.ts"
-import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionCheck } from "../src/lib/introductionPolicy.ts"
+import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionReviewInstruction, introductionCheck } from "../src/lib/introductionPolicy.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
 import {
   agentLibraryStatus,
@@ -3024,7 +3024,7 @@ async function runBatchArticle(
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
             `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map((section: any) => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
-            `INTRODUCTION LENGTH: prefer ${budget.introduction.min}-${budget.introduction.max} words; accept ${budget.introduction.acceptedMin}-${budget.introduction.acceptedMax} words. Length inside the accepted range must not produce a warning or failure. There is no fixed character-count requirement; never invent one.`,
+            introductionReviewInstruction(candidate),
             `DRAFT: ${candidate}`,
             batchSemanticReviewInstruction(article, candidate),
             incompleteRecovery
