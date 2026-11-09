@@ -1,4 +1,4 @@
-import { articleStepRuns, jobHistoryWindows } from "./jobHistory.ts"
+import { articleStepRuns, estimatedStepRuns, jobHistoryWindows } from "./jobHistory.ts"
 import { performance } from "node:perf_hooks"
 import { database } from "./postgres.ts"
 // Fixed aggregate SQL only. No article content, user identity or credentials leave this module.
@@ -104,10 +104,27 @@ export async function readMonitoringData(
     const jobLimit = 10000
     // AI Agent Lab run history: each batch article is a run whose workload names the article, and
     // its saved step timings (batchStepRuns) are the sub-jobs from Content Plan to checked draft.
+    // Articles finished before batchStepRuns existed: last AI call per step, for estimated sub-jobs.
+    const callMarksAvailable = await exists("writer_ai_usage") && Number((await client.query(
+      `SELECT count(*)::int AS n FROM information_schema.columns
+       WHERE table_schema = 'writer_studio' AND table_name = 'writer_ai_usage' AND column_name IN ('article_id', 'step', 'model', 'called_at')`,
+    )).rows[0].n) === 4
+    const callMarks = callMarksAvailable
+      ? `CASE WHEN b.status = 'completed' AND a.payload->'batchStepRuns' IS NULL AND a.completed_at >= now() - interval '61 days'
+           AND a.payload->>'batchStartedAt' ~ '^[0-9]{4}-' THEN (
+             SELECT jsonb_build_object(
+               'seo', max(u.called_at) FILTER (WHERE u.step = 2 AND u.model ILIKE '%web-search%'),
+               'spec', max(u.called_at) FILTER (WHERE u.step = 2 AND u.model NOT ILIKE '%web-search%'),
+               'outline', max(u.called_at) FILTER (WHERE u.step = 3))
+             FROM writer_studio.writer_ai_usage u
+             WHERE u.article_id = a.id AND u.step IN (2, 3)
+               AND u.called_at BETWEEN (a.payload->>'batchStartedAt')::timestamptz AND a.completed_at)
+         END`
+      : "NULL::jsonb"
     const articleRows = await exists("batch_job_items") && await exists("writer_articles")
       ? (await client.query(
         `SELECT 'Writer batch article' AS job,
-           b.id::text AS "runId", a.title AS title, a.payload->'batchStepRuns' AS steps,
+           b.id::text AS "runId", a.title AS title, a.payload->'batchStepRuns' AS steps, ${callMarks} AS "callMarks",
            CASE a.content_group WHEN 'editorial_originality' THEN '1 editorial article'
              WHEN 'comparison_seo' THEN '1 SEO article' ELSE '1 batch article' END AS workload,
            b.status,
@@ -123,8 +140,12 @@ export async function readMonitoringData(
       )).rows
       : null
     const history = articleRows
-      ? jobHistoryWindows(articleRows, since, jobLimit, Date.now(), articleRows.flatMap((row: any) =>
-          articleStepRuns(row.steps, { runId: row.runId, job: row.job, workload: row.title?.trim() ? (row.workload + " · " + row.title.trim()).slice(0, 200) : row.workload })))
+      ? jobHistoryWindows(articleRows, since, jobLimit, Date.now(), articleRows.flatMap((row: any) => {
+          const article = { runId: row.runId, job: row.job, workload: row.title?.trim() ? (row.workload + " · " + row.title.trim()).slice(0, 200) : row.workload }
+          // Measured steps when saved; otherwise steps estimated from AI call times.
+          return row.steps ? articleStepRuns(row.steps, article)
+            : estimatedStepRuns(row.callMarks, { ...article, startedAt: row.startedAt, endedAt: row.endedAt })
+        }))
       : { jobHistory: null, jobHistoryAllTime: null }
     const contentWorkload = await exists("batch_job_items") && await exists("writer_articles")
       ? {

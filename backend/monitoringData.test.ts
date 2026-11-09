@@ -81,3 +81,42 @@ test("read-only aggregates deduplicate actual storage precedence and separate ca
     await db.close()
   }
 })
+
+test("articles without saved step timings get estimated sub-jobs from AI call times", async () => {
+  const db = new PGlite()
+  const previous = process.env.DATABASE_PROVIDER
+  process.env.DATABASE_PROVIDER = "postgres"
+  try {
+    await db.exec(`CREATE SCHEMA writer_studio;
+ CREATE TABLE writer_studio.kv_store(key text primary key,value jsonb);
+ CREATE TABLE writer_studio.writer_articles(id text,status text,payload jsonb,title text,activity_id text,content_group text,draft text,completed_at timestamptz);
+ CREATE TABLE writer_studio.batch_job_items(id text, batch_job_id text, article_id text, status text, updated_at timestamptz, error_message text);
+ CREATE TABLE writer_studio.writer_ai_usage(id text,article_id text,provider text,model text,step int,input_tokens int,cached_input_tokens int,output_tokens int,cost_usd numeric,cache_hit boolean,called_at timestamptz);
+ INSERT INTO writer_studio.writer_articles VALUES
+   ('old','done',jsonb_build_object('batchStartedAt', date_trunc('second', now()) - interval '2 hours'),'Old article','b1','comparison_seo','text',date_trunc('second', now()) - interval '1 hour 57 minutes'),
+   ('new','done',jsonb_build_object('batchStartedAt', date_trunc('second', now()) - interval '30 minutes','batchStepRuns','[]'::jsonb),'New article','b1','comparison_seo','text',date_trunc('second', now()) - interval '28 minutes');
+ INSERT INTO writer_studio.batch_job_items VALUES ('i-old','b1','old','completed',now(),null),('i-new','b1','new','completed',now(),null);
+ INSERT INTO writer_studio.writer_ai_usage VALUES
+   ('u1','old','openai','gpt-5.4-mini-web-search',2,1,0,1,null,false,date_trunc('second', now()) - interval '2 hours' + interval '10 seconds'),
+   ('u2','old','openai','gpt-5.4',2,1,0,1,null,false,date_trunc('second', now()) - interval '2 hours' + interval '40 seconds'),
+   ('u3','old','openai','gpt-5.4',3,1,0,1,null,false,date_trunc('second', now()) - interval '2 hours' + interval '80 seconds'),
+   ('u4','new','openai','gpt-5.4',3,1,0,1,null,false,date_trunc('second', now()) - interval '29 minutes');`)
+    const client = { query: async (sql: string, values?: any[]) => db.query(sql, values), release: () => {} }
+    const pool = { connect: async () => client, totalCount: 1, idleCount: 0, waitingCount: 0 }
+    const result: any = await readMonitoringData("2020-01-01T00:00:00.000Z", pool as any)
+    const runs = result.jobRuns?.runs ?? []
+    const old = runs.filter((r: any) => r.parentRunId === "i-old")
+    assert.deepEqual(old.map((r: any) => [r.job, Date.parse(r.endedAt) - Date.parse(r.startedAt), r.estimated]).sort(), [
+      ["Article Spec & Core Idea", 30000, true],
+      ["Lập outline", 40000, true],
+      ["Nghiên cứu từ khóa SEO", 10000, true],
+      ["Viết draft & kiểm tra chất lượng", 100000, true],
+    ])
+    assert.equal(runs.some((r: any) => r.parentRunId === "i-new"), false, "an article with saved step timings is never estimated")
+    assert.equal(result.jobHistoryAllTime?.executed, 2, "estimated steps are not counted as jobs")
+  } finally {
+    if (previous === undefined) delete process.env.DATABASE_PROVIDER
+    else process.env.DATABASE_PROVIDER = previous
+    await db.close()
+  }
+})
