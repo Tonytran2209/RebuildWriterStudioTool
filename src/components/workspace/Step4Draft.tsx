@@ -26,7 +26,7 @@ import { notifyWorkspace } from './WorkspaceNotification';
 import { StepUsage } from './StepUsage';
 import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionReviewInstruction, introductionCheck } from '../../lib/introductionPolicy';
 import { normalizeDraftOutput, normalizeDraftHtml } from '../../lib/draftExport';
-import { canonicalSpecFingerprint, qualityInputFingerprint, qualityAllowsCompletion, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION } from '../../lib/qualityPolicy';
+import { canonicalSpecFingerprint, qualityInputFingerprint, qualityAllowsCompletion, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, EVIDENCE_ATTRIBUTION_INSTRUCTION } from '../../lib/qualityPolicy';
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage } from '../../lib/evidencePolicy';
 import { verifyEvidence } from '../../lib/evidenceValidation';
 import { internalLinkInstruction, addMissingInternalLinks, redistributeInternalLinks } from '../../lib/internalLinkPolicy';
@@ -125,7 +125,7 @@ function applyTargetedDraftRepair(draft: string, repair: TargetedDraftRepair) {
   for (const edit of repair.edits ?? []) {
     const find = String(edit.find ?? '');
     const replace = String(edit.replace ?? '');
-    if (find && next.includes(find)) next = next.replace(find, replace);
+    if (find && next.includes(find)) next = next.replace(find, () => replace);
   }
   const addition = String(repair.appendBeforeConclusion ?? '').trim();
   if (addition) {
@@ -829,6 +829,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           canonicalAIOutputInstruction,
           'Viết bài hoàn chỉnh theo dàn bài và tài liệu được cấp.',
           '- Knowledge Base là nguồn dữ liệu duy nhất cho số liệu, dẫn chứng, thông tin sản phẩm. KHÔNG bịa dữ liệu.',
+          EVIDENCE_ATTRIBUTION_INSTRUCTION,
           '- Content Plan hiện tại cung cấp topic, nhóm nội dung và keyword đã được tổng hợp cho article; không đọc kế hoạch legacy.',
           '- Rules & Guidelines quyết định tone of voice, từ ngữ cấm, cấu trúc câu, quy tắc SEO. PHẢI tuân thủ tuyệt đối.',
           '- Khi dùng thông tin từ KB, nêu tự nhiên trong văn bản; không cần footnote hay hiển thị mã evidence trong bài.',
@@ -1401,11 +1402,11 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         semantic = semantic.map(item => item.id === 'evidence-support' && item.status !== 'pass'
           ? { ...item, autoFixAllowed: false, recommendedAction: 'Add relevant Knowledge Base evidence, or manually remove/qualify the unsupported claim. Content Plan titles are topic context only.' } : item);
       }
-      const actionableSemanticFindings = semanticFindings.filter(item => {
-        const check = semantic.find(candidate => candidate.label === item.label);
-        if (check?.id === 'evidence-support' && noEvidence) return false;
-        return Boolean(check && blocksPublication(check) && (check.status === 'fail' || check.autoFixAllowed));
-      });
+      const actionableSemanticFindings = semantic.filter(check =>
+        blocksPublication(check) && (check.id === 'evidence-support'
+          ? !noEvidence
+          : check.status === 'fail' || check.autoFixAllowed),
+      );
 
       if (actionableSemanticFindings.length) {
         const repairResponse = await callAI({
@@ -1420,14 +1421,17 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           jsonMode: true,
           jsonSchema: targetedDraftRepairSchema,
           skipDocumentContext: true,
-          systemPrompt: 'You are a surgical draft editor. Fix only the supplied semantic findings. Return compact exact-text replacement operations, never a rewritten reviewArticle. Every find value must be copied verbatim from the current draft. Preserve headings, verified claims and approved URLs.',
+          systemPrompt: 'You are a surgical draft editor. Fix only the supplied semantic findings. Return exact-text replacements, never a rewritten article. Copy each find value verbatim from the current draft. Preserve headings, verified claims and approved URLs.',
           prompt: [
-            `SEMANTIC FINDINGS: ${JSON.stringify(actionableSemanticFindings)}`,
+            `SEMANTIC FINDINGS: ${JSON.stringify(actionableSemanticFindings.map(({ id, label, reason, evidence, location, recommendedAction }) => ({ id, label, reason, evidence, location, recommendedAction })))}`,
+            EVIDENCE_ATTRIBUTION_INSTRUCTION,
+            'For an unsupported attribution, remove the attribution throughout the draft while keeping supported details. Inspect every section. Include one exact-text edit per occurrence, even when the same text appears repeatedly. Do not add new factual claims or change evidence mappings.',
             `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+            `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
             `TARGET WORDS: ${targetWords}`,
             `CURRENT DRAFT:\n${candidateDraft}`,
-            'Return at most 8 minimal operations that directly resolve the findings.',
+            'Return at most 8 minimal operations. Each operation replaces one occurrence.',
           ].join('\n\n'),
         });
         const beforeSemanticRepair = candidateDraft;

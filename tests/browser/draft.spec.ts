@@ -302,6 +302,44 @@ test('qc-evidence missing KB does not trigger an unsupported rewrite or repeated
  await expect(page.getByRole('button',{name:/Đánh dấu hoàn thành|Mark complete/})).toBeDisabled();
 });
 
+test('qc-evidence recheck repairs repeated unsupported attribution even without an auto-fix flag', async ({ page }) => {
+ const attribution = 'Acme Clinic illustrates the process.';
+ const supported = 'The example illustrates the process.';
+ const calls: any[] = [];
+ await page.route('**/*', async route => {
+  const url = new URL(route.request().url());
+  if (url.hostname !== '127.0.0.1') return route.abort();
+  if (url.pathname !== '/api/generate') return route.fallback();
+  const body = route.request().postDataJSON();
+  calls.push(body);
+  const warning = body.prompt.includes(attribution);
+  const content = body.systemPrompt.includes('surgical draft editor')
+   ? { edits: Array.from({ length: 2 }, () => ({ find: attribution, replace: supported })), appendBeforeConclusion: '' }
+   : { checks: Object.fromEntries(['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov'].map(id => [id, {
+      status: warning && id === 'evidence-support' ? 'warning' : 'pass',
+      reason: 'Compared the draft with the fixture excerpt.',
+      evidence: warning && id === 'evidence-support' ? attribution : '',
+      autoFixAllowed: false,
+    }])) };
+  await route.fulfill({ json: { content: JSON.stringify(content), model: 'fixture', usage: { inputTokens: 0, outputTokens: 0 } } });
+ });
+ await page.goto('/?qc=recheck&kb=1');
+ await page.evaluate(attribution => {
+  const saved = JSON.parse(sessionStorage.getItem('qc-fixture')!);
+  saved.draft = saved.draft.replace(/(## Practical guide [01]\n\n)/g, '$1' + attribution + ' ');
+  sessionStorage.setItem('qc-fixture', JSON.stringify(saved));
+ }, attribution);
+ await page.reload();
+ await page.getByRole('button', { name: /Kiểm tra lại và sửa|Re-check and fix/ }).click();
+ const saved = () => page.evaluate(() => JSON.parse(sessionStorage.getItem('qc-fixture')!));
+ await expect.poll(async () => (await saved()).semanticReviewChecks?.find((check: any) => check.id === 'evidence-support')?.status).toBe('pass');
+ expect(calls).toHaveLength(3);
+ expect(calls[1].prompt).toContain('DRAFT EVIDENCE USAGE');
+ expect(calls[2].prompt).not.toContain(attribution);
+ expect((await saved()).draft.split(supported)).toHaveLength(3);
+ await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
+});
+
 test('qc-evidence recheck retrieves current section KB without manufacturing usage',async({page})=>{
  const calls=await mockQcFlow(page,'recheck',false,false,true);
  await page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/}).click();

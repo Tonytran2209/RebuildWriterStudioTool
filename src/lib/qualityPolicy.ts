@@ -52,6 +52,8 @@ export function qualityAllowsCompletion(checks: QualityGateCheck[]) {
   return SEMANTIC_IDS.every(id => checks.some(check => check.kind === 'semantic' && check.id === id)) && !checks.some(blocksPublication);
 }
 
+export const EVIDENCE_ATTRIBUTION_INSTRUCTION = 'Name an organization, person or product as part of a factual example only when the approved KB excerpt mapped to that section explicitly supports the attribution. A name in a filename, outline, brief or Content Plan is insufficient. Keep the supported details and omit the unsupported attribution.';
+
 export const EVIDENCE_REVIEW_INSTRUCTION = 'EVIDENCE CONTRACT: Content Plan establishes topic/intent only; Rules establish style only. Neither is factual evidence. Only supplied KB excerpts can support factual or expert claims. A registered/mapped ID does not prove that a claim is supported. Evaluate actual prose against the quote. General explanatory prose and clearly framed editorial decision guidance do not require citations and may pass. For an unsupported concrete claim (statistics, measured effects, healthcare outcomes, product capabilities), quote the exact claim and its section location; fail blocking claims. If support is unavailable, recommend adding verified KB evidence or removing/qualifying that claim. Never request external research automatically or invent evidence. Do not warn merely because a general explanation lacks a citation.';
 
 

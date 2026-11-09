@@ -51,7 +51,7 @@ import { jsonrepair } from "jsonrepair"
 import { resolveArticleProjection } from "./articleProjection.ts"
 import { formatDraftExport } from "./draftFormatter.ts"
 import { internalLinkInstruction, internalLinkChecks, addMissingInternalLinks } from "../src/lib/internalLinkPolicy.ts"
-import { canonicalSpecFingerprint, qualityInputFingerprint, outlineContentChanged, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS } from "../src/lib/qualityPolicy.ts"
+import { canonicalSpecFingerprint, qualityInputFingerprint, outlineContentChanged, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, EVIDENCE_ATTRIBUTION_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS } from "../src/lib/qualityPolicy.ts"
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from "../src/lib/evidencePolicy.ts"
 import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionReviewInstruction, introductionCheck } from "../src/lib/introductionPolicy.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
@@ -2790,6 +2790,7 @@ async function runBatchArticle(
             outlineStructurePrompt(article.outlineStructure, "draft"),
             `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
             "Knowledge Base is the only source for concrete facts, figures, evidence and product claims. If a concrete claim has no approved evidence, omit it or replace it with general explanatory prose.",
+            EVIDENCE_ATTRIBUTION_INSTRUCTION,
             "Sections marked editorial-guidance may offer general analysis or decision guidance only. Never invent measurements, clinical outcomes or product claims to satisfy a missing source. If the Article Spec requires such a claim, flag the missing evidence.",
             "Follow every supplied Skill rule and use only supported KB claims. Keep every approved heading in order and do not add unplanned sections.",
             'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order. Each usedEvidenceRefs array may contain only IDs approved for that section. section.content is prose only: never include #, ##, ###, its outline heading, or a Conclusion heading.',
