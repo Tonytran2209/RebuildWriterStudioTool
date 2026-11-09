@@ -72,3 +72,20 @@ test("job runs carry run linkage, document names and parent runs for AI Agent La
     { job: "Group", runId: "group:1", workload: "3 bài · Plan Q4", status: "running", startedAt: "2026-11-08T00:00:00Z", endedAt: null },
   ])
 })
+
+test("article step runs keep only finished steps with a saved start and end", async () => {
+  const { articleStepRuns } = await import("./jobHistory.ts")
+  const article = { runId: "item1", job: "Writer batch article", workload: "1 SEO article · When to Remake a Video" }
+  const runs = articleStepRuns([
+    { key: "seo", label: "Nghiên cứu từ khóa SEO", startedAt: "2026-11-09T00:00:00Z", endedAt: "2026-11-09T00:00:05Z", status: "completed" },
+    { key: "spec", label: "Article Spec & Core Idea", startedAt: "2026-11-09T00:00:05Z", endedAt: "2026-11-09T00:00:20Z", status: "failed" },
+    { key: "outline", label: "Lập outline", startedAt: "2026-11-09T00:00:20Z", endedAt: null, status: "running" },
+    { key: "bad", label: "", startedAt: "2026-11-09T00:00:00Z", endedAt: "2026-11-09T00:00:01Z", status: "completed" },
+    { key: "reversed", label: "X", startedAt: "2026-11-09T00:00:09Z", endedAt: "2026-11-09T00:00:01Z", status: "completed" },
+  ], article)
+  assert.deepEqual(runs, [
+    { job: "Nghiên cứu từ khóa SEO", runId: "item1:seo", workload: article.workload, status: "success", startedAt: "2026-11-09T00:00:00.000Z", endedAt: "2026-11-09T00:00:05.000Z", parentRunId: "item1", parent: "Writer batch article" },
+    { job: "Article Spec & Core Idea", runId: "item1:spec", workload: article.workload, status: "failed", startedAt: "2026-11-09T00:00:05.000Z", endedAt: "2026-11-09T00:00:20.000Z", parentRunId: "item1", parent: "Writer batch article" },
+  ])
+  assert.deepEqual(articleStepRuns(null, article), [])
+})

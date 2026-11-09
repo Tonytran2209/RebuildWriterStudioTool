@@ -18,7 +18,8 @@ type JobRecord = {
   title?: string | null
 }
 
-// A run that only exists as a parent of other runs (e.g. a whole batch), sent alongside them.
+// A run sent only to jobRuns (not counted in jobHistory): a parent of other runs, or a sub-job
+// step of a run (parentRunId + parent name the run it belongs to).
 export type ParentRun = {
   job: string
   runId: string
@@ -26,6 +27,26 @@ export type ParentRun = {
   status: "success" | "failed" | "running"
   startedAt: string | null
   endedAt: string | null
+  parentRunId?: string
+  parent?: string
+}
+
+type StepRecord = { key?: unknown; label?: unknown; startedAt?: unknown; endedAt?: unknown; status?: unknown }
+
+// Sub-job runs of one article from its saved step timings. Running or malformed steps are skipped;
+// nothing is inferred for steps without a saved start and end.
+export function articleStepRuns(steps: unknown, article: { runId: string; job: string; workload: string }): ParentRun[] {
+  if (!Array.isArray(steps)) return []
+  return (steps as StepRecord[]).slice(0, 12).flatMap((step) => {
+    const startedAt = iso(step?.startedAt as string), endedAt = iso(step?.endedAt as string)
+    if (typeof step?.label !== "string" || !step.label.trim() || !startedAt || !endedAt || Date.parse(startedAt) > Date.parse(endedAt)) return []
+    if (step.status !== "completed" && step.status !== "failed") return []
+    return [{
+      job: step.label.trim().slice(0, 80), runId: article.runId + ":" + String(step.key ?? step.label).slice(0, 40),
+      workload: article.workload, status: step.status === "completed" ? "success" as const : "failed" as const,
+      startedAt, endedAt, parentRunId: article.runId, parent: article.job,
+    }]
+  })
 }
 
 export function summarizeJobHistory(rows: JobRecord[], limit: number) {
