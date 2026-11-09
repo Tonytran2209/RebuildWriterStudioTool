@@ -1,4 +1,4 @@
-import { jobHistoryWindows } from "./jobHistory.ts"
+import { jobHistoryWindows, type ParentRun } from "./jobHistory.ts"
 import { performance } from "node:perf_hooks"
 import { database } from "./postgres.ts"
 // Fixed aggregate SQL only. No article content, user identity or credentials leave this module.
@@ -102,9 +102,32 @@ export async function readMonitoringData(
     }
     // Writer keeps the latest terminal state per batch article, not every retry.
     const jobLimit = 10000
+    // Each batch is the parent run of its articles (AI Agent Lab run history). Paused batches are
+    // left out: their wall-clock time includes the pause.
+    const plansTable = await exists("content_plans")
+    const batchParents: ParentRun[] = await exists("batch_jobs") && await exists("batch_job_items") && await exists("writer_articles")
+      ? (await client.query(
+        `SELECT j.id, j.status, j.total_items AS "totalItems", j.failed_items AS "failedItems", j.updated_at AS "updatedAt",
+           ${plansTable ? "COALESCE(p.name, '')" : "''"} AS "planName",
+           (SELECT min((a.payload->>'batchStartedAt')::timestamptz) FROM writer_studio.batch_job_items b
+              JOIN writer_studio.writer_articles a ON a.id = b.article_id AND a.activity_id = b.batch_job_id
+              WHERE b.batch_job_id = j.id AND a.payload->>'batchStartedAt' ~ '^[0-9]{4}-') AS "startedAt"
+         FROM writer_studio.batch_jobs j
+         ${plansTable ? "LEFT JOIN writer_studio.content_plans p ON p.id = j.content_plan_id" : ""}
+         WHERE j.status IN ('running', 'completed', 'failed') AND j.updated_at >= now() - interval '61 days'
+         ORDER BY j.updated_at DESC LIMIT 1000`,
+      )).rows.map((j: any) => ({
+        job: "Writer batch", runId: "batch:" + j.id,
+        workload: j.totalItems + " bài" + (j.planName ? " · " + j.planName : ""),
+        status: j.status === "running" ? "running" as const : j.status === "failed" || Number(j.failedItems) > 0 ? "failed" as const : "success" as const,
+        startedAt: j.startedAt ? new Date(j.startedAt).toISOString() : null,
+        endedAt: j.status === "running" ? null : new Date(j.updatedAt).toISOString(),
+      })).filter((run: ParentRun) => run.startedAt || run.endedAt)
+      : []
     const history = await exists("batch_job_items") && await exists("writer_articles")
       ? jobHistoryWindows((await client.query(
         `SELECT 'Writer batch article' AS job,
+           b.id::text AS "runId", 'batch:' || b.batch_job_id AS "parentRunId", 'Writer batch' AS parent, a.title AS title,
            CASE a.content_group WHEN 'editorial_originality' THEN '1 editorial article'
              WHEN 'comparison_seo' THEN '1 SEO article' ELSE '1 batch article' END AS workload,
            b.status,
@@ -117,7 +140,7 @@ export async function readMonitoringData(
          LEFT JOIN writer_studio.writer_articles a ON a.id = b.article_id AND a.activity_id = b.batch_job_id
          WHERE b.status IN ('completed', 'failed')
          ORDER BY "recordedAt" DESC NULLS LAST, b.id LIMIT $1`, [jobLimit + 1],
-      )).rows, since, jobLimit)
+      )).rows, since, jobLimit, Date.now(), batchParents)
       : { jobHistory: null, jobHistoryAllTime: null }
     const contentWorkload = await exists("batch_job_items") && await exists("writer_articles")
       ? {
