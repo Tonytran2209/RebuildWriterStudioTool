@@ -1274,35 +1274,48 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         const validPrevious = previous.filter(check => semanticCheckIds.some(id => id === check.id) && check.kind === 'semantic');
         const missing = semanticCheckIds.filter(id => !validPrevious.some(check => check.id === id));
         const completeMissing = async (partial: QualityGateCheck[]) => {
-          const needed = semanticCheckIds.filter(id => !partial.some(check => check.id === id));
-          if (!needed.length) return { checks: partial, schemaComplete: true };
-          const recovery = await callAI({
-            articleId: reviewArticle.id,
-            model, railwayUrl, stepNumber: 4, bypassCache: true, requestPurpose: 'recheck',
-            maxTokens: Math.max(650, needed.length * 320), temperature: 0,
-            jsonMode: true, jsonSchema: semanticSchemaFor(needed), skipDocumentContext: true,
-            systemPrompt: `You are a strict publishing quality reviewer. Evaluate only the requested missing checks. ${semanticLinkBoundary} Return concise JSON matching the schema. Do not rewrite the draft. Never assume evidence or brand alignment without support.`,
-            prompt: [
-              `MISSING CHECKS: ${needed.join(', ')}`,
-              `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
-              `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
-              `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
-              `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
-              `DRAFT: ${draftWithoutImagePlaceholders(value)}`,
-              semanticReviewInstruction(reviewArticle, value),
-              `Return only these checks: ${needed.join(', ')}.`,
-            ].join('\n\n'),
+          const checks = [...partial];
+          const incomplete = (error: unknown) => ({
+            checks: [...checks, ...incompleteSemanticReviewChecks(error, checks)],
+            schemaComplete: false,
           });
-          const additions = parsePartialSemanticQuality(recovery.content).filter(check => needed.some(id => id === check.id));
-          const combined = [...partial, ...additions];
-          const remaining = semanticCheckIds.filter(id => !combined.some(check => check.id === id));
-          if (remaining.length) throw new Error(`Semantic reviewer chưa hoàn tất báo cáo; thiếu: ${remaining.join(', ')}. Draft chưa bị đánh dấu fail.`);
-          return { checks: combined, schemaComplete: true };
+          // Keep partial progress. A second recovery call is useful only if
+          // the first supplied at least one missing check.
+          for (let attempt = 0; attempt < 2; attempt++) {
+            const needed = missingSemanticChecks(checks);
+            if (!needed.length) return { checks, schemaComplete: true };
+            try {
+              const recovery = await callAI({
+                articleId: reviewArticle.id,
+                model, railwayUrl, stepNumber: 4, bypassCache: true, requestPurpose: 'recheck',
+                maxTokens: Math.max(1000, needed.length * 420), temperature: 0,
+                jsonMode: true, jsonSchema: semanticSchemaFor(needed), skipDocumentContext: true,
+                systemPrompt: `You are a strict publishing quality reviewer. Evaluate only the requested missing checks. ${semanticLinkBoundary} Return concise JSON matching the schema. Do not rewrite the draft. Never assume evidence or brand alignment without support.`,
+                prompt: [
+                  `MISSING CHECKS: ${needed.join(', ')}`,
+                  `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
+                  `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
+                  `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
+                  `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
+                  `DRAFT: ${draftWithoutImagePlaceholders(value)}`,
+                  semanticReviewInstruction(reviewArticle, value),
+                  `Return a checks object with exactly these keys: ${needed.join(', ')}. Include a status and concise reason for each key, including when evidence is insufficient.`,
+                ].join('\n\n'),
+              });
+              const additions = parsePartialSemanticQuality(recovery.content)
+                .filter(check => needed.some(id => id === check.id));
+              for (const check of additions) {
+                if (!checks.some(existing => existing.id === check.id)) checks.push(check);
+              }
+              if (!additions.length) break;
+            } catch (error) {
+              return incomplete(error);
+            }
+          }
+          if (!missingSemanticChecks(checks).length) return { checks, schemaComplete: true };
+          return incomplete('The reviewer returned a partial report. Re-check will request the remaining items.');
         };
-        if (validPrevious.length && missing.length) {
-          try { return await completeMissing(validPrevious); }
-          catch (error) { return { checks: [...validPrevious, ...incompleteSemanticReviewChecks(error, validPrevious)], schemaComplete: false }; }
-        }
+        if (validPrevious.length && missing.length) return completeMissing(validPrevious);
         const requestReview = () => callAI({
           articleId: reviewArticle.id,
           model,
@@ -1330,11 +1343,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           return { checks: parseSemanticQuality(response.content), schemaComplete: true };
         } catch (error) {
           const partial = partialSemanticReviewChecks(response.content, error).filter(check => check.id !== 'semantic-review-schema');
-          try {
-            return await completeMissing(partial);
-          } catch (recoveryError) {
-            return { checks: [...partial, ...incompleteSemanticReviewChecks(recoveryError)], schemaComplete: false };
-          }
+          return completeMissing(partial);
         }
       };
 

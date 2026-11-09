@@ -111,7 +111,7 @@ for(const status of ['pass','warning','fail','incomplete'])test(`qc-reload prese
 });
 
 // Exercise the real component handlers and HTTP boundary; no live AI or storage.
-async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incomplete=false,evidenceWarning=false,withKnowledge=false){
+async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incomplete=false,evidenceWarning=false,withKnowledge=false,staggeredRecovery=false){
  const calls:any[]=[];
  await page.route('**/*',async route=>{
   const url=new URL(route.request().url());
@@ -119,7 +119,11 @@ async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incom
   if(url.pathname!=='/api/generate')return route.fallback();
   const body=route.request().postDataJSON();calls.push(body);
   const reviewer=/publishing quality reviewer|structured-output recovery reviewer/.test(body.systemPrompt);
-  const requested=body.systemPrompt.includes('requested missing checks') ? ['brand-pov'] : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support',...(incomplete?[]:['brand-pov'])];
+  const requested=staggeredRecovery
+    ? body.prompt.includes('MISSING CHECKS: evidence-support, brand-pov') ? ['evidence-support']
+      : body.prompt.includes('MISSING CHECKS: brand-pov') ? ['brand-pov']
+        : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness']
+    : body.systemPrompt.includes('requested missing checks') ? ['brand-pov'] : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support',...(incomplete?[]:['brand-pov'])];
   const content=reviewer ? JSON.stringify({checks:Object.fromEntries(requested.map(id=>[id,{status:evidenceWarning && id==='evidence-support'?'warning':'pass',reason:'Reviewed fixture',autoFixAllowed:evidenceWarning && id==='evidence-support'}]))}) : await page.evaluate(()=>JSON.stringify((window as any).qcFlow.payload));
   if(reviewer){const checkpoint=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));expect(checkpoint.draft).toContain('Fixture practical guide');}
   await route.fulfill({json:{content,model:'fixture',usage:{inputTokens:0,outputTokens:0}}});
@@ -442,4 +446,16 @@ test('approving an image preserves a passing QC report across reload', async ({ 
   await page.reload();
   await expect(complete).toBeEnabled();
   expect(calls).toHaveLength(2);
+});
+
+test('re-check retains partial recovery and requests only the remaining semantic check', async ({ page }) => {
+  const calls = await mockQcFlow(page, 'recheck', false, false, false, true);
+  const draft = await page.getByTestId('stored-source').textContent();
+  await page.getByRole('button', { name: /Kiểm tra lại và sửa|Re-check and fix/ }).click();
+  await expect.poll(() => calls.length).toBe(3);
+  expect(calls[1].prompt).toContain('MISSING CHECKS: evidence-support, brand-pov');
+  expect(calls[2].prompt).toContain('MISSING CHECKS: brand-pov');
+  await expect.poll(() => page.evaluate(() => JSON.parse(sessionStorage.getItem('qc-fixture') || '{}').semanticReviewChecks?.length)).toBe(6);
+  await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
+  expect(await page.getByTestId('stored-source').textContent()).toBe(draft);
 });
