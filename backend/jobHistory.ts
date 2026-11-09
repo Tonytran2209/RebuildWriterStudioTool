@@ -29,9 +29,41 @@ export type ParentRun = {
   endedAt: string | null
   parentRunId?: string
   parent?: string
+  // Reconstructed from other saved timestamps, not measured: AI Agent Lab shows it in run
+  // history but keeps it out of P95, targets and job detection.
+  estimated?: boolean
 }
 
 type StepRecord = { key?: unknown; label?: unknown; startedAt?: unknown; endedAt?: unknown; status?: unknown }
+
+// Last AI call of each step inside one article run (writer_ai_usage.called_at).
+export type CallMarks = { seo?: unknown; spec?: unknown; outline?: unknown }
+
+// Estimated sub-jobs for an article finished before step timings were saved. Each segment ends at
+// the last AI call of its step and starts where the previous step ended; a segment is only sent
+// when both of its ends are known and in order. "Nhận bài từ Content Plan" (milliseconds) is not
+// estimated, and draft and quality share step 4 calls, so they are one combined segment.
+export function estimatedStepRuns(marks: CallMarks | null | undefined, article: { runId: string; job: string; workload: string; startedAt: unknown; endedAt: unknown }): ParentRun[] {
+  const start = iso(article.startedAt as string), end = iso(article.endedAt as string)
+  if (!marks || !start || !end) return []
+  const at = (value: unknown) => {
+    const time = iso(value as string)
+    return time && Date.parse(time) >= Date.parse(start) && Date.parse(time) <= Date.parse(end) ? time : null
+  }
+  const seo = at(marks.seo), spec = at(marks.spec), outline = at(marks.outline)
+  const segments: [string, string, string | null, string | null][] = [
+    ["seo", "Nghiên cứu từ khóa SEO", start, seo],
+    // Without a web-search call the research came from the 24h cache.
+    ["spec", "Article Spec & Core Idea", seo ?? start, spec],
+    ["outline", "Lập outline", spec, outline],
+    ["draft-quality", "Viết draft & kiểm tra chất lượng", spec && outline, end],
+  ]
+  return segments.flatMap(([key, job, from, to]) =>
+    from && to && Date.parse(from) <= Date.parse(to)
+      ? [{ job, runId: article.runId + ":est:" + key, workload: article.workload, status: "success" as const,
+          startedAt: from, endedAt: to, parentRunId: article.runId, parent: article.job, estimated: true }]
+      : [])
+}
 
 // Sub-job runs of one article from its saved step timings. Running or malformed steps are skipped;
 // nothing is inferred for steps without a saved start and end.

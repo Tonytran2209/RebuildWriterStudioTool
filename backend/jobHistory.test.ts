@@ -89,3 +89,24 @@ test("article step runs keep only finished steps with a saved start and end", as
   ])
   assert.deepEqual(articleStepRuns(null, article), [])
 })
+
+test("old articles get estimated sub-jobs from the last AI call of each step", async () => {
+  const { estimatedStepRuns } = await import("./jobHistory.ts")
+  const article = { runId: "old", job: "Writer batch article", workload: "1 SEO article · Old", startedAt: "2026-11-01T00:00:00Z", endedAt: "2026-11-01T00:03:00Z" }
+  const marks = { seo: "2026-11-01T00:00:10Z", spec: "2026-11-01T00:00:40Z", outline: "2026-11-01T00:01:20Z" }
+  const runs = estimatedStepRuns(marks, article)
+  assert.deepEqual(runs.map((r) => [r.job, r.startedAt, r.endedAt, r.estimated, r.parentRunId]), [
+    ["Nghiên cứu từ khóa SEO", "2026-11-01T00:00:00.000Z", "2026-11-01T00:00:10.000Z", true, "old"],
+    ["Article Spec & Core Idea", "2026-11-01T00:00:10.000Z", "2026-11-01T00:00:40.000Z", true, "old"],
+    ["Lập outline", "2026-11-01T00:00:40.000Z", "2026-11-01T00:01:20.000Z", true, "old"],
+    ["Viết draft & kiểm tra chất lượng", "2026-11-01T00:01:20.000Z", "2026-11-01T00:03:00.000Z", true, "old"],
+  ])
+  assert.deepEqual(estimatedStepRuns({ spec: marks.spec, outline: marks.outline }, article).map((r) => [r.job, r.startedAt]),
+    [["Article Spec & Core Idea", "2026-11-01T00:00:00.000Z"], ["Lập outline", "2026-11-01T00:00:40.000Z"], ["Viết draft & kiểm tra chất lượng", "2026-11-01T00:01:20.000Z"]],
+    "cached SEO research: the spec segment starts at the article start")
+  assert.deepEqual(estimatedStepRuns({ seo: marks.seo, outline: marks.outline }, article).map((r) => r.job), ["Nghiên cứu từ khóa SEO"],
+    "without the spec mark, outline and draft segments would mix two steps and are not sent")
+  assert.deepEqual(estimatedStepRuns({ ...marks, seo: "2026-10-31T00:00:00Z" }, article)[0].job, "Article Spec & Core Idea", "calls outside the run are ignored")
+  assert.deepEqual(estimatedStepRuns(null, article), [])
+  assert.deepEqual(estimatedStepRuns(marks, { ...article, endedAt: null }), [])
+})
