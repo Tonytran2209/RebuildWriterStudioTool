@@ -72,3 +72,5 @@ The detail icon beside each workflow checkpoint opens an accessible dialog with 
 Keep the log header visible and its checklist collapsed by default when opening or reloading an article, including when the step has no recorded run. Its live status and timer remain visible. Restore the last finished run per article and workflow step in the current browser tab so reopening the checklist still shows its events and checkpoint details.
 
 Campaign labels use the same 13 px typography as recent article rows, with separate accessible delete targets. Completed article workspaces keep review and export available and require reopening before generation or editing. When restoring a saved sign-in, use the workspace loading screen until the session check resolves.
+
+Draft Outline presents a single ordered hierarchy with H3 rows indented under the nearest preceding H2. Each heading opens its own details and editing controls. Keep legacy headings without a preceding H2 visible at the top level and preserve the saved outline order.

@@ -37,8 +37,14 @@ function Fixture(){
 }
 const reopenIdeas=['one','two'].map((id,index)=>({id,title:'Idea '+id,mainArgument:'Saved argument '+id,primaryKeyword:'fixture',secondaryKeywords:[],rating:{overall:8,seoPotential:8,audienceFit:8,docSupport:8,uniqueness:8},matchedDocs:[],ruleRefs:[],evidence:[]}));
 const reopenArticles=['draft','completed','missing','unmatched'].map((status,index)=>({id:'reopen-'+index,title:index===0?'Hướng dẫn viết bài tiếng Việt đầy đủ với tiêu đề dài để kiểm tra xuống dòng trên màn hình nhỏ và giữ nguyên toàn bộ nội dung':'Tiêu đề bài '+index,topic:'Saved topic',status:status==='completed'?'done':'draft',currentStep:4,draft:'Saved draft '+index,outline:[{id:'section',level:'h2',heading:'Section heading differs from title',notes:'Saved notes'}],coreIdeaSuggestions:reopenIdeas,selectedCoreIdeaId:index===2?undefined:index===3?'absent':index===0?'one':'two'}));
+const hierarchyOutline = [
+ {id:'legacy-h3',level:'h3',heading:'Legacy subsection'},
+ {id:'first-h2',level:'h2',heading:'First section',notes:'First section notes'},
+ {id:'child-h3',level:'h3',heading:'Supporting detail',notes:'Supporting detail notes'},
+ {id:'second-h2',level:'h2',heading:'Second section'},
+];
 function ReopenFixture(){
- const [state,setState]=useState<any>(()=>JSON.parse(sessionStorage.getItem('reopen-state')||'null')||{articles:reopenArticles,index:0,updates:[]});
+ const [state,setState]=useState<any>(()=>JSON.parse(sessionStorage.getItem('reopen-state')||'null')||{articles:new URLSearchParams(location.search).has('outline-tree') ? reopenArticles.map((article,index)=>index===0?{...article,outline:hierarchyOutline}:article) : reopenArticles,index:0,updates:[]});
  useEffect(()=>{sessionStorage.setItem('reopen-state',JSON.stringify(state));},[state]);
  const article=state.articles[state.index];
  const props={article,config:DEFAULT_CONFIG,files:[],model:DEFAULT_MODELS[0],railwayUrl:'http://127.0.0.1:4173',onUpdate:async(p:any)=>{const versionFixture=new URLSearchParams(location.search).has("versions");setState((s:any)=>({...s,articles:versionFixture?s.articles.map((a:any)=>a.id===article.id?{...a,...p}:a):s.articles,updates:[...s.updates,versionFixture?{articleId:article.id,patch:p}:p]}));return true;},onPrev:()=>{},onNext:()=>{}};

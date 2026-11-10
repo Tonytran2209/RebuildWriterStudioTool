@@ -5,7 +5,7 @@ import { getArticleStages, type ArticleStageVersion } from "../../lib/db";
 import OutlineStructureSelect from '../OutlineStructureSelect';
 import { buildOutlineTask, validateOutlineStructure, outlineSelectionUpdates } from '../../../shared/outlineStructures';
 import { type ReactNode, useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, Eye, History, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronUp, Eye, History, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -575,6 +575,33 @@ export default function Step3Outline({
     updateSection(sectionId, { keywords: [...existing, kw] });
   };
 
+  // A subsection belongs to the nearest preceding H2 in the saved order.
+  const groups: Array<{ root: number; children: number[] }> = [];
+  outline.forEach((section, index) => {
+    const group = groups.at(-1);
+    if (section.level === 'h3' && group && outline[group.root].level === 'h2') {
+      group.children.push(index);
+    } else {
+      groups.push({ root: index, children: [] });
+    }
+  });
+  const renderSection = (index: number) => {
+    const section = outline[index];
+    return (
+      <SectionRow
+        isFirst={index === 0}
+        isLast={index === outline.length - 1}
+        section={section}
+        onChange={patch => updateSection(section.id, patch)}
+        onRemove={() => removeSection(section.id)}
+        onMove={dir => moveSection(section.id, dir)}
+        keywordSuggestions={suggestedKeywords}
+        onAddKeyword={kw => addKeywordToSection(section.id, kw)}
+        readOnly={completed}
+        processTrace={article.step3ProcessTrace}
+      />
+    );
+  };
   const h2Count = outline.filter(s => s.level === "h2").length;
   const h3Count = outline.filter(s => s.level === "h3").length;
   const isCurrentStep = (article.currentStep ?? 2) <= 3;
@@ -631,24 +658,19 @@ export default function Step3Outline({
                   </span>
                 </div>
 
-                <div className="space-y-2.5">
-                  {outline.map((section, index) => (
-                    <SectionRow
-                      key={section.id}
-                      index={index}
-                      isFirst={index === 0}
-                      isLast={index === outline.length - 1}
-                      section={section}
-                      onChange={patch => updateSection(section.id, patch)}
-                      onRemove={() => removeSection(section.id)}
-                      onMove={dir => moveSection(section.id, dir)}
-                      keywordSuggestions={suggestedKeywords}
-                      onAddKeyword={kw => addKeywordToSection(section.id, kw)}
-                      readOnly={completed}
-                      processTrace={article.step3ProcessTrace}
-                    />
+                <ol aria-label={tr('Các heading trong dàn bài', 'Outline headings')} className="divide-y divide-[var(--ui-border)] rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
+                  {groups.map(({ root, children }) => (
+                    <li key={outline[root].id} className="min-w-0 px-2 py-1 sm:px-3">
+                      {renderSection(root)}
+                      {children.length > 0 && (
+                        <ol aria-label={tr(`Các mục con của ${outline[root].heading}`, `Subheadings of ${outline[root].heading}`)}
+                          className="mb-1 ml-4 border-l border-[var(--ui-border)] pl-2 sm:ml-6 sm:pl-3">
+                          {children.map(index => <li key={outline[index].id}>{renderSection(index)}</li>)}
+                        </ol>
+                      )}
+                    </li>
                   ))}
-                </div>
+                </ol>
               </div>
             )}
 
@@ -743,7 +765,6 @@ export default function Step3Outline({
 // ─────────────────────────────────────────────────────────────
 
 function SectionRow({
-  index,
   isFirst,
   isLast,
   section,
@@ -755,7 +776,6 @@ function SectionRow({
   processTrace,
   readOnly,
 }: {
-  index: number;
   isFirst: boolean;
   isLast: boolean;
   section: OutlineSection;
@@ -770,115 +790,56 @@ function SectionRow({
   const { tr } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const detailsId = useId();
   const [headingDraft, setHeadingDraft] = useState(section.heading);
   const [notesDraft, setNotesDraft] = useState(section.notes ?? '');
   const [rationaleDraft, setRationaleDraft] = useState(section.rationale ?? '');
-  const menuRef = useRef<HTMLDivElement>(null);
   const isH3 = section.level === "h3";
 
   useEffect(() => setHeadingDraft(section.heading), [section.heading]);
   useEffect(() => setNotesDraft(section.notes ?? ''), [section.notes]);
   useEffect(() => setRationaleDraft(section.rationale ?? ''), [section.rationale]);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const closeMenu = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', closeMenu);
-    return () => document.removeEventListener('mousedown', closeMenu);
-  }, [menuOpen]);
-
   return (
-    <div className={`outline-card group overflow-hidden rounded-xl border transition-colors ${
-      isH3 ? "ml-2 sm:ml-6 border-slate-200 bg-slate-50/60" : "border-slate-200 bg-white"
-    }`}>
-      <div className="flex flex-wrap sm:flex-nowrap items-start gap-2 sm:gap-3 p-3 sm:p-4">
-        <div className={`outline-section-index flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${
-          isH3 ? "is-h3 border border-slate-200" : "is-h2"
-        }`}>
-          {index + 1}
-        </div>
+    <div>
+      <button type="button" onClick={() => setExpanded(value => !value)}
+        aria-expanded={expanded} aria-controls={detailsId}
+        className={`flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-[var(--ui-control)] focus-visible:outline-2 focus-visible:outline-[var(--ui-secondary)] ${expanded ? 'bg-[var(--ui-control)]' : ''}`}>
+        <span className="shrink-0 font-mono text-[11px] text-[var(--ui-secondary)]">{section.level.toUpperCase()}</span>
+        <span className={`min-w-0 flex-1 break-words text-[var(--ui-text)] ${isH3 ? 'text-sm' : 'text-base font-medium'}`}>
+          {section.heading || tr('Heading chưa có tiêu đề', 'Untitled heading')}
+        </span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-[var(--ui-secondary)] ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-              {section.level.toUpperCase()}
-            </span>
-            {section.searchIntent && (
-              <span className="text-[9px] text-slate-400">· {SEARCH_INTENT_META[section.searchIntent].label}</span>
-            )}
-          </div>
-          <textarea
-            readOnly={readOnly}
-            value={headingDraft}
-            onChange={e => setHeadingDraft(e.target.value)}
-            onBlur={() => headingDraft !== section.heading && onChange({ heading: headingDraft })}
-            rows={isH3 ? 1 : 2}
-            placeholder={tr('Tiêu đề section...', 'Section heading...')}
-            className={`outline-heading-input w-full resize-none overflow-hidden bg-transparent text-slate-800 outline-none placeholder:text-slate-300 ${
-              isH3 ? "text-sm font-semibold" : "text-sm font-bold"
-            }`}
-          />
-          {section.notes && !expanded && (
-            <p className="text-[11px] text-slate-500 leading-relaxed mt-1.5">{section.notes}</p>
-          )}
-
-          {!expanded && (
-            <div className="flex flex-wrap items-center gap-1.5 mt-3">
-              {section.keywords?.slice(0, 3).map((kw, i) => (
-                <span key={i} className="outline-keyword-chip rounded-md border px-2 py-0.5 text-[10px]">
-                  {kw}
-                </span>
-              ))}
-              {(section.keywords?.length ?? 0) > 3 && (
-                <span className="text-[10px] text-slate-400">+{section.keywords!.length - 3} keyword</span>
-              )}
-              {(section.evidence?.length ?? 0) > 0 && (
-                <span className="text-[10px] text-slate-400 ml-1">· {section.evidence!.length} nguồn</span>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setExpanded(value => !value)}
-            className={`outline-details-button flex h-8 w-8 items-center justify-center rounded-lg border ${expanded ? 'is-active' : ''}`}
-            title={expanded ? tr('Thu gọn chi tiết', 'Collapse details') : tr('Mở chi tiết', 'Open details')}
-            aria-label={expanded ? tr('Thu gọn chi tiết', 'Collapse details') : tr('Mở chi tiết', 'Open details')}
-            aria-expanded={expanded}
-          >
-            <Eye className="app-icon" aria-hidden="true" />
-          </button>
-        <div ref={menuRef} className="outline-action-menu relative">
-          <button
-            type="button"
-            onClick={() => setMenuOpen(open => !open)}
-            className="outline-menu-trigger flex h-8 w-8 items-center justify-center rounded-lg border"
-            aria-label={tr('Mở thao tác section', 'Open section actions')}
-            aria-expanded={menuOpen}
-          >
-            <Ellipsis className="app-icon" aria-hidden="true" />
-          </button>
-          {menuOpen && (
-            <div className="outline-menu-popover absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-lg border p-1 shadow-lg" role="menu">
-              <button type="button" role="menuitem" onClick={() => { setShowAudit(true); setMenuOpen(false); }}><Eye className="app-icon" aria-hidden="true" /><span>{tr('Xem AI log', 'View AI log')}</span></button>
-              <button type="button" role="menuitem" disabled={readOnly || isFirst} onClick={() => { onMove(-1); setMenuOpen(false); }}><ChevronUp className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển lên', 'Move up')}</span></button>
-              <button type="button" role="menuitem" disabled={readOnly || isLast} onClick={() => { onMove(1); setMenuOpen(false); }}><ChevronDown className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển xuống', 'Move down')}</span></button>
-              <div className="outline-menu-divider my-1 border-t" />
-              <button type="button" role="menuitem" disabled={readOnly} className="is-danger" onClick={() => { onRemove(); setMenuOpen(false); }}><Trash2 className="app-icon" aria-hidden="true" /><span>{tr('Xóa section', 'Delete section')}</span></button>
-            </div>
-          )}
-        </div>
-        </div>
-      </div>
-
-      {/* Expanded editor */}
       {expanded && (
-        <div className="outline-expanded space-y-4 border-t px-3 py-3 sm:px-4 sm:py-4">
+        <div id={detailsId} className="my-1 space-y-4 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 sm:p-4">
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => setShowAudit(true)} className="outline-secondary-button inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 text-xs">
+              <Eye className="app-icon" aria-hidden="true" />{tr('Xem AI log', 'View AI log')}
+            </button>
+            {!readOnly && <>
+              <button type="button" disabled={isFirst} onClick={() => onMove(-1)} aria-label={tr('Di chuyển lên', 'Move up')} title={tr('Di chuyển lên', 'Move up')} className="outline-secondary-button grid h-11 w-11 place-items-center rounded-lg border disabled:opacity-40">
+                <ChevronUp className="app-icon" aria-hidden="true" />
+              </button>
+              <button type="button" disabled={isLast} onClick={() => onMove(1)} aria-label={tr('Di chuyển xuống', 'Move down')} title={tr('Di chuyển xuống', 'Move down')} className="outline-secondary-button grid h-11 w-11 place-items-center rounded-lg border disabled:opacity-40">
+                <ChevronDown className="app-icon" aria-hidden="true" />
+              </button>
+              <button type="button" onClick={() => { if (window.confirm(tr(`Xóa mục “${section.heading}” khỏi dàn bài?`, `Delete “${section.heading}” from the outline?`))) onRemove(); }} aria-label={tr('Xóa section', 'Delete section')} title={tr('Xóa section', 'Delete section')} className="outline-secondary-button grid h-11 w-11 place-items-center rounded-lg border">
+                <Trash2 className="app-icon" aria-hidden="true" />
+              </button>
+            </>}
+          </div>
+          {!readOnly && <label className="outline-field block">
+            <span className="text-xs font-medium text-[var(--ui-secondary)]">{tr('Tiêu đề heading', 'Heading title')}</span>
+            <textarea
+              value={headingDraft}
+              onChange={event => setHeadingDraft(event.target.value)}
+              onBlur={() => headingDraft !== section.heading && onChange({ heading: headingDraft })}
+              rows={2}
+              className="outline-editor-control mt-1 w-full resize-y rounded-lg border px-2.5 py-2 text-sm"
+            />
+          </label>}
           <div className="outline-field">
             <label>Notes</label>
             <textarea readOnly={readOnly}

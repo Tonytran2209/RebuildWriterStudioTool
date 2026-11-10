@@ -67,3 +67,26 @@ test('completed articles block AI generation, selection and re-check while retai
  await expect(page.getByRole('button', {name: /Mở lại bài viết|Reopen article/})).toBeEnabled();
  expect(await snapshot(page)).toEqual(before);
 });
+
+test('outline nests H3 under the preceding H2 and opens details independently', async ({page}) => {
+ await page.goto('/?reopen&outline-tree&versions');
+ const outline = page.getByTestId('reopen-outline');
+ const list = outline.getByRole('list', {name: /Các heading trong dàn bài|Outline headings/});
+ const childList = list.getByRole('list', {name: /Các mục con của First section|Subheadings of First section/});
+ const child = childList.getByRole('button', {name: 'H3 Supporting detail'});
+ const parent = list.getByRole('button', {name: 'H2 First section'});
+ await expect(list.getByRole('button', {name: 'H3 Legacy subsection'})).toBeVisible();
+ await expect(childList.getByRole('button', {name: /Legacy subsection|Second section/})).toHaveCount(0);
+ await expect(parent).toHaveAttribute('aria-expanded', 'false');
+ await expect(child).toHaveAttribute('aria-expanded', 'false');
+ await expect(list.locator('textarea')).toHaveCount(0);
+ await child.click();
+ await expect(child).toHaveAttribute('aria-expanded', 'true');
+ await expect(parent).toHaveAttribute('aria-expanded', 'false');
+ const panel = outline.locator(`[id="${await child.getAttribute('aria-controls')}"]`);
+ await expect(panel.locator('textarea').nth(1)).toHaveValue('Supporting detail notes');
+ await expect(panel.getByRole('button', {name: /Xem AI log|View AI log/})).toBeVisible();
+ await panel.getByRole('textbox', {name: /Tiêu đề heading|Heading title/}).fill('Updated supporting detail');
+ await panel.getByRole('textbox', {name: /Tiêu đề heading|Heading title/}).blur();
+ await expect(childList.getByRole('button', {name: 'H3 Updated supporting detail'})).toBeVisible();
+});
