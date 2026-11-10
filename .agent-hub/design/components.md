@@ -69,4 +69,4 @@ Each checklist row opens inline to show its status, elapsed time and timestamped
 
 The detail icon beside each workflow checkpoint opens an accessible dialog with inputs, outputs, documents and applied rules captured during that run. Keep source context reported by the server distinct from verified evidence and mark missing data explicitly. Keep large payloads behind field disclosures and the existing timeline inline.
 
-Keep the checklist collapsed by default when opening or reloading an article. Its live status and timer remain visible. Restore the last finished run per article and workflow step in the current browser tab so reopening the checklist still shows its events and checkpoint details.
+Keep the log header visible and its checklist collapsed by default when opening or reloading an article, including when the step has no recorded run. Its live status and timer remain visible. Restore the last finished run per article and workflow step in the current browser tab so reopening the checklist still shows its events and checkpoint details.

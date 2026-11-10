@@ -141,9 +141,12 @@ test('draft checklist follows generation and quality review until the report is 
   await (request.systemPrompt.includes('publishing quality reviewer') ? reviewPending : generationPending);
   await route.fallback();
  });
- await page.getByRole('button', { name: /Tạo bài viết|Generate article/ }).click();
  const log = page.getByRole('region', { name: /Nhật ký xử lý AI|AI progress log/ });
  const toggle = log.locator(':scope > details > summary');
+ await page.reload();
+ await expect(toggle).toContainText(/Chưa có lượt chạy|No runs yet/);
+ await expect(log.locator(':scope > details')).not.toHaveAttribute('open');
+ await page.getByRole('button', { name: /Tạo bài viết|Generate article/ }).click();
  const current = log.locator('[aria-current="step"]');
  try {
   await expect(toggle).toBeVisible();
@@ -188,7 +191,11 @@ test('draft checklist follows generation and quality review until the report is 
   await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
   const switchArticle = page.getByRole('button', { name: 'Switch fixture article' });
   await switchArticle.click();
-  await expect(log).toHaveCount(0);
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toContainText(/Chưa có lượt chạy|No runs yet/);
+  await expect(log.getByText(/Chưa có nhật ký cho bước này|No log for this step yet/)).toBeHidden();
+  await toggle.click();
+  await expect(log.getByText(/Chưa có nhật ký cho bước này|No log for this step yet/)).toBeVisible();
   await switchArticle.click();
   await expect(toggle).toBeVisible();
   await expect(log.locator('ol')).toBeHidden();

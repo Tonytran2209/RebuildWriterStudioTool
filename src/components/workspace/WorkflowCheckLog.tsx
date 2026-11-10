@@ -173,9 +173,8 @@ export default function WorkflowCheckLog({ run, steps }: { run: Run | null; step
     return () => window.clearInterval(timer);
   }, [running, startedAt]);
 
-  if (!run) return null;
-  const elapsed = formatDuration((run.finishedAt ?? now) - run.startedAt);
-  const currentAction = run.checkpoints[run.index].entries.at(-1)?.text ?? steps[run.index];
+  const elapsed = run ? formatDuration((run.finishedAt ?? now) - run.startedAt) : '';
+  const currentAction = run && (run.checkpoints[run.index].entries.at(-1)?.text ?? steps[run.index]);
   const status = {
     running: tr('Đang thực hiện', 'In progress'),
     completed: tr('Hoàn thành', 'Completed'),
@@ -183,8 +182,11 @@ export default function WorkflowCheckLog({ run, steps }: { run: Run | null; step
     failed: tr('Không hoàn tất', 'Could not finish'),
     pending: tr('Chờ thực hiện', 'Pending'),
   };
-  const checkpointStatus = (index: number) => index < run.index ? 'completed' : index === run.index ? run.outcome : 'pending';
-  const selectedIndex = selection?.run === run.startedAt ? selection.index : null;
+  const checkpointStatus = (index: number) => {
+    if (!run || index > run.index) return 'pending';
+    return index < run.index ? 'completed' : run.outcome;
+  };
+  const selectedIndex = selection && selection.run === run?.startedAt ? selection.index : null;
   const icons = {
     running: <Loader2 className="h-4 w-4 motion-safe:animate-spin" />,
     completed: <Check className="h-3.5 w-3.5 rounded-full bg-[var(--ui-secondary)] p-0.5 text-[var(--ui-surface)]" />,
@@ -198,10 +200,10 @@ export default function WorkflowCheckLog({ run, steps }: { run: Run | null; step
       <details className="group/log rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
         <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-xl px-4 py-2 [&::-webkit-details-marker]:hidden">
           <span className="min-w-0 flex-1 font-medium">{tr('Nhật ký xử lý AI', 'AI progress log')}</span>
-          <span className="text-xs text-[var(--ui-secondary)]">{status[run.outcome]}</span>
+          <span className="text-xs text-[var(--ui-secondary)]">{run ? status[run.outcome] : tr('Chưa có lượt chạy', 'No runs yet')}</span>
           <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 group-open/log:rotate-180" />
         </summary>
-        <ol key={run.startedAt} className="px-4 pb-3">
+        {run ? <ol key={run.startedAt} className="px-4 pb-3">
           {steps.map((step, index) => {
             const state = checkpointStatus(index);
             const checkpoint = run.checkpoints[index];
@@ -242,14 +244,18 @@ export default function WorkflowCheckLog({ run, steps }: { run: Run | null; step
               </li>
             );
           })}
-        </ol>
+        </ol> : (
+          <p className="px-4 pb-3 text-xs text-[var(--ui-secondary)]">
+            {tr('Chưa có nhật ký cho bước này. Nhật ký sẽ cập nhật khi bạn chạy AI.', 'No log for this step yet. It will update when you run AI.')}
+          </p>
+        )}
       </details>
-      <div className="flex items-start gap-2.5 px-2 pt-3 text-[var(--ui-secondary)]">
+      {run && <div className="flex items-start gap-2.5 px-2 pt-3 text-[var(--ui-secondary)]">
         <span aria-hidden="true" className="mt-0.5 shrink-0">{icons[run.outcome]}</span>
         <span role="status" className="min-w-0 flex-1 break-words">{running ? currentAction : status[run.outcome]}</span>
         <span className="shrink-0 tabular-nums" aria-label={tr(`Thời gian đã chạy ${elapsed}`, `Elapsed time ${elapsed}`)}>{elapsed}</span>
-      </div>
-      {selectedIndex !== null && <CheckpointDialog title={steps[selectedIndex]}
+      </div>}
+      {run && selectedIndex !== null && <CheckpointDialog title={steps[selectedIndex]}
         status={status[checkpointStatus(selectedIndex)]} audit={run.checkpoints[selectedIndex]?.audit}
         error={checkpointStatus(selectedIndex) === 'failed' ? run.checkpoints[selectedIndex]?.entries.at(-1)?.text : undefined}
         onClose={() => setSelection(null)} />}
