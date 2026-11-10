@@ -370,11 +370,20 @@ export default function Step3Outline({
         compiledWorkflowRules.taskGuidance,
       ].join("\n");
 
+      progress.inspect({
+        input: { ArticleSpec: compactArticleSpec, [tr('Định hướng bài', 'Article brief')]: contextBrief },
+        sources: { [tr('Dẫn chứng kế thừa', 'Inherited evidence')]: trustedCoreIdeaEvidence },
+        rules: { [tr('Cấu trúc đã chọn', 'Selected structure')]: article.outlineStructure },
+      });
       let modelCalls = 1;
       const jsonRepairCalls = 0;
       let evidenceCorrectionCalls = 0;
       const aiResponses: Awaited<ReturnType<typeof callAI>>[] = [];
       progress.advance(tr('Đang yêu cầu AI dựng dàn bài theo cấu trúc đã chọn.', 'Requesting an outline using the selected structure.'));
+      progress.inspect({
+        input: { Model: model.id, [tr('Yêu cầu gửi AI', 'Request sent to AI')]: userPrompt },
+        rules: { [tr('Chỉ dẫn hệ thống', 'System instructions')]: systemPrompt, Workflow: compiledWorkflowRules.snapshot.rules },
+      });
       const res = await callAI({
         articleId: article.id,
         model,
@@ -389,11 +398,19 @@ export default function Step3Outline({
         contextQuery,
         onAccepted: () => setGenerationAccepted(true),
       });
+      progress.inspect({
+        output: { Model: res.model, Tokens: res.usage, [tr('Trích đoạn phản hồi (tối đa 12.000 ký tự)', 'Response excerpt (up to 12,000 characters)')]: res.content.slice(0, 12000) },
+        sources: { [tr('Tài liệu theo phản hồi máy chủ', 'Documents reported by the server')]: res.context },
+      });
       progress.advance(tr('Đang kiểm tra đề mục, chủ đề bắt buộc và dẫn chứng.', 'Checking headings, required topics and evidence.'));
       aiResponses.push(res);
       let lastResponse = res;
       const parsed = parseAIJson(res.content);
       const normalized = normalizeSections(parsed, bundle, trustedCoreIdeaEvidence);
+      progress.inspect({
+        input: { [tr('Số mục AI trả về', 'Returned section count')]: normalized.rawSectionCount, [tr('Mục bị loại ban đầu', 'Initially rejected headings')]: normalized.rejectedHeadings },
+        rules: { [tr('Số mục tối thiểu', 'Minimum section count')]: minimumSections, [tr('Cấu trúc đã chọn', 'Selected structure')]: article.outlineStructure },
+      });
       let sections = normalized.sections;
       let generatedAt = res.servedAt ?? res.generatedAt ?? new Date().toISOString();
       if (sections.length < minimumSections) {
@@ -437,6 +454,10 @@ export default function Step3Outline({
       );
       sections = mapMustCoverTopics(sections, article.articleSpec?.mustCover ?? []);
       const structureErrors = validateOutlineStructure(sections, article.outlineStructure);
+      progress.inspect({
+        output: { [tr('Mục đã xác minh', 'Validated sections')]: sections, [tr('Lỗi cấu trúc', 'Structure errors')]: structureErrors },
+        sources: { [tr('Dẫn chứng theo mục', 'Evidence by section')]: sections.map(section => ({ heading: section.heading, evidence: section.evidence })) },
+      });
       if (structureErrors.length) throw new Error(structureErrors.join('\n'));
       const partialResult = sections.length < minimumSections;
       const trace: AIProcessTraceEvent[] = [
@@ -447,6 +468,7 @@ export default function Step3Outline({
         { id: 'step3-persist', stage: 'persistence', status: 'completed', title: '5. Lưu outline và audit trail', detail: 'Lưu section, rationale, evidence, nguồn Rules và nhật ký hành động này cùng bài viết trong Supabase.' },
       ];
       progress.advance(tr('Đang lưu dàn bài đã kiểm tra.', 'Saving the validated outline.'));
+      progress.inspect({ input: { [tr('Đề mục cần lưu', 'Headings to save')]: sections.map(section => section.heading) } });
       const saved = await onUpdate({
         outline: sections,
         outlineGenerationId: crypto.randomUUID(),
@@ -465,6 +487,7 @@ export default function Step3Outline({
       if (!saved) throw new Error('Outline Bước 2 chưa được lưu vào Supabase.');
       if (generationTiming.current) generationTiming.current.saved = true;
       window.dispatchEvent(new CustomEvent('writer:generation-saved', { detail: { articleId: article.id, stage: 'outline' } }));
+      progress.inspect({ output: { [tr('Số mục đã lưu', 'Saved section count')]: sections.length } });
       progress.finish(partialResult, tr(`Đã lưu ${sections.length} mục dàn bài.`, `Saved ${sections.length} outline sections.`));
       if (partialResult) {
         setWarning(`Đã lưu ${sections.length}/${minimumSections} section tối thiểu vượt qua kiểm chứng. Bạn có thể chỉnh sửa thủ công hoặc nhấn “Tạo lại” để thử bổ sung.`);

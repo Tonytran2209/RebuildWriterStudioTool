@@ -883,7 +883,18 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         compiledWorkflowRules.taskGuidance,
       ].join('\n');
 
+      progress.inspect({
+        input: { ArticleSpec: article.articleSpec, [tr('Dàn bài', 'Outline')]: verifiedOutline.sections },
+        output: { [tr('Ngân sách từ', 'Word budget')]: wordBudget },
+        sources: { [tr('Kho dẫn chứng đã xác minh', 'Verified evidence registry')]: verifiedOutline.evidenceRegistry },
+        rules: { [tr('Cấu trúc đã chọn', 'Selected structure')]: article.outlineStructure, [tr('Đoạn mở đầu', 'Introduction')]: INTRODUCTION_INSTRUCTION },
+      });
       progress.advance(tr('Đang yêu cầu AI viết bản nháp theo dàn bài.', 'Requesting a draft based on the outline.'));
+      progress.inspect({
+        input: { Model: model.id, [tr('Yêu cầu gửi AI', 'Request sent to AI')]: userPrompt },
+        sources: { [tr('Kho dẫn chứng đã xác minh', 'Verified evidence registry')]: verifiedOutline.evidenceRegistry },
+        rules: { [tr('Chỉ dẫn hệ thống', 'System instructions')]: systemPrompt, Workflow: compiledWorkflowRules.snapshot.rules },
+      });
       const res = await callAI({
         articleId: article.id,
         model,
@@ -899,6 +910,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         contextQuery,
         skipDocumentContext: !bundle.totalCount,
       });
+      progress.inspect({
+        output: { Model: res.model, Tokens: res.usage, [tr('Trích đoạn phản hồi (tối đa 12.000 ký tự)', 'Response excerpt (up to 12,000 characters)')]: res.content.slice(0, 12000) },
+        sources: { [tr('Tài liệu theo phản hồi máy chủ', 'Documents reported by the server')]: res.context },
+      });
       progress.advance(tr('Đang kiểm tra các phần bắt buộc trong phản hồi.', 'Checking the response for required sections.'));
       rawResponseExcerpt = res.content.slice(0, 12_000);
       if (!res.content.trim()) throw new Error('AI trả về draft rỗng. Kết quả cũ vẫn được giữ nguyên.');
@@ -909,6 +924,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         parsed = {};
       }
       const missingParts = missingStructuredParts(parsed, article);
+      progress.inspect({
+        input: { [tr('Các phần thiếu trong phản hồi ban đầu', 'Missing parts in the initial response')]: missingParts },
+        rules: { [tr('Đoạn mở đầu', 'Introduction')]: INTRODUCTION_INSTRUCTION, [tr('Ngân sách từ', 'Word budget')]: wordBudget },
+      });
       processTrace.push({
         id: `draft-validate-${Date.now()}`,
         stage: 'validation',
@@ -1008,10 +1027,15 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         getDraftEvidenceUsage(parsed, article),
         verifiedOutline,
       );
+      progress.inspect({
+        output: { [tr('Bản nháp đã ghép', 'Assembled draft')]: assembledDraft },
+        sources: { [tr('Dẫn chứng khai báo theo mục', 'Declared evidence by section')]: evidenceUsage },
+      });
       sessionStorage.setItem(recoveryKey, assembledDraft);
       setRecoveryDraft(assembledDraft);
       if (editorRef.current) editorRef.current.innerText = displayDraft(assembledDraft);
       progress.advance(tr('Đang lưu bản nháp trước khi chạy QC.', 'Saving the draft before QC.'));
+      progress.inspect({ input: { [tr('Bản nháp gửi lưu', 'Draft submitted for saving')]: assembledDraft } });
       const checkpointSaved = await onUpdate({
         draft: assembledDraft,
         draftGenerationId: crypto.randomUUID(),
@@ -1025,21 +1049,30 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 4: compiledWorkflowRules.snapshot },
       });
       if (!checkpointSaved) throw new Error('Draft đã được giữ tạm trên thiết bị nhưng chưa thể lưu checkpoint vào Supabase. Hãy kiểm tra kết nối rồi thử lưu lại; không cần gọi AI lại ngay.');
+      progress.inspect({ output: { [tr('Đã lưu bản nháp', 'Draft saved')]: checkpointSaved } });
       progress.note(tr('Đã lưu bản nháp.', 'Draft saved.'));
       window.dispatchEvent(new CustomEvent('writer:generation-saved', { detail: { articleId: article.id, stage: 'draft' } }));
       progress.advance(tr('Đang kiểm tra SEO và các tiêu chí Universal QC.', 'Checking SEO and Universal QC requirements.'));
+      progress.inspect({
+        input: { [tr('Số từ mục tiêu', 'Target words')]: targetWords, ArticleSpec: article.articleSpec },
+        sources: { [tr('Kho dẫn chứng', 'Evidence registry')]: verifiedOutline.evidenceRegistry, [tr('Dẫn chứng khai báo theo mục', 'Declared evidence by section')]: evidenceUsage },
+        rules: { [tr('Tiêu chí đánh giá nội dung', 'Content review criteria')]: semanticReviewInstruction(article, assembledDraft), Workflow: compiledWorkflowRules.snapshot.rules },
+      });
       const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
+      progress.inspect({ output: { [tr('Số từ đo được', 'Measured word count')]: validation.wordCount, [tr('Kết quả kiểm tra SEO', 'SEO checklist findings')]: validation.failed } });
       if (validation.failed.length) throw new Error(`Draft đã được lưu để chỉnh sửa nhưng chưa đạt 100% SEO checklist (${validation.wordCount}/${targetWords} từ): ${validation.failed.map(item => item.label).join(', ')}.`);
       let deterministic = [
         ...deterministicQualityChecks(article, assembledDraft, targetWords, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name)),
         ...evidenceMappingChecks(article, evidenceUsage, verifiedOutline),
       ];
+      progress.inspect({ output: { [tr('Kiểm tra tự động', 'Deterministic checks')]: deterministic } });
       if (deterministic.some(item => item.status === 'fail')) {
         const report = qualityReport({ ...article, draft: assembledDraft, draftEvidenceUsage: evidenceUsage }, deterministic, targetWords, files, config.workflowRules);
         const detail = `Draft đã được lưu nhưng Universal Quality Gate chưa đạt: ${deterministic.filter(item => item.status === 'fail').map(item => `${item.label} — ${item.reason}`).join('; ')}.`;
         processTrace.push({ id: `draft-qc-${Date.now()}`, stage: 'validation', status: 'warning', title: 'Draft saved; QC needs attention', detail });
         const saved = await onUpdate({ qualityReport: report, step4ProcessTrace: processTrace });
         if (!saved) throw new Error('Draft đã lưu nhưng chưa ghi được kết quả QC. Hãy tải lại bài trước khi Re-check.');
+        progress.inspect({ output: { [tr('Báo cáo Universal QC', 'Universal QC report')]: report } });
         progress.finish(true, detail);
         setError(detail);
         return;
@@ -1107,6 +1140,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           detail: 'The first draft was saved for review. Automatic semantic rewrites are disabled to prevent repeated paid calls; Re-check & Fix can apply one targeted patch on demand.',
         });
       }
+      progress.inspect({ output: { [tr('Báo cáo Universal QC', 'Universal QC report')]: report } });
       progress.note(tr('Đang lưu báo cáo Universal QC.', 'Saving the Universal QC report.'));
       const saved = await onUpdate({
         draft: assembledDraft,
@@ -1122,6 +1156,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 4: compiledWorkflowRules.snapshot },
       });
       if (!saved) throw new Error('Draft Bước 3 chưa được lưu vào Supabase.');
+      progress.inspect({ output: { [tr('Đã lưu báo cáo', 'Report saved')]: saved } });
       progress.finish(report.status !== 'pass', report.status === 'pass'
         ? tr('Đã lưu báo cáo QC. Tất cả kiểm tra đều đạt.', 'QC report saved. All checks passed.')
         : tr('Đã lưu báo cáo QC. Có mục cần xem lại.', 'QC report saved. Some checks need review.'));

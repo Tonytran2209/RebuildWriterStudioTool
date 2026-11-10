@@ -393,8 +393,17 @@ export default function Step2CoreIdea({
         selectedSnapshot?.label ?? "",
         article.contentType ?? "",
       ].map(seed => seed.trim()).filter(Boolean);
+      progress.inspect({
+        input: { [tr('Chủ đề', 'Topic')]: article.topic, [tr('Nhóm nội dung', 'Content type')]: article.contentType },
+        output: { [tr('Từ khóa gốc', 'Seed keywords')]: seeds },
+      });
       progress.advance(tr('Đang tra cứu từ khóa SEO và ý định tìm kiếm.', 'Researching SEO keywords and search intent.'));
+      progress.inspect({ input: { [tr('Từ khóa gốc', 'Seed keywords')]: seeds, [tr('Số từ khóa yêu cầu', 'Requested keyword count')]: requestedKeywordCount } });
       const seoResearch = await researchSeoKeywords(seeds, article.id, railwayUrl, requestedKeywordCount);
+      progress.inspect({
+        output: { [tr('Kết quả nghiên cứu SEO', 'SEO research result')]: seoResearch },
+        sources: { [tr('URL nghiên cứu', 'Research URLs')]: [...new Set(seoResearch.keywords.flatMap(keyword => keyword.sources ?? []))] },
+      });
       const contextQuery = [
         ...seeds,
         ...seoResearch.keywords.map(item => item.keyword),
@@ -504,8 +513,21 @@ export default function Step2CoreIdea({
       };
       progress.note(tr('Đã nhận kết quả nghiên cứu từ khóa.', 'Keyword research results received.'));
       progress.advance(tr('Đang yêu cầu AI tạo Article Spec và Core Ideas.', 'Requesting the Article Spec and Core Ideas.'));
+      progress.inspect({
+        input: { Model: model.id, [tr('Yêu cầu gửi AI', 'Request sent to AI')]: userPrompt },
+        rules: { [tr('Chỉ dẫn hệ thống', 'System instructions')]: systemPrompt, Workflow: compiledWorkflowRules.snapshot.rules },
+      });
       let result = await requestIdeas(manual);
+      progress.inspect({
+        output: { Model: result.res.model, [tr('Phản hồi đã phân tích', 'Parsed response')]: result.parsed, Tokens: result.res.usage },
+        sources: { [tr('Tài liệu theo phản hồi máy chủ', 'Documents reported by the server')]: result.res.context },
+      });
       progress.advance(tr('Đang đối chiếu từ khóa và dẫn chứng.', 'Validating keywords and evidence.'));
+      progress.inspect({
+        input: { [tr('Số đề xuất sau chuẩn hóa', 'Normalized idea count')]: result.ideas.length },
+        sources: { [tr('Dẫn chứng đã xác minh', 'Verified evidence')]: trustedEvidence },
+        rules: { Workflow: compiledWorkflowRules.snapshot.rules },
+      });
       const resultRoot = result.parsed && typeof result.parsed === 'object' && !Array.isArray(result.parsed)
         ? result.parsed as Record<string, unknown>
         : {};
@@ -571,6 +593,7 @@ export default function Step2CoreIdea({
       const allAudits = result.ideas.flatMap(idea => idea.keywordAudit ?? []);
       const acceptedKeywords = new Set(allAudits.filter(item => item.decision === 'accepted').map(item => item.keyword.toLocaleLowerCase())).size;
       const rejectedKeywords = new Set(allAudits.filter(item => item.decision === 'rejected').map(item => item.keyword.toLocaleLowerCase())).size;
+      progress.inspect({ output: { ArticleSpec: articleSpec, [tr('Đề xuất hợp lệ', 'Validated ideas')]: result.ideas, acceptedKeywords, rejectedKeywords } });
       const trace: AIProcessTraceEvent[] = [
         { id: 'step2-seeds', stage: 'input', status: 'completed', title: '1. Thu thập seed keyword', detail: 'Lấy seed từ Content Type và snapshot Step 1 đã chọn.', facts: { seeds: seeds.length, contentType: article.contentType } },
         { id: 'step2-web-search', stage: 'tool', status: 'completed', title: '2. OpenAI Web Search thị trường USA', detail: 'Tìm tín hiệu SERP, related-query patterns và search intent. Hệ thống chỉ giữ keyword có URL nguồn hợp lệ.', facts: { keywords: seoResearch.keywords.length, cacheHit: Boolean(seoResearch.cacheHit), market: seoResearch.location }, sources: [...new Set(seoResearch.keywords.flatMap(keyword => keyword.sources ?? []))] },
@@ -581,6 +604,7 @@ export default function Step2CoreIdea({
       ];
       const specFingerprint = articleSpecFingerprint(articleSpec);
       progress.advance(tr('Đang lưu Article Spec, Core Ideas và kết quả nghiên cứu.', 'Saving the Article Spec, Core Ideas and research results.'));
+      progress.inspect({ input: { ArticleSpec: articleSpec, [tr('Tiêu đề đề xuất', 'Idea titles')]: result.ideas.map(idea => idea.title) } });
       const saved = await onUpdate({
         coreIdeaSuggestions: result.ideas,
         selectedCoreIdeaId: undefined,
@@ -594,6 +618,7 @@ export default function Step2CoreIdea({
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 2: compiledWorkflowRules.snapshot },
       });
       if (!saved) throw new Error('Kết quả Bước 1 chưa được lưu vào Supabase.');
+      progress.inspect({ output: { [tr('Số đề xuất đã lưu', 'Saved idea count')]: result.ideas.length, [tr('Mã phiên bản Article Spec', 'Article Spec fingerprint')]: specFingerprint } });
       progress.finish(partialResult, tr(`Đã lưu ${result.ideas.length}/${requestedIdeaCount} đề xuất.`, `Saved ${result.ideas.length}/${requestedIdeaCount} suggestions.`));
       if (partialResult) {
         setWarning(`Đã lưu ${result.ideas.length}/${requestedIdeaCount} core idea vượt qua đầy đủ kiểm chứng. Bạn có thể tiếp tục với kết quả hợp lệ hoặc nhấn “Đề xuất lại” để thử bổ sung.`);
