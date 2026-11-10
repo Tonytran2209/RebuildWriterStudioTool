@@ -1,4 +1,4 @@
-import { sendOutlinePerformanceSample } from "../../lib/performanceTelemetry";
+import { measureUiAfterPaint, sendOutlinePerformanceSample, uiInteractionStart } from "../../lib/performanceTelemetry";
 import { getArticleStages, type ArticleStageVersion } from "../../lib/db";
 import OutlineStructureSelect from '../OutlineStructureSelect';
 import { buildOutlineTask, validateOutlineStructure, outlineSelectionUpdates } from '../../../shared/outlineStructures';
@@ -152,6 +152,24 @@ function normalizeSections(
   return { sections, rejectedHeadings, rawSectionCount: rawSections.length, registryCount: Object.keys(registry).length };
 }
 
+interface GenerationTiming {
+  start: number;
+  clickMeasured: boolean;
+  acceptMeasured: boolean;
+  acceptedMs?: number;
+  saved: boolean;
+  finished: boolean;
+  responseSent: boolean;
+}
+
+// Sent once both the accepted frame was measured and the outline was saved;
+// either can happen first.
+function sendAcceptedResponseTime(timing: GenerationTiming) {
+  if (!timing.finished || !timing.saved || timing.acceptedMs === undefined || timing.responseSent) return;
+  timing.responseSent = true;
+  sendOutlinePerformanceSample("responseTime", timing.acceptedMs);
+}
+
 function targetSectionCount(wordCount: number): number {
   if (wordCount <= 1000) return 6;
   if (wordCount <= 1800) return 8;
@@ -190,18 +208,34 @@ export default function Step3Outline({
   const [newSectionHeading, setNewSectionHeading] = useState("");
   const [newSectionLevel, setNewSectionLevel] = useState<"h2" | "h3">("h2");
   const generationInFlight = useRef(false);
-  const generationTiming = useRef<{ start: number; clickSent: boolean; saved: boolean } | null>(null);
+  // ui-kpi-v2: both KPIs start at the click and end in the second animation
+  // frame after the state is shown. clickLatency ends at the painted
+  // "generating" state; responseTime ends at the painted "accepted" state (the
+  // server took the job, before the AI runs) and, as before, is only reported
+  // for generations whose outline was saved.
+  const [generationAccepted, setGenerationAccepted] = useState(false);
+  const generationTiming = useRef<GenerationTiming | null>(null);
   useLayoutEffect(() => {
     const timing = generationTiming.current;
     if (!timing) return;
-    if (generating && !timing.clickSent) {
-      timing.clickSent = true;
-      sendOutlinePerformanceSample("clickLatency", timing.start);
+    if (generating && !timing.clickMeasured) {
+      timing.clickMeasured = true;
+      measureUiAfterPaint(timing.start, ms => sendOutlinePerformanceSample("clickLatency", ms));
     } else if (!generating) {
       generationTiming.current = null;
-      if (timing.saved) sendOutlinePerformanceSample("responseTime", timing.start);
+      timing.finished = true;
+      sendAcceptedResponseTime(timing);
     }
   }, [generating]);
+  useLayoutEffect(() => {
+    const timing = generationTiming.current;
+    if (!generationAccepted || !timing || timing.acceptMeasured) return;
+    timing.acceptMeasured = true;
+    measureUiAfterPaint(timing.start, ms => {
+      timing.acceptedMs = ms;
+      sendAcceptedResponseTime(timing);
+    });
+  }, [generationAccepted]);
   const outline = article.outline || [];
   const prerequisite = gateArticleStep(article, 3);
 
@@ -274,8 +308,7 @@ export default function Step3Outline({
   ].filter(Boolean).join(" ");
 
   const handleGenerate = async (manual: boolean, eventTime: number) => {
-    const now = performance.now();
-    const startedAt = eventTime > 0 && eventTime <= now ? eventTime : now;
+    const startedAt = uiInteractionStart(eventTime);
     if (generationInFlight.current) return;
     if (!prerequisite.allowed) {
       setError(tr(prerequisite.reasonVi, prerequisite.reason));
@@ -295,7 +328,8 @@ export default function Step3Outline({
       return;
     }
     generationInFlight.current = true;
-    generationTiming.current = { start: startedAt, clickSent: false, saved: false };
+    generationTiming.current = { start: startedAt, clickMeasured: false, acceptMeasured: false, saved: false, finished: false, responseSent: false };
+    setGenerationAccepted(false);
     setGenerating(true);
     setError(null);
     setWarning(null);
@@ -349,6 +383,7 @@ export default function Step3Outline({
         bypassCache: manual,
         jsonMode: true,
         contextQuery,
+        onAccepted: () => setGenerationAccepted(true),
       });
       aiResponses.push(res);
       let lastResponse = res;
@@ -433,6 +468,7 @@ export default function Step3Outline({
       setError(`Không tạo được outline: ${message}`);
     } finally {
       generationInFlight.current = false;
+      setGenerationAccepted(false);
       setGenerating(false);
     }
   };
@@ -661,7 +697,7 @@ export default function Step3Outline({
             disabled={stepActionDisabled}
             className="workflow-endpoint-button"
           >
-            {generating ? <><LoaderCircle className="app-icon animate-spin" aria-hidden="true" /><span>{tr('Đang dựng...', 'Generating...')}</span></>
+            {generating ? <><LoaderCircle className="app-icon animate-spin" aria-hidden="true" /><span>{generationAccepted ? tr('Đã nhận yêu cầu — đang dựng...', 'Request accepted — generating...') : tr('Đang dựng...', 'Generating...')}</span></>
               : needsOutlineApproval ? <><Check className="app-icon" aria-hidden="true" /><span>{tr('Phê duyệt outline', 'Approve outline')}</span></>
               : canContinueToDraft ? <><span>{tr('Tiếp tục — First Draft', 'Continue — First Draft')}</span><ArrowRight className="app-icon" aria-hidden="true" /></>
               : <><Sparkles className="app-icon" aria-hidden="true" /><span>{outline.length ? tr('Tạo lại outline', 'Regenerate outline') : tr('Tạo outline', 'Generate outline')}</span></>}

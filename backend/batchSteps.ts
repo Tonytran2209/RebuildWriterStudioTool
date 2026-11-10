@@ -22,9 +22,9 @@ export const labProfile = {
   mainJob: { job: ARTICLE_JOB, steps: Object.values(batchStepLabels) },
   // Kept from AI Agent Lab's earlier built-in target for batch articles.
   jobTargets: { [ARTICLE_JOB]: 10 },
-  // What the browser KPIs measure (src/components/workspace/Step3Outline.tsx).
+  // What the browser KPIs measure (ui-kpi-v2, src/components/workspace/Step3Outline.tsx).
   kpiDescriptions: {
-    responseTime: "Bấm 'Tạo outline' (bước 3) → outline đã lưu hiển thị",
-    clickLatency: "Bấm 'Tạo outline' → giao diện hiện trạng thái đang tạo",
+    responseTime: "Bấm 'Tạo outline' (bước 3; mốc bắt đầu là thời điểm sự kiện bấm) → khung hình thứ hai sau khi giao diện hiện 'Đã nhận yêu cầu', tức máy chủ đã kiểm tra và nhận việc trước khi gọi AI; không chờ AI tạo xong",
+    clickLatency: "Bấm 'Tạo outline' (bước 3; mốc bắt đầu là thời điểm sự kiện bấm) → khung hình thứ hai sau khi trạng thái 'Đang dựng...' được hiển thị, tức khung đầu tiên đã có cơ hội vẽ",
   },
 }
