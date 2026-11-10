@@ -201,7 +201,7 @@ export default function Step3Outline({
   onPrev,
 }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
-  const generationLog = useWorkflowCheckLog(article.id);
+  const generationLog = useWorkflowCheckLog(article.id, 3);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -599,7 +599,7 @@ export default function Step3Outline({
             <GenerationHistory articleId={article.id} stage="outline" generationId={article.outlineGenerationId} />
             <StepUsage step={2} usage={article.aiUsageByStep?.[3]} />
 
-            <WorkflowCheckLog run={generationLog.run} steps={[
+            <WorkflowCheckLog key={article.id} run={generationLog.run} steps={[
               tr('Chuẩn bị Article Spec và cấu trúc đã chọn', 'Prepare the Article Spec and selected structure'),
               tr('Dựng dàn bài từ tài liệu được cấp', 'Generate the outline from available sources'),
               tr('Kiểm tra cấu trúc và dẫn chứng', 'Validate structure and evidence'),

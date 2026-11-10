@@ -292,7 +292,7 @@ export default function Step2CoreIdea({
   }, [article.id]);
   const generationInFlight = useRef(false);
   const { tr, canonicalAIOutputInstruction } = useI18n();
-  const generationLog = useWorkflowCheckLog(article.id);
+  const generationLog = useWorkflowCheckLog(article.id, 2);
   const prerequisite = gateArticleStep(article, 2);
 
   useEffect(() => { if (error) notifyWorkspace(error, 'error'); }, [error]);
@@ -691,7 +691,7 @@ export default function Step2CoreIdea({
               </section>
             )}
 
-            <WorkflowCheckLog run={generationLog.run} steps={[
+            <WorkflowCheckLog key={article.id} run={generationLog.run} steps={[
               tr('Chuẩn bị chủ đề và từ khóa gốc', 'Prepare the topic and seed keywords'),
               tr('Nghiên cứu từ khóa SEO', 'Research SEO keywords'),
               tr('Tạo Article Spec và đề xuất Core Ideas', 'Generate the Article Spec and Core Ideas'),

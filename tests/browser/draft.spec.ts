@@ -143,8 +143,13 @@ test('draft checklist follows generation and quality review until the report is 
  });
  await page.getByRole('button', { name: /Tạo bài viết|Generate article/ }).click();
  const log = page.getByRole('region', { name: /Nhật ký xử lý AI|AI progress log/ });
+ const toggle = log.locator(':scope > details > summary');
  const current = log.locator('[aria-current="step"]');
  try {
+  await expect(toggle).toBeVisible();
+  await expect(current).toBeHidden();
+  await expect(log.getByRole('status')).toBeVisible();
+  await toggle.click();
   await expect(current).toContainText(/Viết bản nháp theo dàn bài|Write the draft from the outline/);
   const qc = log.locator('ol > li').last();
   const live = log.getByRole('status');
@@ -181,6 +186,20 @@ test('draft checklist follows generation and quality review until the report is 
   await page.clock.fastForward(3000);
   await expect(timer).toHaveText(finalElapsed!);
   await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
+  const switchArticle = page.getByRole('button', { name: 'Switch fixture article' });
+  await switchArticle.click();
+  await expect(log).toHaveCount(0);
+  await switchArticle.click();
+  await expect(toggle).toBeVisible();
+  await expect(log.locator('ol')).toBeHidden();
+  await toggle.click();
+  await expect(log.locator('ol')).toBeVisible();
+  await page.reload();
+  await expect(toggle).toBeVisible();
+  await expect(log.locator('ol')).toBeHidden();
+  await toggle.click();
+  await log.locator('ol > li').last().getByRole('button', { name: /Xem chi tiết mốc|View checkpoint details/ }).click();
+  await expect(popup.getByText('Universal QC report', { exact: true }).or(popup.getByText('Báo cáo Universal QC', { exact: true }))).toBeVisible();
  } finally {
   resumeGeneration();
   resumeReview();

@@ -637,7 +637,7 @@ interface Props {
 
 export default function Step4Draft({ embedded = false, article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
-  const generationLog = useWorkflowCheckLog(article.id);
+  const generationLog = useWorkflowCheckLog(article.id, 4);
   const bundle = useMemo(() => collectStepDocs(4, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(4, config, files), [config, files]);
   const compiledWorkflowRules = useMemo(() => compileWorkflowRules(config, 4, 'manual'), [config]);
@@ -1706,7 +1706,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             <div className="flex-1 overflow-y-auto p-3 sm:p-5">
               <SeoBrief article={article} primaryKeyword={getPrimaryKeyword(article)} linkTarget={internalLinkPlan.target} linkMax={internalLinkPlan.max} approvedCandidates={internalLinkCandidates.length} />
               <div className="mb-3 empty:hidden">
-                <WorkflowCheckLog run={generationLog.run} steps={[
+                <WorkflowCheckLog key={article.id} run={generationLog.run} steps={[
                   tr('Chuẩn bị dàn bài, dẫn chứng và ngân sách từ', 'Prepare the outline, evidence and word budget'),
                   tr('Viết bản nháp theo dàn bài', 'Write the draft from the outline'),
                   tr('Kiểm tra và bổ sung phần còn thiếu', 'Validate the response and fill missing parts'),

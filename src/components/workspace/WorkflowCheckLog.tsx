@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, CircleAlert, FileSearch, Loader2, X } from 'lucide-react';
 import { useI18n } from '../../lib/i18n';
 
@@ -18,8 +18,26 @@ type Run = {
   checkpoints: Checkpoint[];
 };
 
-export function useWorkflowCheckLog(articleId: string) {
+export function useWorkflowCheckLog(articleId: string, step: 2 | 3 | 4) {
   const [run, setRun] = useState<Run | null>(null);
+  const storagePrefix = `writer:workflow-check-log:v1:${step}:`;
+  const savedRun = useMemo(() => {
+    try {
+      const value: Run | null = JSON.parse(sessionStorage.getItem(storagePrefix + articleId) ?? 'null');
+      return value?.articleId === articleId && value.finishedAt && value.checkpoints?.[value.index] ? value : null;
+    } catch {
+      return null;
+    }
+  }, [articleId, storagePrefix]);
+
+  useEffect(() => {
+    if (!run?.finishedAt) return;
+    try {
+      sessionStorage.setItem(storagePrefix + run.articleId, JSON.stringify(run));
+    } catch {
+      // The in-memory log remains available when browser storage is unavailable.
+    }
+  }, [run, storagePrefix]);
   function start(text?: string) {
     const startedAt = Date.now();
     setRun({ articleId, startedAt, index: 0, outcome: 'running', checkpoints: [
@@ -60,7 +78,7 @@ export function useWorkflowCheckLog(articleId: string) {
       fail: (text: string) => update('failed', text),
     };
   }
-  return { start, run: run?.articleId === articleId ? run : null };
+  return { start, run: run?.articleId === articleId ? run : savedRun };
 }
 
 function formatDuration(ms: number) {
@@ -177,14 +195,13 @@ export default function WorkflowCheckLog({ run, steps }: { run: Run | null; step
 
   return (
     <section aria-label={tr('Nhật ký xử lý AI', 'AI progress log')} className="text-sm text-[var(--ui-text)]">
-      <div key={run.startedAt} className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h3 className="font-medium">{tr('Nhật ký xử lý AI', 'AI progress log')}</h3>
-          <div className="flex gap-2 text-xs text-[var(--ui-secondary)]">
-            <span>{status[run.outcome]}</span>
-          </div>
-        </div>
-        <ol>
+      <details className="group/log rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-xl px-4 py-2 [&::-webkit-details-marker]:hidden">
+          <span className="min-w-0 flex-1 font-medium">{tr('Nhật ký xử lý AI', 'AI progress log')}</span>
+          <span className="text-xs text-[var(--ui-secondary)]">{status[run.outcome]}</span>
+          <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 group-open/log:rotate-180" />
+        </summary>
+        <ol key={run.startedAt} className="px-4 pb-3">
           {steps.map((step, index) => {
             const state = checkpointStatus(index);
             const checkpoint = run.checkpoints[index];
@@ -226,7 +243,7 @@ export default function WorkflowCheckLog({ run, steps }: { run: Run | null; step
             );
           })}
         </ol>
-      </div>
+      </details>
       <div className="flex items-start gap-2.5 px-2 pt-3 text-[var(--ui-secondary)]">
         <span aria-hidden="true" className="mt-0.5 shrink-0">{icons[run.outcome]}</span>
         <span role="status" className="min-w-0 flex-1 break-words">{running ? currentAction : status[run.outcome]}</span>
