@@ -73,4 +73,4 @@ Keep the log header visible and its checklist collapsed by default when opening 
 
 Campaign labels use the same 13 px typography as recent article rows, with separate accessible delete targets. Completed article workspaces keep review and export available and require reopening before generation or editing. When restoring a saved sign-in, use the workspace loading screen until the session check resolves.
 
-Draft Outline presents a single ordered hierarchy with H3 rows indented under the nearest preceding H2. Each heading opens its own details and editing controls. Keep legacy headings without a preceding H2 visible at the top level and preserve the saved outline order.
+Draft Outline presents a single ordered hierarchy with H3 rows indented under the nearest preceding H2. Heading rows use a full-width neutral hover and a distinct expanded state. Each heading opens a read-first panel with notes and rationale in full, with editing available as an explicit action. Keep log and section actions in a compact footer. Keep legacy headings without a preceding H2 visible at the top level and preserve the saved outline order.

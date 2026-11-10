@@ -161,3 +161,25 @@ body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* Heading rows share the outline surface; hover is lighter than selection. */
+.outline-heading-trigger[aria-expanded="true"] {
+  background: var(--ui-selected);
+}
+
+.outline-heading-action {
+  color: var(--ui-secondary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .outline-heading-trigger[aria-expanded="false"]:hover,
+  .outline-heading-action:not(:disabled):hover {
+    background: var(--ui-hover);
+  }
+}
+
+.outline-heading-trigger:focus-visible,
+.outline-heading-action:focus-visible {
+  outline: 2px solid var(--ui-secondary);
+  outline-offset: -2px;
+}

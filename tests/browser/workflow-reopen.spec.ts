@@ -68,8 +68,9 @@ test('completed articles block AI generation, selection and re-check while retai
  expect(await snapshot(page)).toEqual(before);
 });
 
-test('outline nests H3 under the preceding H2 and opens details independently', async ({page}) => {
- await page.goto('/?reopen&outline-tree&versions');
+for (const theme of ['light', 'dark']) test(`outline headings use a compact disclosure and readable details in ${theme}`, async ({page}, testInfo) => {
+ await page.goto(`/?reopen&outline-tree&versions&theme=${theme}`);
+ await page.addStyleTag({path:'src/ui-guide.css'});
  const outline = page.getByTestId('reopen-outline');
  const list = outline.getByRole('list', {name: /Các heading trong dàn bài|Outline headings/});
  const childList = list.getByRole('list', {name: /Các mục con của First section|Subheadings of First section/});
@@ -80,12 +81,29 @@ test('outline nests H3 under the preceding H2 and opens details independently', 
  await expect(parent).toHaveAttribute('aria-expanded', 'false');
  await expect(child).toHaveAttribute('aria-expanded', 'false');
  await expect(list.locator('textarea')).toHaveCount(0);
+ const background = () => child.evaluate(element => getComputedStyle(element).backgroundColor);
+ const idle = await background();
+ let collapsedBackground = idle;
+ if (testInfo.project.name === 'desktop') {
+  const dimensions = () => child.evaluate(element => ({width: element.clientWidth, height: element.clientHeight}));
+  const rowSize = await dimensions();
+  await child.hover();
+  await expect.poll(background).not.toBe(idle);
+  collapsedBackground = await background();
+  expect(await dimensions()).toEqual(rowSize);
+ }
  await child.click();
+ await expect.poll(background).not.toBe(collapsedBackground);
  await expect(child).toHaveAttribute('aria-expanded', 'true');
  await expect(parent).toHaveAttribute('aria-expanded', 'false');
  const panel = outline.locator(`[id="${await child.getAttribute('aria-controls')}"]`);
- await expect(panel.locator('textarea').nth(1)).toHaveValue('Supporting detail notes');
+ await expect(panel.getByText('Supporting detail notes', {exact: true})).toBeVisible();
+ await expect(panel.locator('textarea')).toHaveCount(0);
+ const size = await panel.evaluate(element => ({scroll: element.scrollWidth, width: element.clientWidth}));
+ expect(size.scroll).toBeLessThanOrEqual(size.width + 1);
  await expect(panel.getByRole('button', {name: /Xem AI log|View AI log/})).toBeVisible();
+ await panel.getByRole('button', {name: /^(Chỉnh sửa|Edit)$/}).click();
+ await expect(panel.getByRole('textbox', {name: /Ghi chú|Notes/})).toHaveValue('Supporting detail notes');
  await panel.getByRole('textbox', {name: /Tiêu đề heading|Heading title/}).fill('Updated supporting detail');
  await panel.getByRole('textbox', {name: /Tiêu đề heading|Heading title/}).blur();
  await expect(childList.getByRole('button', {name: 'H3 Updated supporting detail'})).toBeVisible();

@@ -5,7 +5,7 @@ import { getArticleStages, type ArticleStageVersion } from "../../lib/db";
 import OutlineStructureSelect from '../OutlineStructureSelect';
 import { buildOutlineTask, validateOutlineStructure, outlineSelectionUpdates } from '../../../shared/outlineStructures';
 import { type ReactNode, useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, ChevronDown, ChevronUp, Eye, History, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronUp, Eye, History, Pencil, LoaderCircle, Plus, Sparkles, Trash2 } from "lucide-react";
 import type {
   Article,
   AIModel,
@@ -658,13 +658,13 @@ export default function Step3Outline({
                   </span>
                 </div>
 
-                <ol aria-label={tr('Các heading trong dàn bài', 'Outline headings')} className="divide-y divide-[var(--ui-border)] rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
+                <ol aria-label={tr('Các heading trong dàn bài', 'Outline headings')} className="overflow-hidden divide-y divide-[var(--ui-border)] rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
                   {groups.map(({ root, children }) => (
-                    <li key={outline[root].id} className="min-w-0 px-2 py-1 sm:px-3">
+                    <li key={outline[root].id} className="min-w-0">
                       {renderSection(root)}
                       {children.length > 0 && (
                         <ol aria-label={tr(`Các mục con của ${outline[root].heading}`, `Subheadings of ${outline[root].heading}`)}
-                          className="mb-1 ml-4 border-l border-[var(--ui-border)] pl-2 sm:ml-6 sm:pl-3">
+                          className="mb-2 ml-6 border-l border-[var(--ui-border)] sm:ml-8">
                           {children.map(index => <li key={outline[index].id}>{renderSection(index)}</li>)}
                         </ol>
                       )}
@@ -789,6 +789,7 @@ function SectionRow({
 }) {
   const { tr } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [showAudit, setShowAudit] = useState(false);
   const detailsId = useId();
   const [headingDraft, setHeadingDraft] = useState(section.heading);
@@ -800,12 +801,17 @@ function SectionRow({
   useEffect(() => setNotesDraft(section.notes ?? ''), [section.notes]);
   useEffect(() => setRationaleDraft(section.rationale ?? ''), [section.rationale]);
 
+  const labelClass = "block text-xs font-medium text-[var(--ui-secondary)]";
+  const fieldClass = "outline-editor-control mt-1 block min-h-11 w-full rounded-lg border px-3 py-2 text-sm";
+  const actionClass = "outline-heading-action inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-2 text-xs disabled:opacity-40";
+  const isEditing = editing && !readOnly;
+
   return (
     <div>
-      <button type="button" onClick={() => setExpanded(value => !value)}
+      <button type="button" onClick={() => { setExpanded(value => !value); setEditing(false); }}
         aria-expanded={expanded} aria-controls={detailsId}
-        className={`flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-[var(--ui-control)] focus-visible:outline-2 focus-visible:outline-[var(--ui-secondary)] ${expanded ? 'bg-[var(--ui-control)]' : ''}`}>
-        <span className="shrink-0 font-mono text-[11px] text-[var(--ui-secondary)]">{section.level.toUpperCase()}</span>
+        className="outline-heading-trigger flex min-h-11 w-full items-center gap-3 px-4 py-2 text-left sm:px-5">
+        <span className="shrink-0 font-mono text-xs text-[var(--ui-secondary)]">{section.level.toUpperCase()}</span>
         <span className={`min-w-0 flex-1 break-words text-[var(--ui-text)] ${isH3 ? 'text-sm' : 'text-base font-medium'}`}>
           {section.heading || tr('Heading chưa có tiêu đề', 'Untitled heading')}
         </span>
@@ -813,121 +819,131 @@ function SectionRow({
       </button>
 
       {expanded && (
-        <div id={detailsId} className="my-1 space-y-4 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 sm:p-4">
-          <div className="flex flex-wrap gap-1.5">
-            <button type="button" onClick={() => setShowAudit(true)} className="outline-secondary-button inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-2.5 text-xs">
-              <Eye className="app-icon" aria-hidden="true" />{tr('Xem AI log', 'View AI log')}
-            </button>
-            {!readOnly && <>
-              <button type="button" disabled={isFirst} onClick={() => onMove(-1)} aria-label={tr('Di chuyển lên', 'Move up')} title={tr('Di chuyển lên', 'Move up')} className="outline-secondary-button grid h-11 w-11 place-items-center rounded-lg border disabled:opacity-40">
+        <div id={detailsId} className="border-t border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 pt-4 sm:px-5">
+          <div className="space-y-4">
+            {isEditing ? (
+              <>
+                <label className="block">
+                  <span className={labelClass}>{tr('Tiêu đề heading', 'Heading title')}</span>
+                  <textarea autoFocus value={headingDraft} onChange={event => setHeadingDraft(event.target.value)}
+                    onBlur={() => headingDraft !== section.heading && onChange({ heading: headingDraft })}
+                    rows={2} className={`${fieldClass} resize-y`} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>{tr('Ghi chú', 'Notes')}</span>
+                  <textarea value={notesDraft} onChange={event => setNotesDraft(event.target.value)}
+                    onBlur={() => notesDraft !== (section.notes ?? '') && onChange({ notes: notesDraft })}
+                    rows={3} className={`${fieldClass} resize-y`} />
+                </label>
+                <label className="block">
+                  <span className={labelClass}>{tr('Lý do & điểm cần đánh giá', 'Rationale & review points')}</span>
+                  <textarea value={rationaleDraft} onChange={event => setRationaleDraft(event.target.value)}
+                    onBlur={() => rationaleDraft !== (section.rationale ?? '') && onChange({ rationale: rationaleDraft })}
+                    rows={3} className={`${fieldClass} resize-y`} />
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block min-w-0">
+                    <span className={labelClass}>{tr('Ý định tìm kiếm', 'Search intent')}</span>
+                    <select value={section.searchIntent || ""} className={fieldClass}
+                      onChange={event => onChange({ searchIntent: (event.target.value || undefined) as SearchIntent | undefined })}>
+                      <option value="">{tr('Chưa xác định', 'Not set')}</option>
+                      {Object.entries(SEARCH_INTENT_META).map(([key, value]) => <option key={key} value={key}>{value.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="block min-w-0">
+                    <span className={labelClass}>{tr('Cấp heading', 'Heading level')}</span>
+                    <select value={section.level} className={fieldClass}
+                      onChange={event => onChange({ level: event.target.value as "h2" | "h3" })}>
+                      <option value="h2">H2</option>
+                      <option value="h3">H3</option>
+                    </select>
+                  </label>
+                </div>
+              </>
+            ) : (
+              <>
+                <dl className="space-y-3 text-sm">
+                  {section.notes && <div><dt className={labelClass}>{tr('Ghi chú', 'Notes')}</dt>
+                    <dd className="mt-1 whitespace-pre-wrap break-words leading-relaxed">{section.notes}</dd></div>}
+                  {section.rationale && <div><dt className={labelClass}>{tr('Lý do & điểm cần đánh giá', 'Rationale & review points')}</dt>
+                    <dd className="mt-1 whitespace-pre-wrap break-words leading-relaxed">{section.rationale}</dd></div>}
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <dt className={labelClass}>{tr('Ý định tìm kiếm', 'Search intent')}</dt>
+                    <dd>{section.searchIntent ? SEARCH_INTENT_META[section.searchIntent]?.label : tr('Chưa xác định', 'Not set')}</dd>
+                  </div>
+                </dl>
+              </>
+            )}
+            {(section.keywords?.length ?? 0) > 0 && (
+              <div>
+                <label className={labelClass}>Keywords</label>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {section.keywords?.map((kw, i) => (
+                    <span key={i} className="break-words rounded-md border border-[var(--ui-border)] px-2 py-1 text-xs text-[var(--ui-secondary)]">
+                      {kw}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(section.evidence?.length ?? 0) > 0 && (
+              <div>
+                <label className={labelClass}>{tr('Toàn bộ dẫn chứng đã kiểm chứng', 'All verified evidence')}</label>
+                <div className="space-y-2 mt-1">
+                  {section.evidence?.map((e, i) => (
+                    <div key={i} className="outline-evidence-card rounded-lg border px-3 py-2 text-[10px]">
+                      <div className="font-bold mb-1">{e.role?.toUpperCase()} · {e.source}</div>
+                      {e.quote && <blockquote className="border-l-2 border-current/30 pl-2 leading-relaxed whitespace-pre-wrap">“{e.quote}”</blockquote>}
+                      {e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(section.ruleRefs?.length ?? 0) > 0 && <div><label className={labelClass}>Rules áp dụng</label><div className="flex flex-wrap gap-1 mt-1">{section.ruleRefs?.map(rule => <span key={rule} className="outline-rule-chip text-[10px] rounded-md border px-2 py-0.5">{rule}</span>)}</div></div>}
+            {isEditing && keywordSuggestions.some(keyword => !section.keywords?.includes(keyword)) && (
+              <div>
+                <label className={labelClass}>
+                  Thêm keyword từ gợi ý
+                </label>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {keywordSuggestions
+                    .filter(k => !section.keywords?.includes(k))
+                    .map(k => (
+                      <button
+                        key={k}
+                        disabled={readOnly} onClick={() => onAddKeyword(k)}
+                        className="text-[10px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 transition-all"
+                      >
+                        {k}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-x-2 border-t border-[var(--ui-border)] py-1">
+            <div className="flex flex-wrap items-center gap-1">
+              {!readOnly && <button type="button" onClick={() => setEditing(value => !value)} className={actionClass}>
+                {isEditing ? <Check className="app-icon" aria-hidden="true" /> : <Pencil className="app-icon" aria-hidden="true" />}
+                {isEditing ? tr('Xong', 'Done') : tr('Chỉnh sửa', 'Edit')}
+              </button>}
+              <button type="button" onClick={() => setShowAudit(true)} className={actionClass}>
+                <Eye className="app-icon" aria-hidden="true" />{tr('Xem AI log', 'View AI log')}
+              </button>
+            </div>
+            {!readOnly && <div className="flex items-center gap-1">
+              <button type="button" disabled={isFirst} onClick={() => onMove(-1)} aria-label={tr('Di chuyển lên', 'Move up')} title={tr('Di chuyển lên', 'Move up')} className={`${actionClass} w-11`}>
                 <ChevronUp className="app-icon" aria-hidden="true" />
               </button>
-              <button type="button" disabled={isLast} onClick={() => onMove(1)} aria-label={tr('Di chuyển xuống', 'Move down')} title={tr('Di chuyển xuống', 'Move down')} className="outline-secondary-button grid h-11 w-11 place-items-center rounded-lg border disabled:opacity-40">
+              <button type="button" disabled={isLast} onClick={() => onMove(1)} aria-label={tr('Di chuyển xuống', 'Move down')} title={tr('Di chuyển xuống', 'Move down')} className={`${actionClass} w-11`}>
                 <ChevronDown className="app-icon" aria-hidden="true" />
               </button>
-              <button type="button" onClick={() => { if (window.confirm(tr(`Xóa mục “${section.heading}” khỏi dàn bài?`, `Delete “${section.heading}” from the outline?`))) onRemove(); }} aria-label={tr('Xóa section', 'Delete section')} title={tr('Xóa section', 'Delete section')} className="outline-secondary-button grid h-11 w-11 place-items-center rounded-lg border">
+              <button type="button" onClick={() => { if (window.confirm(tr(`Xóa mục “${section.heading}” khỏi dàn bài?`, `Delete “${section.heading}” from the outline?`))) onRemove(); }} aria-label={tr('Xóa section', 'Delete section')} title={tr('Xóa section', 'Delete section')} className={`${actionClass} w-11`}>
                 <Trash2 className="app-icon" aria-hidden="true" />
               </button>
-            </>}
+            </div>}
           </div>
-          {!readOnly && <label className="outline-field block">
-            <span className="text-xs font-medium text-[var(--ui-secondary)]">{tr('Tiêu đề heading', 'Heading title')}</span>
-            <textarea
-              value={headingDraft}
-              onChange={event => setHeadingDraft(event.target.value)}
-              onBlur={() => headingDraft !== section.heading && onChange({ heading: headingDraft })}
-              rows={2}
-              className="outline-editor-control mt-1 w-full resize-y rounded-lg border px-2.5 py-2 text-sm"
-            />
-          </label>}
-          <div className="outline-field">
-            <label>Notes</label>
-            <textarea readOnly={readOnly}
-              value={notesDraft}
-              onChange={e => setNotesDraft(e.target.value)}
-              onBlur={() => notesDraft !== (section.notes ?? '') && onChange({ notes: notesDraft })}
-              rows={2}
-              placeholder={tr('Nội dung sẽ trình bày trong section...', 'Content to cover in this section...')}
-              className="outline-editor-control mt-1 w-full resize-none rounded-lg border px-2.5 py-2 text-xs outline-none"
-            />
-          </div>
-          <div className="outline-field">
-            <label>{tr('Lý do & điểm cần đánh giá', 'Rationale & review points')}</label>
-            <textarea readOnly={readOnly} value={rationaleDraft} onChange={e => setRationaleDraft(e.target.value)} onBlur={() => rationaleDraft !== (section.rationale ?? '') && onChange({ rationale: rationaleDraft })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="outline-editor-control mt-1 w-full resize-y rounded-lg border px-2.5 py-2 text-xs outline-none" />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div>
-              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Search Intent</label>
-              <select disabled={readOnly}
-                value={section.searchIntent || ""}
-                onChange={e => onChange({ searchIntent: (e.target.value || undefined) as SearchIntent | undefined })}
-                className="outline-editor-control mt-1 w-full rounded-lg border px-2 py-1.5 text-xs outline-none"
-              >
-                <option value="">— {tr('chưa xác định', 'not set')} —</option>
-                {Object.entries(SEARCH_INTENT_META).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Level</label>
-              <select disabled={readOnly}
-                value={section.level}
-                onChange={e => onChange({ level: e.target.value as "h2" | "h3" })}
-                className="outline-editor-control mt-1 w-full rounded-lg border px-2 py-1.5 text-xs outline-none"
-              >
-                <option value="h2">H2</option>
-                <option value="h3">H3</option>
-              </select>
-            </div>
-          </div>
-          {(section.keywords?.length ?? 0) > 0 && (
-            <div>
-              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Keywords</label>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {section.keywords?.map((kw, i) => (
-                  <span key={i} className="text-[10px] text-slate-600 bg-white border border-slate-200 rounded-md px-2 py-0.5">
-                    {kw}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-          {(section.evidence?.length ?? 0) > 0 && (
-            <div>
-              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{tr('Toàn bộ dẫn chứng đã kiểm chứng', 'All verified evidence')}</label>
-              <div className="space-y-2 mt-1">
-                {section.evidence?.map((e, i) => (
-                  <div key={i} className="outline-evidence-card rounded-lg border px-3 py-2 text-[10px]">
-                    <div className="font-bold mb-1">{e.role?.toUpperCase()} · {e.source}</div>
-                    {e.quote && <blockquote className="border-l-2 border-current/30 pl-2 leading-relaxed whitespace-pre-wrap">“{e.quote}”</blockquote>}
-                    {e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {(section.ruleRefs?.length ?? 0) > 0 && <div><label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Rules áp dụng</label><div className="flex flex-wrap gap-1 mt-1">{section.ruleRefs?.map(rule => <span key={rule} className="outline-rule-chip text-[10px] rounded-md border px-2 py-0.5">{rule}</span>)}</div></div>}
-          {keywordSuggestions.length > 0 && (
-            <div>
-              <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">
-                Thêm keyword từ gợi ý
-              </label>
-              <div className="flex flex-wrap gap-1 mt-1">
-                {keywordSuggestions
-                  .filter(k => !section.keywords?.includes(k))
-                  .map(k => (
-                    <button
-                      key={k}
-                      disabled={readOnly} onClick={() => onAddKeyword(k)}
-                      className="text-[10px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 transition-all"
-                    >
-                      {k}
-                    </button>
-                  ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
       {showAudit && <ProcessTraceModal title={section.heading} events={processTrace} onClose={() => setShowAudit(false)}><div className="outline-audit-content space-y-4"><div className="outline-audit-summary rounded-lg border p-4"><div className="outline-audit-label">{tr('Lý do tạo section', 'Section rationale')}</div><p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">{section.rationale || tr('Chưa có rationale trong kết quả đã lưu.', 'No rationale in the saved result.')}</p></div><div><div className="outline-audit-label mb-2">{tr('Dẫn chứng của section', 'Section evidence')}</div><div className="space-y-2">{section.evidence?.map((e, i) => <div key={`${e.source}-${i}`} className="outline-audit-evidence rounded-lg border p-3 text-[10px]"><b>{e.role?.toUpperCase()} · {e.source}</b>{e.quote && <blockquote className="mt-1.5 whitespace-pre-wrap border-l-2 pl-2">“{e.quote}”</blockquote>}{e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}</div></div></div></ProcessTraceModal>}
