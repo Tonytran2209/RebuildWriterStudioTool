@@ -1,3 +1,4 @@
+import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
 import { outlineReviewInstruction, outlineQualityChecks } from '../src/lib/outlineQuality.ts';
@@ -729,14 +730,16 @@ async function saveArticleCheckpoint(
   article: any,
   updates: Record<string, any>,
 ) {
-  const next = { ...article, ...updates, updatedAt: new Date().toISOString() }
-  if (article.activityKind === "batch" && article.activityId && deletedBatchIds.has(article.activityId)) return next
-  freezeGenerationSnapshots(article, next)
-  await projectArticleStageRuns(article)
-  await projectArticleStageRuns(next)
-  await kvSet(`${ARTICLE_PREFIX}${article.id}`, next)
-  await projectArticle(next)
-  return next
+  return serializeByKey(articleMutationQueues, article.id, async () => {
+    const next = { ...article, ...updates, updatedAt: new Date().toISOString() }
+    if (article.activityKind === "batch" && article.activityId && deletedBatchIds.has(article.activityId)) return next
+    freezeGenerationSnapshots(article, next)
+    await projectArticleStageRuns(article)
+    await projectArticleStageRuns(next)
+    await kvSet(`${ARTICLE_PREFIX}${article.id}`, next)
+    await projectArticle(next)
+    return next
+  })
 }
 
 async function projectArticle(article: any) {
@@ -3251,6 +3254,7 @@ async function runBatchArticle(
 }
 
 async function runBatch(activityId: string) {
+  if (deletedBatchIds.has(activityId)) return
   const controller = batchControllers.get(activityId) ?? {
     paused: false,
     running: false,
@@ -3270,6 +3274,7 @@ async function runBatch(activityId: string) {
         (article) =>
           article.activityId === activityId &&
           article.activityKind === "batch" &&
+          !isArticleCompleted(article) &&
           !["completed", "failed"].includes(article.batchStatus),
       )
       if (!articles.length) break
@@ -3303,6 +3308,7 @@ async function runBatch(activityId: string) {
         : latest.some((article) => article.batchStatus === "failed")
           ? "failed"
           : "queued"
+    if (deletedBatchIds.has(activityId)) return
     const usage = latest.flatMap(
       (article) => Object.values(article.aiUsageByStep ?? {}).flat() as any[],
     )
@@ -3967,6 +3973,8 @@ app.post("/api/seo/research", async (req, res) => {
     const article = await kvGet<any>(`${ARTICLE_PREFIX}${articleId}`)
     if (!article)
       return res.status(404).json({ error: "Article không tồn tại." })
+    if (isArticleCompleted(article))
+      return res.status(409).json({ code: "ARTICLE_COMPLETED", error: "Hãy mở lại bài viết trước khi chạy AI." })
     const batchMutationError = activeBatchManualMutationError(article)
     if (batchMutationError) {
       return res
@@ -4089,6 +4097,8 @@ app.post("/api/generate", async (req, res) => {
       if (article.outlineNeedsRegeneration || errors.length) return res.status(409).json({ error: errors.join("; ") || "Regenerate the outline after changing structure." })
     }
     if (stepNumber === 3 || stepNumber === 4) prompt = [prompt, outlineStructurePrompt(article.outlineStructure, stepNumber === 3 ? "outline" : "draft")].filter(Boolean).join("\n\n")
+    if (isArticleCompleted(article))
+      return res.status(409).json({ code: "ARTICLE_COMPLETED", error: "Hãy mở lại bài viết trước khi chạy AI." })
     const batchMutationError = activeBatchManualMutationError(article)
     if (batchMutationError) {
       return res
@@ -4808,11 +4818,6 @@ app.delete("/api/content-plans/:id", async (req, res) => {
         .json({
           error: `Content Plan đang có ${linked.length} article. Hãy archive thay vì xóa để bảo toàn lịch sử.`,
         })
-    await deleteDocumentBinaries(
-      (plan.sources ?? [])
-        .map((source: any) => source.storagePath)
-        .filter(Boolean),
-    )
     if (await relationalPlansAvailable()) {
       // Import/classification calls can create usage and batch audit records
       // before any article exists. Preserve those records for cost history,
@@ -4856,6 +4861,11 @@ app.delete("/api/content-plans/:id", async (req, res) => {
         })))
       await kvDelete(`${CONTENT_PLAN_PREFIX}${plan.id}`)
     }
+    await deleteDocumentBinaries(
+      (plan.sources ?? [])
+        .map((source: any) => source.storagePath)
+        .filter(Boolean),
+    ).catch(error => console.warn("[plan-delete] binary cleanup failed", error))
     res.json({ ok: true, deletedId: plan.id })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
@@ -4944,11 +4954,17 @@ app.delete("/api/batches/:activityId", async (req, res) => {
     if (controller) controller.paused = true
     deletedBatchIds.add(activityId)
 
+    // A checkpoint already writing must settle before removing its records.
+    await Promise.all(articles.map(article => articleMutationQueues.get(article.id)))
     const planIds = [...new Set(articles.map((article) => article.contentPlanId).filter(Boolean))] as string[]
     if (await tableAvailable("batch_jobs"))
       await tableDeleteWhere("batch_jobs", "id", activityId)
     if (await tableAvailable("writer_articles"))
       await tableDeleteWhere("writer_articles", "activity_id", activityId)
+
+    const legacy = (await kvGet<any[]>("writer:articles")) ?? []
+    if (legacy.some((article) => article?.activityId === activityId))
+      await kvSet("writer:articles", legacy.filter((article) => article?.activityId !== activityId))
 
     await Promise.all([
       ...articles.map((article) => kvDelete(`${ARTICLE_PREFIX}${article.id}`)),
@@ -4961,10 +4977,6 @@ app.delete("/api/batches/:activityId", async (req, res) => {
         status: "not_started",
         updated_at: new Date().toISOString(),
       })))
-
-    const legacy = (await kvGet<any[]>("writer:articles")) ?? []
-    if (legacy.some((article) => article?.activityId === activityId))
-      await kvSet("writer:articles", legacy.filter((article) => article?.activityId !== activityId))
 
     for (const planId of planIds) {
       const plan = await getContentPlan(planId)
@@ -4990,6 +5002,8 @@ app.post("/api/batches/:activityId/retry/:articleId", async (req, res) => {
     const article = await kvGet<any>(`${ARTICLE_PREFIX}${req.params.articleId}`)
     if (!article || article.activityId !== req.params.activityId)
       return res.status(404).json({ error: "Article không thuộc batch này." })
+    if (isArticleCompleted(article))
+      return res.status(409).json({ code: "ARTICLE_COMPLETED", error: "Hãy mở lại bài viết trước khi chạy AI." })
     const prerequisiteError = articleStepPrerequisite(article, 2)
     if (prerequisiteError)
       return workflowPrerequisiteResponse(res, prerequisiteError)
@@ -5257,6 +5271,13 @@ app.put("/api/articles/:id", async (req, res) => {
         if (!existing)
           existing = (await loadArticles()).find((item) => item.id === id)
         if (!existing) throw new Error("Bài viết không tồn tại trong Supabase.")
+        if (isArticleCompleted(existing)) {
+          const fields = Object.keys(updates)
+          const reopening = updates.status === "review" && updates.completedAt === null &&
+            fields.every(field => field === "status" || field === "completedAt")
+          if (!reopening && fields.some(field => field !== "currentStep" && field !== "aiUsageByStep"))
+            throw new Error("ARTICLE_COMPLETED:Hãy mở lại bài viết trước khi chỉnh sửa.")
+        }
         const next = {
           ...existing,
           ...updates,
@@ -5305,6 +5326,8 @@ app.put("/api/articles/:id", async (req, res) => {
     )
     res.json({ ok: true, article })
   } catch (err: any) {
+    if (String(err?.message ?? "").startsWith("ARTICLE_COMPLETED:"))
+      return res.status(409).json({ code: "ARTICLE_COMPLETED", error: String(err.message).slice("ARTICLE_COMPLETED:".length) })
     const workflowError = String(err?.message ?? "").startsWith(
       "WORKFLOW_PREREQUISITE_MISSING:",
     )
@@ -5320,66 +5343,72 @@ app.put("/api/articles/:id", async (req, res) => {
 app.delete("/api/articles/:id", async (req, res) => {
   try {
     const { id } = req.params
-    const existing = await kvGet<any>(`${ARTICLE_PREFIX}${id}`)
-    if (
-      !existing &&
-      !(await loadArticles()).some((article) => article.id === id)
-    ) {
-      // DELETE is idempotent. This also lets the client clear a stale Recents
-      // item after an older server version deleted the record but failed during
-      // non-critical Content Plan projection cleanup.
+    const existing = await serializeByKey(articleMutationQueues, id, async () => {
+      const article = await kvGet<any>(`${ARTICLE_PREFIX}${id}`) ??
+        (await loadArticles()).find(item => item.id === id)
+      if (!article) return null
+      if (article.activityKind === "batch" && batchControllers.get(article.activityId)?.running)
+        throw new Error("BATCH_RUNNING:Hãy đợi batch tạm dừng hoặc kết thúc trước khi xóa từng bài.")
+      if (await tableAvailable("writer_articles"))
+        await tableDeleteWhere("writer_articles", "id", id)
+      const legacy = (await kvGet<any[]>("writer:articles")) ?? []
+      if (legacy.some(item => item?.id === id))
+        await kvSet("writer:articles", legacy.filter(item => item?.id !== id))
+      await kvDelete(`${ARTICLE_PREFIX}${id}`)
+      return article
+    })
+    if (!existing) {
       res.json({ ok: true, deletedId: id, alreadyDeleted: true })
       return
     }
-    await kvDelete(`${ARTICLE_PREFIX}${id}`)
-    if (await tableAvailable("writer_articles"))
-      await tableDeleteWhere("writer_articles", "id", id)
-    const legacy = (await kvGet<any[]>("writer:articles")) ?? []
-    if (legacy.some((article) => article?.id === id)) {
-      await kvSet(
-        "writer:articles",
-        legacy.filter((article) => article?.id !== id),
-      )
-    }
-    if (existing?.activityId) {
-      const siblings = (await loadArticles()).filter(
-        (article) => article.activityId === existing.activityId,
-      )
-      if (!siblings.length) {
-        await kvDelete(`writer:batch:${existing.activityId}`)
-        batchControllers.delete(existing.activityId)
-      }
-    }
-    if (existing?.contentPlanId) {
-      if (await relationalPlansAvailable()) {
-        // Legacy articles may retain a contentPlanId after the related plan was
-        // removed. Article deletion is authoritative; missing plan projections
-        // must not turn a successful delete into a 500 response.
-        const plan = await getContentPlan(existing.contentPlanId)
-        if (plan) {
-          const projected = await tableSelect<any>("writer_articles", (query) =>
-            query.select("id").eq("content_plan_id", existing.contentPlanId),
-          )
-          await tableUpdate("content_plans", existing.contentPlanId, {
-            total_articles: projected.length,
-            updated_at: new Date().toISOString(),
-          })
-        }
-      } else {
-        const plan = await kvGet<any>(
-          `${CONTENT_PLAN_PREFIX}${existing.contentPlanId}`,
+    try {
+      const planItemId = existing.contentPlanSourceItemId || existing.contentPlanItemId
+      if (planItemId && await tableAvailable("content_plan_items"))
+        await tableUpdate("content_plan_items", planItemId, { status: "not_started", updated_at: new Date().toISOString() })
+      if (existing?.activityId) {
+        const siblings = (await loadArticles()).filter(
+          (article) => article.activityId === existing.activityId,
         )
-        if (plan) {
-          plan.totalArticles = (await kvGetByPrefix(ARTICLE_PREFIX)).filter(
-            (record) => record.value?.contentPlanId === existing.contentPlanId,
-          ).length
-          plan.updatedAt = new Date().toISOString()
-          await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, plan)
+        if (!siblings.length) {
+          await kvDelete(`writer:batch:${existing.activityId}`)
+          batchControllers.delete(existing.activityId)
         }
       }
+      if (existing?.contentPlanId) {
+        if (await relationalPlansAvailable()) {
+          // Legacy articles may retain a contentPlanId after the related plan was
+          // removed. Article deletion is authoritative; missing plan projections
+          // must not turn a successful delete into a 500 response.
+          const plan = await getContentPlan(existing.contentPlanId)
+          if (plan) {
+            const projected = await tableSelect<any>("writer_articles", (query) =>
+              query.select("id").eq("content_plan_id", existing.contentPlanId),
+            )
+            await tableUpdate("content_plans", existing.contentPlanId, {
+              total_articles: projected.length,
+              updated_at: new Date().toISOString(),
+            })
+          }
+        } else {
+          const plan = await kvGet<any>(
+            `${CONTENT_PLAN_PREFIX}${existing.contentPlanId}`,
+          )
+          if (plan) {
+            plan.totalArticles = (await kvGetByPrefix(ARTICLE_PREFIX)).filter(
+              (record) => record.value?.contentPlanId === existing.contentPlanId,
+            ).length
+            plan.updatedAt = new Date().toISOString()
+            await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, plan)
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("[article-delete] projection cleanup failed", error)
     }
     res.json({ ok: true, deletedId: id })
   } catch (err: any) {
+    if (String(err?.message ?? "").startsWith("BATCH_RUNNING:"))
+      return res.status(409).json({ error: String(err.message).slice("BATCH_RUNNING:".length) })
     res.status(500).json({ error: err.message })
   }
 })

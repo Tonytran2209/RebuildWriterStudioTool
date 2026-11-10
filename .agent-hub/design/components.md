@@ -70,3 +70,5 @@ Each checklist row opens inline to show its status, elapsed time and timestamped
 The detail icon beside each workflow checkpoint opens an accessible dialog with inputs, outputs, documents and applied rules captured during that run. Keep source context reported by the server distinct from verified evidence and mark missing data explicitly. Keep large payloads behind field disclosures and the existing timeline inline.
 
 Keep the log header visible and its checklist collapsed by default when opening or reloading an article, including when the step has no recorded run. Its live status and timer remain visible. Restore the last finished run per article and workflow step in the current browser tab so reopening the checklist still shows its events and checkpoint details.
+
+Campaign labels use the same 13 px typography as recent article rows, with separate accessible delete targets. Completed article workspaces keep review and export available and require reopening before generation or editing. When restoring a saved sign-in, use the workspace loading screen until the session check resolves.

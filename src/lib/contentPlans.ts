@@ -1,19 +1,10 @@
 import type { ContentPlan, ContentPlanSourceType } from '../types';
-import { getAuthSession } from './db';
+import { authenticatedRailwayFetch } from './db';
 
-function baseUrl(railwayUrl: string) { return railwayUrl.trim().replace(/\/$/, '') || window.location.origin; }
 async function parse(response: Response) { const payload = await response.json().catch(() => ({ error: response.statusText })); if (!response.ok) throw new Error(payload.error || `Content Plan error ${response.status}`); return payload; }
 
-// Content Plan endpoints are protected by the same Railway auth middleware as
-// the rest of the application. Keep the token wiring here so imports, history,
-// classification, and edits cannot accidentally make unauthenticated requests.
-async function contentPlanRequest(path: string, railwayUrl: string, init?: RequestInit): Promise<Response> {
-  const headers = new Headers(init?.headers)
-  const session = getAuthSession()
-  if (session?.accessToken && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${session.accessToken}`)
-  }
-  return fetch(`${baseUrl(railwayUrl)}${path}`, { ...init, headers })
+function contentPlanRequest(path: string, railwayUrl: string, init?: RequestInit): Promise<Response> {
+  return authenticatedRailwayFetch(path, init, railwayUrl);
 }
 
 export async function importContentPlan(input: { name: string; sourceType: ContentPlanSourceType; content?: string; url?: string; file?: File; previousVersionId?: string }, railwayUrl: string): Promise<ContentPlan> {

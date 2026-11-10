@@ -22,7 +22,7 @@ interface Props {
   onSignOutAll?: () => void
   onToggleComplete: (article: Article) => void
   completionSavingId: string | null
-  onDeleteArticle: (article: Article) => void
+  onDeleteArticle: (article: Article, deleteGroup?: boolean) => void
   deletingArticleId: string | null
 }
 export default function Sidebar({
@@ -161,14 +161,27 @@ export default function Sidebar({
               onClick={() => setExpanded(current => { const next = new Set(current); if (next.has(campaign.id)) next.delete(campaign.id); else next.add(campaign.id); return next })}
               className="sidebar-nav min-h-11 w-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-text)]">
               <ChevronDown aria-hidden="true" className={`app-icon shrink-0 ${isOpen ? "" : "-rotate-90"}`} />
-              <span className="truncate">{campaign.name}</span><span className="ml-auto text-xs text-[var(--ui-secondary)]">{campaign.articles.length}</span>
+              <span className="campaign-nav-label truncate">{campaign.name}</span><span className="ml-auto text-xs text-[var(--ui-secondary)]">{campaign.articles.length}</span>
             </button>
             {isOpen && <div id={`campaign-${campaign.id}`} className="ml-4 border-l border-[var(--ui-border)] pl-1">
-              {matching.map(article => <button key={article.id} title={article.topic || article.title} onClick={() => onSelectArticle(article.id)} aria-current={activeArticleId === article.id ? "page" : undefined}
-                className={`sidebar-nav min-h-11 w-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-text)] ${activeArticleId === article.id ? "bg-[var(--ui-selected)]" : ""}`}>
-                <span className="truncate">{article.topic || article.title}</span>
-                {(article.status === "done" || article.completedAt || article.batchStatus === "completed") && <CircleCheck className="app-icon ml-auto shrink-0 text-emerald-400" aria-label={tr("Đã hoàn tất", "Completed")} />}
-              </button>)}
+              {matching.map(article => {
+                const batchRunning = article.activityKind === "batch" && articles.some(item => item.activityId === article.activityId && item.batchStatus === "running")
+                const title = article.topic || article.title
+                return <div key={article.id} className="group flex min-w-0 items-center">
+                  <button title={title} onClick={() => onSelectArticle(article.id)} aria-current={activeArticleId === article.id ? "page" : undefined}
+                    className={`sidebar-nav min-h-11 min-w-0 flex-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-text)] ${activeArticleId === article.id ? "bg-[var(--ui-selected)]" : ""}`}>
+                    <span className="campaign-nav-label truncate">{title}</span>
+                    {(article.status === "done" || article.completedAt || article.batchStatus === "completed") && <CircleCheck className="app-icon ml-auto shrink-0 text-emerald-400" aria-label={tr("Đã hoàn tất", "Completed")} />}
+                  </button>
+                  <button type="button" disabled={Boolean(deletingArticleId) || batchRunning}
+                    onClick={() => onDeleteArticle(article)}
+                    title={batchRunning ? tr("Tạm dừng batch trước khi xóa từng bài", "Pause the batch before deleting an article") : tr("Xóa bài viết", "Delete article")}
+                    aria-label={`${tr("Xóa bài viết", "Delete article")}: ${title}`}
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-[var(--ui-secondary)] hover:bg-[var(--ui-hover)] hover:text-red-400 disabled:opacity-35">
+                    <Trash2 className="app-icon" aria-hidden="true" />
+                  </button>
+                </div>
+              })}
               {!matching.length && <p className="px-2 py-3 text-xs text-[var(--ui-secondary)]">{tr("Chưa có bài viết", "No articles yet")}</p>}
             </div>}
           </section>
@@ -211,9 +224,9 @@ export default function Sidebar({
               {(batchComplete || singleComplete) && <CircleCheck className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-400 transition-opacity group-hover:opacity-0" aria-label={tr("Đã hoàn tất", "Completed")} />}
               <button
                 disabled={deletingArticleId === article.id}
-                onClick={(event) => { event.stopPropagation(); onDeleteArticle(article) }}
-                className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ui-secondary)] opacity-0 transition-all hover:bg-[var(--ui-hover)] hover:text-red-400 group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 disabled:opacity-30"
-                aria-label={tr("Xóa bài viết", "Delete article")}
+                onClick={(event) => { event.stopPropagation(); onDeleteArticle(article, isBatch) }}
+                className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-[var(--ui-secondary)] opacity-100 transition-all hover:bg-[var(--ui-hover)] hover:text-red-400 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100 focus-visible:opacity-100 disabled:opacity-30"
+                aria-label={isBatch ? tr("Xóa batch", "Delete batch") : tr("Xóa bài viết", "Delete article")}
               >
                 <Trash2 className="app-icon" aria-hidden="true" />
               </button>

@@ -1,3 +1,4 @@
+import { DEFAULT_CONFIG } from '../../src/lib/defaultData';
 import { test, expect } from './browser-fixture';
 test('PostgreSQL auth restores cookie session after reload without persisting tokens', async ({ page }) => {
   let refreshes = 0, logouts = 0;
@@ -52,4 +53,32 @@ test('Email confirmation submits one-time token explicitly and clears URL fragme
   await page.getByRole('button',{name:/^(Xác nhận email|Verify email)$/}).click();
   await expect(page.getByRole('status')).toHaveText('Email verified fixture');
   expect(confirmations).toBe(1);
+});
+
+test('App keeps the sign-in form hidden while a stored cookie session is refreshed', async ({page}) => {
+ const user = { id:'user',email:'user@example.com',role:'user' };
+ let release!: () => void;
+ const pending = new Promise<void>(resolve => { release = resolve; });
+ await page.addInitScript(user => {
+  localStorage.setItem('writer:auth-session', JSON.stringify({authProvider:'postgres',accessToken:'',expiresAt:null,user}));
+ }, user);
+ await page.route('**/*', async route => {
+  const url = new URL(route.request().url());
+  if (url.hostname !== '127.0.0.1') return route.abort();
+  if (url.pathname === '/api/auth/refresh') {
+   await pending;
+   return route.fulfill({json:{authProvider:'postgres',accessToken:'test-access',expiresAt:null,user}});
+  }
+  if (url.pathname === '/api/config') return route.fulfill({json:{...DEFAULT_CONFIG,railwayUrl:url.origin}});
+  if (['/api/articles','/api/files','/api/content-plans'].includes(url.pathname)) return route.fulfill({json:[]});
+  return route.fallback();
+ });
+ await page.goto('/?app-auth');
+ try {
+  await expect(page.getByText(/Đang tải Writer Studio|Loading Writer Studio/)).toBeVisible();
+  await expect(page.getByLabel('Email',{exact:true})).toHaveCount(0);
+  release();
+  await expect(page.getByRole('button',{name:'Writer Studio',exact:true})).toBeVisible();
+  await expect(page.getByLabel('Email',{exact:true})).toHaveCount(0);
+ } finally { release(); }
 });

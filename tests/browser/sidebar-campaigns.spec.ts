@@ -20,6 +20,8 @@ for(const theme of ['light','dark']) test(`campaign disclosure and navigation in
  await expect(page.getByTestId('campaign-selected')).toHaveText('batch');
  await page.getByRole('button',{name:'Single article Completed',exact:true}).click();
  await expect(page.getByTestId('campaign-selected')).toHaveText('single');
+ await expect(campaign.locator('.campaign-nav-label')).toHaveCSS('font-size','13px');
+ await expect(page.getByRole('button',{name:'Batch article',exact:true}).locator('.campaign-nav-label')).toHaveCSS('font-size','13px');
  await campaign.focus(); await page.keyboard.press('Space');
  await expect(campaign).toHaveAttribute('aria-expanded','false');
  await page.getByRole('button',{name:'Empty campaign'}).click();
@@ -29,7 +31,7 @@ for(const theme of ['light','dark']) test(`campaign disclosure and navigation in
  await expect(page.getByRole('button',{name:'Single article Completed',exact:true})).toBeVisible();
  await page.getByRole('textbox',{name:'Search articles'}).fill('');
  await page.getByRole('button',{name:'Campaign details unavailable'}).click();
- await expect(page.getByRole('button',{name:'Missing metadata article'})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Missing metadata article',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Ungrouped article',exact:true})).toBeVisible();
  expect(writes).toEqual([]); await expect(page.getByTestId('campaign-deleted')).toBeEmpty();
 });
@@ -74,4 +76,37 @@ test('offline: actual Sidebar renders collapsed campaigns and preserves ungroupe
   expect(markup.match(/aria-expanded="false" aria-controls="campaign-/g)).toHaveLength(2);
   expect(markup).not.toContain('Hidden child');expect(markup).toContain('Accessible old article');
  } finally { Reflect.deleteProperty(globalThis,'localStorage'); }
+});
+
+test('campaign articles have per-item deletion and plan history supports delete or archive',async({page})=>{
+ const writes:string[]=[];
+ let archiveStatus='ready';
+ let emptyDeleted=false;
+ await page.route('**/api/content-plans**',async route=>{
+  const request=route.request();
+  if(request.method()==='PATCH'){
+   writes.push('archive');
+   archiveStatus='archived';
+   return route.fulfill({json:{plan:{...plan('campaign-a','Added campaign'),status:archiveStatus}}});
+  }
+  if(request.method()==='DELETE'){
+   writes.push('delete');
+   emptyDeleted=true;
+   return route.fulfill({json:{ok:true}});
+  }
+  await route.fulfill({json:[{...plan('campaign-a','Added campaign'),status:archiveStatus},...(emptyDeleted?[]:[plan('empty','Empty campaign')])]});
+ });
+ page.on('dialog', dialog=>dialog.accept());
+ await open(page);
+ await page.getByRole('button',{name:'Added campaign'}).click();
+ await page.getByRole('button',{name:'Delete article: Single article',exact:true}).click();
+ await expect(page.getByTestId('campaign-deleted')).toHaveText('single');
+ await page.getByRole('button',{name:'Delete article: Batch article',exact:true}).click();
+ await expect(page.getByTestId('campaign-deleted')).toHaveText('batch');
+ await page.locator('.activity-launcher').getByRole('button',{name:'Content Plan history',exact:true}).click();
+ await page.getByRole('button',{name:'Archive Content Plan: Added campaign',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Archive Content Plan: Added campaign',exact:true})).toBeDisabled();
+ await page.getByRole('button',{name:'Delete Content Plan: Empty campaign',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Delete Content Plan: Empty campaign',exact:true})).toHaveCount(0);
+ expect(writes).toEqual(['archive','delete']);
 });

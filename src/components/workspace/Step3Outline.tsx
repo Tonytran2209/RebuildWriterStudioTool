@@ -1,3 +1,4 @@
+import { isArticleCompleted } from '../../lib/workflowGuards';
 import WorkflowCheckLog, { useWorkflowCheckLog } from './WorkflowCheckLog';
 import { measureUiAfterPaint, sendOutlinePerformanceSample, uiInteractionStart } from "../../lib/performanceTelemetry";
 import { getArticleStages, type ArticleStageVersion } from "../../lib/db";
@@ -201,6 +202,7 @@ export default function Step3Outline({
   onPrev,
 }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
+  const completed = isArticleCompleted(article);
   const generationLog = useWorkflowCheckLog(article.id, 3);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -311,7 +313,7 @@ export default function Step3Outline({
 
   const handleGenerate = async (manual: boolean, eventTime: number) => {
     const startedAt = uiInteractionStart(eventTime);
-    if (generationInFlight.current) return;
+    if (completed || generationInFlight.current) return;
     if (!prerequisite.allowed) {
       setError(tr(prerequisite.reasonVi, prerequisite.reason));
       return;
@@ -506,6 +508,7 @@ export default function Step3Outline({
   };
 
   const handleSuggestKeywords = async () => {
+    if (completed) return;
     if (!contextBrief.angle && !contextBrief.topic) return;
     setSuggestingKeywords(true);
     try {
@@ -577,7 +580,7 @@ export default function Step3Outline({
   const isCurrentStep = (article.currentStep ?? 2) <= 3;
   const needsOutlineApproval = isCurrentStep && article.activityType === 'editorial-originality' && article.editorialApproval?.status !== 'approved';
   const canContinueToDraft = isCurrentStep && gateStepCompletion(article, 3).allowed && !needsOutlineApproval;
-  const stepActionDisabled = (!canContinueToDraft && !needsOutlineApproval && !article.outlineStructure) || generating || (needsOutlineApproval ? !outline.length : !canContinueToDraft && !prerequisite.allowed);
+  const stepActionDisabled = completed || (!canContinueToDraft && !needsOutlineApproval && !article.outlineStructure) || generating || (needsOutlineApproval ? !outline.length : !canContinueToDraft && !prerequisite.allowed);
 
   return (
     <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
@@ -594,7 +597,7 @@ export default function Step3Outline({
                 </p>
               </div>
             </div>
-            <OutlineStructureSelect files={files} allowedIds={config.stepConfigs[3]?.fileAccess?.rules ?? []} value={article.outlineStructure} disabled={generating || (article.activityKind === "batch" && !["completed", "failed"].includes(article.batchStatus ?? "queued"))} onChange={outlineStructure => void onUpdate(outlineSelectionUpdates(outlineStructure))} />
+            <OutlineStructureSelect files={files} allowedIds={config.stepConfigs[3]?.fileAccess?.rules ?? []} value={article.outlineStructure} disabled={completed || generating || (article.activityKind === "batch" && !["completed", "failed"].includes(article.batchStatus ?? "queued"))} onChange={outlineStructure => void onUpdate(outlineSelectionUpdates(outlineStructure))} />
             {article.outlineNeedsRegeneration && <p role="status" className="text-xs">{tr('Cấu trúc đã đổi. Hãy tạo lại outline trước khi viết draft. Kết quả cũ vẫn được giữ.', 'Structure changed. Regenerate the outline before drafting. Previous output is preserved.')}</p>}
             <GenerationHistory articleId={article.id} stage="outline" generationId={article.outlineGenerationId} />
             <StepUsage step={2} usage={article.aiUsageByStep?.[3]} />
@@ -641,6 +644,7 @@ export default function Step3Outline({
                       onMove={dir => moveSection(section.id, dir)}
                       keywordSuggestions={suggestedKeywords}
                       onAddKeyword={kw => addKeywordToSection(section.id, kw)}
+                      readOnly={completed}
                       processTrace={article.step3ProcessTrace}
                     />
                   ))}
@@ -649,7 +653,7 @@ export default function Step3Outline({
             )}
 
             {/* Add section */}
-            <div className="outline-add-panel space-y-3 rounded-xl border border-slate-200 p-4">
+            {!completed && <div className="outline-add-panel space-y-3 rounded-xl border border-slate-200 p-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="text-xs font-bold text-slate-700">{tr('Thêm section hoặc luận điểm nhánh', 'Add a section or supporting point')}</div>
                 <button
@@ -705,7 +709,7 @@ export default function Step3Outline({
                   </div>
                 </div>
               )}
-            </div>
+            </div>}
           </div>
         </div>
       </div>
@@ -749,6 +753,7 @@ function SectionRow({
   keywordSuggestions,
   onAddKeyword,
   processTrace,
+  readOnly,
 }: {
   index: number;
   isFirst: boolean;
@@ -760,6 +765,7 @@ function SectionRow({
   keywordSuggestions: string[];
   onAddKeyword: (kw: string) => void;
   processTrace?: AIProcessTraceEvent[];
+  readOnly: boolean;
 }) {
   const { tr } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -805,6 +811,7 @@ function SectionRow({
             )}
           </div>
           <textarea
+            readOnly={readOnly}
             value={headingDraft}
             onChange={e => setHeadingDraft(e.target.value)}
             onBlur={() => headingDraft !== section.heading && onChange({ heading: headingDraft })}
@@ -859,10 +866,10 @@ function SectionRow({
           {menuOpen && (
             <div className="outline-menu-popover absolute right-0 top-9 z-20 w-44 overflow-hidden rounded-lg border p-1 shadow-lg" role="menu">
               <button type="button" role="menuitem" onClick={() => { setShowAudit(true); setMenuOpen(false); }}><Eye className="app-icon" aria-hidden="true" /><span>{tr('Xem AI log', 'View AI log')}</span></button>
-              <button type="button" role="menuitem" disabled={isFirst} onClick={() => { onMove(-1); setMenuOpen(false); }}><ChevronUp className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển lên', 'Move up')}</span></button>
-              <button type="button" role="menuitem" disabled={isLast} onClick={() => { onMove(1); setMenuOpen(false); }}><ChevronDown className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển xuống', 'Move down')}</span></button>
+              <button type="button" role="menuitem" disabled={readOnly || isFirst} onClick={() => { onMove(-1); setMenuOpen(false); }}><ChevronUp className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển lên', 'Move up')}</span></button>
+              <button type="button" role="menuitem" disabled={readOnly || isLast} onClick={() => { onMove(1); setMenuOpen(false); }}><ChevronDown className="app-icon" aria-hidden="true" /><span>{tr('Di chuyển xuống', 'Move down')}</span></button>
               <div className="outline-menu-divider my-1 border-t" />
-              <button type="button" role="menuitem" className="is-danger" onClick={() => { onRemove(); setMenuOpen(false); }}><Trash2 className="app-icon" aria-hidden="true" /><span>{tr('Xóa section', 'Delete section')}</span></button>
+              <button type="button" role="menuitem" disabled={readOnly} className="is-danger" onClick={() => { onRemove(); setMenuOpen(false); }}><Trash2 className="app-icon" aria-hidden="true" /><span>{tr('Xóa section', 'Delete section')}</span></button>
             </div>
           )}
         </div>
@@ -874,7 +881,7 @@ function SectionRow({
         <div className="outline-expanded space-y-4 border-t px-3 py-3 sm:px-4 sm:py-4">
           <div className="outline-field">
             <label>Notes</label>
-            <textarea
+            <textarea readOnly={readOnly}
               value={notesDraft}
               onChange={e => setNotesDraft(e.target.value)}
               onBlur={() => notesDraft !== (section.notes ?? '') && onChange({ notes: notesDraft })}
@@ -885,12 +892,12 @@ function SectionRow({
           </div>
           <div className="outline-field">
             <label>{tr('Lý do & điểm cần đánh giá', 'Rationale & review points')}</label>
-            <textarea value={rationaleDraft} onChange={e => setRationaleDraft(e.target.value)} onBlur={() => rationaleDraft !== (section.rationale ?? '') && onChange({ rationale: rationaleDraft })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="outline-editor-control mt-1 w-full resize-y rounded-lg border px-2.5 py-2 text-xs outline-none" />
+            <textarea readOnly={readOnly} value={rationaleDraft} onChange={e => setRationaleDraft(e.target.value)} onBlur={() => rationaleDraft !== (section.rationale ?? '') && onChange({ rationale: rationaleDraft })} rows={3} placeholder={tr('Vì sao section này cần thiết, vị trí và dẫn chứng hỗ trợ...', 'Why this section, its position, and supporting evidence...')} className="outline-editor-control mt-1 w-full resize-y rounded-lg border px-2.5 py-2 text-xs outline-none" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Search Intent</label>
-              <select
+              <select disabled={readOnly}
                 value={section.searchIntent || ""}
                 onChange={e => onChange({ searchIntent: (e.target.value || undefined) as SearchIntent | undefined })}
                 className="outline-editor-control mt-1 w-full rounded-lg border px-2 py-1.5 text-xs outline-none"
@@ -903,7 +910,7 @@ function SectionRow({
             </div>
             <div>
               <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Level</label>
-              <select
+              <select disabled={readOnly}
                 value={section.level}
                 onChange={e => onChange({ level: e.target.value as "h2" | "h3" })}
                 className="outline-editor-control mt-1 w-full rounded-lg border px-2 py-1.5 text-xs outline-none"
@@ -951,7 +958,7 @@ function SectionRow({
                   .map(k => (
                     <button
                       key={k}
-                      onClick={() => onAddKeyword(k)}
+                      disabled={readOnly} onClick={() => onAddKeyword(k)}
                       className="text-[10px] font-medium bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 transition-all"
                     >
                       {k}

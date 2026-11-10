@@ -40,6 +40,11 @@ export function getAuthSession(): AuthSession | null {
   return session?.expiresAt && session.expiresAt * 1000 <= Date.now() ? null : session
 }
 
+export function hasRefreshableAuthSession(): boolean {
+  const session = readStoredAuthSession()
+  return Boolean(session?.refreshToken || session?.authProvider === "postgres")
+}
+
 export function clearAuthSession() {
   memorySession = null
   localStorage.removeItem(AUTH_STORAGE_KEY)

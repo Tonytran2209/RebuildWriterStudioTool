@@ -2,7 +2,7 @@ import OutlineStructureSelect from './OutlineStructureSelect';
 import type { OutlineStructureSnapshot } from '../../shared/outlineStructures';
 import type { DocumentFile } from '../types';
 import { useEffect, useRef, useState } from "react"
-import { ArrowLeft, FilePlus2, FileText, History, LoaderCircle, Plus, Sheet, Trash2, Upload, X } from "lucide-react"
+import { Archive, ArrowLeft, FilePlus2, FileText, History, LoaderCircle, Plus, Sheet, Trash2, Upload, X } from "lucide-react"
 import type {
   AIModel,
   Article,
@@ -16,6 +16,7 @@ import {
   fetchContentPlans,
   importContentPlan,
   updateContentPlanItem,
+  updateContentPlanStatus,
 } from "../lib/contentPlans"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
@@ -113,20 +114,32 @@ export default function ActivityLauncher({
     setMenu(false)
     if (type === "file") fileInput.current?.click()
   }
-  const handleDeletePlan = async (item: ContentPlan) => {
-    const confirmed = window.confirm(tr(
-      `Xóa Content Plan “${item.name}”? Thao tác này không thể hoàn tác. Các plan đã có bài viết liên kết cần được archive để bảo toàn lịch sử.`,
-      `Delete Content Plan “${item.name}”? This cannot be undone. Plans with linked articles must be archived to preserve history.`,
+  const handleDeletePlan = async (item: ContentPlan, archive: boolean) => {
+    if (deletingPlanId) return
+    const confirmed = window.confirm(archive ? tr(
+      `Lưu trữ Content Plan “${item.name}” và giữ các bài đã tạo?`,
+      `Archive Content Plan “${item.name}” and keep its articles?`,
+    ) : tr(
+      `Xóa vĩnh viễn Content Plan “${item.name}”?`,
+      `Permanently delete Content Plan “${item.name}”?`,
     ))
     if (!confirmed) return
     setDeletingPlanId(item.id)
     setError(null)
     try {
-      await deleteContentPlan(item.id, railwayUrl)
-      plansRevision.current++
-      onContentPlansChange?.([], item.id)
-      setPlans(current => current.filter(planItem => planItem.id !== item.id))
-      setPlan(current => current?.id === item.id ? null : current)
+      if (archive) {
+        const updated = await updateContentPlanStatus(item.id, 'archived', railwayUrl)
+        plansRevision.current++
+        onContentPlansChange?.([updated])
+        setPlans(current => current.map(entry => entry.id === item.id ? updated : entry))
+        setPlan(current => current?.id === item.id ? updated : current)
+      } else {
+        await deleteContentPlan(item.id, railwayUrl)
+        plansRevision.current++
+        onContentPlansChange?.([], item.id)
+        setPlans(current => current.filter(entry => entry.id !== item.id))
+        setPlan(current => current?.id === item.id ? null : current)
+      }
       setSelected([])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -209,7 +222,7 @@ export default function ActivityLauncher({
     setSelected((current) => current.filter((id) => id !== item.id))
   }
   const generate = async () => {
-    if (!plan || !chosen.length) return
+    if (!plan || plan.status === "archived" || !chosen.length) return
     if (chosen.length > 1 && !outlineStructure) { setError(tr("Chọn cấu trúc outline trước khi chạy batch.", "Choose an outline structure before running the batch.")); return; }
     const target = chosen.slice(0, 20)
     setBusy(true)
@@ -505,7 +518,7 @@ export default function ActivityLauncher({
                       )}
                 </div>
                 <button
-                  disabled={busy || (selected.length > 1 && !outlineStructure)}
+                  disabled={busy || plan.status === "archived" || (selected.length > 1 && !outlineStructure)}
                   onClick={generate}
                   className="rounded-lg bg-[var(--ui-primary-bg)] px-4 py-2 text-[11px] font-semibold text-[var(--ui-primary-text)] disabled:opacity-40"
                 >
@@ -674,7 +687,7 @@ export default function ActivityLauncher({
       )}
       {showHistory && (
         <div
-          className="fixed inset-0 z-40 bg-black/60 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[60] bg-black/60 p-4 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
           aria-labelledby="plan-history-title"
@@ -697,6 +710,8 @@ export default function ActivityLauncher({
             <div className="mt-4 space-y-2">
               {error && <div className="rounded-lg border border-[#5a3434] bg-[#281d1d] px-3 py-2 text-[10px] leading-relaxed text-[#e1a1a1]">{error}</div>}
               {historyPlans.map((item, index) => {
+                const archive = recentArticles.some(article => article.contentPlanId === item.id)
+                const actionLabel = archive ? tr('Lưu trữ Content Plan', 'Archive Content Plan') : tr('Xóa Content Plan', 'Delete Content Plan')
                 const source = item.sources?.[0]
                 const order = historyPlans.length - index
                 const updated = item.updatedAt && item.updatedAt !== item.createdAt
@@ -736,13 +751,13 @@ export default function ActivityLauncher({
                 </button>
                 <button
                   type="button"
-                  onClick={(event) => { event.stopPropagation(); void handleDeletePlan(item) }}
-                  disabled={deletingPlanId === item.id}
-                  className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-md text-[var(--ui-secondary)] opacity-0 transition hover:bg-[#312525] hover:text-[#e0a0a0] focus:opacity-100 disabled:opacity-100 group-hover:opacity-100"
-                  title={tr('Xóa Content Plan', 'Delete Content Plan')}
-                  aria-label={`${tr('Xóa Content Plan', 'Delete Content Plan')}: ${item.name}`}
+                  onClick={(event) => { event.stopPropagation(); void handleDeletePlan(item, archive) }}
+                  disabled={Boolean(deletingPlanId) || (archive && item.status === "archived")}
+                  className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-md text-[var(--ui-secondary)] transition hover:bg-[#312525] hover:text-[#e0a0a0] disabled:opacity-40"
+                  title={actionLabel}
+                  aria-label={`${actionLabel}: ${item.name}`}
                 >
-                  {deletingPlanId === item.id ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : <Trash2 className="app-icon" aria-hidden="true" />}
+                  {deletingPlanId === item.id ? <LoaderCircle className="app-icon animate-spin" aria-hidden="true" /> : archive ? <Archive className="app-icon" aria-hidden="true" /> : <Trash2 className="app-icon" aria-hidden="true" />}
                 </button>
                 </div>
               )})}

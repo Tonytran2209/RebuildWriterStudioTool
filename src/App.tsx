@@ -25,7 +25,7 @@ import { useI18n } from "./lib/i18n"
 import ActivityLauncher from "./components/ActivityLauncher"
 import BatchActivity from "./components/BatchActivity"
 import LoginScreen from "./components/LoginScreen"
-import { clampArticleStep, gateArticleStep, gateStepCompletion } from "./lib/workflowGuards"
+import { clampArticleStep, gateArticleStep, gateStepCompletion, isArticleCompleted } from "./lib/workflowGuards"
 import { isLegacyArticle } from "./lib/legacyCompatibility"
 import { useThemePreference } from "./lib/theme"
 
@@ -62,12 +62,23 @@ export default function App() {
     }
     return db.getAuthSession()
   })
+  const [restoringSession, setRestoringSession] = useState(() =>
+    !authSession && !hasPasswordRecoveryLink() && db.hasRefreshableAuthSession(),
+  )
   const [articles, setArticles] = useState<Article[]>([])
   useEffect(() => {
-    if (!hasPasswordRecoveryLink() && !db.getAuthSession()) {
-      void db.refreshStoredAuthSession().then(session => { if (session) setAuthSession(session) })
-    }
-  }, [])
+    if (!restoringSession) return
+    let active = true
+    void db.refreshStoredAuthSession().then(session => {
+      if (!active) return
+      if (session) {
+        setSyncStatus("loading")
+        setAuthSession(session)
+      }
+      setRestoringSession(false)
+    })
+    return () => { active = false }
+  }, [restoringSession])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [contentPlans, setContentPlans] = useState<ContentPlan[]>([])
@@ -111,6 +122,7 @@ export default function App() {
   const workflowStepRefs = useRef(new Map<2 | 3 | 4, HTMLElement>())
   const articleMutationQueues = useRef(new Map<string, Promise<void>>())
   const failedArticleMutations = useRef(new Set<string>())
+  const deletingOrDeletedIds = useRef(new Set<string>())
   const articlesRef = useRef<Article[]>([])
   const activeIdRef = useRef<string | null>(null)
   articlesRef.current = articles
@@ -199,6 +211,8 @@ export default function App() {
   const handleUpdateArticle = useCallback(
     (id: string, updates: Partial<Article>, options: ArticleUpdateOptions = {}) => {
       const previous = articlesRef.current.find((article) => article.id === id)
+      if (deletingOrDeletedIds.current.has(id)) return Promise.resolve(false)
+      if (previous && isArticleCompleted(previous) && Object.keys(updates).some(key => key !== "currentStep")) return Promise.resolve(false)
       setArticles((prev) =>
         prev.map((a) =>
           a.id === id
@@ -364,7 +378,7 @@ export default function App() {
   const handleToggleComplete = useCallback(
     async (target: Article) => {
       if (completionSavingId) return
-      const isDone = target.status === "done"
+      const isDone = isArticleCompleted(target)
       const updates: Partial<Article> = isDone
         ? { status: "review", completedAt: null }
         : {
@@ -418,14 +432,14 @@ export default function App() {
   }, [migratingLegacyId, tr])
 
   const handleDeleteArticle = useCallback(
-    async (target: Article) => {
-      if (deletingArticleId) return
+    async (target: Article, deleteGroup = false) => {
+      if (deletingArticleId || deletingOrDeletedIds.current.has(target.id)) return
       const targets =
-        target.activityKind === "batch" && target.activityId
+        deleteGroup && target.activityId
           ? articles.filter((item) => item.activityId === target.activityId)
           : [target]
       const confirmed = window.confirm(
-        targets.length > 1
+        deleteGroup
           ? `Xoá vĩnh viễn batch gồm ${targets.length} bài khỏi Supabase? Thao tác này không thể hoàn tác.`
           : isLegacyArticle(target)
             ? `Xoá vĩnh viễn bài legacy “${target.title || target.topic}” khỏi cả kho lưu trữ cũ và Supabase? Thao tác này không thể hoàn tác.`
@@ -436,24 +450,22 @@ export default function App() {
       setArticleActionError(null)
       setDeletingArticleId(target.id)
       setSyncStatus("saving")
-      const previousArticles = articles
-      const previousActiveId = activeId
-      const targetIds = new Set(targets.map((item) => item.id))
-      const remaining = articles.filter((item) => !targetIds.has(item.id))
-      setArticles(remaining)
-      if (activeId && targetIds.has(activeId)) setActiveId(remaining[0]?.id ?? null)
+      const targetIds = new Set(targets.map(item => item.id))
+      targetIds.forEach(id => deletingOrDeletedIds.current.add(id))
       try {
         // Finish any content save already queued before deleting the database record.
         await Promise.all(targets.map((item) => waitForArticleMutations(item.id)))
-        if (target.activityKind === "batch" && target.activityId)
+        if (deleteGroup && target.activityId)
           await db.deleteBatch(target.activityId)
         else
           await db.deleteArticle(target.id)
+        const remaining = articlesRef.current.filter(item => !targetIds.has(item.id))
+        setArticles(current => current.filter(item => !targetIds.has(item.id)))
+        if (activeIdRef.current && targetIds.has(activeIdRef.current)) setActiveId(remaining[0]?.id ?? null)
         setSyncStatus("idle")
-        notifyWorkspace(targets.length > 1 ? `Đã xóa batch gồm ${targets.length} bài.` : "Đã xóa bài viết.", "success")
+        notifyWorkspace(deleteGroup ? `Đã xóa batch gồm ${targets.length} bài.` : "Đã xóa bài viết.", "success")
       } catch (error: unknown) {
-        setArticles(previousArticles)
-        setActiveId(previousActiveId)
+        targetIds.forEach(id => deletingOrDeletedIds.current.delete(id))
         setArticleActionError(
           `Không xoá được bài viết khỏi Supabase: ${
             error instanceof Error ? error.message : String(error)
@@ -464,7 +476,7 @@ export default function App() {
         setDeletingArticleId(null)
       }
     },
-    [activeId, articles, deletingArticleId, waitForArticleMutations],
+    [articles, deletingArticleId, waitForArticleMutations],
   )
 
   const handleSaveConfig = async (
@@ -567,7 +579,7 @@ export default function App() {
             changed = true
             return remote
           })
-          const added = remoteArticles.filter((item) => !currentIds.has(item.id))
+          const added = remoteArticles.filter((item) => !currentIds.has(item.id) && !deletingOrDeletedIds.current.has(item.id))
           if (added.length) changed = true
           return changed ? [...added, ...merged] : current
         })
@@ -641,7 +653,7 @@ export default function App() {
     undefined
 
   // ── Loading screen ──
-  if (!authSession) {
+  if (!authSession && !restoringSession) {
     return <LoginScreen
       onLogin={async (email, password) => setAuthSession(await db.login(email, password))}
       onSignUp={db.signUp}
@@ -650,7 +662,7 @@ export default function App() {
     />
   }
 
-  if (syncStatus === "loading") {
+  if (restoringSession || syncStatus === "loading") {
     return (
       <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} h-dvh flex items-center justify-center bg-[var(--ui-bg)]`}>
         <div className="text-center space-y-3">
@@ -665,6 +677,8 @@ export default function App() {
       </div>
     )
   }
+
+  if (!authSession) return null
 
   if (initialLoadError) {
     return (
@@ -751,6 +765,8 @@ export default function App() {
             articles={articles.filter(
               (item) => item.activityId === article.activityId,
             )}
+            onDeleteBatch={() => void handleDeleteArticle(article, true)}
+            deletingBatch={Boolean(deletingArticleId)}
             onOpen={(id) => {
               setActiveId(id)
               setShowBatchOverview(false)
@@ -808,6 +824,9 @@ export default function App() {
             <main className="continuous-workspace flex-1 min-h-0 overflow-y-auto p-2.5 md:p-5">
               <div className="workflow-layout">
                 <div className="workflow-content min-w-0 space-y-6">
+                  {isArticleCompleted(article) && <p className="rounded-xl border border-[var(--ui-border)] px-4 py-3 text-sm text-[var(--ui-secondary)]">
+                    {tr("Bài đã hoàn thành. Chọn Mở lại bài viết ở bước Draft Content để chỉnh sửa hoặc chạy AI lại.", "This article is complete. Choose Reopen article in Draft Content to edit or run AI again.")}
+                  </p>}
                   <section ref={(node) => { if (node) workflowStepRefs.current.set(2, node); else workflowStepRefs.current.delete(2) }} data-workflow-step="2" className="workflow-section scroll-mt-4">
                     <Step2CoreIdea
                       embedded
@@ -821,7 +840,7 @@ export default function App() {
                       onPrev={() => { setActiveId(null); setLauncherHistoryOpen(true) }}
                     />
                   </section>
-                  {(article.currentStep ?? 2) >= 3 && gateArticleStep(article, 3).allowed && (
+                  {((article.currentStep ?? 2) >= 3 && gateArticleStep(article, 3).allowed || isArticleCompleted(article) && Boolean(article.outline?.length)) && (
                     <section ref={(node) => { if (node) workflowStepRefs.current.set(3, node); else workflowStepRefs.current.delete(3) }} data-workflow-step="3" className="workflow-section scroll-mt-4">
                       <Step3Outline
                         embedded
@@ -836,7 +855,7 @@ export default function App() {
                       />
                     </section>
                   )}
-                  {(article.currentStep ?? 2) >= 4 && gateArticleStep(article, 4).allowed && (
+                  {((article.currentStep ?? 2) >= 4 && gateArticleStep(article, 4).allowed || isArticleCompleted(article)) && (
                     <section ref={(node) => { if (node) workflowStepRefs.current.set(4, node); else workflowStepRefs.current.delete(4) }} data-workflow-step="4" className="workflow-section scroll-mt-4">
                       <Step4Draft
                         embedded

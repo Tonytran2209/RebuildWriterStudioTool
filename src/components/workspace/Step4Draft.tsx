@@ -1,3 +1,4 @@
+import { isArticleCompleted } from '../../lib/workflowGuards';
 import WorkflowCheckLog, { useWorkflowCheckLog } from './WorkflowCheckLog';
 import { GenerationHistory } from "./Step3Outline";
 import { outlineReviewInstruction } from '../../lib/outlineQuality';
@@ -637,6 +638,7 @@ interface Props {
 
 export default function Step4Draft({ embedded = false, article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
+  const completed = isArticleCompleted(article);
   const generationLog = useWorkflowCheckLog(article.id, 4);
   const bundle = useMemo(() => collectStepDocs(4, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(4, config, files), [config, files]);
@@ -780,6 +782,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   }, [draftWarnings]);
 
   const handleGenerate = async (manual = false) => {
+    if (completed) return;
     if (generationInFlight.current) return;
     if (!prerequisite.allowed) {
       setError(tr(prerequisite.reasonVi, prerequisite.reason));
@@ -1233,6 +1236,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   };
 
   const handleRecheckAndFix = async () => {
+    if (completed) return;
     if (!draft.trim() || generationInFlight.current) return;
     if (article.outlineNeedsRegeneration) { setError(tr('Hãy tạo lại outline và draft theo cấu trúc đã chọn trước khi kiểm tra QC.', 'Regenerate the outline and draft for the selected structure before QC.')); return; }
     generationInFlight.current = true;
@@ -1568,6 +1572,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   };
 
   const handleEditorInput = () => {
+    if (completed) return;
     if (editorRef.current) {
       pendingDraft.current = applyDisplayedDraftEdit(pendingDraft.current ?? draft, editorRef.current.innerText);
       if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current);
@@ -1652,7 +1657,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 <button
                   type="button"
                   onClick={() => void handleGenerate(Boolean(draft))}
-                  disabled={generating || repairing || !prerequisite.allowed}
+                  disabled={completed || generating || repairing || !prerequisite.allowed}
                   className="workflow-endpoint-button draft-generate-button"
                 >
                   {generating
@@ -1677,7 +1682,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 <button
                   type="button"
                   onClick={() => void handleRecheckAndFix()}
-                  disabled={!draft || generating || repairing}
+                  disabled={completed || !draft || generating || repairing}
                   title={tr('Kiểm tra lại và chỉ sửa các mục chưa đạt', 'Re-check and fix only failed checks')}
                   className="draft-toolbar-action"
                   aria-label={tr('Kiểm tra lại và sửa', 'Re-check and fix')}
@@ -1716,20 +1721,20 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               </div>
               {!generating && (
                 <>
-                {draft && <button
+                {draft && !completed && <button
                   type="button"
                   className="mb-3 rounded border border-slate-300 px-3 py-1 text-xs"
                   onClick={() => setEditingDraft(value => !value)}
                 >{editingDraft ? tr('Xem bản nháp', 'Preview draft') : tr('Chỉnh sửa toàn bộ bản nháp', 'Edit full draft')}</button>}
-                {draft && !editingDraft && <div className="draft-prose whitespace-pre-wrap">
+                {draft && (completed || !editingDraft) && <div className="draft-prose whitespace-pre-wrap">
                   {preview.title && <div>{preview.title}</div>}
                   <div>{preview.introduction}</div>
                   <div>{preview.body}</div>
                 </div>}
-                <div hidden={Boolean(draft) && !editingDraft}>
+                <div hidden={Boolean(draft) && (completed || !editingDraft)}>
                 <div
                   ref={editorRef}
-                  contentEditable
+                  contentEditable={!completed}
                   suppressContentEditableWarning
                   onInput={handleEditorInput}
                   data-placeholder={tr("Nhấn 'AI Viết Draft' để tạo nội dung, hoặc bắt đầu viết thủ công...", "Click 'AI Draft' to generate content, or start writing manually...")}
@@ -1741,13 +1746,13 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               {draft && <section className="image-placement-suggestions mt-5 rounded-xl border border-[#303030] bg-[#1b1b1b] p-3.5 text-xs text-[#c4c4c4] shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div><h3 className="font-medium text-[#f1f1f1]">Image placement suggestions</h3><p className="mt-0.5 text-[10px] text-[#888]">Visual context only · never a substitute for evidence or claims</p></div>
-                  <button disabled={generating || repairing} onClick={createImageSuggestions} className="image-placement-control rounded-lg border px-2.5 py-1.5 text-[10px] font-medium transition"><Image className="mr-1 inline h-3.5 w-3.5" />{imageSuggestions.length ? 'Refresh' : 'Suggest images'}</button>
+                  <button disabled={completed || generating || repairing} onClick={createImageSuggestions} className="image-placement-control rounded-lg border px-2.5 py-1.5 text-[10px] font-medium transition"><Image className="mr-1 inline h-3.5 w-3.5" />{imageSuggestions.length ? 'Refresh' : 'Suggest images'}</button>
                 </div>
                 {imageSuggestions.length > 0 && <div className="mt-3 grid gap-2 lg:grid-cols-2">{imageSuggestions.map(suggestion => <div key={suggestion.id} className="rounded-lg border border-[#303030] bg-[#202020] p-3">
                   <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="image-placement-badge rounded-md px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">{suggestion.type}</span><span className="text-[10px] text-[#777]">After section</span></div><p className="mt-1.5 truncate text-[11px] font-medium text-[#ececec]">{suggestion.afterHeading}</p></div><span className={`image-placement-badge image-placement-status-${suggestion.status} rounded-full px-2 py-0.5 text-[9px]`}>{suggestion.status}</span></div>
                   <p className="mt-2 max-h-8 overflow-hidden text-[10px] leading-relaxed text-[#a7a7a7]">{suggestion.purpose}</p><p className="mt-1 text-[10px] text-[#777]">Alt: {suggestion.altText}</p>
                   <details className="mt-2 text-[10px] text-[#858585]"><summary className="cursor-pointer select-none hover:text-[#ccc]">View image brief</summary><p className="mt-1.5 leading-relaxed">{suggestion.brief}</p></details>
-                  {suggestion.status === 'suggested' && <div className="mt-3 flex gap-1.5"><button disabled={generating || repairing} onClick={() => approveImageSuggestion(suggestion)} className="image-placement-control image-placement-approve rounded-md border px-2 py-1 text-[10px] font-medium">Approve</button><button disabled={generating || repairing} onClick={() => editImageSuggestion(suggestion)} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Edit</button><button disabled={generating || repairing} onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Dismiss</button></div>}
+                  {suggestion.status === 'suggested' && <div className="mt-3 flex gap-1.5"><button disabled={completed || generating || repairing} onClick={() => approveImageSuggestion(suggestion)} className="image-placement-control image-placement-approve rounded-md border px-2 py-1 text-[10px] font-medium">Approve</button><button disabled={completed || generating || repairing} onClick={() => editImageSuggestion(suggestion)} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Edit</button><button disabled={completed || generating || repairing} onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Dismiss</button></div>}
                 </div>)}</div>}
               </section>}
             </div>
@@ -1813,7 +1818,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               {displayedQualityChecks.some(item => ['quality-review-stale', 'semantic-review-schema'].includes(item.id)) && <div role="status" className="rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs leading-relaxed">
                 <p className="font-medium">{tr('Chưa thể hoàn thành: quy trình kiểm tra chưa đủ hoặc cần cập nhật', 'Completion pending: review is incomplete or needs updating')}</p>
                 <p className="mt-1 text-[var(--ui-secondary)]">{tr('Đây là trạng thái kiểm tra, không tự kết luận bài viết sai. Bản nháp đã được giữ nguyên.', 'This is a review-process status, not a content failure. The saved draft is preserved.')}</p>
-                <button type="button" disabled={generating || repairing || !draft || article.outlineNeedsRegeneration} onClick={() => void handleRecheckAndFix()} className="mt-2 min-h-11 rounded-lg border border-[var(--ui-control-border)] px-3">{repairing ? tr('Đang kiểm tra…', 'Reviewing…') : tr('Kiểm tra lại và hoàn tất đánh giá', 'Re-check and complete review')}</button>
+                <button type="button" disabled={completed || generating || repairing || !draft || article.outlineNeedsRegeneration} onClick={() => void handleRecheckAndFix()} className="mt-2 min-h-11 rounded-lg border border-[var(--ui-control-border)] px-3">{repairing ? tr('Đang kiểm tra…', 'Reviewing…') : tr('Kiểm tra lại và hoàn tất đánh giá', 'Re-check and complete review')}</button>
               </div>}
               <div className="space-y-1.5">
                 {displayedQualityChecks.map(item => {
@@ -1893,11 +1898,11 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           </button>
         <button
           onClick={onToggleComplete}
-          disabled={completionSaving || generating || repairing || !draft || (article.status !== 'done' && !seoChecklistPassed)}
-          className={`workflow-endpoint-button ${article.status === 'done' ? 'is-complete' : ''}`}
+          disabled={completionSaving || generating || repairing || (!completed && (!draft || !seoChecklistPassed))}
+          className={`workflow-endpoint-button ${completed ? 'is-complete' : ''}`}
         >
           {completionSaving ? <><LoaderCircle className="app-icon animate-spin" aria-hidden="true" /><span>{tr('Đang lưu...', 'Saving...')}</span></>
-            : article.status === 'done' ? <><RefreshCw className="app-icon" aria-hidden="true" /><span>{tr('Mở lại bài viết', 'Reopen article')}</span></>
+            : completed ? <><RefreshCw className="app-icon" aria-hidden="true" /><span>{tr('Mở lại bài viết', 'Reopen article')}</span></>
             : <><Check className="app-icon" aria-hidden="true" /><span>{tr('Đánh dấu hoàn thành', 'Mark complete')}</span></>}
         </button>
         </div>

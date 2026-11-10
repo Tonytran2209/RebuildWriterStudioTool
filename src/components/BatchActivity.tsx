@@ -1,11 +1,11 @@
 import { useState } from "react"
-import { CircleAlert, CircleCheck, Download, LoaderCircle, Pause, Play, RefreshCw } from "lucide-react"
+import { CircleAlert, CircleCheck, Download, LoaderCircle, Pause, Play, RefreshCw, Trash2 } from "lucide-react"
 import type { Article } from "../types"
 import { useI18n } from "../lib/i18n"
 import { buildBatchZip } from "../lib/zipExport"
 import { notifyWorkspace } from "./workspace/WorkspaceNotification"
 
-interface Props { articles: Article[]; onOpen: (id: string) => void; onStart: () => Promise<void>; onPause: () => Promise<void>; onRetry: (id: string) => Promise<void> }
+interface Props { articles: Article[]; onOpen: (id: string) => void; onStart: () => Promise<void>; onPause: () => Promise<void>; onRetry: (id: string) => Promise<void>; onDeleteBatch?: () => void; deletingBatch?: boolean }
 
 function completedStages(article: Article) {
   if (article.batchStatus === "completed" || article.status === "done") return 3
@@ -31,7 +31,7 @@ function download(article: Article) {
   URL.revokeObjectURL(url)
 }
 
-export default function BatchActivity({ articles, onOpen, onStart, onPause, onRetry }: Props) {
+export default function BatchActivity({ articles, onOpen, onStart, onPause, onRetry, onDeleteBatch, deletingBatch }: Props) {
   const { tr } = useI18n()
   const [action, setAction] = useState<string | null>(null)
   const complete = articles.filter((article) => article.batchStatus === "completed" || article.status === "done").length
@@ -67,6 +67,7 @@ export default function BatchActivity({ articles, onOpen, onStart, onPause, onRe
           <div className="flex flex-wrap gap-2">
             {running ? <button disabled={Boolean(action)} onClick={() => act("pause", onPause)} className="inline-flex items-center gap-2 rounded-lg border border-[var(--ui-border)] px-3 py-2 text-xs text-[var(--ui-text)] hover:bg-[var(--ui-control)]"><Pause className="app-icon" />{action === "pause" ? "…" : tr("Tạm dừng", "Pause")}</button> : complete < articles.length && <button disabled={Boolean(action)} onClick={() => act("start", onStart)} className="inline-flex items-center gap-2 rounded-lg bg-[var(--ui-primary-bg)] px-3 py-2 text-xs font-medium text-[var(--ui-primary-text)] hover:opacity-90"><Play className="app-icon" />{action === "start" ? "…" : paused ? tr("Tiếp tục", "Resume") : tr("Chạy batch", "Run batch")}</button>}
             <button disabled={!complete} onClick={downloadAll} className="inline-flex items-center gap-2 rounded-lg border border-[var(--ui-border)] px-3 py-2 text-xs text-[var(--ui-text)] hover:bg-[var(--ui-control)] disabled:opacity-35"><Download className="app-icon" />{tr("Tải ZIP", "Download ZIP")}</button>
+            {onDeleteBatch && <button type="button" disabled={deletingBatch || Boolean(action)} onClick={onDeleteBatch} className="inline-flex items-center gap-2 rounded-lg border border-[var(--ui-border)] px-3 py-2 text-xs text-[var(--ui-secondary)] hover:text-red-400 disabled:opacity-35"><Trash2 className="app-icon" aria-hidden="true" />{tr("Xóa batch", "Delete batch")}</button>}
           </div>
         </div>
         <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-[var(--ui-hover)]"><div className="h-full rounded-full bg-[var(--ui-primary-bg)] transition-[width] duration-500 ease-out" style={{ width: `${progress}%` }} /></div>

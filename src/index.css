@@ -460,6 +460,10 @@ a .lucide {
 
 .writer-light .writer-sidebar { background: #f1f1ef !important; border-color: #dededb !important; color: #555 !important; }
 .writer-light .writer-sidebar .text-white { color: #1f1f1f !important; }
+.writer-app .sidebar-nav > span.campaign-nav-label {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
 .writer-light .sidebar-nav { color: #555; }
 .writer-light .sidebar-nav:hover { background: #e5e5e2; color: #171717; }
 .writer-light .bg-\[\#171717\] { background-color: #f7f7f5 !important; }

@@ -51,3 +51,19 @@ test('reopen-preservation viewing never writes or generates and missing IDs stay
  }
  expect(await snapshot(page)).toEqual(before);expect(requests).toEqual([]);
 });
+
+test('completed articles block AI generation, selection and re-check while retaining saved content', async ({page}) => {
+ await page.route('**/api/**', route => route.abort());
+ await page.goto('/?reopen&versions');
+ await page.getByRole('button', {name: 'Open 1', exact: true}).click();
+ const before = await snapshot(page);
+ const core = page.getByTestId('reopen-core');
+ const outline = page.getByTestId('reopen-outline');
+ for (const choice of await core.locator('.core-idea-select-area').all()) await expect(choice).toBeDisabled();
+ await expect(core.locator('.workflow-endpoint-button')).toBeDisabled();
+ await expect(outline.locator('.workflow-endpoint-button')).toBeDisabled();
+ await expect(page.getByRole('button', {name: /Tạo lại Draft|Regenerate draft/})).toBeDisabled();
+ await expect(page.getByRole('button', {name: /Kiểm tra lại và sửa|Re-check and fix/})).toBeDisabled();
+ await expect(page.getByRole('button', {name: /Mở lại bài viết|Reopen article/})).toBeEnabled();
+ expect(await snapshot(page)).toEqual(before);
+});

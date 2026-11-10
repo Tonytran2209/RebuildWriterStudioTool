@@ -1,3 +1,4 @@
+import { isArticleCompleted } from '../../lib/workflowGuards';
 import WorkflowCheckLog, { useWorkflowCheckLog } from './WorkflowCheckLog';
 import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -292,6 +293,7 @@ export default function Step2CoreIdea({
   }, [article.id]);
   const generationInFlight = useRef(false);
   const { tr, canonicalAIOutputInstruction } = useI18n();
+  const completed = isArticleCompleted(article);
   const generationLog = useWorkflowCheckLog(article.id, 2);
   const prerequisite = gateArticleStep(article, 2);
 
@@ -365,7 +367,7 @@ export default function Step2CoreIdea({
   const ideas = storedIdeas;
 
   const fetchIdeas = async (manual = false) => {
-    if (generationInFlight.current) return;
+    if (completed || generationInFlight.current) return;
     if (!prerequisite.allowed) {
       setError(tr(prerequisite.reasonVi, prerequisite.reason));
       return;
@@ -636,6 +638,7 @@ export default function Step2CoreIdea({
   };
 
   const handleSelect = (idea: CoreIdeaSuggestion) => {
+    if (completed) return;
     const selectionChanged = article.selectedCoreIdeaId !== idea.id;
     const selectedSpec = article.articleSpec ? { ...article.articleSpec, thesis: idea.mainArgument, audience: idea.targetAudience || article.articleSpec.audience } : null;
     onUpdate({
@@ -663,7 +666,7 @@ export default function Step2CoreIdea({
 
   const isCurrentStep = (article.currentStep ?? 2) <= 2;
   const canContinueToOutline = isCurrentStep && gateStepCompletion({ ...article, selectedCoreIdeaId: selectedId ?? undefined }, 2).allowed && !scanIsStale;
-  const stepActionDisabled = loading || (!canContinueToOutline && (!prerequisite.allowed || !bundle.totalCount));
+  const stepActionDisabled = completed || loading || (!canContinueToOutline && (!prerequisite.allowed || !bundle.totalCount));
 
   return (
     <div className={`minimal-step flex flex-col gap-4 animate-fade-in-up ${embedded ? 'continuous-step' : 'h-full'}`}>
@@ -707,7 +710,7 @@ export default function Step2CoreIdea({
                     const isSelected = selectedId === idea.id;
                     return (
                       <div key={idea.id} className={`core-idea-card group flex min-w-0 items-start rounded-lg ${isSelected ? "is-selected" : ""}`}>
-                        <button type="button" onClick={() => handleSelect(idea)} className="core-idea-select-area min-w-0 flex-1 px-3 py-3 text-left" aria-pressed={isSelected}>
+                        <button type="button" onClick={() => handleSelect(idea)} disabled={completed} className="core-idea-select-area min-w-0 flex-1 px-3 py-3 text-left" aria-pressed={isSelected}>
                           <div className="core-idea-score flex items-baseline gap-1.5">
                             <span className="core-idea-score-label text-[9px] font-medium uppercase tracking-wide">{tr('Điểm', 'Score')}</span>
                             <span className={`core-idea-score-value text-[11px] font-semibold leading-none tabular-nums ${ratingColor(idea.rating.overall)}`}>{idea.rating.overall.toFixed(1)}</span>
@@ -778,7 +781,7 @@ export default function Step2CoreIdea({
             </div>
             <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 sm:px-6">
               <button type="button" onClick={() => { setDetailIdeaId(null); setAuditIdeaId(idea.id); }} className="ai-log-button inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-medium"><Search className="app-icon"/>{tr('Xem nhật ký AI', 'View AI log')}</button>
-              <button type="button" onClick={() => { handleSelect(idea); setDetailIdeaId(null); }} className={`rounded-lg px-4 py-2 text-[10px] font-semibold ${isSelected ? "border border-slate-200 bg-white text-slate-700" : "bg-slate-900 text-white hover:bg-slate-800"}`}>{isSelected ? tr('Đã chọn ý tưởng này', 'This idea is selected') : tr('Chọn ý tưởng này', 'Select this idea')}</button>
+              <button type="button" onClick={() => { handleSelect(idea); setDetailIdeaId(null); }} disabled={completed} className={`rounded-lg px-4 py-2 text-[10px] font-semibold ${isSelected ? "border border-slate-200 bg-white text-slate-700" : "bg-slate-900 text-white hover:bg-slate-800"}`}>{isSelected ? tr('Đã chọn ý tưởng này', 'This idea is selected') : tr('Chọn ý tưởng này', 'Select this idea')}</button>
             </footer>
           </div>
           </div>

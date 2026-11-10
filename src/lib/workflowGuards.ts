@@ -1,4 +1,4 @@
-import type { Article, CoreIdeaSuggestion } from "../types";
+import type { Article, CoreIdeaSuggestion } from "../types/index.ts";
 
 export type ArticleWorkflowStep = 2 | 3 | 4;
 
@@ -10,6 +10,10 @@ export interface WorkflowGate {
 
 const allowed = (): WorkflowGate => ({ allowed: true, reason: "", reasonVi: "" });
 const blocked = (reasonVi: string, reason: string): WorkflowGate => ({ allowed: false, reason, reasonVi });
+
+export function isArticleCompleted(article: Pick<Article, "status" | "completedAt">): boolean {
+  return article.status === "done" || Boolean(article.completedAt);
+}
 
 export function selectedCoreIdea(article: Article): CoreIdeaSuggestion | null {
   if (!article.selectedCoreIdeaId || !article.coreIdeaSuggestions?.length) return null;
