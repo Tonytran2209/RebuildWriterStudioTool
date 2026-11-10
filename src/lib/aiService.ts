@@ -1,5 +1,6 @@
 import type { AICallUsage, AIModel, SeoResearchResult } from '../types';
 import { authenticatedRailwayFetch } from './db';
+import { GENERATE_ACK_HEADER, GENERATE_ACK_VERSION, isGenerateAckResponse, readGenerateAckStream } from '../../shared/generateAck';
 
 export interface AIRequest {
   model: AIModel;
@@ -17,6 +18,12 @@ export interface AIRequest {
   contextQuery?: string;
   skipDocumentContext?: boolean;
   articleId: string;
+  /**
+   * Opt-in (outline step only): the server streams an `accepted` event once it
+   * has validated the request, before calling the AI. Called at most once; the
+   * returned result and error messages are the same as without it.
+   */
+  onAccepted?: () => void;
 }
 
 export interface AIResponse {
@@ -119,7 +126,7 @@ function getDemoKey(prompt: string): string {
 }
 
 export async function callAI(req: AIRequest): Promise<AIResponse> {
-  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber, splitByWave, bypassCache, requestPurpose, jsonMode, jsonSchema, contextQuery, skipDocumentContext, articleId } = req;
+  const { model, prompt, systemPrompt, maxTokens, temperature, stepNumber, splitByWave, bypassCache, requestPurpose, jsonMode, jsonSchema, contextQuery, skipDocumentContext, articleId, onAccepted } = req;
 
   // Resolve railway URL — prop → localStorage → hardcoded production URL
   const railwayUrl = req.railwayUrl
@@ -131,7 +138,10 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
     try {
       const res = await authenticatedRailwayFetch('/api/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(onAccepted ? { [GENERATE_ACK_HEADER]: GENERATE_ACK_VERSION } : {}),
+        },
         body: JSON.stringify({
           modelId: model.id,
           provider: model.provider,
@@ -157,7 +167,19 @@ export async function callAI(req: AIRequest): Promise<AIResponse> {
         throw new Error(formatAIError(err, model.provider, model.id));
       }
 
-      const response = await res.json() as AIResponse;
+      let response: AIResponse;
+      if (onAccepted && isGenerateAckResponse(res)) {
+        // The clock for responseTime stops at the `accepted` event; the
+        // outcome then arrives in-stream with the status the plain route uses.
+        const outcome = await readGenerateAckStream(res.body, onAccepted);
+        if (outcome.status < 200 || outcome.status >= 300) {
+          const err = (outcome.body && typeof outcome.body === 'object' ? outcome.body : { error: res.statusText }) as AIErrorPayload;
+          throw new Error(formatAIError(err, model.provider, model.id));
+        }
+        response = outcome.body as AIResponse;
+      } else {
+        response = await res.json() as AIResponse;
+      }
       const billedInput = response.cacheHit ? 0 : response.usage?.inputTokens ?? 0;
       const billedOutput = response.cacheHit ? 0 : response.usage?.outputTokens ?? 0;
       const billedCachedInput = response.cacheHit ? 0 : response.usage?.cachedInputTokens ?? 0;

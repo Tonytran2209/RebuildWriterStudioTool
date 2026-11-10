@@ -1,6 +1,7 @@
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
 import { outlineReviewInstruction, outlineQualityChecks } from '../src/lib/outlineQuality.ts';
+import { createGenerateReply, GENERATE_ACK_HEADER, GENERATE_ACK_VERSION } from '../shared/generateAck.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
 import "dotenv/config"
 import { authProvider, AuthService, AuthError } from "./authService.ts"
@@ -4038,6 +4039,11 @@ app.post("/api/generate", async (req, res) => {
   } = req.body
 
   let prompt = submittedPrompt
+  // Opt-in early acknowledgement (outline step only); see shared/generateAck.ts.
+  const reply = createGenerateReply(
+    res,
+    stepNumber === 3 && req.get(GENERATE_ACK_HEADER) === GENERATE_ACK_VERSION,
+  )
 
   if (
     !modelId ||
@@ -4095,6 +4101,9 @@ app.post("/api/generate", async (req, res) => {
     const prerequisiteError = articleStepPrerequisite(article, stepNumber)
     if (prerequisiteError)
       return workflowPrerequisiteResponse(res, prerequisiteError)
+    // Validated: the job is taken. Anything after this point (context,
+    // budget, provider) reports its outcome in-stream for ack clients.
+    reply.accept()
     const startedAt = Date.now()
     const contextsStartedAt = Date.now()
     const normalizedContextQuery = String(contextQuery ?? "")
@@ -4161,7 +4170,7 @@ app.post("/api/generate", async (req, res) => {
       console.log(
         `[generate] cache-hit step=${stepNumber} key=${cacheKey.slice(-12)} totalMs=${Date.now() - startedAt}`,
       )
-      return res.json({
+      return reply.send(200, {
         ...cached,
         cacheHit: true,
         generatedAt: cached.generatedAt,
@@ -4398,11 +4407,11 @@ app.post("/api/generate", async (req, res) => {
     console.log(
       `[generate] done cache=false contextMs=${contextMs} providerMs=${providerMs} totalMs=${Date.now() - startedAt} outputTokens=${result.usage?.outputTokens}`,
     )
-    return res.json(responsePayload)
+    return reply.send(200, responsePayload)
   } catch (err: any) {
     console.error("[generate] error:", err.message)
     const failure = classifyAIError(err, provider, modelId)
-    res.status(failure.status).json(failure.body)
+    reply.send(failure.status, failure.body)
   }
 })
 

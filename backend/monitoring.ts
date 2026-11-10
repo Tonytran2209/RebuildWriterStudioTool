@@ -5,6 +5,7 @@ import type { Request, Response, NextFunction } from "express"
 import { kvGet, kvSet } from "./supabase.ts"
 import { readMonitoringData } from "./monitoringData.ts"
 import { labProfile } from "./batchSteps.ts"
+import { nearestRank, roundKpiMs, UI_KPI_METRICS, UI_KPI_STANDARD, type UiKpiMetric } from "../shared/uiKpi.ts"
 
 const limits = [
   10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000, 180000,
@@ -29,7 +30,13 @@ type AiCounter = Counter & {
 }
 type JobOutcome = "valid" | "technical" | "invalid" | "unknown"
 type JobCounter = { job: string; workload: string; duration: Counter; valid: number; technical: number; unknown: number }
-type BrowserMetric = "clickLatency" | "responseTime"
+type BrowserMetric = UiKpiMetric
+/** ui-kpi-v2 raw sample: [received at (epoch ms), duration (ms, 0.1 precision)]. */
+type BrowserSample = [number, number]
+// Bound per metric, per hour and per instance (one persisted bucket).
+export const MAX_BROWSER_SAMPLES_PER_BUCKET = 2000
+/** Streamed responses (generate ack) record their real outcome here. */
+export const outcomeStatus = (res: Response) => Number(res.locals?.outcomeStatus) || res.statusCode
 const kpiLimits = limits.map((limit) => limit === 250 ? 200 : limit)
 
 export function jobFailure(error: unknown): JobOutcome {
@@ -49,7 +56,8 @@ type Bucket = {
   http: Counter
   routes: Record<string, Counter>
   ai: Record<string, AiCounter>
-  browser?: Partial<Record<BrowserMetric, Counter>>
+  // Older rows may still hold the pre-ui-kpi-v2 `browser` histograms; they are ignored.
+  browserSamples?: Partial<Record<BrowserMetric, BrowserSample[]>>
   jobs?: Record<string, JobCounter>
 }
 const counter = (): Counter => ({
@@ -330,13 +338,14 @@ export function createMonitoring(
       // Only accept the app's own browser requests and a bounded scalar payload.
       if (req.get("sec-fetch-site") !== "same-origin") return res.sendStatus(403)
       const { metric, ms } = req.body ?? {}
-      if ((metric !== "clickLatency" && metric !== "responseTime") ||
+      if (!UI_KPI_METRICS.includes(metric) ||
           typeof ms !== "number" || !Number.isFinite(ms) || ms < 0 || ms > 600000) return res.sendStatus(400)
       const b = bucket()
-      const browser = b.browser ??= {}
-      const row = browser[metric as BrowserMetric] ??= counter()
-      if (row.calls >= 10000) return res.sendStatus(429)
-      record(row, ms, 200, false, kpiLimits)
+      const samples = b.browserSamples ??= {}
+      const rows = samples[metric as BrowserMetric] ??= []
+      if (rows.length >= MAX_BROWSER_SAMPLES_PER_BUCKET) return res.sendStatus(429)
+      // Only the metric name (the key), the time and the duration are stored.
+      rows.push([Date.now(), roundKpiMs(ms)])
       changed(b)
       return res.sendStatus(204)
     },
@@ -356,7 +365,7 @@ export function createMonitoring(
         inFlight--
         const b = bucket(),
           ms = performance.now() - start,
-          status = aborted ? 0 : res.statusCode
+          status = aborted ? 0 : outcomeStatus(res)
         const path =
           typeof req.route?.path === "string"
             ? req.method + " " + req.route.path
@@ -392,7 +401,8 @@ export function createMonitoring(
       const http = counter(),
         routes: Record<string, Counter> = {},
         models: Record<string, AiCounter> = {}
-      const browser = { clickLatency: counter(), responseTime: counter() }
+      const sinceMs = Date.parse(since)
+      const browser: Record<BrowserMetric, number[]> = { clickLatency: [], responseTime: [] }
       const jobs = new Map<string, JobCounter>()
       let first: string | null = null
       const timeline = new Map<string, {
@@ -409,9 +419,11 @@ export function createMonitoring(
       for (const b of byKey.values()) {
         if (!b || !b.http || !b.ai || !b.routes) continue
         if (!first || b.hour < first) first = b.hour
-        for (const metric of ["clickLatency", "responseTime"] as const) {
-          const sample = b.browser?.[metric]
-          if (sample) add(browser[metric], sample)
+        for (const metric of UI_KPI_METRICS) {
+          const rows = b.browserSamples?.[metric]
+          if (!Array.isArray(rows)) continue
+          for (const row of rows)
+            if (Array.isArray(row) && row[0] >= sinceMs && Number.isFinite(row[1])) browser[metric].push(row[1])
         }
         for (const [key, row] of Object.entries(b.jobs ?? {})) {
           const total = jobs.get(key) ?? { job: row.job, workload: row.workload, duration: counter(), valid: 0, technical: 0, unknown: 0 }
@@ -494,6 +506,7 @@ export function createMonitoring(
         unknownOutcomes: total.unknownOutcomes + row.unknown,
       }), { executed: 0, technicalErrors: 0, validCompletions: 0, unknownOutcomes: 0 })
       const measure = (row: Counter) => ({ p95Ms: summarize(row, kpiLimits).p95Ms, samples: row.calls })
+      const exact = (values: number[]) => ({ p95Ms: nearestRank(values, 0.95), samples: values.length, precision: "exact" as const })
       const memory = process.memoryUsage()
       return {
         protocol: "app-monitoring-v1",
@@ -503,8 +516,9 @@ export function createMonitoring(
         jobHistory: "jobHistory" in source ? source.jobHistory : null,
         jobHistoryAllTime: "jobHistoryAllTime" in source ? source.jobHistoryAllTime : null,
         performanceKpis: {
-          clickLatency: measure(browser.clickLatency),
-          responseTime: measure(browser.responseTime),
+          standard: UI_KPI_STANDARD,
+          clickLatency: exact(browser.clickLatency),
+          responseTime: exact(browser.responseTime),
           jobCompletion: jobRows.map(({ job, workload, duration }) => ({ job, workload, ...measure(duration) })),
           jobs: {
             executed: outcomes.executed,

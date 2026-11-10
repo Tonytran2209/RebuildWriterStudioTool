@@ -89,7 +89,10 @@ test("AI instrumentation preserves results, errors and restart-safe aggregate to
     assert.deepEqual((report as any).profile, { version: "profile-v1", mainJob: { job: "Writer article", steps: [
       "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Article Spec & Core Idea", "Lập outline", "Viết draft", "Kiểm tra chất lượng"] },
       jobTargets: { "Writer article": 10 },
-      kpiDescriptions: { responseTime: "Bấm 'Tạo outline' (bước 3) → outline đã lưu hiển thị", clickLatency: "Bấm 'Tạo outline' → giao diện hiện trạng thái đang tạo" } },
+      kpiDescriptions: {
+        responseTime: "Bấm 'Tạo outline' (bước 3; mốc bắt đầu là thời điểm sự kiện bấm) → khung hình thứ hai sau khi giao diện hiện 'Đã nhận yêu cầu', tức máy chủ đã kiểm tra và nhận việc trước khi gọi AI; không chờ AI tạo xong",
+        clickLatency: "Bấm 'Tạo outline' (bước 3; mốc bắt đầu là thời điểm sự kiện bấm) → khung hình thứ hai sau khi trạng thái 'Đang dựng...' được hiển thị, tức khung đầu tiên đã có cơ hội vẽ",
+      } },
       "the report declares the article pipeline so AI Agent Lab lists all six sub-jobs")
     assert.equal(report.ai.calls, 3)
     assert.equal(report.ai.failed, 1)
@@ -156,7 +159,7 @@ test("monitor route fails closed and HTTP instrumentation records errors without
   }
 })
 
-test("KPI samples persist, preserve 200 ms boundary and withhold ambiguous technical error rates", async () => {
+test("ui-kpi-v2 samples are exact, persisted, restart-safe and withhold ambiguous technical error rates", async () => {
   const rows = new Map<string, { key: string; value: any }>()
   const options = {
     readData: async () => source([...rows.values()])(),
@@ -175,15 +178,24 @@ test("KPI samples persist, preserve 200 ms boundary and withhold ambiguous techn
       headers: { "content-type": "application/json", "sec-fetch-site": site },
       body: JSON.stringify({ metric, ms }),
     })
-    assert.equal((await sample("clickLatency", 195)).status, 204)
-    assert.equal((await sample("responseTime", 2200)).status, 204)
+    assert.equal((await sample("clickLatency", 195.04)).status, 204)
+    assert.equal((await sample("responseTime", 2200.26)).status, 204)
     assert.equal((await sample("responseTime", 100, "cross-site")).status, 403)
     assert.equal((await sample("invalid", 100)).status, 400)
     monitor.recordJob("Test gate", "1 item", performance.now() - 100, "valid")
     monitor.recordJob("Test gate", "1 item", performance.now() - 100, "technical")
     const first = (await monitor.snapshot(7)).performanceKpis
-    assert.deepEqual(first.clickLatency, { p95Ms: 200, samples: 1 })
-    assert.deepEqual(first.responseTime, { p95Ms: 2500, samples: 1 })
+    assert.equal(first.standard, "ui-kpi-v2")
+    assert.deepEqual(first.clickLatency, { p95Ms: 195, samples: 1, precision: "exact" })
+    assert.deepEqual(first.responseTime, { p95Ms: 2200.3, samples: 1, precision: "exact" })
+    // Persisted rows hold only time + duration under the metric name.
+    const stored = [...rows.values()].map((row) => row.value.browserSamples)
+    assert.equal(stored.length, 1)
+    assert.deepEqual(Object.keys(stored[0]).sort(), ["clickLatency", "responseTime"])
+    for (const [at, ms] of [...stored[0].clickLatency, ...stored[0].responseTime]) {
+      assert.equal(typeof at, "number")
+      assert.equal(typeof ms, "number")
+    }
     assert.deepEqual(first.jobs, { executed: 2, technicalErrors: 1, validCompletions: 1 })
     assert.equal(first.jobCompletion[0].samples, 2)
     const restarted = createMonitoring("test", options)
@@ -198,6 +210,43 @@ test("KPI samples persist, preserve 200 ms boundary and withhold ambiguous techn
     }
   } finally {
     server.close()
+    await monitor.stop()
+  }
+})
+
+test("ui-kpi-v2 report uses nearest-rank P95 over raw samples of the requested window", async () => {
+  const hour = (offsetHours: number) => new Date(Date.now() - offsetHours * 3600000).toISOString().slice(0, 13) + ":00:00.000Z"
+  const bucketRow = (h: string, samples: Record<string, [number, number][]>, legacy?: unknown) => ({
+    key: "lab-monitor:v1:" + h + ":old",
+    value: { key: "lab-monitor:v1:" + h + ":old", hour: h, instanceId: "old", version: 1, http: {calls:0,failed:0,clientErrors:0,aborted:0,totalMs:0,maxMs:0,histogram:[]}, routes: {}, ai: {}, browserSamples: samples, ...(legacy ? { browser: legacy } : {}) },
+  })
+  const now = Date.now()
+  // 1..20 ms in the current hour; nearest rank ceil(0.95 * 20) = 19th value.
+  const current = Array.from({ length: 20 }, (_, i) => [now - 1000, i + 1] as [number, number])
+  // Samples older than the 1-day window must be ignored.
+  const old: [number, number][] = [[now - 3 * 86400000, 99999]]
+  const monitor = createMonitoring("test", {
+    readData: source([
+      bucketRow(hour(0), { responseTime: current, clickLatency: [[now - 500, 42.5]] },
+        { clickLatency: { calls: 5, failed: 0, clientErrors: 0, aborted: 0, totalMs: 10, maxMs: 9, histogram: [5] } }),
+      bucketRow(hour(72), { responseTime: old }),
+    ]),
+    save: async () => {},
+  })
+  try {
+    const week = (await monitor.snapshot(1)).performanceKpis
+    assert.equal(week.standard, "ui-kpi-v2")
+    assert.deepEqual(week.responseTime, { p95Ms: 19, samples: 20, precision: "exact" })
+    // Legacy histogram counters are not mixed into the exact samples.
+    assert.deepEqual(week.clickLatency, { p95Ms: 42.5, samples: 1, precision: "exact" })
+    const empty = createMonitoring("test", { readData: source(), save: async () => {} })
+    try {
+      const none = (await empty.snapshot(7)).performanceKpis
+      assert.deepEqual(none.responseTime, { p95Ms: null, samples: 0, precision: "exact" })
+    } finally {
+      await empty.stop()
+    }
+  } finally {
     await monitor.stop()
   }
 })
