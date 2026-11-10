@@ -1,3 +1,4 @@
+import WorkflowCheckLog, { useWorkflowCheckLog } from './WorkflowCheckLog';
 import { measureUiAfterPaint, sendOutlinePerformanceSample, uiInteractionStart } from "../../lib/performanceTelemetry";
 import { getArticleStages, type ArticleStageVersion } from "../../lib/db";
 import OutlineStructureSelect from '../OutlineStructureSelect';
@@ -200,6 +201,7 @@ export default function Step3Outline({
   onPrev,
 }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
+  const generationLog = useWorkflowCheckLog(article.id);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -330,6 +332,7 @@ export default function Step3Outline({
     generationInFlight.current = true;
     generationTiming.current = { start: startedAt, clickMeasured: false, acceptMeasured: false, saved: false, finished: false, responseSent: false };
     setGenerationAccepted(false);
+    const progress = generationLog.start();
     setGenerating(true);
     setError(null);
     setWarning(null);
@@ -371,6 +374,7 @@ export default function Step3Outline({
       const jsonRepairCalls = 0;
       let evidenceCorrectionCalls = 0;
       const aiResponses: Awaited<ReturnType<typeof callAI>>[] = [];
+      progress.advance(1);
       const res = await callAI({
         articleId: article.id,
         model,
@@ -385,6 +389,7 @@ export default function Step3Outline({
         contextQuery,
         onAccepted: () => setGenerationAccepted(true),
       });
+      progress.advance(2);
       aiResponses.push(res);
       let lastResponse = res;
       const parsed = parseAIJson(res.content);
@@ -440,6 +445,7 @@ export default function Step3Outline({
         { id: 'step3-validation', stage: 'validation', status: evidenceCorrectionCalls ? 'warning' : 'completed', title: '4. Kiểm tra cấu trúc và dẫn chứng', detail: 'Loại section thiếu quote nguyên văn ở bất kỳ phân vùng nào đang được cấp quyền. Nếu dưới ngưỡng tối thiểu, chỉ yêu cầu bổ sung phần còn thiếu.', facts: { sectionsAccepted: sections.length, evidenceVerified: sections.reduce((sum, section) => sum + (section.evidence?.length ?? 0), 0), jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step3-persist', stage: 'persistence', status: 'completed', title: '5. Lưu outline và audit trail', detail: 'Lưu section, rationale, evidence, nguồn Rules và nhật ký hành động này cùng bài viết trong Supabase.' },
       ];
+      progress.advance(3);
       const saved = await onUpdate({
         outline: sections,
         outlineGenerationId: crypto.randomUUID(),
@@ -458,6 +464,7 @@ export default function Step3Outline({
       if (!saved) throw new Error('Outline Bước 2 chưa được lưu vào Supabase.');
       if (generationTiming.current) generationTiming.current.saved = true;
       window.dispatchEvent(new CustomEvent('writer:generation-saved', { detail: { articleId: article.id, stage: 'outline' } }));
+      progress.finish(partialResult);
       if (partialResult) {
         setWarning(`Đã lưu ${sections.length}/${minimumSections} section tối thiểu vượt qua kiểm chứng. Bạn có thể chỉnh sửa thủ công hoặc nhấn “Tạo lại” để thử bổ sung.`);
       } else {
@@ -465,6 +472,7 @@ export default function Step3Outline({
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      progress.fail();
       setError(`Không tạo được outline: ${message}`);
     } finally {
       generationInFlight.current = false;
@@ -567,16 +575,12 @@ export default function Step3Outline({
             <GenerationHistory articleId={article.id} stage="outline" generationId={article.outlineGenerationId} />
             <StepUsage step={2} usage={article.aiUsageByStep?.[3]} />
 
-            {generating && (
-              <div className="space-y-2">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-2">
-                    <div className="ai-loading h-4 w-2/3" />
-                    <div className="ai-loading h-3 w-full" />
-                  </div>
-                ))}
-              </div>
-            )}
+            <WorkflowCheckLog run={generationLog.run} steps={[
+              tr('Chuẩn bị Article Spec và cấu trúc đã chọn', 'Prepare the Article Spec and selected structure'),
+              tr('Dựng dàn bài từ tài liệu được cấp', 'Generate the outline from available sources'),
+              tr('Kiểm tra cấu trúc và dẫn chứng', 'Validate structure and evidence'),
+              tr('Lưu dàn bài', 'Save the outline'),
+            ]} />
 
             {!generating && outline.length === 0 && (
               <div className="outline-empty-state rounded-xl border border-dashed border-slate-200 p-8 text-center">

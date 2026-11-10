@@ -1,3 +1,4 @@
+import WorkflowCheckLog, { useWorkflowCheckLog } from './WorkflowCheckLog';
 import { GenerationHistory } from "./Step3Outline";
 import { outlineReviewInstruction } from '../../lib/outlineQuality';
 import { draftWithoutImagePlaceholders, semanticReviewInputFingerprint, missingSemanticChecks, semanticReviewIncomplete, SEMANTIC_IDS, QUALITY_VERSION } from '../../lib/qualityPolicy';
@@ -636,6 +637,7 @@ interface Props {
 
 export default function Step4Draft({ embedded = false, article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
+  const generationLog = useWorkflowCheckLog(article.id);
   const bundle = useMemo(() => collectStepDocs(4, config, files, article.contentPlanInput), [article.contentPlanInput, config, files]);
   const documentPromptRules = useMemo(() => buildStepDocumentPromptRules(4, config, files), [config, files]);
   const compiledWorkflowRules = useMemo(() => compileWorkflowRules(config, 4, 'manual'), [config]);
@@ -797,6 +799,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       return;
     }
     generationInFlight.current = true;
+    const progress = generationLog.start();
     setGenerating(true);
     setError('');
     const processTrace: AIProcessTraceEvent[] = [...(article.step4ProcessTrace ?? []), {
@@ -880,6 +883,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         compiledWorkflowRules.taskGuidance,
       ].join('\n');
 
+      progress.advance(1);
       const res = await callAI({
         articleId: article.id,
         model,
@@ -895,6 +899,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         contextQuery,
         skipDocumentContext: !bundle.totalCount,
       });
+      progress.advance(2);
       rawResponseExcerpt = res.content.slice(0, 12_000);
       if (!res.content.trim()) throw new Error('AI trả về draft rỗng. Kết quả cũ vẫn được giữ nguyên.');
       let parsed: StructuredDraftPayload;
@@ -1004,6 +1009,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       sessionStorage.setItem(recoveryKey, assembledDraft);
       setRecoveryDraft(assembledDraft);
       if (editorRef.current) editorRef.current.innerText = displayDraft(assembledDraft);
+      progress.advance(3);
       const checkpointSaved = await onUpdate({
         draft: assembledDraft,
         draftGenerationId: crypto.randomUUID(),
@@ -1018,6 +1024,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       });
       if (!checkpointSaved) throw new Error('Draft đã được giữ tạm trên thiết bị nhưng chưa thể lưu checkpoint vào Supabase. Hãy kiểm tra kết nối rồi thử lưu lại; không cần gọi AI lại ngay.');
       window.dispatchEvent(new CustomEvent('writer:generation-saved', { detail: { articleId: article.id, stage: 'draft' } }));
+      progress.advance(4);
       const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
       if (validation.failed.length) throw new Error(`Draft đã được lưu để chỉnh sửa nhưng chưa đạt 100% SEO checklist (${validation.wordCount}/${targetWords} từ): ${validation.failed.map(item => item.label).join(', ')}.`);
       let deterministic = [
@@ -1030,6 +1037,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         processTrace.push({ id: `draft-qc-${Date.now()}`, stage: 'validation', status: 'warning', title: 'Draft saved; QC needs attention', detail });
         const saved = await onUpdate({ qualityReport: report, step4ProcessTrace: processTrace });
         if (!saved) throw new Error('Draft đã lưu nhưng chưa ghi được kết quả QC. Hãy tải lại bài trước khi Re-check.');
+        progress.finish(true);
         setError(detail);
         return;
       }
@@ -1109,12 +1117,14 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 4: compiledWorkflowRules.snapshot },
       });
       if (!saved) throw new Error('Draft Bước 3 chưa được lưu vào Supabase.');
+      progress.finish(report.status !== 'pass');
       if (editorRef.current) editorRef.current.innerText = displayDraft(assembledDraft);
       if (report.status === 'pass')
         notifyWorkspace(manual && draft ? 'Đã viết lại, kiểm tra và lưu draft.' : 'Đã tạo, kiểm tra và lưu draft.', 'success');
       else
         notifyWorkspace('Draft đã được lưu. Một số semantic check cần review; dùng Re-check & Fix nếu muốn sửa bằng AI.', report.status === 'fail' ? 'error' : 'warning');
     } catch (err) {
+      progress.fail();
       processTrace.push({
         id: `draft-failure-${Date.now()}`,
         stage: 'validation',
@@ -1653,13 +1663,16 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             {/* Draft editor */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-5">
               <SeoBrief article={article} primaryKeyword={getPrimaryKeyword(article)} linkTarget={internalLinkPlan.target} linkMax={internalLinkPlan.max} approvedCandidates={internalLinkCandidates.length} />
-              {generating ? (
-                <div className="space-y-3">
-                  {[...Array(12)].map((_, i) => (
-                    <div key={i} className="ai-loading h-4" style={{ width: `${60 + Math.random() * 40}%` }} />
-                  ))}
-                </div>
-              ) : (
+              <div className="mb-3 empty:hidden">
+                <WorkflowCheckLog run={generationLog.run} steps={[
+                  tr('Chuẩn bị dàn bài, dẫn chứng và ngân sách từ', 'Prepare the outline, evidence and word budget'),
+                  tr('Viết bản nháp theo dàn bài', 'Write the draft from the outline'),
+                  tr('Kiểm tra và bổ sung phần còn thiếu', 'Validate the response and fill missing parts'),
+                  tr('Lưu bản nháp', 'Save the draft'),
+                  tr('Chạy SEO, Universal QC và lưu kết quả', 'Run SEO and Universal QC and save the results'),
+                ]} />
+              </div>
+              {!generating && (
                 <>
                 {draft && <button
                   type="button"
