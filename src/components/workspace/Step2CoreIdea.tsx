@@ -1,3 +1,4 @@
+import WorkflowCheckLog, { useWorkflowCheckLog } from './WorkflowCheckLog';
 import { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { ArrowRight, Ellipsis, LoaderCircle, Search, Sparkles } from "lucide-react";
@@ -291,6 +292,7 @@ export default function Step2CoreIdea({
   }, [article.id]);
   const generationInFlight = useRef(false);
   const { tr, canonicalAIOutputInstruction } = useI18n();
+  const generationLog = useWorkflowCheckLog(article.id);
   const prerequisite = gateArticleStep(article, 2);
 
   useEffect(() => { if (error) notifyWorkspace(error, 'error'); }, [error]);
@@ -381,6 +383,7 @@ export default function Step2CoreIdea({
       return;
     }
     generationInFlight.current = true;
+    const progress = generationLog.start();
     setLoading(true);
     setError(null);
     setWarning(null);
@@ -390,6 +393,7 @@ export default function Step2CoreIdea({
         selectedSnapshot?.label ?? "",
         article.contentType ?? "",
       ].map(seed => seed.trim()).filter(Boolean);
+      progress.advance(1);
       const seoResearch = await researchSeoKeywords(seeds, article.id, railwayUrl, requestedKeywordCount);
       const contextQuery = [
         ...seeds,
@@ -498,7 +502,9 @@ export default function Step2CoreIdea({
         const parsed = parseAIJson(res.content);
         return { res, parsed, ideas: normalizeIdeas(parsed, bundle, seoResearch, trustedEvidence) };
       };
+      progress.advance(2);
       let result = await requestIdeas(manual);
+      progress.advance(3);
       const resultRoot = result.parsed && typeof result.parsed === 'object' && !Array.isArray(result.parsed)
         ? result.parsed as Record<string, unknown>
         : {};
@@ -572,6 +578,7 @@ export default function Step2CoreIdea({
         { id: 'step2-persist', stage: 'persistence', status: 'completed', title: '6. Lưu kết quả có thể audit', detail: 'Lưu Top 10, quyết định chọn/loại, evidence, điểm số, lý do và nhật ký này cùng bài viết trong Supabase.' },
       ];
       const specFingerprint = articleSpecFingerprint(articleSpec);
+      progress.advance(4);
       const saved = await onUpdate({
         coreIdeaSuggestions: result.ideas,
         selectedCoreIdeaId: undefined,
@@ -585,6 +592,7 @@ export default function Step2CoreIdea({
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 2: compiledWorkflowRules.snapshot },
       });
       if (!saved) throw new Error('Kết quả Bước 1 chưa được lưu vào Supabase.');
+      progress.finish(partialResult);
       if (partialResult) {
         setWarning(`Đã lưu ${result.ideas.length}/${requestedIdeaCount} core idea vượt qua đầy đủ kiểm chứng. Bạn có thể tiếp tục với kết quả hợp lệ hoặc nhấn “Đề xuất lại” để thử bổ sung.`);
       } else {
@@ -592,6 +600,7 @@ export default function Step2CoreIdea({
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      progress.fail();
       setError(`Không lấy được đề xuất từ AI: ${message}`);
     } finally {
       generationInFlight.current = false;
@@ -655,26 +664,13 @@ export default function Step2CoreIdea({
               </section>
             )}
 
-            {loading && (
-              <div className="space-y-3">
-                {[0, 1, 2].map(i => (
-                  <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div className="ai-loading h-3 w-20" />
-                      <div className="ai-loading h-6 w-10" />
-                    </div>
-                    <div className="ai-loading h-5 w-full" />
-                    <div className="ai-loading h-3 w-full" />
-                    <div className="ai-loading h-3 w-5/6" />
-                    <div className="flex gap-1 pt-1">
-                      <div className="ai-loading h-5 w-16 rounded-full" />
-                      <div className="ai-loading h-5 w-20 rounded-full" />
-                      <div className="ai-loading h-5 w-14 rounded-full" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <WorkflowCheckLog run={generationLog.run} steps={[
+              tr('Chuẩn bị chủ đề và từ khóa gốc', 'Prepare the topic and seed keywords'),
+              tr('Nghiên cứu từ khóa SEO', 'Research SEO keywords'),
+              tr('Tạo Article Spec và đề xuất Core Ideas', 'Generate the Article Spec and Core Ideas'),
+              tr('Kiểm tra từ khóa và dẫn chứng', 'Validate keywords and evidence'),
+              tr('Lưu Article Spec và Core Ideas', 'Save the Article Spec and Core Ideas'),
+            ]} />
 
             {!loading && ideas.length > 0 && (
               <div className="core-idea-suggestions border-t pt-4">

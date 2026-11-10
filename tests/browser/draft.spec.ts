@@ -130,6 +130,36 @@ async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incom
  });
  await page.goto('/?qc='+mode+(withKnowledge?'&kb=1':''));return calls;
 }
+test('draft checklist follows generation and quality review until the report is saved', async ({ page }) => {
+ let resumeGeneration!: () => void;
+ const generationPending = new Promise<void>(resolve => { resumeGeneration = resolve; });
+ let resumeReview!: () => void;
+ const reviewPending = new Promise<void>(resolve => { resumeReview = resolve; });
+ await mockQcFlow(page, 'generation');
+ await page.route('**/api/generate', async route => {
+  const request = route.request().postDataJSON();
+  await (request.systemPrompt.includes('publishing quality reviewer') ? reviewPending : generationPending);
+  await route.fallback();
+ });
+ await page.getByRole('button', { name: /Tạo bài viết|Generate article/ }).click();
+ const log = page.getByRole('region', { name: /Nhật ký xử lý AI|AI progress log/ });
+ const current = log.locator('[aria-current="step"]');
+ try {
+  await expect(current).toContainText(/Viết bản nháp theo dàn bài|Write the draft from the outline/);
+  await expect(log.getByRole('listitem').last()).toContainText(/Chờ thực hiện|Pending/);
+  resumeGeneration();
+  await expect(current).toContainText(/Universal QC/);
+  await expect(log.getByRole('listitem').nth(3)).toContainText(/Hoàn thành|Completed/);
+  resumeReview();
+  await expect(current).toHaveCount(0);
+  await expect(log.getByRole('status')).toHaveText(/Hoàn thành|Completed/);
+  await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
+ } finally {
+  resumeGeneration();
+  resumeReview();
+ }
+});
+
 for(const incomplete of [false,true])test(`qc-schema generation saves checkpoint before reviewer and preserves ${incomplete?'incomplete':'complete'} report`,async({page})=>{
  const calls=await mockQcFlow(page,'generation',incomplete);
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
