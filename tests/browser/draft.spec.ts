@@ -146,13 +146,25 @@ test('draft checklist follows generation and quality review until the report is 
  const current = log.locator('[aria-current="step"]');
  try {
   await expect(current).toContainText(/Viết bản nháp theo dàn bài|Write the draft from the outline/);
-  await expect(log.getByRole('listitem').last()).toContainText(/Chờ thực hiện|Pending/);
+  const qc = log.locator('ol > li').last();
+  const live = log.getByRole('status');
+  const timer = log.locator('[aria-label^="Thời gian đã chạy"], [aria-label^="Elapsed time"]');
+  await qc.locator('summary').click();
+  await expect(qc.getByText(/Chưa có hoạt động|No activity yet/)).toBeVisible();
+  await expect(live).toHaveText(/Đang yêu cầu AI viết|Requesting a draft/);
+  await expect(timer).not.toHaveText('0s');
   resumeGeneration();
   await expect(current).toContainText(/Universal QC/);
-  await expect(log.getByRole('listitem').nth(3)).toContainText(/Hoàn thành|Completed/);
+  await expect(live).toHaveText(/Đang kiểm tra nội dung và dẫn chứng|Reviewing content and evidence/);
+  await expect(qc.getByText(/Đang kiểm tra nội dung và dẫn chứng|Reviewing content and evidence/)).toBeVisible();
   resumeReview();
   await expect(current).toHaveCount(0);
-  await expect(log.getByRole('status')).toHaveText(/Hoàn thành|Completed/);
+  await expect(live).toHaveText(/Hoàn thành|Completed/);
+  await expect(qc.getByText(/Đã lưu báo cáo QC|QC report saved/)).toBeVisible();
+  const finalElapsed = await timer.textContent();
+  await page.clock.install();
+  await page.clock.fastForward(3000);
+  await expect(timer).toHaveText(finalElapsed!);
   await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
  } finally {
   resumeGeneration();

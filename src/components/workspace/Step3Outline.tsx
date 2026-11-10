@@ -332,7 +332,7 @@ export default function Step3Outline({
     generationInFlight.current = true;
     generationTiming.current = { start: startedAt, clickMeasured: false, acceptMeasured: false, saved: false, finished: false, responseSent: false };
     setGenerationAccepted(false);
-    const progress = generationLog.start();
+    const progress = generationLog.start(tr('Chuẩn bị Article Spec, cấu trúc đã chọn và nguồn được cấp.', 'Prepare the Article Spec, selected structure and available sources.'));
     setGenerating(true);
     setError(null);
     setWarning(null);
@@ -374,7 +374,7 @@ export default function Step3Outline({
       const jsonRepairCalls = 0;
       let evidenceCorrectionCalls = 0;
       const aiResponses: Awaited<ReturnType<typeof callAI>>[] = [];
-      progress.advance(1);
+      progress.advance(tr('Đang yêu cầu AI dựng dàn bài theo cấu trúc đã chọn.', 'Requesting an outline using the selected structure.'));
       const res = await callAI({
         articleId: article.id,
         model,
@@ -389,7 +389,7 @@ export default function Step3Outline({
         contextQuery,
         onAccepted: () => setGenerationAccepted(true),
       });
-      progress.advance(2);
+      progress.advance(tr('Đang kiểm tra đề mục, chủ đề bắt buộc và dẫn chứng.', 'Checking headings, required topics and evidence.'));
       aiResponses.push(res);
       let lastResponse = res;
       const parsed = parseAIJson(res.content);
@@ -400,6 +400,7 @@ export default function Step3Outline({
         evidenceCorrectionCalls += 1;
         modelCalls += 1;
         const missingCount = desiredSections - sections.length;
+        progress.note(tr('Đang yêu cầu bổ sung các mục dàn bài còn thiếu.', 'Requesting missing outline sections.'));
         const corrected = await callAI({
           articleId: article.id,
           model,
@@ -445,7 +446,7 @@ export default function Step3Outline({
         { id: 'step3-validation', stage: 'validation', status: evidenceCorrectionCalls ? 'warning' : 'completed', title: '4. Kiểm tra cấu trúc và dẫn chứng', detail: 'Loại section thiếu quote nguyên văn ở bất kỳ phân vùng nào đang được cấp quyền. Nếu dưới ngưỡng tối thiểu, chỉ yêu cầu bổ sung phần còn thiếu.', facts: { sectionsAccepted: sections.length, evidenceVerified: sections.reduce((sum, section) => sum + (section.evidence?.length ?? 0), 0), jsonRepairCalls, evidenceCorrectionCalls } },
         { id: 'step3-persist', stage: 'persistence', status: 'completed', title: '5. Lưu outline và audit trail', detail: 'Lưu section, rationale, evidence, nguồn Rules và nhật ký hành động này cùng bài viết trong Supabase.' },
       ];
-      progress.advance(3);
+      progress.advance(tr('Đang lưu dàn bài đã kiểm tra.', 'Saving the validated outline.'));
       const saved = await onUpdate({
         outline: sections,
         outlineGenerationId: crypto.randomUUID(),
@@ -464,7 +465,7 @@ export default function Step3Outline({
       if (!saved) throw new Error('Outline Bước 2 chưa được lưu vào Supabase.');
       if (generationTiming.current) generationTiming.current.saved = true;
       window.dispatchEvent(new CustomEvent('writer:generation-saved', { detail: { articleId: article.id, stage: 'outline' } }));
-      progress.finish(partialResult);
+      progress.finish(partialResult, tr(`Đã lưu ${sections.length} mục dàn bài.`, `Saved ${sections.length} outline sections.`));
       if (partialResult) {
         setWarning(`Đã lưu ${sections.length}/${minimumSections} section tối thiểu vượt qua kiểm chứng. Bạn có thể chỉnh sửa thủ công hoặc nhấn “Tạo lại” để thử bổ sung.`);
       } else {
@@ -472,7 +473,7 @@ export default function Step3Outline({
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      progress.fail();
+      progress.fail(message);
       setError(`Không tạo được outline: ${message}`);
     } finally {
       generationInFlight.current = false;

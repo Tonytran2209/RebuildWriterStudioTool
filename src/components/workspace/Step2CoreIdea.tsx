@@ -383,7 +383,7 @@ export default function Step2CoreIdea({
       return;
     }
     generationInFlight.current = true;
-    const progress = generationLog.start();
+    const progress = generationLog.start(tr('Đọc chủ đề đã chọn và lấy từ khóa gốc.', 'Read the selected topic and collect seed keywords.'));
     setLoading(true);
     setError(null);
     setWarning(null);
@@ -393,7 +393,7 @@ export default function Step2CoreIdea({
         selectedSnapshot?.label ?? "",
         article.contentType ?? "",
       ].map(seed => seed.trim()).filter(Boolean);
-      progress.advance(1);
+      progress.advance(tr('Đang tra cứu từ khóa SEO và ý định tìm kiếm.', 'Researching SEO keywords and search intent.'));
       const seoResearch = await researchSeoKeywords(seeds, article.id, railwayUrl, requestedKeywordCount);
       const contextQuery = [
         ...seeds,
@@ -502,9 +502,10 @@ export default function Step2CoreIdea({
         const parsed = parseAIJson(res.content);
         return { res, parsed, ideas: normalizeIdeas(parsed, bundle, seoResearch, trustedEvidence) };
       };
-      progress.advance(2);
+      progress.note(tr('Đã nhận kết quả nghiên cứu từ khóa.', 'Keyword research results received.'));
+      progress.advance(tr('Đang yêu cầu AI tạo Article Spec và Core Ideas.', 'Requesting the Article Spec and Core Ideas.'));
       let result = await requestIdeas(manual);
-      progress.advance(3);
+      progress.advance(tr('Đang đối chiếu từ khóa và dẫn chứng.', 'Validating keywords and evidence.'));
       const resultRoot = result.parsed && typeof result.parsed === 'object' && !Array.isArray(result.parsed)
         ? result.parsed as Record<string, unknown>
         : {};
@@ -530,6 +531,7 @@ export default function Step2CoreIdea({
           ? [String((item as Record<string, unknown>).keyword ?? "").trim()]
           : []).filter(Boolean);
         modelCalls += 1;
+        progress.note(tr('Đang yêu cầu bổ sung các ý tưởng còn thiếu.', 'Requesting the remaining ideas.'));
         const correctionResponse = await callAI({
           articleId: article.id,
           model,
@@ -578,7 +580,7 @@ export default function Step2CoreIdea({
         { id: 'step2-persist', stage: 'persistence', status: 'completed', title: '6. Lưu kết quả có thể audit', detail: 'Lưu Top 10, quyết định chọn/loại, evidence, điểm số, lý do và nhật ký này cùng bài viết trong Supabase.' },
       ];
       const specFingerprint = articleSpecFingerprint(articleSpec);
-      progress.advance(4);
+      progress.advance(tr('Đang lưu Article Spec, Core Ideas và kết quả nghiên cứu.', 'Saving the Article Spec, Core Ideas and research results.'));
       const saved = await onUpdate({
         coreIdeaSuggestions: result.ideas,
         selectedCoreIdeaId: undefined,
@@ -592,7 +594,7 @@ export default function Step2CoreIdea({
         workflowRuleSnapshots: { ...article.workflowRuleSnapshots, 2: compiledWorkflowRules.snapshot },
       });
       if (!saved) throw new Error('Kết quả Bước 1 chưa được lưu vào Supabase.');
-      progress.finish(partialResult);
+      progress.finish(partialResult, tr(`Đã lưu ${result.ideas.length}/${requestedIdeaCount} đề xuất.`, `Saved ${result.ideas.length}/${requestedIdeaCount} suggestions.`));
       if (partialResult) {
         setWarning(`Đã lưu ${result.ideas.length}/${requestedIdeaCount} core idea vượt qua đầy đủ kiểm chứng. Bạn có thể tiếp tục với kết quả hợp lệ hoặc nhấn “Đề xuất lại” để thử bổ sung.`);
       } else {
@@ -600,7 +602,7 @@ export default function Step2CoreIdea({
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      progress.fail();
+      progress.fail(message);
       setError(`Không lấy được đề xuất từ AI: ${message}`);
     } finally {
       generationInFlight.current = false;

@@ -64,3 +64,5 @@ Draft uses a History icon button immediately right of Regenerate draft (or Gener
 ## Workflow check log
 
 Core Ideas, Draft Outline and Draft Content share a compact checklist for in-workspace generation. A dashed circle marks queued work, an animated ring marks the current operation, and a check marks a completed operation. Show elapsed time and distinguish saved results that need review from interrupted runs. Drive each transition from the actual application operation and retain the latest checklist alongside the output while the step remains mounted. Keep the persisted AI audit trace for detailed inspection. Use theme tokens, accessible status text and reduced-motion support.
+
+Each checklist row opens inline to show its status, elapsed time and timestamped application events. A live line below the card shows the current operation and elapsed run time, then holds the final time. Announce operation changes to assistive technology without announcing each timer tick.
