@@ -23,12 +23,14 @@ async function checkpoints() {
 }
 
 function workflow(prompt, checkpoint) {
+  const steps = Number(process.env.WRITER_COMFY_STEPS || 24);
+  if (!Number.isInteger(steps) || steps < 1 || steps > 50) throw new Error("WRITER_COMFY_STEPS must be an integer from 1 to 50.");
   return {
     "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: checkpoint } },
     "2": { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["1", 1] } },
     "3": { class_type: "CLIPTextEncode", inputs: { text: "text, watermark, logo, unsupported statistics, extra limbs, blurry", clip: ["1", 1] } },
     "4": { class_type: "EmptyLatentImage", inputs: { width: 768, height: 768, batch_size: 1 } },
-    "5": { class_type: "KSampler", inputs: { seed: randomInt(0, 2 ** 32), steps: 24, cfg: 7, sampler_name: "euler", scheduler: "normal", denoise: 1,
+    "5": { class_type: "KSampler", inputs: { seed: randomInt(0, 2 ** 32), steps, cfg: 7, sampler_name: "euler", scheduler: "normal", denoise: 1,
       model: ["1", 0], positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0] } },
     "6": { class_type: "VAEDecode", inputs: { samples: ["5", 0], vae: ["1", 2] } },
     "7": { class_type: "SaveImage", inputs: { filename_prefix: "writer-studio", images: ["6", 0] } },
@@ -57,7 +59,7 @@ async function main() {
   })).json();
   if (!submitted.prompt_id || submitted.error) throw new Error("ComfyUI rejected the local workflow.");
 
-  const deadline = Date.now() + 210_000;
+  const deadline = Date.now() + 620_000;
   let image;
   while (Date.now() < deadline) {
     const history = await (await request(`/history/${encodeURIComponent(submitted.prompt_id)}`)).json();

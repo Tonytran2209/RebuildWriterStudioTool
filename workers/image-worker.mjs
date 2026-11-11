@@ -17,7 +17,8 @@ await access(renderer, constants.X_OK);
 const run = promisify(execFile);
 const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 const { WRITER_IMAGE_WORKER_TOKEN: _token, OPENAI_IMAGE_API_KEY: _imageKey, ...agentEnv } = process.env;
-const options = { timeout: 240_000, maxBuffer: 256 * 1024, env: agentEnv };
+// Prompt and render together must finish within the backend's 15-minute claim lease.
+const options = { timeout: 180_000, maxBuffer: 256 * 1024, env: agentEnv };
 
 async function call(route, body) {
   const response = await fetch(new URL(`/internal/image-worker${route}`, origin), {
@@ -51,7 +52,7 @@ async function render(job, folder) {
 
   try {
     await run(renderer, [brief, file], {
-      ...options, cwd: folder,
+      ...options, timeout: 660_000, cwd: folder,
       env: path.basename(renderer) === "openai-image.mjs"
         ? { ...agentEnv, OPENAI_IMAGE_API_KEY: process.env.OPENAI_IMAGE_API_KEY }
         : agentEnv,

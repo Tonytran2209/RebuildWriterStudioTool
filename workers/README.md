@@ -23,6 +23,8 @@ The server needs `backend/migrations/003_image_workers.sql` applied to the Write
 
    `WRITER_COMFY_URL` defaults to `http://127.0.0.1:8188`. Only loopback HTTP origins are accepted. If ComfyUI uses another local port, set `WRITER_COMFY_URL` accordingly.
 
+   `WRITER_COMFY_STEPS` defaults to 24. On slower Macs, setting it to 16 can shorten generation at some cost to detail. The worker allows up to 10 minutes for the local render within the backend's 15-minute lease.
+
    On the configured iMac, `~/Library/Application Support/Writer Studio/start-image-worker.sh` now uses the local renderer and reads the checkpoint name from `~/Library/Application Support/Writer Studio/comfy-checkpoint.txt`. If exactly one checkpoint is installed, the renderer selects it automatically and this file is optional. With multiple checkpoints, write the desired name into that file before running the script. The script no longer reads `writer-studio-image-api-key` from Keychain.
 
 ## Pair and run
