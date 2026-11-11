@@ -2657,7 +2657,10 @@ html, body, #root {
 }
 @media (prefers-reduced-motion: reduce) { .image-placement-suggestions .ips-brief-chevron { transition: none; } }
 
-/* Completed-article ticks in the sidebar read as success (emerald) in dark theme. */
+/* Completed-article ticks in the sidebar read as success (emerald) in every theme. */
+.writer-sidebar .sidebar-complete-icon,
+:root[data-writer-theme='light'] .writer-sidebar .sidebar-complete-icon,
+.writer-light .writer-sidebar .sidebar-complete-icon { color: #047857 !important; }
 :root[data-writer-theme='dark'] .writer-sidebar .sidebar-complete-icon,
 .codex-dark .writer-sidebar .sidebar-complete-icon { color: #34d399 !important; }
 

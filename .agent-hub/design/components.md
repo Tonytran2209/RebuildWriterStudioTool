@@ -51,7 +51,7 @@ Distinguish content findings from incomplete/outdated review process. Explain wh
 
 ## Campaign sidebar (REQ-460AEC3E)
 
-App loads Content Plan metadata independently of articles and ignores superseded responses. Launcher reports successful history loads, imports (before classification) and existing plan deletions to App. Sidebar groups by Content Plan id, including empty campaigns and metadata fallbacks, with collapsed native button disclosures, visible focus and 44px targets. Search exposes matching articles. Child selection keeps the existing single/batch callback; child rows have no delete control because the existing handler may delete an entire batch. Ungrouped articles retain their existing controls. Completed-article ticks (campaign and recent rows) use emerald success color in dark theme (`#34d399`) instead of the inherited neutral icon color.
+App loads Content Plan metadata independently of articles and ignores superseded responses. Launcher reports successful history loads, imports (before classification) and existing plan deletions to App. Sidebar groups by Content Plan id, including empty campaigns and metadata fallbacks, with collapsed native button disclosures, visible focus and 44px targets. Search exposes matching articles. Child selection keeps the existing single/batch callback; child rows have no delete control because the existing handler may delete an entire batch. Ungrouped articles retain their existing controls. Completed-article ticks (campaign and recent rows) use emerald success color instead of the inherited neutral icon color: `#047857` in light theme (at least 4.2:1 on sidebar and selected-row backgrounds) and `#34d399` in dark theme.
 
 ## Outline and draft history (REQ-44E4C670)
 
