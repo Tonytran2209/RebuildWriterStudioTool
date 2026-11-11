@@ -1,3 +1,4 @@
+import DraftImageWorker, { useDraftImageJobs, WorkerImage } from './DraftImageWorker';
 import { isArticleCompleted } from '../../lib/workflowGuards';
 import WorkflowCheckLog, { useWorkflowCheckLog } from './WorkflowCheckLog';
 import { GenerationHistory } from "./Step3Outline";
@@ -733,8 +734,12 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   }
   const seoChecklistPassed = Boolean(draft) && reportIsCurrent && qualityAllowsCompletion(displayedQualityChecks);
   const imageSuggestions = article.imageSuggestions ?? []
+  const imageJobs = useDraftImageJobs(railwayUrl, article.id, imageSuggestions.some(item => item.status === 'approved'));
+  const insertedImages = new Map(imageJobs.jobs.filter(job => job.status === 'inserted').map(job => [job.suggestion_id, job]));
   const createImageSuggestions = () => {
-    const suggestions = buildImageSuggestions(article, draft)
+    const approved = imageSuggestions.filter(item => item.status === 'approved' && draft.includes(`(image-placeholder://${item.id})`));
+    const suggestions = [...approved, ...buildImageSuggestions(article, draft).filter(item =>
+      !approved.some(existing => existing.afterHeading === item.afterHeading))];
     void onUpdate({ imageSuggestions: suggestions })
     notifyWorkspace(suggestions.length ? `${suggestions.length} image suggestions are ready for review.` : 'No suitable sections of at least 100 words were found for image suggestions.', suggestions.length ? 'success' : 'warning')
   }
@@ -1729,7 +1734,14 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 {draft && (completed || !editingDraft) && <div className="draft-prose whitespace-pre-wrap">
                   {preview.title && <div>{preview.title}</div>}
                   <div>{preview.introduction}</div>
-                  <div>{preview.body}</div>
+                  <div>{preview.body.split(/(^!\[[^\r\n]*\]\(image-placeholder:\/\/[^)\s]+\)$)/m).map((part, index) => {
+                    const suggestionId = part.match(/^!\[[^\r\n]*\]\(image-placeholder:\/\/([^)\s]+)\)$/)?.[1];
+                    const job = suggestionId ? insertedImages.get(suggestionId) : undefined;
+                    const suggestion = imageSuggestions.find(item => item.id === suggestionId);
+                    return job && suggestion
+                      ? <WorkerImage key={job.id} railwayUrl={railwayUrl} jobId={job.id} alt={suggestion.altText} />
+                      : <span key={index}>{part}</span>;
+                  })}</div>
                 </div>}
                 <div hidden={Boolean(draft) && (completed || !editingDraft)}>
                 <div
@@ -1753,6 +1765,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   <p className="mt-2 max-h-8 overflow-hidden text-[10px] leading-relaxed text-[#a7a7a7]">{suggestion.purpose}</p><p className="mt-1 text-[10px] text-[#777]">Alt: {suggestion.altText}</p>
                   <details className="mt-2 text-[10px] text-[#858585]"><summary className="cursor-pointer select-none hover:text-[#ccc]">View image brief</summary><p className="mt-1.5 leading-relaxed">{suggestion.brief}</p></details>
                   {suggestion.status === 'suggested' && <div className="mt-3 flex gap-1.5"><button disabled={completed || generating || repairing} onClick={() => approveImageSuggestion(suggestion)} className="image-placement-control image-placement-approve rounded-md border px-2 py-1 text-[10px] font-medium">Approve</button><button disabled={completed || generating || repairing} onClick={() => editImageSuggestion(suggestion)} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Edit</button><button disabled={completed || generating || repairing} onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Dismiss</button></div>}
+                  {suggestion.status === 'approved' && <DraftImageWorker railwayUrl={railwayUrl} suggestion={suggestion}
+                    disabled={completed || generating || repairing || editingDraft} imageJobs={imageJobs} />}
                 </div>)}</div>}
               </section>}
             </div>

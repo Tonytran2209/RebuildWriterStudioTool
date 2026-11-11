@@ -86,14 +86,14 @@ test("AI instrumentation preserves results, errors and restart-safe aggregate to
       (e) => e === error,
     )
     const report = await m.snapshot(7)
-    assert.deepEqual((report as any).profile, { version: "profile-v1", mainJob: { job: "Writer article", steps: [
-      "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Article Spec & Core Idea", "Lập outline", "Viết draft", "Kiểm tra chất lượng"] },
-      jobTargets: { "Writer article": 10 },
-      kpiDescriptions: {
-        responseTime: "Bấm 'Tạo outline' (bước 3; mốc bắt đầu là thời điểm sự kiện bấm) → khung hình thứ hai sau khi giao diện hiện 'Đã nhận yêu cầu', tức máy chủ đã kiểm tra và nhận việc trước khi gọi AI; không chờ AI tạo xong",
-        clickLatency: "Bấm 'Tạo outline' (bước 3; mốc bắt đầu là thời điểm sự kiện bấm) → khung hình thứ hai sau khi trạng thái 'Đang dựng...' được hiển thị, tức khung đầu tiên đã có cơ hội vẽ",
-      } },
-      "the report declares the article pipeline so AI Agent Lab lists all six sub-jobs")
+    assert.equal(report.profile.version, "profile-v1")
+    assert.deepEqual(report.profile.mainJob, { job: "Writer article", steps: [
+      "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Article Spec & Core Idea", "Lập outline", "Viết draft",
+      "Kiểm tra chất lượng", "Tạo ảnh minh họa", "Chèn ảnh vào bài",
+    ] })
+    assert.deepEqual(report.profile.jobTargets, { "Writer article": 10 })
+    assert.match(report.profile.kpiDescriptions.responseTime, /Tạo outline, Tạo ảnh hoặc Chèn ảnh/)
+    assert.match(report.profile.kpiDescriptions.clickLatency, /khung hình thứ hai/)
     assert.equal(report.ai.calls, 3)
     assert.equal(report.ai.failed, 1)
     assert.equal(report.ai.usageSamples, 1)

@@ -1,3 +1,4 @@
+import { imageWorkerApi, imageWorkerRunner } from "./imageWorkers.ts"
 import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
@@ -227,6 +228,8 @@ app.use("/api", async (req: AuthenticatedRequest, res, next) => {
   }
 })
 
+app.use("/internal/image-worker", imageWorkerRunner)
+app.use("/api/image-workers", imageWorkerApi)
 app.post("/api/monitoring/ui-sample", monitoring.browserSample)
 
 const ARTICLE_PREFIX = "writer:article:"

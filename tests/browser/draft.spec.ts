@@ -592,3 +592,48 @@ test('regenerating a draft fills missing semantic checks and supplies the measur
   await page.reload();
   await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
 });
+
+test('approved image suggestions select a worker and insert its preview without changing draft prose', async ({page}) => {
+ const jobs: Array<{ id: string; suggestion_id: string; worker_id: string; status: string }> = [];
+ const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD/oAAAAASUVORK5CYII=', 'base64');
+ await page.route('**/api/image-workers/**', async route => {
+  const path = new URL(route.request().url()).pathname;
+  if (path.endsWith('/workers')) return route.fulfill({json:[
+   {id:'claude',name:'Mac Claude',agent:'claude',preferred:true,online:true},
+   {id:'codex',name:'Mac Codex',agent:'codex',preferred:false,online:true},
+  ]});
+  if (path.endsWith('/asset')) return route.fulfill({body:image,contentType:'image/png'});
+  if (path.endsWith('/insert')) {
+   jobs[0].status='inserted';
+   return route.fulfill({json:jobs[0]});
+  }
+  if (route.request().method()==='POST') {
+   expect(route.request().postDataJSON()).toEqual({workerId:'codex',suggestionId:'visual'});
+   jobs.push({id:'job',suggestion_id:'visual',worker_id:'codex',status:'ready'});
+   return route.fulfill({status:202,json:jobs[0]});
+  }
+  return route.fulfill({json:jobs});
+ });
+ await page.route('**/api/monitoring/ui-sample', route => route.fulfill({json:{ok:true}}));
+ await page.goto('/?qc=recheck');
+ await expect(page.getByTestId('stored-source')).toBeAttached();
+ const savedDraft = await page.evaluate(() => {
+  const article = JSON.parse(sessionStorage.getItem('qc-fixture')!);
+  article.draft += '\n\n![Visual explanation](image-placeholder://visual)';
+  article.imageSuggestions = [{id:'visual',status:'approved',afterHeading:'Conclusion',altText:'Visual explanation',type:'diagram',brief:'Explain',purpose:'Illustrate'}];
+  sessionStorage.setItem('qc-fixture', JSON.stringify(article));
+  return article.draft;
+ });
+ await page.reload();
+ const placement = page.locator('.image-placement-suggestions');
+ const select = placement.getByRole('combobox', {name:/Worker tạo ảnh|Image worker/});
+ await expect(select).toHaveValue('claude');
+ await select.selectOption('codex');
+ await placement.getByRole('button', {name:/^(Tạo ảnh|Generate image)$/}).click();
+ await expect(placement.getByRole('img', {name:'Visual explanation'})).toBeVisible();
+ await placement.getByRole('button', {name:/Chèn vào bài|Insert into draft/}).click();
+ await expect(page.locator('.draft-prose').getByRole('img', {name:'Visual explanation'})).toBeVisible();
+ expect(await page.getByTestId('stored-source').textContent()).toBe(savedDraft);
+ await page.reload();
+ await expect(page.locator('.draft-prose').getByRole('img', {name:'Visual explanation'})).toBeVisible();
+});

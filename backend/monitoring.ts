@@ -1,3 +1,4 @@
+import { readImageWorkerRuns } from "./imageWorkers.ts"
 import {createTaskUsage} from './taskUsage.ts';
 import crypto from "node:crypto"
 import { performance } from "node:perf_hooks"
@@ -165,6 +166,7 @@ export function createMonitoring(
   appId: string,
   options: {
     readData?: typeof readMonitoringData
+    readImageRuns?: typeof readImageWorkerRuns
     getConfig?: () => Promise<any>
     save?: (key: string, value: unknown) => Promise<void>
     token?: () => string | undefined
@@ -393,7 +395,16 @@ export function createMonitoring(
         Date.parse(new Date().toISOString().slice(0, 10)) -
           (days - 1) * 86400000,
       ).toISOString()
-      const source = await (options.readData ?? readMonitoringData)(since)
+      const [source, imageHistory] = await Promise.all([
+        (options.readData ?? readMonitoringData)(since),
+        (options.readImageRuns ?? (options.readData ? async () => ({ runs: [], complete: true }) : readImageWorkerRuns))()
+          .catch((error: { code?: string }) => ({ runs: [], complete: error.code === "42P01" })),
+      ])
+      const articleHistory = "jobRuns" in source ? source.jobRuns : null
+      const historyRuns = [...(articleHistory?.runs ?? []), ...imageHistory.runs]
+        .sort((a, b) => Date.parse(b.endedAt ?? b.startedAt ?? "") - Date.parse(a.endedAt ?? a.startedAt ?? ""))
+      const jobRunsTruncated = historyRuns.length > 2500 || articleHistory?.complete === false || !imageHistory.complete
+      const jobHistorySince = articleHistory?.since ?? new Date(Date.now() - 61 * 86400000).toISOString()
       const byKey = new Map<string, Bucket>(
         (source.buckets || []).map((b: any) => [b.key, b.value]),
       )
@@ -512,7 +523,7 @@ export function createMonitoring(
         protocol: "app-monitoring-v1",
         profile: labProfile,
         contentWorkload: source.contentWorkload,
-        jobRuns: "jobRuns" in source ? source.jobRuns : null,
+        jobRuns: { since: jobHistorySince, complete: !jobRunsTruncated, truncated: jobRunsTruncated, runs: historyRuns.slice(0, 2500) },
         jobHistory: "jobHistory" in source ? source.jobHistory : null,
         jobHistoryAllTime: "jobHistoryAllTime" in source ? source.jobHistoryAllTime : null,
         performanceKpis: {

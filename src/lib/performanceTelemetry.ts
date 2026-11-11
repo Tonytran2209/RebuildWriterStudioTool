@@ -17,13 +17,13 @@ export function measureUiAfterPaint(startedAt: number, report: (ms: number) => v
   measureAfterPaint(startedAt, browserClock, report);
 }
 
-export function sendOutlinePerformanceSample(metric: UiKpiMetric, ms: number) {
-  if (document.hidden) return;
+export function sendOutlinePerformanceSample(metric: UiKpiMetric, ms: number, allowHidden = false, railwayUrl = window.location.origin) {
+  if (document.hidden && !allowHidden) return;
   const options = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ metric, ms }),
     keepalive: true,
   };
-  void authenticatedRailwayFetch("/api/monitoring/ui-sample", options, window.location.origin).catch(() => {});
+  void authenticatedRailwayFetch("/api/monitoring/ui-sample", options, railwayUrl).catch(() => {});
 }

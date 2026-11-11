@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Bot, Cpu, Library, Search } from 'lucide-react';
+import { ArrowLeft, Bot, Cpu, Image, Library, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AppConfig, Article, DocumentFile, ActiveTab } from '../../types';
 import TabStepSetup from './TabStepSetup';
+import ImageWorkersSettings from './ImageWorkersSettings';
 import TabModels from './TabModels';
 import TabKnowledgeBase from './TabKnowledgeBase';
 import { sanitizeConfigFileAccess } from '../../lib/documentStatus';
@@ -19,6 +20,7 @@ interface Props {
 const TABS: Array<{ id: ActiveTab; labelVi: string; labelEn: string; descriptionVi: string; descriptionEn: string; icon: LucideIcon }> = [
   { id: 'step-setup', labelVi: 'Workflow AI', labelEn: 'AI workflow', descriptionVi: 'Model theo bước, nguồn context và usage', descriptionEn: 'Step models, context sources, and usage', icon: Bot },
   { id: 'models', labelVi: 'AI Models', labelEn: 'AI models', descriptionVi: 'Provider, model và chi phí token', descriptionEn: 'Providers, models, and token pricing', icon: Cpu },
+  { id: 'image-workers', labelVi: 'Worker tạo ảnh', labelEn: 'Image Workers', descriptionVi: 'Đăng ký máy và chọn worker mặc định', descriptionEn: 'Pair Macs and choose a default worker', icon: Image },
   { id: 'knowledge-base', labelVi: 'Knowledge & Rules', labelEn: 'Knowledge & rules', descriptionVi: 'Knowledge Base, Skills và website inventory', descriptionEn: 'Knowledge Base, skills, and website inventory', icon: Library },
 ];
 
@@ -98,6 +100,7 @@ export default function ConfigModal({ config, files, articles, onSave, onClose }
           <div className="settings-content min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8 md:py-7">
             <div className="mx-auto max-w-[760px]">
               {activeTab === 'step-setup' && <TabStepSetup config={localConfig} files={localFiles} articles={articles} onChange={setLocalConfig} />}
+              {activeTab === 'image-workers' && <ImageWorkersSettings railwayUrl={localConfig.railwayUrl} />}
               {activeTab === 'models' && <TabModels config={localConfig} onChange={setLocalConfig} />}
               {activeTab === 'knowledge-base' && <TabKnowledgeBase files={localFiles} onChange={setLocalFiles} railwayUrl={localConfig.railwayUrl} config={localConfig} onConfigChange={setLocalConfig} />}
             </div>

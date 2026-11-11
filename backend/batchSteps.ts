@@ -1,6 +1,6 @@
 // Sub-jobs of one batch article, from taking it from the Content Plan to a checked draft.
 // Shared by the batch runner (step timings) and the AI Agent Lab report (declared pipeline).
-export type BatchStepKey = "plan" | "seo" | "spec" | "outline" | "draft" | "quality"
+export type BatchStepKey = "plan" | "seo" | "spec" | "outline" | "draft" | "quality" | "imageGenerate" | "imageInsert"
 export type BatchStepRun = { key: BatchStepKey; label: string; startedAt: string; endedAt: string | null; status: "running" | "completed" | "failed" }
 export const batchStepLabels: Record<BatchStepKey, string> = {
   plan: "Nhận bài từ Content Plan",
@@ -9,6 +9,8 @@ export const batchStepLabels: Record<BatchStepKey, string> = {
   outline: "Lập outline",
   draft: "Viết draft",
   quality: "Kiểm tra chất lượng",
+  imageGenerate: "Tạo ảnh minh họa",
+  imageInsert: "Chèn ảnh vào bài",
 }
 // Main Job for every article, batch or step-by-step (single). Named at report time, so history of
 // earlier batch articles is reported under the same name.
@@ -24,7 +26,7 @@ export const labProfile = {
   jobTargets: { [ARTICLE_JOB]: 10 },
   // What the browser KPIs measure (ui-kpi-v2, src/components/workspace/Step3Outline.tsx).
   kpiDescriptions: {
-    responseTime: "Bấm 'Tạo outline' (bước 3; mốc bắt đầu là thời điểm sự kiện bấm) → khung hình thứ hai sau khi giao diện hiện 'Đã nhận yêu cầu', tức máy chủ đã kiểm tra và nhận việc trước khi gọi AI; không chờ AI tạo xong",
-    clickLatency: "Bấm 'Tạo outline' (bước 3; mốc bắt đầu là thời điểm sự kiện bấm) → khung hình thứ hai sau khi trạng thái 'Đang dựng...' được hiển thị, tức khung đầu tiên đã có cơ hội vẽ",
+    responseTime: "Bấm Tạo outline, Tạo ảnh hoặc Chèn ảnh (tính từ sự kiện bấm) → khung hình thứ hai sau khi giao diện xác nhận máy chủ đã nhận việc tạo outline, đưa ảnh vào hàng đợi hoặc lưu vị trí chèn ảnh",
+    clickLatency: "Bấm Tạo outline, Tạo ảnh hoặc Chèn ảnh (tính từ sự kiện bấm) → khung hình thứ hai sau khi trạng thái đang xử lý được hiển thị, tức khung đầu tiên đã có cơ hội vẽ",
   },
 }
