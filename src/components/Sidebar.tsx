@@ -171,7 +171,7 @@ export default function Sidebar({
                   <button title={title} onClick={() => onSelectArticle(article.id)} aria-current={activeArticleId === article.id ? "page" : undefined}
                     className={`campaign-article-open sidebar-nav min-h-11 min-w-0 flex-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-text)] ${activeArticleId === article.id ? "bg-[var(--ui-selected)]" : ""}`}>
                     <span className="campaign-nav-label truncate">{title}</span>
-                    {(article.status === "done" || article.completedAt || article.batchStatus === "completed") && <CircleCheck className="campaign-article-status app-icon ml-auto shrink-0 text-[var(--ui-secondary)]" aria-label={tr("Đã hoàn tất", "Completed")} />}
+                    {(article.status === "done" || article.completedAt || article.batchStatus === "completed") && <CircleCheck className="campaign-article-status sidebar-complete-icon app-icon ml-auto shrink-0 text-[var(--ui-secondary)]" aria-label={tr("Đã hoàn tất", "Completed")} />}
                   </button>
                   <button type="button" disabled={Boolean(deletingArticleId) || batchRunning}
                     onClick={() => onDeleteArticle(article)}
@@ -221,7 +221,7 @@ export default function Sidebar({
                 </div>
               </button>
               {batchWorking && <LoaderCircle className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-[var(--ui-secondary)] transition-opacity group-hover:opacity-0" aria-label={tr("Đang tạo bài", "Generating articles")} />}
-              {(batchComplete || singleComplete) && <CircleCheck className="app-icon absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-400 transition-opacity group-hover:opacity-0" aria-label={tr("Đã hoàn tất", "Completed")} />}
+              {(batchComplete || singleComplete) && <CircleCheck className="sidebar-complete-icon app-icon absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-400 transition-opacity group-hover:opacity-0" aria-label={tr("Đã hoàn tất", "Completed")} />}
               <button
                 disabled={deletingArticleId === article.id}
                 onClick={(event) => { event.stopPropagation(); onDeleteArticle(article, isBatch) }}

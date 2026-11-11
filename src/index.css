@@ -2602,7 +2602,7 @@ html, body, #root {
   background: var(--ui-surface); color: var(--ui-text); font-size: 12px; line-height: 1.5;
 }
 :root[data-writer-theme='light'] .image-placement-suggestions, .writer-light .image-placement-suggestions {
-  --ips-success-bg: #e6f4ed; --ips-success-text: #166044;
+  --ips-success-bg: #d1fae5; --ips-success-text: #047857; --ips-success-border: #6ee7b7;
   --ips-warning-bg: #fff0d6; --ips-warning-text: #795000;
   --ips-error-text: #b91c1c;
 }
@@ -2617,7 +2617,7 @@ html, body, #root {
 .image-placement-suggestions .ips-type { flex: none; padding: 2px 6px; border: 1px solid var(--ui-border); border-radius: 6px; font: 500 11px/16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: .02em; color: var(--ui-secondary); }
 .image-placement-suggestions .ips-position { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--ui-muted); }
 .image-placement-suggestions .ips-status { display: inline-flex; flex: none; align-items: center; gap: 4px; margin-left: auto; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; line-height: 16px; white-space: nowrap; background: var(--ui-soft); color: var(--ui-secondary); }
-.image-placement-suggestions .ips-status-approved { background: var(--ips-success-bg); color: var(--ips-success-text); }
+.image-placement-suggestions .ips-status-approved { background: var(--ips-success-bg); color: var(--ips-success-text); box-shadow: inset 0 0 0 1px var(--ips-success-border, transparent); }
 .image-placement-suggestions .ips-status-suggested { background: var(--ips-warning-bg); color: var(--ips-warning-text); }
 .image-placement-suggestions .ips-heading { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 10px 0 0; font-size: 14px; font-weight: 500; line-height: 1.4; color: var(--ui-text); overflow-wrap: anywhere; }
 .image-placement-suggestions .ips-purpose { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 6px 0 0; color: var(--ui-secondary); }
@@ -2656,6 +2656,10 @@ html, body, #root {
   .image-placement-suggestions .ips-worker-row { flex-direction: column; align-items: stretch; }
 }
 @media (prefers-reduced-motion: reduce) { .image-placement-suggestions .ips-brief-chevron { transition: none; } }
+
+/* Completed-article ticks in the sidebar read as success (emerald) in dark theme. */
+:root[data-writer-theme='dark'] .writer-sidebar .sidebar-complete-icon,
+.codex-dark .writer-sidebar .sidebar-complete-icon { color: #34d399 !important; }
 
 /* Required outline choice, shared by single and batch workflows. */
 .outline-picker { padding: 20px; border: 1px solid var(--ui-control-border); border-radius: 12px; background: var(--ui-surface); color: var(--ui-text); }
