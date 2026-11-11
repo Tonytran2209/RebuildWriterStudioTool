@@ -49,10 +49,16 @@ async function render(job, folder) {
   } else throw new Error("Unknown agent");
   if (!brief || brief.length > 16_000) throw new Error("Invalid image prompt");
 
-  await run(renderer, [brief, file], {
-    ...options, cwd: folder,
-    env: { ...agentEnv, OPENAI_IMAGE_API_KEY: process.env.OPENAI_IMAGE_API_KEY },
-  });
+  try {
+    await run(renderer, [brief, file], {
+      ...options, cwd: folder,
+      env: path.basename(renderer) === "openai-image.mjs"
+        ? { ...agentEnv, OPENAI_IMAGE_API_KEY: process.env.OPENAI_IMAGE_API_KEY }
+        : agentEnv,
+    });
+  } catch {
+    throw new Error("RENDERER_FAILED");
+  }
   const bytes = await readFile(file);
   if (!bytes.length || bytes.length > 6_000_000) throw new Error("Invalid image size");
   return bytes.toString("base64");
@@ -67,7 +73,8 @@ async function processJob(job) {
   try {
     const image = await render(job, folder);
     result = { image };
-  } catch {
+  } catch (error) {
+    console.error("Image job failed:", error.message === "RENDERER_FAILED" ? "RENDERER_FAILED" : "PROMPT_OR_IMAGE_INVALID");
     result = { failed: true };
   } finally {
     clearInterval(timer);
