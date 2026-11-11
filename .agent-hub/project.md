@@ -31,6 +31,7 @@ Writer Studio creates evidence-aware articles through the Core Idea, Outline and
 | Data contracts | `database/data-model.md` |
 | Storage and retention | `database/storage.md` |
 | Change safety | `policies/ownership.md`, `policies/automation.md` |
+| Monitoring readiness | `policies/monitoring.md` |
 
 ## Module map
 
@@ -46,7 +47,7 @@ Writer Studio creates evidence-aware articles through the Core Idea, Outline and
 
 ## Agent reading order
 
-1. Read this file and `policies/ownership.md`.
+1. Read this file, `policies/ownership.md` and `policies/monitoring.md` (every new or changed processing step is a monitored sub-job).
 2. Classify feedback as Design, Backend, Database, or a dependency chain.
 3. Read only the corresponding library documents and scoped source paths.
 4. Create a request with `baseCommit`, `allowedPaths`, acceptance criteria and risk.
