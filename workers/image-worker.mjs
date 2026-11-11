@@ -1,9 +1,8 @@
-import { execFile } from "node:child_process";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
+import { runCommand } from "./run-command.mjs";
 import { setTimeout as wait } from "node:timers/promises";
 
 const origin = new URL(process.env.WRITER_URL ?? "");
@@ -14,7 +13,6 @@ if ((origin.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(origin
 }
 
 await access(renderer, constants.X_OK);
-const run = promisify(execFile);
 const auth = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 const { WRITER_IMAGE_WORKER_TOKEN: _token, OPENAI_IMAGE_API_KEY: _imageKey, ...agentEnv } = process.env;
 // Prompt and render together must finish within the backend's 15-minute claim lease.
@@ -39,11 +37,11 @@ async function render(job, folder) {
   const file = path.join(folder, "image");
   let brief;
   if (job.agent === "claude") {
-    const response = await run(process.env.WRITER_CLAUDE_BIN || "claude",
+    const response = await runCommand(process.env.WRITER_CLAUDE_BIN || "claude",
       ["-p", "--tools", "", "--output-format", "text", "--", prompt], { ...options, cwd: folder });
     brief = response.stdout.trim();
   } else if (job.agent === "codex") {
-    await run(process.env.WRITER_CODEX_BIN || "codex",
+    await runCommand(process.env.WRITER_CODEX_BIN || "codex",
       ["exec", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check", "-o", promptFile, "--", prompt],
       { ...options, cwd: folder });
     brief = (await readFile(promptFile, "utf8")).trim();
@@ -51,7 +49,7 @@ async function render(job, folder) {
   if (!brief || brief.length > 16_000) throw new Error("Invalid image prompt");
 
   try {
-    await run(renderer, [brief, file], {
+    await runCommand(renderer, [brief, file], {
       ...options, timeout: 660_000, cwd: folder,
       env: path.basename(renderer) === "openai-image.mjs"
         ? { ...agentEnv, OPENAI_IMAGE_API_KEY: process.env.OPENAI_IMAGE_API_KEY }
