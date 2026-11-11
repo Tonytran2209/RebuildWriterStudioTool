@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { Check, CircleX, LoaderCircle } from "lucide-react";
 import type { ImageSuggestion } from "../../types";
 import { authenticatedRailwayFetch } from "../../lib/db";
 import { imageWorkerRequest, type ImageJob, type ImageWorker } from "../../lib/imageWorkers";
@@ -112,7 +113,7 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
     inserted: tr("Đã chèn vào bài", "Inserted into draft"),
     failed: tr("Tạo ảnh không thành công", "Image generation failed"),
   };
-  const control = "min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] px-2.5 text-xs text-[var(--ui-text)] disabled:opacity-50";
+  const control = "ips-btn ips-btn-secondary";
 
   async function act(event: MouseEvent<HTMLButtonElement>, path: string, method: string, body?: unknown) {
     if (pending || disabled) return;
@@ -127,33 +128,41 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
     finally { setPending(false); }
   }
 
-  return <div className="mt-3 space-y-2 border-t border-[var(--ui-border)] pt-3 text-xs text-[var(--ui-text)]">
-    {(job || pending) && <p role="status">{pending ? tr("Đang gửi yêu cầu…", "Submitting…") : job && status[job.status]}</p>}
-    {(error || imageJobs.error) && <p role="alert">{error || imageJobs.error}</p>}
+  const statusTone = pending ? "" : job ? `is-${job.status}` : "";
+  return <div className="ips-worker">
+    {(job || pending) && <p role="status" className={`ips-worker-status ${statusTone}`}>
+      {pending || job?.status === "queued" || job?.status === "running"
+        ? <LoaderCircle className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
+        : job?.status === "failed" ? <CircleX className="h-3.5 w-3.5" aria-hidden /> : <Check className="h-3.5 w-3.5" aria-hidden />}
+      {pending ? tr("Đang gửi yêu cầu…", "Submitting…") : job && status[job.status]}
+    </p>}
+    {(error || imageJobs.error) && <p role="alert" className="ips-worker-error">{error || imageJobs.error}</p>}
     {job?.status === "ready" && <WorkerImage railwayUrl={railwayUrl} jobId={job.id} alt={suggestion.altText} />}
     {!disabled && <>
       {(!job || job.status === "queued" || job.status === "failed") && <>
-        <label className="grid gap-1">{tr("Worker tạo ảnh", "Image worker")}
-          <select className={control} value={selected} disabled={pending || !workers.length} onChange={event => setSelection(event.target.value)}>
+        <label>{tr("Worker tạo ảnh", "Image worker")}
+          <select value={selected} disabled={pending || !workers.length} onChange={event => setSelection(event.target.value)}>
             {!workers.length && <option value="">{tr("Đăng ký worker trong Settings", "Register a worker in Settings")}</option>}
             {workers.map(worker => <option key={worker.id} value={worker.id}>
               {worker.name} · {worker.busy ? tr("Bận", "Busy") : worker.online ? tr("Sẵn sàng", "Online") : tr("Ngoại tuyến", "Offline")}
             </option>)}
           </select>
         </label>
-        {job?.status === "queued" ? <button type="button" className={control} disabled={pending || !selected || selected === job.worker_id}
-          onClick={event => void act(event, `/jobs/${job.id}/worker`, "PATCH", {workerId:selected})}>
-          {tr("Đổi worker", "Switch worker")}
-        </button> : <button type="button" className={control} disabled={pending || !selected}
-          onClick={event => void act(event, imageJobs.path, "POST", {workerId:selected, suggestionId:suggestion.id})}>
-          {job?.status === "failed" ? tr("Tạo lại ảnh", "Retry image") : tr("Tạo ảnh", "Generate image")}
-        </button>}
+        <div className="ips-worker-actions">
+          {job?.status === "queued" ? <button type="button" className={control} disabled={pending || !selected || selected === job.worker_id}
+            onClick={event => void act(event, `/jobs/${job.id}/worker`, "PATCH", {workerId:selected})}>
+            {tr("Đổi worker", "Switch worker")}
+          </button> : <button type="button" className="ips-btn ips-btn-primary" disabled={pending || !selected}
+            onClick={event => void act(event, imageJobs.path, "POST", {workerId:selected, suggestionId:suggestion.id})}>
+            {job?.status === "failed" ? tr("Tạo lại ảnh", "Retry image") : tr("Tạo ảnh", "Generate image")}
+          </button>}
+        </div>
       </>}
-      {job?.status === "ready" && <div className="flex flex-wrap gap-2">
-        <button type="button" className={control} disabled={pending} onClick={event => void act(event, `/jobs/${job.id}/insert`, "POST")}>
+      {job?.status === "ready" && <div className="ips-worker-actions">
+        <button type="button" className="ips-btn ips-btn-primary" disabled={pending} onClick={event => void act(event, `/jobs/${job.id}/insert`, "POST")}>
           {tr("Chèn vào bài", "Insert into draft")}
         </button>
-        <button type="button" className={control} disabled={pending} onClick={event => void act(event, `/jobs/${job.id}`, "DELETE")}>
+        <button type="button" className="ips-btn ips-btn-ghost" disabled={pending} onClick={event => void act(event, `/jobs/${job.id}`, "DELETE")}>
           {tr("Bỏ ảnh này", "Discard image")}
         </button>
       </div>}

@@ -26,6 +26,8 @@ async function expectReadable(locator: Locator) {
 
 for (const theme of ['light', 'dark'] as const) {
   test(`image placement controls retain contrast and behavior in ${theme}`, async ({page}) => {
+    // Panel labels are localized; assertions use the English UI.
+    await page.addInitScript(() => localStorage.setItem('writer:language', 'en'));
     await page.goto(`/?qc=recheck&theme=${theme}`);
     // Include the app's final stylesheet and root theme, absent from the legacy fixture.
     await page.addStyleTag({url: '/src/ui-guide.css'});

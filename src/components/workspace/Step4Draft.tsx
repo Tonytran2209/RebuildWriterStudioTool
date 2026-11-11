@@ -1755,19 +1755,38 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 </div>
                 </>
               )}
-              {draft && <section className="image-placement-suggestions mt-5 rounded-xl border border-[#303030] bg-[#1b1b1b] p-3.5 text-xs text-[#c4c4c4] shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div><h3 className="font-medium text-[#f1f1f1]">Image placement suggestions</h3><p className="mt-0.5 text-[10px] text-[#888]">Visual context only · never a substitute for evidence or claims</p></div>
-                  <button disabled={completed || generating || repairing} onClick={createImageSuggestions} className="image-placement-control rounded-lg border px-2.5 py-1.5 text-[10px] font-medium transition"><Image className="mr-1 inline h-3.5 w-3.5" />{imageSuggestions.length ? 'Refresh' : 'Suggest images'}</button>
+              {draft && <section className="image-placement-suggestions" aria-labelledby="image-placement-title">
+                <div className="ips-header">
+                  <div className="min-w-0">
+                    <h3 id="image-placement-title" className="ips-title">{tr('Gợi ý vị trí ảnh', 'Image placement suggestions')}</h3>
+                    <p className="ips-subtitle">{tr('Chỉ bổ trợ thị giác · không thay thế bằng chứng hay luận điểm', 'Visual context only · never a substitute for evidence or claims')}</p>
+                  </div>
+                  <button type="button" disabled={completed || generating || repairing} onClick={createImageSuggestions} className="ips-btn ips-btn-secondary shrink-0">
+                    {imageSuggestions.length ? <RefreshCw className="h-3.5 w-3.5" aria-hidden /> : <Image className="h-3.5 w-3.5" aria-hidden />}
+                    {imageSuggestions.length ? tr('Làm mới', 'Refresh') : tr('Gợi ý ảnh', 'Suggest images')}
+                  </button>
                 </div>
-                {imageSuggestions.length > 0 && <div className="mt-3 grid gap-2 lg:grid-cols-2">{imageSuggestions.map(suggestion => <div key={suggestion.id} className="rounded-lg border border-[#303030] bg-[#202020] p-3">
-                  <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="image-placement-badge rounded-md px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">{suggestion.type}</span><span className="text-[10px] text-[#777]">After section</span></div><p className="mt-1.5 truncate text-[11px] font-medium text-[#ececec]">{suggestion.afterHeading}</p></div><span className={`image-placement-badge image-placement-status-${suggestion.status} rounded-full px-2 py-0.5 text-[9px]`}>{suggestion.status}</span></div>
-                  <p className="mt-2 max-h-8 overflow-hidden text-[10px] leading-relaxed text-[#a7a7a7]">{suggestion.purpose}</p><p className="mt-1 text-[10px] text-[#777]">Alt: {suggestion.altText}</p>
-                  <details className="mt-2 text-[10px] text-[#858585]"><summary className="cursor-pointer select-none hover:text-[#ccc]">View image brief</summary><p className="mt-1.5 leading-relaxed">{suggestion.brief}</p></details>
-                  {suggestion.status === 'suggested' && <div className="mt-3 flex gap-1.5"><button disabled={completed || generating || repairing} onClick={() => approveImageSuggestion(suggestion)} className="image-placement-control image-placement-approve rounded-md border px-2 py-1 text-[10px] font-medium">Approve</button><button disabled={completed || generating || repairing} onClick={() => editImageSuggestion(suggestion)} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Edit</button><button disabled={completed || generating || repairing} onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="image-placement-control rounded-md border px-2 py-1 text-[10px]">Dismiss</button></div>}
-                  {suggestion.status === 'approved' && <DraftImageWorker railwayUrl={railwayUrl} suggestion={suggestion}
-                    disabled={completed || generating || repairing || editingDraft} imageJobs={imageJobs} />}
-                </div>)}</div>}
+                {imageSuggestions.length > 0 && <ul className="ips-grid">{imageSuggestions.map(suggestion => {
+                  const statusLabel = suggestion.status === 'approved' ? tr('Đã duyệt', 'Approved') : suggestion.status === 'dismissed' ? tr('Đã bỏ qua', 'Dismissed') : tr('Chờ duyệt', 'Needs review');
+                  return <li key={suggestion.id} className={`ips-card ${suggestion.status === 'dismissed' ? 'is-dismissed' : ''}`}>
+                    <div className="ips-card-meta">
+                      <span className="ips-type image-placement-badge">{suggestion.type}</span>
+                      <span className="ips-position">{tr('Sau mục', 'After section')}</span>
+                      <span className={`ips-status ips-status-${suggestion.status} image-placement-badge image-placement-status-${suggestion.status}`}>{suggestion.status === 'approved' && <Check className="h-3 w-3" aria-hidden />}{statusLabel}</span>
+                    </div>
+                    <p className="ips-heading" title={suggestion.afterHeading}>{suggestion.afterHeading}</p>
+                    <p className="ips-purpose">{suggestion.purpose}</p>
+                    <dl className="ips-alt"><dt>Alt</dt><dd>{suggestion.altText}</dd></dl>
+                    <details className="ips-brief"><summary><ChevronDown className="ips-brief-chevron h-3.5 w-3.5" aria-hidden />{tr('Xem brief ảnh', 'View image brief')}</summary><p>{suggestion.brief}</p></details>
+                    {suggestion.status === 'suggested' && <div className="ips-actions">
+                      <button type="button" disabled={completed || generating || repairing} onClick={() => approveImageSuggestion(suggestion)} className="ips-btn ips-btn-primary">{tr('Duyệt', 'Approve')}</button>
+                      <button type="button" disabled={completed || generating || repairing} onClick={() => editImageSuggestion(suggestion)} className="ips-btn ips-btn-ghost">{tr('Sửa', 'Edit')}</button>
+                      <button type="button" disabled={completed || generating || repairing} onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="ips-btn ips-btn-ghost">{tr('Bỏ qua', 'Dismiss')}</button>
+                    </div>}
+                    {suggestion.status === 'approved' && <DraftImageWorker railwayUrl={railwayUrl} suggestion={suggestion}
+                      disabled={completed || generating || repairing || editingDraft} imageJobs={imageJobs} />}
+                  </li>;
+                })}</ul>}
               </section>}
             </div>
 
