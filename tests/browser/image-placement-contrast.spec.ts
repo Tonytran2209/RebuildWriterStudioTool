@@ -54,7 +54,7 @@ for (const theme of ['light', 'dark'] as const) {
     const card = panel.locator('.image-placement-status-suggested').first().locator('..').locator('..');
     page.once('dialog', dialog => dialog.accept('Updated local image brief'));
     await card.getByRole('button', {name: 'Edit', exact: true}).click();
-    await card.getByText('View image brief', {exact: true}).click();
+    await card.getByText('Image details', {exact: true}).click();
     await expect(card).toContainText('Updated local image brief');
     await expect(source).toHaveText(original!);
     await card.getByRole('button', {name: 'Approve', exact: true}).click();

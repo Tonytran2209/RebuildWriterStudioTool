@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
-import { Check, CircleX, LoaderCircle } from "lucide-react";
+import { Check, CircleX, LoaderCircle, Sparkles } from "lucide-react";
 import type { ImageSuggestion } from "../../types";
 import { authenticatedRailwayFetch } from "../../lib/db";
 import { imageWorkerRequest, type ImageJob, type ImageWorker } from "../../lib/imageWorkers";
@@ -98,14 +98,13 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
   imageJobs: ReturnType<typeof useDraftImageJobs>;
 }) {
   const { tr } = useI18n();
-  const [selection, setSelection] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const job = imageJobs.jobs.find(item => item.suggestion_id === suggestion.id);
   const workers = imageJobs.workers;
-  const selected = workers.find(worker => worker.id === selection)?.id ??
-    workers.find(worker => worker.id === job?.worker_id)?.id ??
-    workers.find(worker => worker.preferred)?.id ?? workers[0]?.id ?? "";
+  // Generation always uses the default worker chosen in Settings › Image Workers.
+  const defaultWorker = workers.find(worker => worker.preferred);
+  const workerState = (worker: typeof defaultWorker) => !worker ? "" : worker.busy ? tr("Bận", "Busy") : worker.online ? tr("Sẵn sàng", "Online") : tr("Ngoại tuyến", "Offline");
   const status = {
     queued: tr("Đang chờ worker", "Waiting for worker"),
     running: tr("Đang tạo ảnh", "Generating image"),
@@ -113,7 +112,6 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
     inserted: tr("Đã chèn vào bài", "Inserted into draft"),
     failed: tr("Tạo ảnh không thành công", "Image generation failed"),
   };
-  const control = "ips-btn ips-btn-secondary";
 
   async function act(event: MouseEvent<HTMLButtonElement>, path: string, method: string, body?: unknown) {
     if (pending || disabled) return;
@@ -139,25 +137,15 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
     {(error || imageJobs.error) && <p role="alert" className="ips-worker-error">{error || imageJobs.error}</p>}
     {job?.status === "ready" && <WorkerImage railwayUrl={railwayUrl} jobId={job.id} alt={suggestion.altText} />}
     {!disabled && <>
-      {(!job || job.status === "queued" || job.status === "failed") && <>
-        <label>{tr("Worker tạo ảnh", "Image worker")}
-          <select value={selected} disabled={pending || !workers.length} onChange={event => setSelection(event.target.value)}>
-            {!workers.length && <option value="">{tr("Đăng ký worker trong Settings", "Register a worker in Settings")}</option>}
-            {workers.map(worker => <option key={worker.id} value={worker.id}>
-              {worker.name} · {worker.busy ? tr("Bận", "Busy") : worker.online ? tr("Sẵn sàng", "Online") : tr("Ngoại tuyến", "Offline")}
-            </option>)}
-          </select>
-        </label>
-        <div className="ips-worker-actions">
-          {job?.status === "queued" ? <button type="button" className={control} disabled={pending || !selected || selected === job.worker_id}
-            onClick={event => void act(event, `/jobs/${job.id}/worker`, "PATCH", {workerId:selected})}>
-            {tr("Đổi worker", "Switch worker")}
-          </button> : <button type="button" className="ips-btn ips-btn-primary" disabled={pending || !selected}
-            onClick={event => void act(event, imageJobs.path, "POST", {workerId:selected, suggestionId:suggestion.id})}>
-            {job?.status === "failed" ? tr("Tạo lại ảnh", "Retry image") : tr("Tạo ảnh", "Generate image")}
-          </button>}
-        </div>
-      </>}
+      {(!job || job.status === "failed") && <div className="ips-worker-row">
+        <p className="ips-worker-default">{defaultWorker
+          ? <>{tr("Worker mặc định", "Default worker")}: <span className="ips-worker-name">{defaultWorker.name}</span> · {workerState(defaultWorker)}</>
+          : tr("Chưa có worker mặc định. Chọn trong Settings › Image Workers.", "No default worker. Choose one in Settings › Image Workers.")}</p>
+        <button type="button" className="ips-btn ips-btn-primary" disabled={pending || !defaultWorker}
+          onClick={event => defaultWorker && void act(event, imageJobs.path, "POST", {workerId:defaultWorker.id, suggestionId:suggestion.id})}>
+          <Sparkles className="h-3.5 w-3.5" aria-hidden />{job?.status === "failed" ? tr("Tạo lại ảnh", "Retry image") : tr("Tạo ảnh", "Generate image")}
+        </button>
+      </div>}
       {job?.status === "ready" && <div className="ips-worker-actions">
         <button type="button" className="ips-btn ips-btn-primary" disabled={pending} onClick={event => void act(event, `/jobs/${job.id}/insert`, "POST")}>
           {tr("Chèn vào bài", "Insert into draft")}

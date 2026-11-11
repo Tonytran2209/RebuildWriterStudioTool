@@ -1767,6 +1767,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   </button>
                 </div>
                 {imageSuggestions.length > 0 && <ul className="ips-grid">{imageSuggestions.map(suggestion => {
+                  // Display-only: drop a trailing ": <heading>" that only repeats the card title.
+                  const rawPurpose = suggestion.purpose.trim();
+                  const repeatedTitle = `: ${suggestion.afterHeading.trim()}`;
+                  const purpose = rawPurpose.toLowerCase().endsWith(repeatedTitle.toLowerCase()) ? rawPurpose.slice(0, -repeatedTitle.length).trim() : rawPurpose;
                   const statusLabel = suggestion.status === 'approved' ? tr('Đã duyệt', 'Approved') : suggestion.status === 'dismissed' ? tr('Đã bỏ qua', 'Dismissed') : tr('Chờ duyệt', 'Needs review');
                   return <li key={suggestion.id} className={`ips-card ${suggestion.status === 'dismissed' ? 'is-dismissed' : ''}`}>
                     <div className="ips-card-meta">
@@ -1775,11 +1779,15 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                       <span className={`ips-status ips-status-${suggestion.status} image-placement-badge image-placement-status-${suggestion.status}`}>{suggestion.status === 'approved' && <Check className="h-3 w-3" aria-hidden />}{statusLabel}</span>
                     </div>
                     <p className="ips-heading" title={suggestion.afterHeading}>{suggestion.afterHeading}</p>
-                    <p className="ips-purpose">{suggestion.purpose}</p>
-                    <dl className="ips-alt"><dt>Alt</dt><dd>{suggestion.altText}</dd></dl>
-                    <details className="ips-brief"><summary><ChevronDown className="ips-brief-chevron h-3.5 w-3.5" aria-hidden />{tr('Xem brief ảnh', 'View image brief')}</summary><p>{suggestion.brief}</p></details>
+                    {purpose && <p className="ips-purpose">{purpose}</p>}
+                    <details className="ips-brief"><summary><ChevronDown className="ips-brief-chevron h-3.5 w-3.5" aria-hidden />{tr('Chi tiết ảnh', 'Image details')}</summary>
+                      <dl className="ips-brief-body">
+                        <div><dt>{tr('Brief cho người tạo ảnh', 'Image brief')}</dt><dd>{suggestion.brief}</dd></div>
+                        {suggestion.altText && <div><dt>{tr('Mô tả thay thế (alt text)', 'Alt text')}</dt><dd>{suggestion.altText}</dd></div>}
+                      </dl>
+                    </details>
                     {suggestion.status === 'suggested' && <div className="ips-actions">
-                      <button type="button" disabled={completed || generating || repairing} onClick={() => approveImageSuggestion(suggestion)} className="ips-btn ips-btn-primary">{tr('Duyệt', 'Approve')}</button>
+                      <button type="button" disabled={completed || generating || repairing} onClick={() => approveImageSuggestion(suggestion)} className="ips-btn ips-btn-primary"><Check className="h-3.5 w-3.5" aria-hidden />{tr('Duyệt', 'Approve')}</button>
                       <button type="button" disabled={completed || generating || repairing} onClick={() => editImageSuggestion(suggestion)} className="ips-btn ips-btn-ghost">{tr('Sửa', 'Edit')}</button>
                       <button type="button" disabled={completed || generating || repairing} onClick={() => setImageSuggestionStatus(suggestion.id, 'dismissed')} className="ips-btn ips-btn-ghost">{tr('Bỏ qua', 'Dismiss')}</button>
                     </div>}

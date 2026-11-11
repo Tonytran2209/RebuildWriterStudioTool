@@ -608,8 +608,8 @@ test('approved image suggestions select a worker and insert its preview without 
    return route.fulfill({json:jobs[0]});
   }
   if (route.request().method()==='POST') {
-   expect(route.request().postDataJSON()).toEqual({workerId:'codex',suggestionId:'visual'});
-   jobs.push({id:'job',suggestion_id:'visual',worker_id:'codex',status:'ready'});
+   expect(route.request().postDataJSON()).toEqual({workerId:'claude',suggestionId:'visual'});
+   jobs.push({id:'job',suggestion_id:'visual',worker_id:'claude',status:'ready'});
    return route.fulfill({status:202,json:jobs[0]});
   }
   return route.fulfill({json:jobs});
@@ -626,9 +626,9 @@ test('approved image suggestions select a worker and insert its preview without 
  });
  await page.reload();
  const placement = page.locator('.image-placement-suggestions');
- const select = placement.getByRole('combobox', {name:/Worker tạo ảnh|Image worker/});
- await expect(select).toHaveValue('claude');
- await select.selectOption('codex');
+ // Generation uses the Settings default worker; no per-card picker.
+ await expect(placement.getByRole('combobox')).toHaveCount(0);
+ await expect(placement).toContainText('Mac Claude');
  await placement.getByRole('button', {name:/^(Tạo ảnh|Generate image)$/}).click();
  await expect(placement.getByRole('img', {name:'Visual explanation'})).toBeVisible();
  await placement.getByRole('button', {name:/Chèn vào bài|Insert into draft/}).click();
