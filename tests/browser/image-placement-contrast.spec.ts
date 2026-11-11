@@ -69,7 +69,8 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(panel.locator('.image-placement-status-approved')).toBeVisible();
     await expect(source).toHaveText(approvedSource!);
     await panel.getByRole('button', {name: 'Refresh', exact: true}).click();
-    await expect(panel.locator('.image-placement-status-approved')).toHaveCount(0);
+    // Refresh keeps an approved image whose placeholder is still in the draft, and suggests the other sections.
+    await expect(panel.locator('.image-placement-status-approved')).toHaveCount(1);
     await expect(panel.locator('.image-placement-status-suggested').first()).toBeVisible();
     await expect(source).toHaveText(approvedSource!);
   });
