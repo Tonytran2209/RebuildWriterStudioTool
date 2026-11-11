@@ -183,3 +183,39 @@ body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 
   outline: 2px solid var(--ui-secondary);
   outline-offset: -2px;
 }
+
+
+@media (hover: hover) and (pointer: fine) {
+  .campaign-article-row .campaign-article-open {
+    padding-inline-end: 44px;
+  }
+
+  .campaign-article-status,
+  .campaign-article-delete {
+    position: absolute;
+    inset-inline-end: 0;
+    top: 50%;
+    translate: 0 -50%;
+  }
+
+  .campaign-article-status {
+    inset-inline-end: 14px;
+  }
+
+  .campaign-article-delete {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .campaign-article-row:hover .campaign-article-delete:not(:disabled),
+  .campaign-article-delete:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .campaign-article-row:hover:has(.campaign-article-delete:not(:disabled)) .campaign-article-status,
+  .campaign-article-row:has(.campaign-article-delete:focus-visible) .campaign-article-status {
+    opacity: 0;
+  }
+
+}

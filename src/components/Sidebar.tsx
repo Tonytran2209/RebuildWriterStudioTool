@@ -167,17 +167,17 @@ export default function Sidebar({
               {matching.map(article => {
                 const batchRunning = article.activityKind === "batch" && articles.some(item => item.activityId === article.activityId && item.batchStatus === "running")
                 const title = article.topic || article.title
-                return <div key={article.id} className="group flex min-w-0 items-center">
+                return <div key={article.id} className="campaign-article-row relative flex min-w-0 items-center rounded-lg">
                   <button title={title} onClick={() => onSelectArticle(article.id)} aria-current={activeArticleId === article.id ? "page" : undefined}
-                    className={`sidebar-nav min-h-11 min-w-0 flex-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-text)] ${activeArticleId === article.id ? "bg-[var(--ui-selected)]" : ""}`}>
+                    className={`campaign-article-open sidebar-nav min-h-11 min-w-0 flex-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ui-text)] ${activeArticleId === article.id ? "bg-[var(--ui-selected)]" : ""}`}>
                     <span className="campaign-nav-label truncate">{title}</span>
-                    {(article.status === "done" || article.completedAt || article.batchStatus === "completed") && <CircleCheck className="app-icon ml-auto shrink-0 text-emerald-400" aria-label={tr("Đã hoàn tất", "Completed")} />}
+                    {(article.status === "done" || article.completedAt || article.batchStatus === "completed") && <CircleCheck className="campaign-article-status app-icon ml-auto shrink-0 text-[var(--ui-secondary)]" aria-label={tr("Đã hoàn tất", "Completed")} />}
                   </button>
                   <button type="button" disabled={Boolean(deletingArticleId) || batchRunning}
                     onClick={() => onDeleteArticle(article)}
                     title={batchRunning ? tr("Tạm dừng batch trước khi xóa từng bài", "Pause the batch before deleting an article") : tr("Xóa bài viết", "Delete article")}
                     aria-label={`${tr("Xóa bài viết", "Delete article")}: ${title}`}
-                    className="grid h-11 w-11 shrink-0 place-items-center rounded-md text-[var(--ui-secondary)] hover:bg-[var(--ui-hover)] hover:text-red-400 disabled:opacity-35">
+                    className="campaign-article-delete grid h-11 w-11 shrink-0 place-items-center rounded-lg text-[var(--ui-secondary)] hover:bg-[var(--ui-hover)] hover:text-red-400 disabled:opacity-35">
                     <Trash2 className="app-icon" aria-hidden="true" />
                   </button>
                 </div>
