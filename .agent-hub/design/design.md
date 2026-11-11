@@ -1,9 +1,9 @@
 ---
 schema: agent-hub/design/v1
 projectId: writer-studio
-theme: Writer Studio neutral workspace with Light, Dark and System appearance
+theme: Writer Studio on the Twenty design language with Light, Dark and System appearance
 authority: primary-design-contract
-implementationSource: src/ui-guide.css
+implementationSource: [src/theme-tokens.css, src/ui-guide.css]
 supplementalReferences: [design/CHATGPT-DESKTOP-UI-GUIDE.md]
 referencePolicy: design/sources.md
 ---
@@ -22,31 +22,37 @@ Writer Studio is a focused AI writing workspace. The UI should feel calm, operat
 4. A requested change to the shared design system must explicitly update this contract and relevant implementation in the same reviewed request. Updating a reference alone does not change the approved system or authorize a redesign.
 5. After a completed UI request, update this contract when approved rules change, update affected usage/component/flow MD, and retain rationale and verification in the request/feedback library. Future requests must recheck current source and this contract; past outcomes and trends remain supporting context, not automatic authority.
 
-## Visual system
+## Visual system (Twenty design language, 2026-11-11)
 
-The semantic Light/Dark tokens are defined in `src/ui-guide.css`; `src/codex-theme.css` holds legacy dark component styling that is progressively mapped to those tokens. Dark remains the default, while the user can choose Light or System.
+User-authorized redesign: Writer Studio adopts the Twenty design language (https://github.com/twentyhq/twenty). Tokens are sRGB conversions of the MIT-licensed `twenty-ui` theme (`theme-light.css` / `theme-dark.css`). Writer Studio keeps its own name, logo, data and workflows. No AGPL Twenty application code is copied.
 
-| Token | Value | Use |
-| --- | --- | --- |
-| Canvas | `--ui-bg` | App background |
-| Sidebar | `--ui-sidebar` | Persistent navigation |
-| Card | `--ui-surface` | Primary surfaces |
-| Control | `--ui-control` | Inputs and secondary controls |
-| Border | `--ui-border` | Hairline separation |
-| Text | `--ui-text` | Primary content |
-| Secondary | `--ui-secondary` | Supporting information |
-| Muted | `--ui-muted` | Metadata and disabled context |
-| Primary action | `--ui-primary-bg` / `--ui-primary-text` | High-confidence action |
+Tokens live in `src/theme-tokens.css` (imported by `src/index.css`) and apply through both `:root[data-writer-theme]` and the `.writer-light` / `.codex-dark` classes. `src/ui-guide.css` holds the shared component layer and loads last. Legacy hex values in `index.css`, `codex-theme.css` and `settings-interactions.css` were remapped to these tokens. Tailwind `slate`/`gray`/`blue`/`indigo`/`emerald`/`amber`/`red`/`rose` utilities, text sizes, radii and shadows resolve to tokens through `@theme inline`. Dark remains the default; users can choose Light or System.
 
-Use neutral grays as the default. Semantic color is reserved for system state: emerald success, amber warning, rose/red failure. Keep focus visibly neutral as specified below; reference accent examples are proposals, not automatic replacements for project tokens. Do not introduce a decorative brand accent without an approved Design request.
+| Token | Light | Dark | Use |
+| --- | --- | --- | --- |
+| `--ui-bg` / `--ui-surface` | #ffffff | #171717 | App background and cards (Twenty background-primary) |
+| `--ui-sidebar` / `--ui-control` | #fcfcfc | #1b1b1b | Navigation drawer and inputs (background-secondary) |
+| `--ui-soft` | #f1f1f1 | #1d1d1d | Tertiary fills (background-tertiary) |
+| `--ui-hover` / `--ui-selected` | black 4% / 8% | white 6% / 10% | Transparent hover and selection overlays |
+| `--ui-text` / `--ui-secondary` | #333333 / #666666 | #ebebeb / #b3b3b3 | Primary and secondary text |
+| `--ui-muted` | #6b6b6b | #929292 | Metadata (Twenty tertiary, adjusted to keep 4.5:1 on all fills) |
+| `--ui-border` / `--ui-border-strong` | #ebebeb / #d6d6d6 | #2a2a2a / #484848 | Hairlines and control borders |
+| `--ui-accent` / `--ui-primary-bg` | #3e63dd | #3e63dd | Primary action, focus, selection accent (Twenty blue) |
+| `--ui-accent-soft` / `--ui-accent-text` | #edf2fe / #3a5bc7 | #182449 / #9db1ff | Focus ring, accent tags and links |
+| success / warning / danger | Radix green/orange/red text-on-tint | same families, dark tints | System state only |
+
+Neutral grays remain the default. Blue is the single accent: primary actions, focus and links. Semantic colors stay reserved for state. Do not introduce other decorative accents without an approved Design request.
 
 ## Typography, spacing and shape
 
-- Use the system sans stack declared in `src/ui-guide.css`; use monospace only for tokens, counts, IDs and technical metadata. The approved defaults are 14px UI text and 16px long-form reading text; reference examples do not change these defaults.
-- Prefer compact hierarchy: app H1 is 24px/500; workspace H2 is 16px/500; H3 is 14px/500.
+- Inter (400/500/600) is the UI font and DM Mono the monospace font, loaded from Google Fonts with system fallbacks. Monospace is only for tokens, counts, IDs and technical metadata.
+- UI text is 13px (Twenty md). Tailwind `text-xs` is 12px, `text-sm` and `text-base` are 13px, `text-lg` 16px, `text-xl` 20px and `text-2xl` 24px. Long-form reading text in the draft editor stays at 16px.
+- Headings: app H1 24px/600, workspace H2 16px/600, H3 13–14px/500. H1/H2 use -0.01em tracking.
 - Launcher greeting exception (REQ-040C6C78, superseding REQ-F11599E3): reduce the main empty-workspace greeting to 32px on desktop (>=900px), 28px on tablet (601-899px), and 24px on mobile (<=600px), consistently in Light, Dark and System. Retain weight 500 and line-height 1.25, and wrap naturally without clipping or overlapping the composer; other headings retain their existing hierarchy.
-- Use a 4px spacing rhythm. Primary cards and workflow groups use 12px radius; controls use 8–12px radius; pills are reserved for statuses and tags.
-- Prefer borders over shadows. Avoid gradients, glass effects, large illustrations and decorative motion in operational screens.
+- Use a 4px spacing rhythm. Radius: 4px (`--ui-radius-sm`) for buttons, inputs, menu items and tags; 8px (`--ui-radius-md`) for cards, panels, popovers and dialogs; pills only for avatars and counters.
+- Prefer hairline borders over shadows. Only popovers, menus and dialogs use Twenty's layered shadow. Avoid gradients, glass effects, large illustrations and decorative motion in operational screens.
+- Inputs: hairline border, 4px radius. Focus shows the blue accent border with a 3px `--ui-accent-soft` ring. Other controls keep a 2px focus outline. Twenty's light border (#d6d6d6) is lighter than WCAG 1.4.11 non-text contrast; labels, placeholders and the focus ring identify fields instead.
+- Sidebar items are 28px high with 4px radius and transparent hover/selected overlays (44px on narrow screens). Inspector tabs use Twenty's underline style.
 
 ## Interaction rules
 
@@ -64,7 +70,7 @@ Use neutral grays as the default. Semantic color is reserved for system state: e
 
 ## Non-goals
 
-- Do not copy a third-party visual identity, logo, proprietary typography or exact layout.
+- Do not copy a third-party logo, name, proprietary assets or AGPL application code. The Twenty design language (tokens and component patterns from MIT `twenty-ui`) is the approved exception (2026-11-11 request).
 - Do not apply a reference-source pattern when it conflicts with the neutral Writer Studio system, accessibility, workflow clarity or existing user data.
 
 ## Workspace ruler (2026-11-03)

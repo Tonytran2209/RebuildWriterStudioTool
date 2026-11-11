@@ -258,21 +258,21 @@ for(const status of ['pass','warning','fail'])test(`qc-status-display qc-evidenc
  const row=page.locator('[data-qc-check="evidence-support"]');
  await expect(row).toHaveAttribute('data-qc-status',status);
  const panel=page.locator('.universal-qc-panel');
- await expect(panel.locator('h3')).toHaveCSS('color','rgb(255, 255, 255)');
- await expect(panel.locator('.seo-score-tag')).toHaveCSS('color','rgb(255, 255, 255)');
- await expect(panel.locator('.seo-score-tag')).toHaveCSS('background-color','rgb(34, 34, 34)');
- await expect(panel.locator('.seo-score-tag')).toHaveCSS('border-top-color','rgb(58, 58, 58)');
- await expect(row).toHaveCSS('color','rgb(255, 255, 255)');
- for(const text of await row.locator('span').all())await expect(text).toHaveCSS('color','rgb(255, 255, 255)');
+ await expect(panel.locator('h3')).toHaveCSS('color','rgb(235, 235, 235)');
+ await expect(panel.locator('.seo-score-tag')).toHaveCSS('color','rgb(235, 235, 235)');
+ await expect(panel.locator('.seo-score-tag')).toHaveCSS('background-color','rgb(29, 29, 29)');
+ await expect(panel.locator('.seo-score-tag')).toHaveCSS('border-top-color','rgb(72, 72, 72)');
+ await expect(row).toHaveCSS('color','rgb(235, 235, 235)');
+ for(const text of await row.locator('span').all())await expect(text).toHaveCSS('color','rgb(235, 235, 235)');
  const icon=row.locator(`[data-qc-icon="${status}"]`);
  await expect(icon).toBeVisible();
- await expect(icon).toHaveCSS('color',status==='pass'?'rgb(52, 211, 153)':status==='warning'?'rgb(245, 158, 11)':'rgb(251, 113, 133)');
+ await expect(icon).toHaveCSS('color',status==='pass'?'rgb(61, 214, 140)':status==='warning'?'rgb(255, 155, 82)':'rgb(255, 138, 136)');
  await expect(row).toContainText(status==='pass'?/Pass|Đạt/:status==='warning'?/Warning|Cảnh báo/:/Fail|Thất bại/);
  if(status!=='pass'){
   await row.locator('summary').click();
   await expect(row.getByText('Fixture review finding:',{exact:false})).toBeVisible();
   await expect(row.getByText('Compare the claim',{exact:false})).toBeVisible();
-  for(const detail of await row.locator('p').all())await expect(detail).toHaveCSS('color','rgb(255, 255, 255)');
+  for(const detail of await row.locator('p').all())await expect(detail).toHaveCSS('color','rgb(235, 235, 235)');
   expect(await row.evaluate(e=>e.scrollWidth<=e.clientWidth+1)).toBe(true);
  }
  const stale=page.locator('[data-qc-check="quality-review-stale"]');
@@ -514,7 +514,7 @@ test('qc-compact independent collapsed findings preserve complete reason and act
   expect(wide.width).toBeCloseTo(wide.limit,0);
   expect(wide.width).toBeLessThan(wide.parentWidth);
   for(const paragraph of await row.locator('p').all()){
-   await expect(paragraph).toHaveCSS('color','rgb(255, 255, 255)');
+   await expect(paragraph).toHaveCSS('color','rgb(235, 235, 235)');
    expect(await paragraph.evaluate(e=>{
     const style=getComputedStyle(e);
     return e.scrollWidth<=e.clientWidth+1 && e.scrollHeight<=e.clientHeight+1

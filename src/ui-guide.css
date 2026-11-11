@@ -1,52 +1,6 @@
-/* Writer Studio implementation of .agent-hub/design/CHATGPT-DESKTOP-UI-GUIDE.md.
-   These are Writer Studio tokens, not claimed OpenAI product tokens. */
-:root,
-:root[data-writer-theme='dark'] {
-  color-scheme: dark;
-  --ui-bg: #181818;
-  --ui-sidebar: #141414;
-  --ui-surface: #202020;
-  --ui-soft: #2a2a2a;
-  --ui-control: #2a2a2a;
-  --ui-hover: #333333;
-  --ui-selected: #3c3c3c;
-  --ui-text: #ffffff;
-  --ui-secondary: #b8b8b8;
-  --ui-muted: #a0a0a0;
-  --ui-border: #3b3b3b;
-  --ui-control-border: #858585;
-  --ui-focus: #78baff;
-  --ui-link: #78baff;
-  --ui-primary-bg: #f3f3f3;
-  --ui-primary-text: #171717;
-  --ui-overlay: rgb(0 0 0 / 56%);
-  --ui-shadow-popover: 0 8px 32px rgb(0 0 0 / 40%);
-}
-
-:root[data-writer-theme='light'] {
-  color-scheme: light;
-  --ui-bg: #ffffff;
-  --ui-sidebar: #f7f7f8;
-  --ui-surface: #ffffff;
-  --ui-soft: #f2f2f2;
-  --ui-control: #f2f2f2;
-  --ui-hover: #eaeaea;
-  --ui-selected: #e3e3e3;
-  --ui-text: #0d0d0d;
-  --ui-secondary: #5d5d5d;
-  --ui-muted: #6b6b6b;
-  --ui-border: #dedede;
-  --ui-control-border: #808080;
-  --ui-focus: #0066cc;
-  --ui-link: #005fcc;
-  --ui-primary-bg: #171717;
-  --ui-primary-text: #ffffff;
-  --ui-overlay: rgb(0 0 0 / 32%);
-  --ui-shadow-popover: 0 8px 32px rgb(0 0 0 / 12%);
-}
-
+/* Design tokens live in theme-tokens.css (imported by index.css). */
 html, body, #root { min-height: 100%; background: var(--ui-bg); }
-body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+body { color: var(--ui-text); font: 400 13px/1.5 var(--ui-font); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 :where(button, input, textarea, select) { font: inherit; }
 :where(button, a, input, textarea, select, [tabindex]):focus-visible,
 .codex-dark :where(button, a, input, textarea, select, [tabindex]):focus-visible {
@@ -110,12 +64,9 @@ body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 
   background: var(--ui-hover) !important;
   color: var(--ui-text) !important;
 }
-.writer-dialog-theme .ai-log-modal .ai-log-step.is-completed { color: #047857 !important; background: #ecfdf5 !important; border-color: #a7f3d0 !important; }
-.writer-dialog-theme .ai-log-modal .ai-log-step.is-warning { color: #a16207 !important; background: #fffbeb !important; border-color: #fde68a !important; }
-.writer-dialog-theme .ai-log-modal .ai-log-step.is-error { color: #be123c !important; background: #fff1f2 !important; border-color: #fecdd3 !important; }
-:root[data-writer-theme='dark'] .writer-dialog-theme .ai-log-modal .ai-log-step.is-completed { color: #34d399 !important; background: #17362c !important; border-color: #245a49 !important; }
-:root[data-writer-theme='dark'] .writer-dialog-theme .ai-log-modal .ai-log-step.is-warning { color: #fbbf24 !important; background: #33280f !important; border-color: #5a4618 !important; }
-:root[data-writer-theme='dark'] .writer-dialog-theme .ai-log-modal .ai-log-step.is-error { color: #fb7185 !important; background: #351a20 !important; border-color: #5f2935 !important; }
+.writer-dialog-theme .ai-log-modal .ai-log-step.is-completed { color: var(--ui-success-text) !important; background: var(--ui-success-bg) !important; border-color: var(--ui-success-border) !important; }
+.writer-dialog-theme .ai-log-modal .ai-log-step.is-warning { color: var(--ui-warning-text) !important; background: var(--ui-warning-bg) !important; border-color: var(--ui-warning-border) !important; }
+.writer-dialog-theme .ai-log-modal .ai-log-step.is-error { color: var(--ui-danger-text) !important; background: var(--ui-danger-bg) !important; border-color: var(--ui-danger-border) !important; }
 @media (max-width: 600px) {
   .writer-dialog-theme .ai-log-modal .ai-log-close { min-width: 44px; min-height: 44px; }
 }
@@ -219,3 +170,78 @@ body { color: var(--ui-text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, 
   }
 
 }
+
+/* ---------------------------------------------------------------------------
+   Twenty component layer. Loaded last; restyles shared surfaces only and never
+   changes structure, handlers or workflow. Specificity ties with legacy rules are
+   resolved by source order (this file is imported after the legacy themes).
+   --------------------------------------------------------------------------- */
+::selection { background: var(--ui-accent-soft); color: inherit; }
+.writer-app, .writer-dialog-theme, .writer-login { font-family: var(--ui-font); font-size: 13px; letter-spacing: 0; }
+.writer-app :where(h1, h2), .writer-dialog-theme :where(h1, h2) { font-weight: 600; letter-spacing: -0.01em; }
+.writer-app :where(code, kbd, samp, .font-mono), .writer-dialog-theme :where(code, kbd, samp, .font-mono) { font-family: var(--ui-font-mono); }
+.writer-app a:not([class]) { color: var(--ui-link); }
+
+/* Scrollbars: thin, neutral (Twenty) */
+.writer-app *, .writer-dialog-theme * { scrollbar-width: thin; scrollbar-color: var(--ui-border-strong) transparent; }
+
+/* Primary action: Twenty accent blue */
+:root :is(.writer-app, .writer-dialog-theme, .writer-login, body) button.bg-slate-900,
+:root .writer-login button[type='submit'] {
+  background: var(--ui-primary-bg) !important;
+  border-color: var(--ui-primary-bg) !important;
+  color: var(--ui-primary-text) !important;
+  box-shadow: none !important;
+}
+:root :is(.writer-app, .writer-dialog-theme, .writer-login, body) button.bg-slate-900:hover:not(:disabled),
+:root .writer-login button[type='submit']:hover:not(:disabled) {
+  background: var(--ui-primary-hover) !important;
+  border-color: var(--ui-primary-hover) !important;
+}
+:root :is(.writer-app, .writer-dialog-theme, body) button.bg-slate-900 :is(span, svg) { color: inherit !important; }
+
+/* Text inputs: 4px radius, hairline border, blue focus border with soft accent ring */
+:is(.writer-app, .writer-dialog-theme, .writer-login) :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']), textarea, select) {
+  border-radius: var(--ui-radius-sm);
+}
+:is(.writer-app, .writer-dialog-theme, .writer-login) :where(input, textarea)::placeholder { color: var(--ui-muted) !important; opacity: 1; }
+:root :is(.writer-app, .writer-dialog-theme, .writer-login) :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']), textarea, select):focus-visible {
+  outline: none !important;
+  border-color: var(--ui-accent) !important;
+  box-shadow: 0 0 0 3px var(--ui-accent-soft) !important;
+}
+:is(.writer-app, .writer-dialog-theme) :where(input[type='checkbox'], input[type='radio']) { accent-color: var(--ui-accent); }
+
+/* Sidebar: Twenty navigation drawer */
+.writer-app .writer-sidebar { font-size: 13px; }
+.writer-app .writer-sidebar .sidebar-nav { min-height: 28px; border-radius: var(--ui-radius-sm); font-weight: 500; color: var(--ui-secondary); }
+.writer-app .writer-sidebar .sidebar-nav:hover { background: var(--ui-hover); color: var(--ui-text); }
+.writer-app .writer-sidebar .sidebar-recent-card { border-radius: var(--ui-radius-sm) !important; border-color: transparent !important; }
+.writer-app .writer-sidebar .sidebar-recent-card:hover { background: var(--ui-hover) !important; }
+.writer-app .writer-sidebar .sidebar-recent-card:has([aria-current='page']) { background: var(--ui-selected) !important; }
+.writer-app .writer-sidebar .sidebar-icon-button { border-radius: var(--ui-radius-sm); color: var(--ui-muted); }
+.writer-app .writer-sidebar .sidebar-icon-button:hover { background: var(--ui-hover); color: var(--ui-text); }
+
+/* Popovers, menus and dialogs: 8px radius, layered Twenty shadow */
+.writer-app .writer-profile-popover,
+.writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal),
+.writer-app [role='menu'], .writer-app [role='listbox'], .writer-dialog-theme [role='dialog'] {
+  border-radius: var(--ui-radius-md) !important;
+  box-shadow: var(--ui-shadow-popover) !important;
+  border-color: var(--ui-border) !important;
+}
+.writer-app [role='menuitem'], .writer-app [role='option'] { border-radius: var(--ui-radius-sm); }
+
+/* Small status tags follow Twenty's 4px tags */
+.image-placement-suggestions .ips-status { border-radius: var(--ui-radius-sm); }
+
+@media (max-width: 600px) {
+  .writer-app .writer-sidebar .sidebar-nav { min-height: 44px; }
+}
+
+/* Draft inspector: Twenty underline tabs; rows hug content instead of stretching. */
+.writer-app .draft-insights, .draft-insights { align-content: start; }
+:root .draft-insight-tabs { display: flex; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--ui-border) !important; background: transparent !important; }
+:root .draft-insight-tab { position: relative; min-height: 40px; padding: 0 2px; border: 0; border-radius: 0; background: transparent !important; color: var(--ui-muted); font-size: 13px; font-weight: 500; box-shadow: inset 0 -1px 0 transparent; }
+:root .draft-insight-tab:hover { background: transparent !important; color: var(--ui-text); }
+:root .draft-insight-tab.is-active { background: transparent !important; color: var(--ui-text); box-shadow: inset 0 -1px 0 var(--ui-text); }

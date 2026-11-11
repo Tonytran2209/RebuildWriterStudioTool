@@ -1,0 +1,95 @@
+/* Writer Studio design tokens, adopted from the Twenty design language
+   (twenty-ui theme, MIT License, Copyright (c) 2023-present Twenty.com, PBC;
+   https://github.com/twentyhq/twenty).
+   Values are sRGB conversions of twenty-ui's display-p3 light/dark tokens.
+   Writer Studio keeps its own name, logo and workflows. */
+:root,
+:root[data-writer-theme='dark'],
+.codex-dark {
+  color-scheme: dark;
+  /* Twenty gray scale (dark) */
+  --ui-gray-1: #171717; --ui-gray-2: #1b1b1b; --ui-gray-3: #1d1d1d; --ui-gray-4: #222222;
+  --ui-gray-5: #292929; --ui-gray-6: #333333; --ui-gray-7: #484848; --ui-gray-8: #666666;
+  --ui-gray-9: #818181; --ui-gray-10: #999999; --ui-gray-11: #b3b3b3; --ui-gray-12: #ebebeb;
+  --ui-bg: #171717;            /* background-primary */
+  --ui-sidebar: #1b1b1b;       /* background-secondary */
+  --ui-surface: #171717;
+  --ui-soft: #1d1d1d;          /* background-tertiary */
+  --ui-control: #1b1b1b;
+  --ui-hover: rgb(255 255 255 / 6%);     /* transparent-light */
+  --ui-selected: rgb(255 255 255 / 10%); /* transparent-medium */
+  --ui-text: #ebebeb;          /* font-color-primary */
+  --ui-secondary: #b3b3b3;     /* font-color-secondary */
+  --ui-muted: #929292;         /* Twenty tertiary #818181 lifted to keep 4.5:1 on dark fills */
+  --ui-light-text: #666666;    /* font-color-light (decorative only) */
+  --ui-border: #2a2a2a;        /* border-color-medium, lifted slightly for legibility */
+  --ui-border-light: #1d1d1d;
+  --ui-border-strong: #484848;
+  --ui-control-border: #484848;
+  --ui-accent: #3e63dd;        /* color-blue / accent9 */
+  --ui-accent-hover: #5472e4;
+  --ui-accent-soft: #182449;   /* accent-tertiary */
+  --ui-accent-border: #3a4f97;
+  --ui-accent-text: #9db1ff;
+  --ui-focus: #5472e4;
+  --ui-link: #9db1ff;
+  --ui-primary-bg: #3e63dd;
+  --ui-primary-hover: #5472e4;
+  --ui-primary-text: #ffffff;
+  --ui-inverted-bg: #ebebeb;
+  --ui-inverted-text: #171717;
+  --ui-success-text: #3dd68c; --ui-success-bg: #132d21; --ui-success-border: #1f5137; --ui-success: #30a46c;
+  --ui-warning-text: #ff9b52; --ui-warning-bg: #331e0b; --ui-warning-border: #5c3412; --ui-warning: #f76a15;
+  --ui-danger-text: #ff8a88;  --ui-danger-bg: #3b1219;  --ui-danger-border: #611623;  --ui-danger: #e5484d;
+  --ui-radius-xs: 2px;
+  --ui-radius-sm: 4px;
+  --ui-radius-md: 8px;
+  --ui-radius-pill: 999px;
+  --ui-font: 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --ui-font-mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ui-overlay: rgb(0 0 0 / 72%);
+  --ui-shadow-popover: 0 0 4px rgb(0 0 0 / 8%), 0 2px 4px rgb(0 0 0 / 16%), 0 4px 16px rgb(0 0 0 / 32%);
+  --ui-shadow-light: 0 2px 4px rgb(0 0 0 / 16%), 0 0 4px rgb(0 0 0 / 8%);
+}
+
+:root[data-writer-theme='light'],
+.writer-light {
+  color-scheme: light;
+  /* Twenty gray scale (light) */
+  --ui-gray-1: #ffffff; --ui-gray-2: #fcfcfc; --ui-gray-3: #f9f9f9; --ui-gray-4: #f1f1f1;
+  --ui-gray-5: #ebebeb; --ui-gray-6: #d6d6d6; --ui-gray-7: #cccccc; --ui-gray-8: #b3b3b3;
+  --ui-gray-9: #999999; --ui-gray-10: #838383; --ui-gray-11: #666666; --ui-gray-12: #333333;
+  --ui-bg: #ffffff;
+  --ui-sidebar: #fcfcfc;
+  --ui-surface: #ffffff;
+  --ui-soft: #f1f1f1;
+  --ui-control: #fcfcfc;
+  --ui-hover: rgb(0 0 0 / 4%);
+  --ui-selected: rgb(0 0 0 / 8%);
+  --ui-text: #333333;
+  --ui-secondary: #666666;
+  --ui-muted: #6b6b6b;         /* Twenty tertiary #999 darkened to keep 4.5:1 on white, secondary and tertiary fills */
+  --ui-light-text: #b3b3b3;
+  --ui-border: #ebebeb;
+  --ui-border-light: #f1f1f1;
+  --ui-border-strong: #d6d6d6;
+  --ui-control-border: #d6d6d6;
+  --ui-accent: #3e63dd;
+  --ui-accent-hover: #3358d4;
+  --ui-accent-soft: #edf2fe;
+  --ui-accent-border: #abbdf9;
+  --ui-accent-text: #3a5bc7;
+  --ui-focus: #3e63dd;
+  --ui-link: #3a5bc7;
+  --ui-primary-bg: #3e63dd;
+  --ui-primary-hover: #3358d4;
+  --ui-primary-text: #ffffff;
+  --ui-inverted-bg: #333333;
+  --ui-inverted-text: #ffffff;
+  --ui-success-text: #047857; --ui-success-bg: #e6f6eb; --ui-success-border: #adddc0; --ui-success: #30a46c;
+  --ui-warning-text: #b24400; --ui-warning-bg: #ffefd6; --ui-warning-border: #ffc182; --ui-warning: #f76a15;
+  --ui-danger-text: #c4262c;  --ui-danger-bg: #feebec;  --ui-danger-border: #ffcdce;  --ui-danger: #e5484d;
+  --ui-overlay: rgb(0 0 0 / 36%);
+  --ui-shadow-popover: 0 0 4px rgb(0 0 0 / 4%), 0 2px 4px rgb(0 0 0 / 8%), 0 4px 16px rgb(0 0 0 / 12%);
+  --ui-shadow-light: 0 2px 4px rgb(0 0 0 / 4%), 0 0 4px rgb(0 0 0 / 8%);
+}

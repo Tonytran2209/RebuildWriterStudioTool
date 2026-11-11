@@ -68,7 +68,7 @@ for (const preference of ['dark', 'light', 'system'] as const) {
     for (const theme of [initial, initial === 'dark' ? 'light' : 'dark'] as const) {
       await page.evaluate(theme => (window as any).setLogTheme(theme), theme);
       await expect(page.locator('html')).toHaveAttribute('data-writer-theme', theme);
-      const background = theme === 'dark' ? 'rgb(32, 32, 32)' : 'rgb(255, 255, 255)';
+      const background = theme === 'dark' ? 'rgb(23, 23, 23)' : 'rgb(255, 255, 255)';
       await expect(dialog.locator('.ai-log-event').first()).toHaveCSS('background-color', background);
       for (const selector of ['h3', 'h4', '.ai-log-event p', '.ai-log-fact', '.ai-log-fact b', '.ai-log-source', '.ai-log-step.is-completed', '.ai-log-step.is-warning', '.ai-log-step.is-error', '.ai-log-close', 'pre']) {
         await readable(dialog.locator(selector).first());

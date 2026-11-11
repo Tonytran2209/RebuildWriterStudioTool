@@ -1,18 +1,18 @@
-/* Settings is a quiet working surface. Only controls react to hover. */
+/* Settings is a quiet working surface. Only controls react to hover. *//* Settings is a quiet working surface. Only controls react to hover. */
 .minimal-settings {
-  --settings-bg: #ffffff;
-  --settings-sidebar: #f7f7f5;
-  --settings-card: #ffffff;
-  --settings-card-subtle: #f8f8f6;
-  --settings-control: #f3f3f1;
-  --settings-border: #e2e2de;
-  --settings-text: #20201e;
-  --settings-muted: #73736f;
-  --settings-faint: #9a9a95;
-  --settings-danger-bg: #fff1f1;
-  --settings-danger: #c94a4a;
+  --settings-bg: var(--ui-surface);
+  --settings-sidebar: var(--ui-soft);
+  --settings-card: var(--ui-surface);
+  --settings-card-subtle: var(--ui-soft);
+  --settings-control: var(--ui-soft);
+  --settings-border: var(--ui-border-strong);
+  --settings-text: var(--ui-text);
+  --settings-muted: var(--ui-secondary);
+  --settings-faint: var(--ui-muted);
+  --settings-danger-bg: var(--ui-danger-bg);
+  --settings-danger: var(--ui-danger-text);
   background: var(--settings-bg) !important;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--ui-font);
 }
 
 .minimal-settings .settings-shell { max-width: none !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
@@ -35,22 +35,22 @@
 .minimal-settings .settings-back-button:hover,
 .minimal-settings .settings-nav-item:hover:not(.is-active) { background: var(--settings-control) !important; color: var(--settings-text) !important; }
 .minimal-settings .settings-nav-item.is-active,
-.minimal-settings .settings-nav-item.is-active:hover { background: #e8e8e4 !important; color: var(--settings-text) !important; }
+.minimal-settings .settings-nav-item.is-active:hover { background: var(--ui-gray-5) !important; color: var(--settings-text) !important; }
 
 .minimal-settings .settings-search input,
 .minimal-settings .settings-content input,
 .minimal-settings .settings-content textarea,
-.minimal-settings .settings-content select { border: 1px solid var(--settings-border) !important; border-radius: .5rem !important; background: var(--settings-card) !important; color: var(--settings-text) !important; outline: none !important; }
+.minimal-settings .settings-content select { border: 1px solid var(--settings-border) !important; border-radius: var(--ui-radius-sm) !important; background: var(--settings-card) !important; color: var(--settings-text) !important; outline: none !important; }
 .minimal-settings .settings-content input:focus,
 .minimal-settings .settings-content textarea:focus,
 .minimal-settings .settings-content select:focus,
-.minimal-settings .settings-search input:focus { border-color: #a9a9a3 !important; box-shadow: 0 0 0 1px #a9a9a3 !important; }
+.minimal-settings .settings-search input:focus { border-color: var(--ui-accent) !important; box-shadow: 0 0 0 3px var(--ui-accent-soft) !important; }
 .minimal-settings .settings-preference-group,
 .minimal-settings .model-provider-group,
 .minimal-settings .workflow-rule-group,
 .minimal-settings .knowledge-source-manager > .overflow-hidden,
 .minimal-settings .knowledge-importer,
-.minimal-settings .settings-content section > .rounded-xl.border { border-color: var(--settings-border) !important; background: var(--settings-card) !important; box-shadow: none !important; }
+.minimal-settings .settings-content section > .rounded-xl.border { border-color: var(--settings-border) !important; background: var(--settings-card) !important; box-shadow: none !important; }/* One group owns its perimeter; children only contribute a single divider. */
 
 /* One group owns its perimeter; children only contribute a single divider. */
 .minimal-settings .settings-preference-group > *,
@@ -58,7 +58,7 @@
 .minimal-settings .model-provider-group .divide-y > *,
 .minimal-settings .workflow-rule-group > *,
 .minimal-settings .knowledge-source-row,
-.minimal-settings .website-inventory-row { border-color: var(--settings-border) !important; border-left: 0 !important; border-right: 0 !important; border-radius: 0 !important; box-shadow: none !important; }
+.minimal-settings .website-inventory-row { border-color: var(--settings-border) !important; border-left: 0 !important; border-right: 0 !important; border-radius: 0 !important; box-shadow: none !important; }/* Read-only rows and containers never impersonate buttons. */
 
 /* Read-only rows and containers never impersonate buttons. */
 .minimal-settings .settings-preference-row:hover,
@@ -84,7 +84,7 @@
 }
 .minimal-settings .settings-secondary-action:hover,
 .minimal-settings .workflow-stage-row button:hover {
-  border-color: #c8c8c3 !important;
+  border-color: var(--ui-border-strong) !important;
   background: var(--settings-control) !important;
   color: var(--settings-text) !important;
 }
@@ -134,22 +134,22 @@
 .minimal-settings .knowledge-source-row button[aria-label*='Xóa']:hover { background: var(--settings-danger-bg) !important; color: var(--settings-danger) !important; }
 
 .minimal-settings .settings-content button.bg-slate-900:hover,
-.minimal-settings .settings-footer button:last-child:hover { background: #333330 !important; color: #fff !important; }
+.minimal-settings .settings-footer button:last-child:hover { background: var(--ui-gray-5) !important; color: var(--ui-text) !important; }
 .minimal-settings .settings-footer button:first-child:hover { background: var(--settings-control) !important; color: var(--settings-text) !important; }
-.minimal-settings .settings-content .border-dashed:hover { border-color: #a9a9a3 !important; background: var(--settings-card-subtle) !important; }
+.minimal-settings .settings-content .border-dashed:hover { border-color: var(--ui-border-strong) !important; background: var(--settings-card-subtle) !important; }
 
 .codex-dark .minimal-settings {
-  --settings-bg: #121212;
-  --settings-sidebar: #1e1e1e;
-  --settings-card: #1e1e1e;
-  --settings-card-subtle: #191919;
-  --settings-control: #2a2a2c;
-  --settings-border: #2c2c2e;
-  --settings-text: #ececec;
-  --settings-muted: #8e8e93;
-  --settings-faint: #636366;
-  --settings-danger-bg: #2a181a;
-  --settings-danger: #f87171;
+  --settings-bg: var(--ui-bg);
+  --settings-sidebar: var(--ui-surface);
+  --settings-card: var(--ui-surface);
+  --settings-card-subtle: var(--ui-bg);
+  --settings-control: var(--ui-gray-4);
+  --settings-border: var(--ui-border);
+  --settings-text: var(--ui-text);
+  --settings-muted: var(--ui-muted);
+  --settings-faint: var(--ui-muted);
+  --settings-danger-bg: var(--ui-surface);
+  --settings-danger: var(--ui-danger-text);
   padding: 0 !important;
 }
 .codex-dark .minimal-settings .settings-page-header h1,
@@ -162,34 +162,35 @@
 .codex-dark .minimal-settings .settings-content .text-slate-600,
 .codex-dark .minimal-settings .settings-page-header p { color: var(--settings-muted) !important; }
 .codex-dark .minimal-settings .settings-nav-item.is-active,
-.codex-dark .minimal-settings .settings-nav-item.is-active:hover { background: #343434 !important; }
+.codex-dark .minimal-settings .settings-nav-item.is-active:hover { background: var(--ui-gray-5) !important; }
 .codex-dark .minimal-settings .settings-back-button:hover,
-.codex-dark .minimal-settings .settings-nav-item:hover:not(.is-active) { background: #292929 !important; }
+.codex-dark .minimal-settings .settings-nav-item:hover:not(.is-active) { background: var(--ui-gray-4) !important; }
 .codex-dark .minimal-settings .settings-search input,
 .codex-dark .minimal-settings .settings-content input,
 .codex-dark .minimal-settings .settings-content textarea,
-.codex-dark .minimal-settings .settings-content select { background: #242426 !important; border-color: #3a3a3c !important; }
+.codex-dark .minimal-settings .settings-content select { background: var(--ui-soft) !important; border-color: var(--ui-border-strong) !important; }
 .codex-dark .minimal-settings .settings-content input:focus,
 .codex-dark .minimal-settings .settings-content textarea:focus,
 .codex-dark .minimal-settings .settings-content select:focus,
-.codex-dark .minimal-settings .settings-search input:focus { border-color: #555558 !important; box-shadow: 0 0 0 1px #555558 !important; }
+.codex-dark .minimal-settings .settings-search input:focus { border-color: var(--ui-accent) !important; box-shadow: 0 0 0 3px var(--ui-accent-soft) !important; }
 .codex-dark .minimal-settings .settings-subnav button.is-active,
-.codex-dark .minimal-settings .settings-subnav button.is-active:hover { background: #3a3a3c !important; color: #ececec !important; box-shadow: none !important; }
+.codex-dark .minimal-settings .settings-subnav button.is-active:hover { background: var(--ui-gray-5) !important; color: var(--ui-text) !important; box-shadow: none !important; }
 .codex-dark .minimal-settings .settings-secondary-action,
-.codex-dark .minimal-settings .workflow-stage-row button { border-color: #3a3a3c !important; background: transparent !important; color: #b5b5b8 !important; }
+.codex-dark .minimal-settings .workflow-stage-row button { border-color: var(--ui-border-strong) !important; background: transparent !important; color: var(--ui-secondary) !important; }
 .codex-dark .minimal-settings .settings-secondary-action:hover,
-.codex-dark .minimal-settings .workflow-stage-row button:hover { border-color: #4a4a4c !important; background: #2a2a2c !important; color: #ececec !important; }
+.codex-dark .minimal-settings .workflow-stage-row button:hover { border-color: var(--ui-border-strong) !important; background: var(--ui-gray-4) !important; color: var(--ui-text) !important; }
 .codex-dark .minimal-settings .workflow-phase-button.is-active,
-.codex-dark .minimal-settings .workflow-phase-button.is-active:hover { background: #2a2a2c !important; }
-.codex-dark .minimal-settings .settings-content button.bg-slate-900 { border: 1px solid #3a3a3c !important; background: #2a2a2c !important; color: var(--settings-text) !important; }
-.codex-dark .minimal-settings .settings-content button.bg-slate-900:hover { border-color: #4a4a4c !important; background: #323234 !important; }
+.codex-dark .minimal-settings .workflow-phase-button.is-active:hover { background: var(--ui-gray-4) !important; }
+.codex-dark .minimal-settings .settings-content button.bg-slate-900 { border: 1px solid var(--ui-border-strong) !important; background: var(--ui-gray-4) !important; color: var(--settings-text) !important; }
+.codex-dark .minimal-settings .settings-content button.bg-slate-900:hover { border-color: var(--ui-border-strong) !important; background: var(--ui-gray-5) !important; }
 .codex-dark .minimal-settings .settings-content .workflow-rule-group,
 .codex-dark .minimal-settings .settings-content .workflow-rule-group:hover { border-color: var(--settings-border) !important; background: var(--settings-card) !important; }
 .codex-dark .minimal-settings .settings-content .model-provider-group,
 .codex-dark .minimal-settings .settings-content .model-provider-group:hover,
 .codex-dark .minimal-settings .settings-content .model-provider-group .model-setting-row,
 .codex-dark .minimal-settings .settings-content .model-provider-group .model-setting-row:hover { background: var(--settings-card) !important; border-color: var(--settings-border) !important; }
-.codex-dark .minimal-settings .prompt-group pre { color: #c9c9cc !important; }
+.codex-dark .minimal-settings .prompt-group pre { color: var(--ui-secondary) !important; }/* Model enablement switches: blue clearly communicates the active state in
+   the otherwise neutral settings surface. */
 
 /* Model enablement switches: blue clearly communicates the active state in
    the otherwise neutral settings surface. */
@@ -198,7 +199,7 @@
   width: 2.25rem;
   height: 1.25rem;
   border-radius: 9999px;
-  background: #363636;
+  background: var(--ui-gray-5);
   transition: background-color 160ms ease, box-shadow 160ms ease;
 }
 .settings-model-toggle::after {
@@ -207,22 +208,22 @@
   left: 2px;
   width: 1rem;
   height: 1rem;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--ui-border-strong);
   border-radius: 9999px;
-  background: #fff;
+  background: var(--ui-surface);
   content: "";
   transition: transform 160ms ease, border-color 160ms ease;
 }
 .settings-model-toggle-input:checked + .settings-model-toggle {
-  background: #2563eb;
+  background: var(--ui-accent);
   box-shadow: 0 0 0 1px rgb(96 165 250 / 45%), 0 0 12px rgb(37 99 235 / 35%);
 }
 .settings-model-toggle-input:checked + .settings-model-toggle::after {
   transform: translateX(1rem);
-  border-color: #fff;
+  border-color: var(--ui-border);
 }
 .settings-model-toggle-input:focus-visible + .settings-model-toggle {
-  outline: 2px solid #60a5fa;
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 

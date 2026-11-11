@@ -36,3 +36,8 @@ lastReviewed: 2026-10-28
 - Extract abstract patterns only: hierarchy, density, interaction states, accessibility and layout principles.
 - Never reproduce third-party logos, color systems, proprietary fonts, screenshots or page structure.
 - A source update creates a `design-reference-review` request; it never edits `design.md` automatically.
+
+## Twenty design language (2026-11-11)
+
+- Source: https://github.com/twentyhq/twenty (main @ 041555221274), `twenty-ui` npm package 2.57.0 (MIT), theme tokens `theme-light.css` / `theme-dark.css`. Attribution: Copyright (c) 2023-present Twenty.com, PBC, MIT License.
+- Status: adopted as the primary visual language by user request; see `design.md`. The rest of the Twenty repository is AGPLv3, so only token values and visual patterns are reused, never application code. This is an explicit, user-authorized exception to the "never reproduce third-party color systems" rule above; it does not extend to logos, names or other sources.
