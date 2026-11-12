@@ -62,3 +62,46 @@ test("local renderer refuses non-local ComfyUI hosts", async () => {
     env: { ...process.env, WRITER_COMFY_URL: "https://example.com", WRITER_COMFY_CHECKPOINT: "local.safetensors" },
   }), /WRITER_COMFY_URL must be a local HTTP origin/);
 });
+
+test("local renderer recompresses an oversized WebP without regenerating the image", async () => {
+  const large = Buffer.alloc(310_000);
+  webp.copy(large);
+  let prompts = [];
+  const server = createServer(async (req, res) => {
+    if (req.url === "/object_info/CheckpointLoaderSimple")
+      return res.end(JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [["local.safetensors"]] } } } }));
+    if (req.url === "/upload/image") {
+      let body = "";
+      for await (const chunk of req) body += chunk.toString("latin1");
+      const name = body.match(/writer-compress-[\w-]+\.webp/)?.[0];
+      return res.end(JSON.stringify({ name }));
+    }
+    if (req.url === "/prompt") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      prompts.push(JSON.parse(body).prompt);
+      return res.end(JSON.stringify({ prompt_id: `job-${prompts.length}` }));
+    }
+    if (req.url?.startsWith("/history/job-"))
+      return res.end(JSON.stringify({ [req.url.slice(9)]: { outputs: { "7": { images: [{ filename: "image.webp", type: "output" }] } } } }));
+    if (req.url?.startsWith("/view?")) return res.end(prompts.length === 1 ? large : webp);
+    res.writeHead(404).end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const folder = await mkdtemp(path.join(tmpdir(), "writer-compress-test-"));
+  try {
+    const output = path.join(folder, "image");
+    await run(process.execPath, [renderer, JSON.stringify({ prompt: "A diagram", output: { width: 1280, height: 720, mime: "image/webp" } }), output], {
+      env: { ...process.env, WRITER_COMFY_URL: `http://127.0.0.1:${server.address().port}`, WRITER_COMFY_CHECKPOINT: "local.safetensors" },
+      timeout: 10_000,
+    });
+    assert.equal(prompts.length, 2);
+    assert.equal(prompts[1]["6"].class_type, "LoadImage");
+    assert.equal(prompts[1]["7"].inputs.quality, 82);
+    assert.deepEqual(await readFile(output), webp);
+  } finally {
+    server.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});

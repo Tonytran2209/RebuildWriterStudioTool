@@ -79,6 +79,46 @@ async function referenceFor(input) {
   return { filename, ipadapterModel, clipVisionModel };
 }
 
+async function awaitImage(prompt, deadline) {
+  const submitted = await (await request("/prompt", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: randomUUID(), prompt }),
+  })).json();
+  if (!submitted.prompt_id || submitted.error) throw new Error("ComfyUI rejected the local workflow.");
+  while (Date.now() < deadline) {
+    const history = await (await request(`/history/${encodeURIComponent(submitted.prompt_id)}`)).json();
+    const result = history?.[submitted.prompt_id];
+    if (result?.status?.status_str === "error") throw new Error("Local ComfyUI generation failed.");
+    const image = result?.outputs?.["7"]?.images?.[0];
+    if (image) {
+      if (!image.filename || !["output", "temp"].includes(image.type)) throw new Error("Local ComfyUI returned an invalid image.");
+      const params = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder || "", type: image.type });
+      return Buffer.from(await (await request(`/view?${params}`, {}, 30_000)).arrayBuffer());
+    }
+    if (result?.status?.completed === true) throw new Error("Local ComfyUI finished without an image.");
+    await wait(2000);
+  }
+  throw new Error("Local ComfyUI did not return an image in time.");
+}
+
+async function uploadForCompression(original) {
+  const filename = `writer-compress-${randomUUID()}.webp`;
+  const form = new FormData();
+  form.set("image", new Blob([original], { type: "image/webp" }), filename);
+  form.set("overwrite", "false");
+  const uploaded = await (await request("/upload/image", { method: "POST", body: form }, 30_000)).json();
+  if (uploaded.name !== filename) throw new Error("ComfyUI did not accept the image for compression.");
+  return filename;
+}
+
+async function recompress(filename, quality, deadline) {
+  return awaitImage({
+    "6": { class_type: "LoadImage", inputs: { image: filename } },
+    "7": { class_type: "SaveAnimatedWEBP", inputs: { filename_prefix: "writer-studio", images: ["6", 0], fps: 1,
+      lossless: false, quality, method: "default" } },
+  }, deadline);
+}
+
 async function main() {
   const names = await checkpoints();
   if (process.argv[2] === "--list-checkpoints") {
@@ -101,33 +141,21 @@ async function main() {
   if (!input?.prompt?.trim() || !output || input?.output?.width !== 1280 || input?.output?.height !== 720 || input?.output?.mime !== "image/webp")
     throw new Error("Renderer requires a 1280x720 WebP visual plan.");
   const reference = await referenceFor(input);
-  const submitted = await (await request("/prompt", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ client_id: randomUUID(), prompt: workflow(input.prompt, checkpoint, reference) }),
-  })).json();
-  if (!submitted.prompt_id || submitted.error) throw new Error("ComfyUI rejected the local workflow.");
-
   const deadline = Date.now() + 620_000;
-  let image;
-  while (Date.now() < deadline) {
-    const history = await (await request(`/history/${encodeURIComponent(submitted.prompt_id)}`)).json();
-    const result = history?.[submitted.prompt_id];
-    if (result?.status?.status_str === "error") {
-      throw new Error("Local ComfyUI generation failed.");
-    }
-    image = result?.outputs?.["7"]?.images?.[0];
-    if (image) break;
-    if (result?.status?.completed === true) throw new Error("Local ComfyUI finished without an image.");
-    await wait(2000);
+  const original = await awaitImage(workflow(input.prompt, checkpoint, reference), deadline);
+  const dimensions = webpDimensions(original);
+  if (!dimensions || dimensions.width !== 1280 || dimensions.height !== 720)
+    throw new Error("Local ComfyUI image must be 1280x720 WebP.");
+  let bytes = original;
+  const compressionInput = bytes.length > 300_000 ? await uploadForCompression(original) : null;
+  for (const quality of [82, 76, 70, 64, 58, 52, 46, 40]) {
+    if (bytes.length <= 300_000) break;
+    bytes = await recompress(compressionInput, quality, deadline);
+    const compressedDimensions = webpDimensions(bytes);
+    if (!compressedDimensions || compressedDimensions.width !== 1280 || compressedDimensions.height !== 720)
+      throw new Error("ComfyUI compression changed the required image format or dimensions.");
   }
-  if (!image?.filename || !["output", "temp"].includes(image.type)) throw new Error("Local ComfyUI did not return an image in time.");
-  const params = new URLSearchParams({ filename: image.filename, subfolder: image.subfolder || "", type: image.type });
-  const response = await request(`/view?${params}`, {}, 30_000);
-  const bytes = Buffer.from(await response.arrayBuffer());
-  const dimensions = webpDimensions(bytes);
-  if (!dimensions || dimensions.width !== 1280 || dimensions.height !== 720 || bytes.length > 6_000_000) {
-    throw new Error("Local ComfyUI image must be 1280x720 WebP and at most 6 MB.");
-  }
+  if (bytes.length > 300_000) throw new Error("Image exceeds 300 KB after WebP compression.");
   await writeFile(output, bytes, { mode: 0o600 });
 }
 

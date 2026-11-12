@@ -432,14 +432,12 @@ export function createImageWorkers(deps = {
     if (!job) return res.sendStatus(409)
     if (job.status !== "running") return res.json({ ok: true })
     if (!job.processing_started_at || Date.parse(job.lease_until) <= Date.now()) return res.sendStatus(409)
-    const bytes = typeof image === "string" && image.length <= 8_000_000 ? Buffer.from(image, "base64") : null
+    const bytes = typeof image === "string" && image.length <= 400_000 ? Buffer.from(image, "base64") : null
     const mime = bytes?.subarray(0,8).equals(Buffer.from("89504e470d0a1a0a","hex")) ? "image/png"
       : bytes?.subarray(0,3).equals(Buffer.from("ffd8ff","hex")) ? "image/jpeg"
       : bytes?.subarray(0,4).toString() === "RIFF" && bytes.subarray(8,12).toString() === "WEBP" ? "image/webp" : null
-    const expectedWebp = job.input?.output?.mime === "image/webp"
     const dimensions = webpDimensions(bytes)
-    const valid = !failed && Boolean(mime) && (!expectedWebp ||
-      (mime === "image/webp" && dimensions?.width === 1280 && dimensions.height === 720)) && bytes!.length <= 6_000_000
+    const valid = !failed && mime === "image/webp" && dimensions?.width === 1280 && dimensions.height === 720 && bytes!.length <= 300_000
     const failureCode = ["STYLE_SYNC_FAILED","STYLE_VERSION_MISMATCH","STYLE_MODEL_MISSING","RENDERER_FAILED","PROMPT_OR_IMAGE_INVALID"].includes(errorCode)
       ? errorCode : "RENDER_FAILED"
     const asset = valid ? `image-workers/${job.id}/${randomUUID()}` : null

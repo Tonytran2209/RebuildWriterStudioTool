@@ -7,7 +7,7 @@ The server needs `backend/migrations/003_image_workers.sql` applied to the Write
 ## Prepare the Mac
 
 1. Install Node 22+ and sign into Codex CLI or Claude Code. The selected agent writes the prompt, not the image pixels.
-2. Install [ComfyUI Desktop](https://comfy.org/download) or self-hosted ComfyUI on the Mac. Run it on `127.0.0.1:8188` (the default). Install an **entirely local** checkpoint compatible with `CheckpointLoaderSimple`, `CLIPTextEncode`, `KSampler`, `VAEDecode`, `ImageScale` and `SaveAnimatedWEBP`. The local workflow renders at 1024 × 576, scales to **1280 × 720 (16:9)** and exports single-frame WebP at quality 88. 1280 × 768 is 5:3, so it is not used. Checkpoint choice affects image quality, speed, memory use, and license.
+2. Install [ComfyUI Desktop](https://comfy.org/download) or self-hosted ComfyUI on the Mac. Run it on `127.0.0.1:8188` (the default). Install an **entirely local** checkpoint compatible with `CheckpointLoaderSimple`, `CLIPTextEncode`, `KSampler`, `VAEDecode`, `ImageScale` and `SaveAnimatedWEBP`. The local workflow renders at 1024 × 576, scales to **1280 × 720 (16:9)** and exports single-frame WebP at quality 88. If the file exceeds **300 KB (300,000 bytes)**, ComfyUI re-encodes the finished image at progressively lower quality without regenerating it. Images still over the limit are rejected. 1280 × 768 is 5:3, so it is not used. Checkpoint choice affects image quality, speed, memory use, and license.
 3. With ComfyUI open, list the exact installed checkpoint names:
 
    ```sh
@@ -61,6 +61,6 @@ node workers/image-worker.mjs
 
 Run from the Writer Studio repository root. `WRITER_IMAGE_RENDERER` must be an absolute path to an executable. `WRITER_CODEX_BIN` or `WRITER_CLAUDE_BIN` may override CLI paths. Keep the Mac awake, ComfyUI running, and this worker process running to receive jobs. The Mac needs outbound HTTPS to Writer Studio, but no inbound public port. Disconnecting a worker in Settings revokes its token.
 
-The Mac worker receives only the image brief and section excerpt. ComfyUI stays on loopback. A 15-minute claim lease recovers interrupted jobs. The renderer must return one 1280 × 720 WebP under 6 MB. In Draft Content, approve a placement, choose a style and worker, generate, preview, review, then insert. Existing text and Google Docs clipboard exports do not embed these assets.
+The Mac worker receives only the image brief and section excerpt. ComfyUI stays on loopback. A 15-minute claim lease recovers interrupted jobs. The renderer must return one 1280 × 720 WebP of at most 300 KB (300,000 bytes). In Draft Content, approve a placement, choose a style and worker, generate, preview, review, then insert. Existing text and Google Docs clipboard exports do not embed these assets.
 
 The older `openai-image.mjs` renderer is not compatible with this local WebP contract; use `local-comfy-image.mjs` for this workflow.

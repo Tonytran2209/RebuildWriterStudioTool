@@ -89,7 +89,7 @@ async function render(job, folder) {
   }
   const bytes = await readFile(file);
   const dimensions = webpDimensions(bytes);
-  if (!dimensions || dimensions.width !== 1280 || dimensions.height !== 720 || bytes.length > 6_000_000)
+  if (!dimensions || dimensions.width !== 1280 || dimensions.height !== 720 || bytes.length > 300_000)
     throw new Error("Invalid image format or dimensions");
   return bytes.toString("base64");
 }
