@@ -2,6 +2,7 @@ import { imageWorkerApi, imageWorkerRunner } from "./imageWorkers.ts"
 import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
+import { convertStepRunsToTelemetryStages, sendArticleRunTelemetry } from "./telemetry.ts";
 import { outlineReviewInstruction, outlineQualityChecks } from '../src/lib/outlineQuality.ts';
 import { createGenerateReply, GENERATE_ACK_HEADER, GENERATE_ACK_VERSION } from '../shared/generateAck.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
@@ -3288,8 +3289,29 @@ async function runBatch(activityId: string) {
         try {
           const outcome = await runBatchArticle(article, controller)
           if (outcome) monitoring.recordJob(job, workload, start, outcome)
-        } catch (error) {
+          // F.Learning Dashboard Telemetry
+          const updated = (await loadArticles()).find((a) => a.id === article.id) || article
+          const stages = convertStepRunsToTelemetryStages(updated.batchStepRuns || [])
+          void sendArticleRunTelemetry({
+            runId: `run_${article.id}`,
+            workload,
+            stages,
+            status: outcome === "valid" ? "SUCCESS" : "ERROR",
+            durationMs: Math.max(1, Math.round(performance.now() - start)),
+          })
+        } catch (error: any) {
           monitoring.recordJob(job, workload, start, jobFailure(error))
+          // F.Learning Dashboard Telemetry
+          const updated = (await loadArticles()).find((a) => a.id === article.id) || article
+          const stages = convertStepRunsToTelemetryStages(updated.batchStepRuns || [])
+          void sendArticleRunTelemetry({
+            runId: `run_${article.id}`,
+            workload,
+            stages,
+            status: "ERROR",
+            errorMessage: error?.message ?? String(error),
+            durationMs: Math.max(1, Math.round(performance.now() - start)),
+          })
           throw error
         }
       })
