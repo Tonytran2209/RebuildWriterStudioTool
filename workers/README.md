@@ -65,4 +65,18 @@ Run from the Writer Studio repository root. `WRITER_IMAGE_RENDERER` must be an a
 
 The Mac worker receives only the image brief and section excerpt. ComfyUI stays on loopback. A 15-minute claim lease recovers interrupted jobs. The renderer must return one 1280 × 720 WebP of at most 300 KB (300,000 bytes). In Draft Content, approve a placement, choose a style and worker, generate, preview, review, then insert. Existing text and Google Docs clipboard exports do not embed these assets.
 
+## Alternative renderer: Codex `$imagegen` (ChatGPT plan, no API key)
+
+`workers/codex-image.mjs` renders with Codex CLI's built-in `$imagegen` (gpt-image-2), billed to the ChatGPT Plus/Pro plan signed into Codex, and converts the result to the same 1280 × 720 WebP ≤ 300 KB contract with `cwebp`. ComfyUI is not needed. The image brief is sent to OpenAI, and each image counts against the plan's Codex usage limits.
+
+```sh
+npm i -g @openai/codex && codex login   # sign in with ChatGPT
+brew install webp                        # provides cwebp
+node workers/codex-image.mjs --check
+export WRITER_IMAGE_RENDERER="$PWD/workers/codex-image.mjs"
+node workers/image-worker.mjs
+```
+
+Style reference images are passed to Codex with `-i` as a style-only hint. `WRITER_CWEBP_BIN` and `WRITER_CODEX_IMAGES_DIR` (default `~/.codex/generated_images`) can override paths. Avoid generating images in the Codex app while the worker runs: the renderer picks the newest image created after the job started.
+
 The older `openai-image.mjs` renderer is not compatible with this local WebP contract; use `local-comfy-image.mjs` for this workflow.
