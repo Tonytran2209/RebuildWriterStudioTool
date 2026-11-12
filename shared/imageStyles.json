@@ -1,0 +1,32 @@
+[
+  {
+    "id": "editorial-neutral-v1",
+    "name": "Editorial neutral",
+    "description": "Calm editorial illustration with restrained color and generous space.",
+    "visualRules": "Simple shapes, balanced horizontal composition, muted neutral palette, clear subject hierarchy. No decorative objects.",
+    "referenceImage": null,
+    "referenceSha256": null,
+    "approved": true,
+    "version": 1
+  },
+  {
+    "id": "clean-diagram-v1",
+    "name": "Clean diagram",
+    "description": "Clear visual explanation of a process or relationship.",
+    "visualRules": "Only the entities and connections named in the brief. Clear spacing and directional flow. No text labels or invented steps.",
+    "referenceImage": null,
+    "referenceSha256": null,
+    "approved": true,
+    "version": 1
+  },
+  {
+    "id": "comparison-v1",
+    "name": "Balanced comparison",
+    "description": "Two-sided comparison with equal visual weight.",
+    "visualRules": "Exactly the compared subjects from the brief, with symmetric layout and a quiet neutral background. No unsupported differences or labels.",
+    "referenceImage": null,
+    "referenceSha256": null,
+    "approved": true,
+    "version": 1
+  }
+]

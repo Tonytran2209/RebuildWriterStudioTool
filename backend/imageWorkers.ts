@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
+import { readFileSync } from "node:fs"
 import { Router, type Request, type Response } from "express"
 import { database, provider } from "./postgres.ts"
 import { downloadDocumentBinary, uploadDocumentBinary, deleteDocumentBinaries, kvGet } from "./supabase.ts"
@@ -11,15 +12,31 @@ import type { ParentRun } from "./jobHistory.ts"
 const workers = "writer_studio.image_workers"
 const jobs = "writer_studio.image_worker_jobs"
 const runs = "writer_studio.image_worker_runs"
+const imageStyles = JSON.parse(readFileSync(new URL("../shared/imageStyles.json", import.meta.url), "utf8")) as Array<{
+  id: string; name: string; description: string; visualRules: string; referenceImage: string | null;
+  referenceSha256: string | null; approved: boolean; version: number
+}>
 const uuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
 const isUuid = (value: unknown): value is string => typeof value === "string" && uuid.test(value)
 const digest = (value: string) => createHash("sha256").update(value).digest("hex")
+function webpDimensions(bytes: Buffer | null): { width: number; height: number } | null {
+  if (!bytes || bytes.length < 30 || bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WEBP") return null
+  const kind = bytes.toString("ascii", 12, 16)
+  if (kind === "VP8X") return { width: 1 + bytes.readUIntLE(24, 3), height: 1 + bytes.readUIntLE(27, 3) }
+  if (kind === "VP8 ") return { width: bytes.readUInt16LE(26) & 0x3fff, height: bytes.readUInt16LE(28) & 0x3fff }
+  if (kind === "VP8L" && bytes[20] === 0x2f) return {
+    width: 1 + (bytes[21] | ((bytes[22] & 0x3f) << 8)),
+    height: 1 + ((bytes[22] >> 6) | (bytes[23] << 2) | ((bytes[24] & 0x0f) << 10)),
+  }
+  return null
+}
 const owner = (req: Request) => (req as Request & { auth: { userId: string } }).auth.userId
 const workerColumns = `id, name, agent, preferred, (last_seen > now() - interval '30 seconds') AS online,
   EXISTS (SELECT 1 FROM ${jobs} j WHERE j.worker_id=w.id AND j.status='running' AND j.lease_until > now()) AS busy`
-const jobColumns = "id, suggestion_id, worker_id, status, error_code"
+const jobColumns = "id, suggestion_id, worker_id, status, error_code, input->>'styleId' AS style_id"
 const publicJobColumns = `id, suggestion_id, worker_id,
-  CASE WHEN status='running' AND lease_until <= now() THEN 'queued' ELSE status END AS status, error_code`
+  CASE WHEN status='running' AND lease_until <= now() THEN 'queued' ELSE status END AS status, error_code,
+  input->>'styleId' AS style_id`
 
 export function imageAnchor(article: Article, suggestionId: string) {
   const suggestion = article.imageSuggestions?.find(item => item.id === suggestionId && item.status === "approved" && item.evidenceSafe)
@@ -117,6 +134,9 @@ export function createImageWorkers(deps = {
   }
 
   const imageWorkerApi = Router()
+  imageWorkerApi.get("/styles", (_req, res) => {
+    res.json(imageStyles.filter(style => style.approved).map(({ id, name, description, version }) => ({ id, name, description, version })))
+  })
   imageWorkerApi.get("/workers", endpoint(async (req, res) => {
     const { rows } = await query(`SELECT ${workerColumns} FROM ${workers} w WHERE owner_id=$1 AND NOT revoked ORDER BY name`, [owner(req)])
     res.json(rows)
@@ -149,15 +169,20 @@ export function createImageWorkers(deps = {
     res.json(rows)
   }))
   imageWorkerApi.post("/articles/:articleId/jobs", endpoint(async (req, res) => {
-    const { workerId, suggestionId } = req.body ?? {}
+    const { workerId, suggestionId, styleId = "editorial-neutral-v1" } = req.body ?? {}
     if (typeof workerId !== "string" || !uuid.test(workerId) || typeof suggestionId !== "string") return res.sendStatus(400)
+    const style = imageStyles.find(item => item.id === styleId && item.approved)
+    if (!style) return res.status(400).json({ error: "Select an approved image style." })
     const article = await loadArticle(String(req.params.articleId))
     const placement = article && !isArticleCompleted(article) && imageAnchor(article, suggestionId)
     if (!placement) return res.status(409).json({ error: "Approve the image placement in the current draft first." })
     const { rows } = await query(`INSERT INTO ${jobs}
       (id,owner_id,worker_id,article_id,suggestion_id,anchor,input)
       SELECT $1,$2,id,$4,$5,$6,$7 FROM ${workers} WHERE id=$3 AND owner_id=$2 AND NOT revoked
-      RETURNING ${jobColumns}`, [randomUUID(), owner(req), workerId, article.id, suggestionId, placement.anchor, placement.input])
+      RETURNING ${jobColumns}`, [randomUUID(), owner(req), workerId, article.id, suggestionId, placement.anchor,
+        { ...placement.input, styleId: style.id, styleVersion: style.version, styleRules: style.visualRules,
+          referenceImage: style.referenceImage, referenceSha256: style.referenceSha256,
+          output: { width: 1280, height: 720, mime: "image/webp" } }])
     if (!rows.length) return res.sendStatus(404)
     res.status(202).json(rows[0])
   }))
@@ -191,6 +216,7 @@ export function createImageWorkers(deps = {
   }))
   imageWorkerApi.post("/jobs/:id/insert", endpoint(async (req, res) => {
     if (!isUuid(req.params.id)) return res.sendStatus(404)
+    if (req.body?.reviewed !== true) return res.status(400).json({ error: "Review the image against the brief before inserting it." })
     const { rows } = await query(`SELECT * FROM ${jobs} WHERE id=$1 AND owner_id=$2 AND status IN ('ready','inserted')`, [req.params.id, owner(req)])
     const job = rows[0]
     if (!job) return res.sendStatus(404)
@@ -216,7 +242,9 @@ export function createImageWorkers(deps = {
   }))
 
   function jobView(job: Record<string, unknown>) {
-    return { id: job.id, suggestion_id: job.suggestion_id, worker_id: job.worker_id, status: job.status, error_code: job.error_code }
+    const input = job.input as { styleId?: string } | undefined
+    return { id: job.id, suggestion_id: job.suggestion_id, worker_id: job.worker_id, status: job.status,
+      error_code: job.error_code, style_id: job.style_id ?? input?.styleId }
   }
 
   const imageWorkerRunner = Router()
@@ -274,12 +302,16 @@ export function createImageWorkers(deps = {
     const mime = bytes?.subarray(0,8).equals(Buffer.from("89504e470d0a1a0a","hex")) ? "image/png"
       : bytes?.subarray(0,3).equals(Buffer.from("ffd8ff","hex")) ? "image/jpeg"
       : bytes?.subarray(0,4).toString() === "RIFF" && bytes.subarray(8,12).toString() === "WEBP" ? "image/webp" : null
-    const valid = !failed && Boolean(mime)
+    const expectedWebp = job.input?.output?.mime === "image/webp"
+    const dimensions = webpDimensions(bytes)
+    const valid = !failed && Boolean(mime) && (!expectedWebp ||
+      (mime === "image/webp" && dimensions?.width === 1280 && dimensions.height === 720)) && bytes!.length <= 6_000_000
     const asset = valid ? `image-workers/${job.id}/${randomUUID()}` : null
     if (asset && bytes && mime) await upload(asset, bytes, mime)
     let written = false
     try {
-      const result = await query(`UPDATE ${jobs} SET status=$4,asset_path=$5,mime=$6,error_code=$7,input='{}'::jsonb
+      const result = await query(`UPDATE ${jobs} SET status=$4,asset_path=$5,mime=$6,error_code=$7,
+        input=jsonb_build_object('styleId',input->>'styleId')
         WHERE id=$1 AND worker_id=$2 AND lease=$3 AND status='running' AND lease_until > now()
         AND EXISTS (SELECT 1 FROM ${workers} WHERE id=$2 AND NOT revoked)`,
       [job.id,current.id,lease,valid ? "ready" : "failed",asset,valid ? mime : null,valid ? null : "RENDER_FAILED"])

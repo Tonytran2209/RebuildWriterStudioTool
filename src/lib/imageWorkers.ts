@@ -14,7 +14,10 @@ export type ImageJob = {
   worker_id: string;
   status: "queued" | "running" | "ready" | "inserted" | "failed";
   error_code: string | null;
+  style_id?: string | null;
 };
+
+export type ImageStyle = { id: string; name: string; description: string; version: number };
 
 export async function imageWorkerRequest<T>(railwayUrl: string, path: string, method = "GET", body?: unknown): Promise<T> {
   const response = await authenticatedRailwayFetch(`/api/image-workers${path}`, {

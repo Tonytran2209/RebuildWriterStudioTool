@@ -65,10 +65,13 @@ test("paired workers claim only their assigned jobs and publish private images a
   const api = "/api/image-workers"
   const runner = "/internal/image-worker"
   try {
+    const styles = await (await request(api + "/styles")).json()
+    assert.ok(styles.some((style: any) => style.id === "editorial-neutral-v1"))
     const claude = await (await request(api + "/workers", "POST", { name: "Mac One", agent: "claude" }, undefined, 201)).json()
     const codex = await (await request(api + "/workers", "POST", { name: "Mac Two", agent: "codex" }, undefined, 201)).json()
     const [claudeId] = claude.token.split(".")
     const [codexId] = codex.token.split(".")
+    await request(api + "/articles/article-1/jobs", "POST", { workerId: claudeId, suggestionId: "visual", styleId: "unknown" }, undefined, 400)
     const queued = await (await request(api + "/articles/article-1/jobs", "POST", { workerId: claudeId, suggestionId: "visual" }, undefined, 202)).json()
     await request(runner + "/claim", "POST", {}, codex.token, 204)
     await request(api + `/jobs/${queued.id}/worker`, "PATCH", { workerId: codexId })
@@ -76,23 +79,29 @@ test("paired workers claim only their assigned jobs and publish private images a
     const claimed = await (await request(runner + "/claim", "POST", {}, codex.token)).json()
     assert.equal(claimed.agent, "codex")
     assert.equal(claimed.input.brief, "PRIVATE_BRIEF")
+    assert.equal(claimed.input.styleId, "editorial-neutral-v1")
+    assert.deepEqual(claimed.input.output, { width: 1280, height: 720, mime: "image/webp" })
     await request(runner + `/jobs/${claimed.id}/start`, "POST", { lease: claimed.lease }, codex.token)
     const readReport = async () => (await request("/internal/monitoring?days=1", "GET", undefined, secret)).json()
     const running = await readReport()
     assert.equal(running.jobRuns.runs[0].status, "running")
     assert.equal(running.jobRuns.runs[0].endedAt, null)
-    const image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD/oAAAAASUVORK5CYII="
+    const webp = Buffer.alloc(30)
+    webp.write("RIFF", 0); webp.writeUInt32LE(22, 4); webp.write("WEBPVP8X", 8)
+    webp.writeUInt32LE(10, 16); webp.writeUIntLE(1279, 24, 3); webp.writeUIntLE(719, 27, 3)
+    const image = webp.toString("base64")
     const resultPath = runner + `/jobs/${claimed.id}/result`
     await request(resultPath, "POST", { lease: claimed.lease, image }, claude.token, 409)
     await request(resultPath, "POST", { lease: claimed.lease, image }, codex.token)
     await request(resultPath, "POST", { lease: claimed.lease, image }, codex.token)
     assert.equal(files.size, 1)
-    assert.equal((await request(api + `/jobs/${claimed.id}/asset`)).headers.get("content-type"), "image/png")
+    assert.equal((await request(api + `/jobs/${claimed.id}/asset`)).headers.get("content-type"), "image/webp")
     currentArticle = { ...article, draft: article.draft.replace("Example prose.", "Changed prose.") }
-    await request(api + `/jobs/${claimed.id}/insert`, "POST", undefined, undefined, 409)
+    await request(api + `/jobs/${claimed.id}/insert`, "POST", { reviewed: true }, undefined, 409)
     currentArticle = article
-    await request(api + `/jobs/${claimed.id}/insert`, "POST")
-    await request(api + `/jobs/${claimed.id}/insert`, "POST")
+    await request(api + `/jobs/${claimed.id}/insert`, "POST", undefined, undefined, 400)
+    await request(api + `/jobs/${claimed.id}/insert`, "POST", { reviewed: true })
+    await request(api + `/jobs/${claimed.id}/insert`, "POST", { reviewed: true })
     const result = await readReport()
     assert.deepEqual(result.profile.mainJob.steps.slice(-2), ["Tạo ảnh minh họa", "Chèn ảnh vào bài"])
     assert.equal(result.jobRuns.runs.length, 3)

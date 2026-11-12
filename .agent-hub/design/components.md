@@ -75,7 +75,7 @@ Campaign labels use the same 13 px typography as recent article rows, with separ
 
 Draft Outline presents a single ordered hierarchy with H3 rows indented under the nearest preceding H2. Heading rows use a full-width neutral hover and a distinct expanded state. Each heading opens a read-first panel with notes and rationale in full, with editing available as an explicit action. Keep log and section actions in a compact footer. Keep legacy headings without a preceding H2 visible at the top level and preserve the saved outline order.
 
-Image Workers pairs a named Mac and agent through Settings. An approved image suggestion uses the default worker set in Settings (no per-suggestion worker picker; the card names it and explains when none is set) and exposes queue status and a private preview. Insert is a separate action. Keep the image in its approved slot in the draft preview and preserve the prose QC result.
+Image Workers pairs a named Mac and agent through Settings. An approved image suggestion uses the default worker set in Settings (no per-suggestion worker picker; the card names it and explains when none is set) and exposes queue status and a private preview. Approved style selection uses the same neutral controls; the default worker remains the only worker choice. Insert is a separate action and requires explicit visual review confirmation. Keep the image in its approved slot in the draft preview and preserve the prose QC result.
 
 ## Image placement suggestions layout (2026-11-11)
 

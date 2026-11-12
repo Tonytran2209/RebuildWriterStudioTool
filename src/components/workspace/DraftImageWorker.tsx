@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Check, CircleX, LoaderCircle, Sparkles } from "lucide-react";
 import type { ImageSuggestion } from "../../types";
 import { authenticatedRailwayFetch } from "../../lib/db";
-import { imageWorkerRequest, type ImageJob, type ImageWorker } from "../../lib/imageWorkers";
+import { imageWorkerRequest, type ImageJob, type ImageWorker, type ImageStyle } from "../../lib/imageWorkers";
 import { uiInteractionStart, sendOutlinePerformanceSample } from "../../lib/performanceTelemetry";
 import { useI18n } from "../../lib/i18n";
 
 export function useDraftImageJobs(railwayUrl: string, articleId: string, enabled: boolean) {
   const [snapshot, setSnapshot] = useState<{ articleId: string; jobs: ImageJob[] }>({ articleId, jobs: [] });
   const [workers, setWorkers] = useState<ImageWorker[]>([]);
+  const [styles, setStyles] = useState<ImageStyle[]>([]);
   const [failure, setFailure] = useState<{ articleId: string; text: string }>();
   const revision = useRef(0);
   const activeArticle = useRef(articleId);
@@ -21,13 +22,15 @@ export function useDraftImageJobs(railwayUrl: string, articleId: string, enabled
     async function poll() {
       const version = revision.current;
       try {
-        const [jobs, available] = await Promise.all([
+        const [jobs, available, approvedStyles] = await Promise.all([
           imageWorkerRequest<ImageJob[]>(railwayUrl, path),
           imageWorkerRequest<ImageWorker[]>(railwayUrl, "/workers"),
+          imageWorkerRequest<ImageStyle[]>(railwayUrl, "/styles"),
         ]);
         if (active) {
           if (version === revision.current) setSnapshot({ articleId, jobs });
           setWorkers(available);
+          setStyles(approvedStyles);
           setFailure(undefined);
         }
       } catch (error) {
@@ -42,7 +45,7 @@ export function useDraftImageJobs(railwayUrl: string, articleId: string, enabled
 
   const jobs = snapshot.articleId === articleId ? snapshot.jobs : [];
   return {
-    path, jobs, workers, error: failure?.articleId === articleId ? failure.text : "",
+    path, jobs, workers, styles, error: failure?.articleId === articleId ? failure.text : "",
     update(job: ImageJob) {
       if (activeArticle.current !== articleId) return;
       revision.current++;
@@ -98,13 +101,18 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
   imageJobs: ReturnType<typeof useDraftImageJobs>;
 }) {
   const { tr } = useI18n();
+  const [styleSelection, setStyleSelection] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [reviewedJob, setReviewedJob] = useState("");
   const job = imageJobs.jobs.find(item => item.suggestion_id === suggestion.id);
-  const workers = imageJobs.workers;
-  // Generation always uses the default worker chosen in Settings › Image Workers.
-  const defaultWorker = workers.find(worker => worker.preferred);
+  const defaultWorker = imageJobs.workers.find(worker => worker.preferred);
   const workerState = (worker: typeof defaultWorker) => !worker ? "" : worker.busy ? tr("Bận", "Busy") : worker.online ? tr("Sẵn sàng", "Online") : tr("Ngoại tuyến", "Offline");
+  const styles = imageJobs.styles;
+  const selectedStyle = styles.find(style => style.id === styleSelection)?.id ??
+    styles.find(style => style.id === job?.style_id)?.id ??
+    (suggestion.type === "comparison" ? styles.find(style => style.id === "comparison-v1")?.id
+      : suggestion.type === "diagram" ? styles.find(style => style.id === "clean-diagram-v1")?.id : undefined) ?? styles[0]?.id ?? "";
   const status = {
     queued: tr("Đang chờ worker", "Waiting for worker"),
     running: tr("Đang tạo ảnh", "Generating image"),
@@ -135,24 +143,45 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
       {pending ? tr("Đang gửi yêu cầu…", "Submitting…") : job && status[job.status]}
     </p>}
     {(error || imageJobs.error) && <p role="alert" className="ips-worker-error">{error || imageJobs.error}</p>}
+    {job?.status === "failed" && job.error_code && <p role="alert" className="ips-worker-error">{tr("Mã lỗi tạo ảnh", "Image error code")}: {job.error_code}</p>}
     {job?.status === "ready" && <WorkerImage railwayUrl={railwayUrl} jobId={job.id} alt={suggestion.altText} />}
     {!disabled && <>
-      {(!job || job.status === "failed") && <div className="ips-worker-row">
-        <p className="ips-worker-default">{defaultWorker
-          ? <>{tr("Worker mặc định", "Default worker")}: <span className="ips-worker-name">{defaultWorker.name}</span> · {workerState(defaultWorker)}</>
-          : tr("Chưa có worker mặc định. Chọn trong Settings › Image Workers.", "No default worker. Choose one in Settings › Image Workers.")}</p>
-        <button type="button" className="ips-btn ips-btn-primary" disabled={pending || !defaultWorker}
-          onClick={event => defaultWorker && void act(event, imageJobs.path, "POST", {workerId:defaultWorker.id, suggestionId:suggestion.id})}>
-          <Sparkles className="h-3.5 w-3.5" aria-hidden />{job?.status === "failed" ? tr("Tạo lại ảnh", "Retry image") : tr("Tạo ảnh", "Generate image")}
-        </button>
+      {(!job || job.status === "failed") && <div className="space-y-2">
+        <label className="grid gap-1 text-xs text-[var(--ui-secondary)]">{tr("Phong cách ảnh", "Image style")}
+          <select className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] px-2.5 text-[var(--ui-text)]"
+            value={selectedStyle} disabled={pending || !styles.length} onChange={event => setStyleSelection(event.target.value)}>
+            {!styles.length && <option value="">{tr("Chưa có phong cách đã duyệt", "No approved styles")}</option>}
+            {styles.map(style => <option key={style.id} value={style.id}>{style.name}</option>)}
+          </select>
+          <span>{styles.find(style => style.id === selectedStyle)?.description}</span>
+        </label>
+        <div className="ips-worker-row">
+          <p className="ips-worker-default">{defaultWorker
+            ? <>{tr("Worker mặc định", "Default worker")}: <span className="ips-worker-name">{defaultWorker.name}</span> · {workerState(defaultWorker)}</>
+            : tr("Chưa có worker mặc định. Chọn trong Settings › Image Workers.", "No default worker. Choose one in Settings › Image Workers.")}</p>
+          <button type="button" className="ips-btn ips-btn-primary" disabled={pending || !defaultWorker || !selectedStyle}
+            onClick={event => defaultWorker && void act(event, imageJobs.path, "POST", {workerId:defaultWorker.id, suggestionId:suggestion.id, styleId:selectedStyle})}>
+            <Sparkles className="h-3.5 w-3.5" aria-hidden />{job?.status === "failed" ? tr("Tạo lại ảnh", "Retry image") : tr("Tạo ảnh", "Generate image")}
+          </button>
+        </div>
       </div>}
-      {job?.status === "ready" && <div className="ips-worker-actions">
-        <button type="button" className="ips-btn ips-btn-primary" disabled={pending} onClick={event => void act(event, `/jobs/${job.id}/insert`, "POST")}>
-          {tr("Chèn vào bài", "Insert into draft")}
-        </button>
-        <button type="button" className="ips-btn ips-btn-ghost" disabled={pending} onClick={event => void act(event, `/jobs/${job.id}`, "DELETE")}>
-          {tr("Bỏ ảnh này", "Discard image")}
-        </button>
+      {job?.status === "ready" && <div className="space-y-2">
+        <label className="flex items-start gap-2 text-xs text-[var(--ui-secondary)]">
+          <input type="checkbox" className="mt-0.5" checked={reviewedJob === job.id}
+            onChange={event => setReviewedJob(event.target.checked ? job.id : "")} />
+          {tr("Tôi đã kiểm tra ảnh bám sát brief, không thêm chi tiết hoặc chữ không được duyệt, và đúng phong cách.",
+            "I checked that the image follows the brief, adds no unapproved details or text, and matches the style.")}
+        </label>
+        <div className="ips-worker-actions">
+          <button type="button" className="ips-btn ips-btn-primary" disabled={pending || reviewedJob !== job.id}
+            onClick={event => void act(event, `/jobs/${job.id}/insert`, "POST", { reviewed: true })}>
+            {tr("Chèn vào bài", "Insert into draft")}
+          </button>
+          <button type="button" className="ips-btn ips-btn-ghost" disabled={pending}
+            onClick={event => void act(event, `/jobs/${job.id}`, "DELETE")}>
+            {tr("Bỏ ảnh này", "Discard image")}
+          </button>
+        </div>
       </div>}
     </>}
   </div>;

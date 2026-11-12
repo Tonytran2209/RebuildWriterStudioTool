@@ -10,7 +10,9 @@ import test from "node:test";
 
 const run = promisify(execFile);
 const renderer = new URL("./local-comfy-image.mjs", import.meta.url).pathname;
-const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD/oAAAAASUVORK5CYII=", "base64");
+const webp = Buffer.alloc(30);
+webp.write("RIFF", 0); webp.writeUInt32LE(22, 4); webp.write("WEBPVP8X", 8);
+webp.writeUInt32LE(10, 16); webp.writeUIntLE(1279, 24, 3); webp.writeUIntLE(719, 27, 3);
 
 test("local renderer submits a checkpoint workflow and retrieves its image", async () => {
   let submitted;
@@ -26,11 +28,11 @@ test("local renderer submits a checkpoint workflow and retrieves its image", asy
     }
     if (req.url === "/history/job-1") {
       historyReads++;
-      return res.end(JSON.stringify(historyReads === 1 ? {} : { "job-1": { outputs: { "7": { images: [{ filename: "image.png", subfolder: "", type: "output" }] } } } }));
+      return res.end(JSON.stringify(historyReads === 1 ? {} : { "job-1": { outputs: { "7": { images: [{ filename: "image.webp", subfolder: "", type: "output" }] } } } }));
     }
     if (req.url?.startsWith("/view?")) {
-      res.setHeader("Content-Type", "image/png");
-      return res.end(png);
+      res.setHeader("Content-Type", "image/webp");
+      return res.end(webp);
     }
     res.writeHead(404).end();
   });
@@ -39,13 +41,16 @@ test("local renderer submits a checkpoint workflow and retrieves its image", asy
   const folder = await mkdtemp(path.join(tmpdir(), "writer-local-render-test-"));
   try {
     const output = path.join(folder, "image");
-    await run(process.execPath, [renderer, "An editorial diagram", output], {
+    await run(process.execPath, [renderer, JSON.stringify({prompt:"An editorial diagram", output:{width:1280,height:720,mime:"image/webp"}}), output], {
       env: { ...process.env, WRITER_COMFY_URL: `http://127.0.0.1:${server.address().port}`, WRITER_COMFY_CHECKPOINT: "local.safetensors" },
       timeout: 10_000,
     });
     assert.equal(submitted.prompt["1"].inputs.ckpt_name, "local.safetensors");
     assert.equal(submitted.prompt["2"].inputs.text, "An editorial diagram");
-    assert.deepEqual(await readFile(output), png);
+    assert.deepEqual(submitted.prompt["4"].inputs, { width: 1024, height: 576, batch_size: 1 });
+    assert.equal(submitted.prompt["7"].class_type, "SaveAnimatedWEBP");
+    assert.equal(submitted.prompt["8"].inputs.width, 1280);
+    assert.deepEqual(await readFile(output), webp);
   } finally {
     server.close();
     await rm(folder, { recursive: true, force: true });
