@@ -3,7 +3,7 @@ import { isArticleCompleted } from '../../lib/workflowGuards';
 import WorkflowCheckLog, { useWorkflowCheckLog } from './WorkflowCheckLog';
 import { GenerationHistory } from "./Step3Outline";
 import { outlineReviewInstruction } from '../../lib/outlineQuality';
-import { draftWithoutImagePlaceholders, semanticReviewInputFingerprint, missingSemanticChecks, semanticReviewIncomplete, SEMANTIC_IDS, QUALITY_VERSION } from '../../lib/qualityPolicy';
+import { draftWithoutImagePlaceholders, semanticReviewInputFingerprint, missingSemanticChecks, semanticReviewIncomplete, SEMANTIC_IDS, QUALITY_VERSION, primaryKeyword, step4ChecklistDocs, checklistReviewInstruction } from '../../lib/qualityPolicy';
 import SeoBrief from './SeoBrief';
 import { outlineStructurePrompt, validateOutlineStructure } from '../../../shared/outlineStructures';
 import { useState, useMemo, useEffect, useRef } from 'react';
@@ -140,7 +140,7 @@ function applyTargetedDraftRepair(draft: string, repair: TargetedDraftRepair) {
   return next;
 }
 
-function semanticReviewInstruction(article: Article, draft: string) {
+function semanticReviewInstruction(article: Article, draft: string, checklist: string) {
   const keyword = getPrimaryKeyword(article);
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const exactMatches = keyword ? draft.match(new RegExp(escaped, 'gi'))?.length ?? 0 : 0;
@@ -153,6 +153,7 @@ function semanticReviewInstruction(article: Article, draft: string) {
     'Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.',
     'Fail only for material keyword stuffing that blocks publication.',
     `PRIMARY KEYWORD METRICS: ${JSON.stringify({ keyword, exactMatches, approximateDensityPercent: Number(density.toFixed(2)) })}`,
+    checklist,
   ].join('\n');
 }
 
@@ -333,30 +334,7 @@ function parseStructuredDraft(raw: string, article: Article) {
   ].join('\n\n'));
 }
 
-function getPrimaryKeyword(article: Article) {
-  const selectedIdea = article.coreIdeaSuggestions?.find(idea => idea.id === article.selectedCoreIdeaId)
-    ?? article.coreIdeaSuggestions?.[0];
-  return article.articleSpec?.primaryQuery?.trim() || selectedIdea?.primaryKeyword?.trim() || (article.keywords || '').split(',')[0]?.trim() || article.topic?.trim() || '';
-}
-
-function evaluateSeoChecklist(text: string, article: Article, targetWords: number) {
-  text = draftWithoutImagePlaceholders(text);
-  const wordCount = countWords(text);
-  const primaryKeyword = getPrimaryKeyword(article);
-  const normalizedKeyword = primaryKeyword.toLocaleLowerCase();
-  const normalizedDraft = text.toLocaleLowerCase();
-  const markdownTitle = text.split('\n').find(line => /^#\s+\S/.test(line.trim()))?.replace(/^#\s+/, '').trim() || '';
-  const conclusionCount = [...text.matchAll(/^##\s+conclusion\s*$/gim)].length;
-  const items = [
-    { key: 'titleKeyword', label: 'Tiêu đề H1 có primary keyword', pass: Boolean(normalizedKeyword && markdownTitle.toLocaleLowerCase().includes(normalizedKeyword)) },
-    { key: 'minimumLength', label: 'Độ dài >= 800 từ', pass: wordCount >= 800 },
-    { key: 'targetLength', label: `Trong khoảng mục tiêu ${Math.max(800, Math.ceil(targetWords * 0.85)).toLocaleString()}–${Math.floor(targetWords * 1.15).toLocaleString()} từ`, pass: wordCount >= Math.max(800, Math.ceil(targetWords * 0.85)) && wordCount <= Math.floor(targetWords * 1.15) },
-    { key: 'headings', label: 'Có headings H2/H3', pass: /^#{2,3}\s+\S/m.test(text) },
-    { key: 'conclusion', label: 'Có đúng một phần Conclusion', pass: conclusionCount === 1 },
-    { key: 'bodyKeyword', label: 'Primary keyword xuất hiện trong bài', pass: Boolean(normalizedKeyword && normalizedDraft.includes(normalizedKeyword)) },
-  ];
-  return { items, failed: items.filter(item => !item.pass), primaryKeyword, markdownTitle, wordCount };
-}
+const getPrimaryKeyword = primaryKeyword;
 
 export function parsePartialSemanticQuality(raw: string): QualityGateCheck[] {
   const parsed = parseAIJson(raw) as Record<string, unknown> & { checks?: Array<Record<string, unknown>> | Record<string, Record<string, unknown>> };
@@ -386,6 +364,9 @@ export function parsePartialSemanticQuality(raw: string): QualityGateCheck[] {
       'brand-pov': 'brand-pov',
       'brand-voice': 'brand-pov',
       'brand-perspective': 'brand-pov',
+      'checklist-compliance': 'checklist-compliance',
+      'seo-checklist': 'checklist-compliance',
+      'checklist': 'checklist-compliance',
     }
     return aliases[key] ?? (required.has(key) ? key as typeof semanticCheckIds[number] : null)
   }
@@ -609,21 +590,6 @@ function buildVerifiedOutlineContext(outline: NonNullable<Article['outline']>, c
   return { evidenceRegistry, sections };
 }
 
-function assessDraft(text: string, article: Article, targetWords: number): string[] {
-  if (!text.trim()) return [];
-  const normalized = text.toLocaleLowerCase();
-  const words = countWords(text);
-  const warnings: string[] = [];
-  if (words < targetWords * 0.9) warnings.push(`Draft có ${words}/${targetWords} từ — thấp hơn khoảng viết khuyến nghị nhưng vẫn có thể hoàn thành nếu các kiểm tra coverage và chất lượng đều đạt.`);
-  const primaryKeyword = (article.keywords || '').split(',')[0]?.trim();
-  if (primaryKeyword && !normalized.includes(primaryKeyword.toLocaleLowerCase())) warnings.push(`Chưa tìm thấy primary keyword “${primaryKeyword}”.`);
-  const missingHeadings = (article.outline ?? []).filter(section =>
-    section.heading.trim() && !normalized.includes(section.heading.trim().toLocaleLowerCase()),
-  );
-  if (missingHeadings.length) warnings.push(`Thiếu ${missingHeadings.length} heading từ outline Bước 2.`);
-  return warnings;
-}
-
 interface Props {
   embedded?: boolean;
   article: Article;
@@ -703,11 +669,10 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   useEffect(() => {
     if (draftIsStale && !generating) notifyWorkspace('Outline, tài liệu, prompting rules hoặc model đã thay đổi. Draft đã lưu vẫn được giữ nguyên cho đến khi viết lại.', 'warning');
   }, [draftIsStale, generating]);
-  const draftWarnings = useMemo(() => assessDraft(draft, article, targetWords), [article, draft, targetWords]);
+  const checklistInstruction = useMemo(() => checklistReviewInstruction(step4ChecklistDocs(files, config, article)), [article, config, files]);
   const internalLinkCandidates = useMemo(() => selectInternalLinkCandidates(article, config.websiteInventory ?? [], 10), [article, config.websiteInventory]);
   const internalLinkPlan = internalLinkBudget(targetWords);
   const exportBrief = useMemo(() => buildExportBrief(article), [article]);
-  const seoChecklist = useMemo(() => evaluateSeoChecklist(draft, article, targetWords), [article, draft, targetWords]);
   const deterministicChecks = useMemo(() => deterministicQualityChecks(
     article,
     draft,
@@ -782,9 +747,6 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   }));
 
   useEffect(() => { if (error) notifyWorkspace(error, 'error'); }, [error]);
-  useEffect(() => {
-    if (draftWarnings.length) notifyWorkspace(draftWarnings.join(' '), 'warning');
-  }, [draftWarnings]);
 
   const handleGenerate = async (manual = false) => {
     if (completed) return;
@@ -1064,11 +1026,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
       progress.inspect({
         input: { [tr('Số từ mục tiêu', 'Target words')]: targetWords, ArticleSpec: article.articleSpec },
         sources: { [tr('Kho dẫn chứng', 'Evidence registry')]: verifiedOutline.evidenceRegistry, [tr('Dẫn chứng khai báo theo mục', 'Declared evidence by section')]: evidenceUsage },
-        rules: { [tr('Tiêu chí đánh giá nội dung', 'Content review criteria')]: semanticReviewInstruction(article, assembledDraft), Workflow: compiledWorkflowRules.snapshot.rules },
+        rules: { [tr('Tiêu chí đánh giá nội dung', 'Content review criteria')]: semanticReviewInstruction(article, assembledDraft, checklistInstruction), Workflow: compiledWorkflowRules.snapshot.rules },
       });
-      const validation = evaluateSeoChecklist(assembledDraft, article, targetWords);
-      progress.inspect({ output: { [tr('Số từ đo được', 'Measured word count')]: validation.wordCount, [tr('Kết quả kiểm tra SEO', 'SEO checklist findings')]: validation.failed } });
-      if (validation.failed.length) throw new Error(`Draft đã được lưu để chỉnh sửa nhưng chưa đạt 100% SEO checklist (${validation.wordCount}/${targetWords} từ): ${validation.failed.map(item => item.label).join(', ')}.`);
       let deterministic = [
         ...deterministicQualityChecks(article, assembledDraft, targetWords, config.websiteInventory ?? [], files.filter(file => !file.knowledgeMetadata?.approvedForExternalUse).map(file => file.name)),
         ...evidenceMappingChecks(article, evidenceUsage, verifiedOutline),
@@ -1104,7 +1063,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
             `DRAFT: ${candidate}`,
-            semanticReviewInstruction(article, candidate),
+            semanticReviewInstruction(article, candidate, checklistInstruction),
             `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}. Use warning only for a genuine publish-quality concern; use fail for a blocking unsupported claim or contract violation.`,
           ].join('\n\n'),
         });
@@ -1118,7 +1077,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         }
       };
       progress.note(tr('Đang kiểm tra nội dung và dẫn chứng trong Universal QC.', 'Reviewing content and evidence in Universal QC.'));
-      const semanticKey = semanticReviewFingerprint(article, assembledDraft, evidenceUsage)
+      const semanticKey = semanticReviewFingerprint(article, assembledDraft, evidenceUsage, checklistInstruction)
       let semanticReview = article.semanticReviewFingerprint === semanticKey && completeSemanticChecks(article.semanticReviewChecks)
         ? { checks: article.semanticReviewChecks, schemaComplete: true, cached: true }
         : await runSemanticReview(assembledDraft, evidenceUsage);
@@ -1222,7 +1181,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map(section => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(usage)}`,
             `DRAFT: ${draftWithoutImagePlaceholders(value)}`,
-            semanticReviewInstruction(reviewArticle, value),
+            semanticReviewInstruction(reviewArticle, value, checklistInstruction),
             `Return a checks object with exactly these keys: ${needed.join(', ')}. Include a status and concise reason for each key, including when evidence is insufficient.`,
           ].join('\n\n'),
         });
@@ -1307,10 +1266,8 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         ...evidenceMappingChecks(reviewArticle, reviewArticle.draftEvidenceUsage ?? {}, verifiedOutline),
       ];
       let deterministic = check(candidateDraft);
-      let seo = evaluateSeoChecklist(candidateDraft, article, targetWords);
       const priorSemantic = (reviewArticle.qualityReport?.checks ?? []).filter(item => item.kind === 'semantic');
       let findings = [
-        ...seo.failed.map(item => ({ label: item.label, reason: item.label })),
         ...deterministic.filter(item => item.status === 'fail').map(item => ({ label: item.label, reason: item.reason, recommendedAction: item.recommendedAction })),
       ];
       processTrace.push({
@@ -1367,11 +1324,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           facts: { draftChanged: candidateDraft !== beforeRepair },
         });
         deterministic = check(candidateDraft);
-        seo = evaluateSeoChecklist(candidateDraft, article, targetWords);
-        findings = [
-          ...seo.failed.map(item => ({ label: item.label, reason: item.label })),
-          ...deterministic.filter(item => item.status === 'fail').map(item => ({ label: item.label, reason: item.reason })),
-        ];
+        findings = deterministic.filter(item => item.status === 'fail').map(item => ({ label: item.label, reason: item.reason, recommendedAction: item.recommendedAction }));
         if (findings.length) {
           const report = qualityReport({ ...reviewArticle, draft: candidateDraft }, deterministic, targetWords, files, config.workflowRules);
           await saveReview({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint });
@@ -1402,7 +1355,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
             `DRAFT: ${draftWithoutImagePlaceholders(value)}`,
-            semanticReviewInstruction(reviewArticle, value),
+            semanticReviewInstruction(reviewArticle, value, checklistInstruction),
             `Return checks as an object containing exactly these keys: ${semanticCheckIds.join(', ')}.`,
           ].join('\n\n'),
         });
@@ -1415,7 +1368,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         }
       };
 
-      const semanticKey = semanticReviewFingerprint(reviewArticle, candidateDraft, reviewArticle.draftEvidenceUsage ?? {})
+      const semanticKey = semanticReviewFingerprint(reviewArticle, candidateDraft, reviewArticle.draftEvidenceUsage ?? {}, checklistInstruction)
       let semanticReview = reviewArticle.semanticReviewFingerprint === semanticKey && completeSemanticChecks(reviewArticle.semanticReviewChecks)
         ? { checks: reviewArticle.semanticReviewChecks, schemaComplete: true, cached: true }
         : await reviewSemantic(candidateDraft, reviewArticle.semanticReviewFingerprint === semanticKey ? reviewArticle.semanticReviewChecks ?? [] : []);
@@ -1430,7 +1383,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         title: 'Semantic quality audit',
         detail: semanticFindings.length
           ? semanticFindings.map(item => `${item.label}: ${item.reason}${item.location ? ` (${item.location})` : ''}`).join('\n')
-          : 'All six semantic publishing checks passed.',
+          : 'All semantic publishing checks passed.',
         facts: { failedOrWarningChecks: semanticFindings.length, schemaComplete: semanticReview.schemaComplete },
       });
 
@@ -1490,6 +1443,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             `ARTICLE SPEC: ${JSON.stringify(reviewArticle.articleSpec)}`,
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(reviewArticle.draftEvidenceUsage ?? {})}`,
+            checklistInstruction,
             `TARGET WORDS: ${targetWords}`,
             `CURRENT DRAFT:\n${candidateDraft}`,
             'Return at most 8 minimal operations. Each operation replaces one occurrence.',
@@ -1515,9 +1469,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           throw new Error(`Không áp dụng được bản sửa cục bộ. Hãy xem AI log để kiểm tra vị trí và đề xuất của: ${actionableSemanticFindings.map(item => item.label).join(', ')}.`);
         }
         deterministic = check(candidateDraft);
-        seo = evaluateSeoChecklist(candidateDraft, article, targetWords);
         const remainingDeterministic = [
-          ...seo.failed.map(item => item.label),
           ...deterministic.filter(item => item.status === 'fail').map(item => item.label),
         ];
         if (remainingDeterministic.length) {
@@ -1554,7 +1506,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           : report.checks.filter(item => item.status !== 'pass').map(item => `${item.label}: ${item.reason}${item.recommendedAction ? ` Action: ${item.recommendedAction}` : ''}`).join('\n'),
         facts: { result: report.status, passedChecks: report.checks.filter(item => item.status === 'pass').length, totalChecks: report.checks.length },
       });
-      await saveReview({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace, semanticReviewFingerprint: semanticReviewFingerprint(reviewArticle, candidateDraft, reviewArticle.draftEvidenceUsage ?? {}), semanticReviewChecks: semantic });
+      await saveReview({ draft: candidateDraft, qualityReport: report, draftSourceFingerprint, step4ProcessTrace: processTrace, semanticReviewFingerprint: semanticReviewFingerprint(reviewArticle, candidateDraft, reviewArticle.draftEvidenceUsage ?? {}, checklistInstruction), semanticReviewChecks: semantic });
       if (editorRef.current) editorRef.current.innerText = displayDraft(candidateDraft);
       if (report.status === 'pass') notifyWorkspace('Re-check & Fix hoàn tất. Draft đã vượt qua toàn bộ checklist.', 'success');
       if (report.status !== 'pass') {

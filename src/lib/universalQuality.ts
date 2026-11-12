@@ -1,12 +1,11 @@
-import { outlineQualityChecks } from './outlineQuality';
-import type { Article, ImageSuggestion, QualityGateCheck, UniversalQualityReport, WebsiteContentRecord } from "../types";
-import { articleSpecFingerprint } from "./articleSpec";
-import { introductionCheck } from "./introductionPolicy";
-import { QUALITY_VERSION, qualityInputFingerprint, draftWithoutImagePlaceholders } from './qualityPolicy';
-import type { DocumentFile } from '../types';
-import { internalLinkChecks } from './internalLinkPolicy';
-import { missingMustCoverTopics } from './mustCoverPolicy';
-export { internalLinkBudget } from './internalLinkPolicy';
+import { outlineQualityChecks } from './outlineQuality.ts';
+import type { Article, DocumentFile, ImageSuggestion, QualityGateCheck, UniversalQualityReport, WebsiteContentRecord } from "../types/index.ts";
+import { articleSpecFingerprint } from "./articleSpec.ts";
+import { introductionCheck } from "./introductionPolicy.ts";
+import { QUALITY_VERSION, qualityInputFingerprint, draftWithoutImagePlaceholders, primaryKeyword } from './qualityPolicy.ts';
+import { internalLinkChecks } from './internalLinkPolicy.ts';
+import { missingMustCoverTopics } from './mustCoverPolicy.ts';
+export { internalLinkBudget } from './internalLinkPolicy.ts';
 
 export const UNIVERSAL_QUALITY_VERSION = QUALITY_VERSION;
 
@@ -32,7 +31,8 @@ function imageSuggestionChecks(draft: string, suggestions: ImageSuggestion[] = [
 }
 
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
-const normalized = (text: string) => text.toLocaleLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+// Unicode-aware so keywords with diacritics (e.g. Vietnamese) are not stripped.
+const normalized = (text: string) => text.toLocaleLowerCase().normalize("NFC").replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
 const links = (text: string) => [...text.matchAll(/https?:\/\/[^\s)\]}>"']+/gi)].map(match => match[0].replace(/[.,;:!?]+$/, ""));
 const canonicalUrl = (value: string) => {
   try {
@@ -87,13 +87,18 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
   const duplicateHeadings = consecutiveDuplicateHeadings(draft);
   const leaked = sourceNames.filter(name => /\.[a-z0-9]{1,8}$/i.test(name.trim()) && draft.toLowerCase().includes(name.trim().toLowerCase()));
   const missingCoverage = missingMustCoverTopics(article.outline ?? [], spec?.mustCover ?? [], draft);
+  const keyword = normalized(primaryKeyword(article));
+  const title = normalized(draft.split("\n").find(line => /^#\s+\S/.test(line.trim()))?.replace(/^\s*#\s+/, "") ?? "");
+  const conclusionCount = [...draft.matchAll(/^##\s+conclusion\s*$/gim)].length;
   const checks: QualityGateCheck[] = [
     introductionCheck(draft),
     ...outlineQualityChecks(article, draft),
     { id: "complete-structure", label: "Complete article structure", kind: "deterministic", status: /^#\s+/m.test(draft) && /^##\s+/m.test(draft) ? "pass" : "fail", reason: "Draft must contain one H1 and at least one H2.", autoFixAllowed: true },
     { id: "duplicate-headings", label: "No consecutive duplicate headings", kind: "deterministic", status: duplicateHeadings.length ? "fail" : "pass", reason: duplicateHeadings.length ? `Repeated heading immediately before its prose: ${duplicateHeadings.join(", ")}` : "Each section heading appears once before its prose.", autoFixAllowed: true },
     { id: "word-budget", label: "English word target range", kind: "deterministic", status: count >= acceptedMin && count <= acceptedMax ? "pass" : "fail", reason: `${count} English words; target ${wordTarget}, accepted range ${acceptedMin}–${acceptedMax}.`, autoFixAllowed: true },
-    { id: "primary-query", label: "Primary query coverage", kind: "deterministic", status: spec?.primaryQuery && body.includes(normalized(spec.primaryQuery)) ? "pass" : "fail", reason: "The primary query must appear naturally in the article.", evidence: spec?.primaryQuery, autoFixAllowed: true },
+    { id: "single-conclusion", label: "Exactly one Conclusion section", kind: "deterministic", status: conclusionCount === 1 ? "pass" : "fail", reason: `Found ${conclusionCount} "## Conclusion" headings; exactly one is required.`, autoFixAllowed: true },
+    { id: "primary-query", label: "Primary query coverage", kind: "deterministic", status: keyword && body.includes(keyword) ? "pass" : "fail", reason: "The primary query must appear naturally in the article.", evidence: primaryKeyword(article), autoFixAllowed: true },
+    { id: "title-keyword", label: "H1 contains the primary keyword", kind: "deterministic", status: keyword && title.includes(keyword) ? "pass" : "fail", reason: keyword ? `The H1 title must contain "${primaryKeyword(article)}".` : "No primary keyword is set in the Article Spec, core idea, keywords or topic.", evidence: primaryKeyword(article), autoFixAllowed: true },
     { id: "must-cover", label: "Must-cover topic coverage", kind: "deterministic", status: missingCoverage.length ? "fail" : "pass", reason: missingCoverage.length ? `Not covered in the approved outline or draft: ${missingCoverage.join(", ")}` : "Every required topic is covered in the approved outline or draft.", autoFixAllowed: true },
     { id: "placeholders", label: "No placeholders", kind: "deterministic", status: /\[(?:cần|needs?|todo|tbd)[^\]]*\]|lorem ipsum|about:blank/i.test(draft) ? "fail" : "pass", reason: "Draft must not contain placeholders or about:blank.", autoFixAllowed: true },
     { id: "source-confidentiality", label: "No internal source leakage", kind: "deterministic", status: leaked.length ? "fail" : "pass", reason: leaked.length ? `Leaked source names: ${leaked.join(", ")}` : "No infrastructure filenames detected.", autoFixAllowed: false },

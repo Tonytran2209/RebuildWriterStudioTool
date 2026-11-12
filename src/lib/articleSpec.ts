@@ -1,5 +1,5 @@
-import type { ArticleSpec, EvidenceRef, SearchIntent, SeoResearchResult } from "../types";
-import { canonicalSpecFingerprint } from './qualityPolicy';
+import type { ArticleSpec, EvidenceRef, SearchIntent, SeoResearchResult } from "../types/index.ts";
+import { canonicalSpecFingerprint } from './qualityPolicy.ts';
 
 export const ARTICLE_SPEC_VERSION = 1;
 

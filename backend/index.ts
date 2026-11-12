@@ -55,7 +55,8 @@ import { jsonrepair } from "jsonrepair"
 import { resolveArticleProjection } from "./articleProjection.ts"
 import { formatDraftExport } from "./draftFormatter.ts"
 import { internalLinkInstruction, internalLinkChecks, addMissingInternalLinks } from "../src/lib/internalLinkPolicy.ts"
-import { canonicalSpecFingerprint, qualityInputFingerprint, outlineContentChanged, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, EVIDENCE_ATTRIBUTION_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS } from "../src/lib/qualityPolicy.ts"
+import { canonicalSpecFingerprint, qualityInputFingerprint, outlineContentChanged, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, EVIDENCE_ATTRIBUTION_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS, primaryKeyword, step4ChecklistDocs, checklistReviewInstruction } from "../src/lib/qualityPolicy.ts"
+import { deterministicQualityChecks } from "../src/lib/universalQuality.ts"
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from "../src/lib/evidencePolicy.ts"
 import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionReviewInstruction, introductionCheck } from "../src/lib/introductionPolicy.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
@@ -1277,52 +1278,6 @@ async function runBatchJsonObjectImpl(
   }
 }
 
-function batchSeoFailures(text: string, article: any, targetWords: number) {
-  const words = text.trim().split(/\s+/).filter(Boolean).length
-  const acceptedMin = Math.max(800, Math.ceil(targetWords * 0.85))
-  const acceptedMax = Math.floor(targetWords * 1.15)
-  const idea =
-    article.coreIdeaSuggestions?.find(
-      (item: any) => item.id === article.selectedCoreIdeaId,
-    ) ?? article.coreIdeaSuggestions?.[0]
-  const primaryKeyword = String(
-    article.articleSpec?.primaryQuery ??
-      idea?.primaryKeyword ??
-      String(article.keywords ?? "").split(",")[0] ??
-      article.topic ??
-      "",
-  ).trim()
-  const normalizedKeyword = primaryKeyword.toLocaleLowerCase()
-  const title =
-    text
-      .split("\n")
-      .find((line) => /^#\s+\S/.test(line.trim()))
-      ?.replace(/^#\s+/, "")
-      .trim() ?? ""
-  const conclusionCount = [...text.matchAll(/^##\s+conclusion\s*$/gim)].length
-  const failures = [
-    !normalizedKeyword || !title.toLocaleLowerCase().includes(normalizedKeyword)
-      ? "H1 title must contain the exact primary keyword"
-      : "",
-    words < acceptedMin
-      ? `article is below the accepted ${acceptedMin}-word minimum around target ${targetWords}`
-      : "",
-    words > acceptedMax
-      ? `article exceeds the accepted ${acceptedMax}-word maximum around target ${targetWords}`
-      : "",
-    !/^#{2,3}\s+\S/m.test(text)
-      ? "article must contain Markdown H2/H3 headings"
-      : "",
-    conclusionCount !== 1
-      ? `article must contain exactly one Conclusion heading (found ${conclusionCount})`
-      : "",
-    !normalizedKeyword || !text.toLocaleLowerCase().includes(normalizedKeyword)
-      ? "body must contain the primary keyword"
-      : "",
-  ].filter(Boolean)
-  return { failures, primaryKeyword, words }
-}
-
 function batchOutlineHasEvidence(outline: any[]) {
   return outline.length > 0 && outline.every(
     (section: any) =>
@@ -1600,17 +1555,6 @@ function attachBatchOutlineCoverage(outline: any[], missingTopics: string[]) {
   return next
 }
 
-function batchMissingDraftCoverage(article: any, text: string) {
-  const draftText = String(text ?? "")
-    .toLocaleLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-  return (article.articleSpec?.mustCover ?? []).filter((topic: unknown) => {
-    const terms = batchCoverageTerms(topic)
-    return terms.length > 0 && terms.filter((term) => draftText.includes(term)).length < Math.ceil(terms.length * 0.5)
-  }).map(String)
-}
-
 function batchUniversalChecks(
   text: string,
   article: any,
@@ -1618,130 +1562,8 @@ function batchUniversalChecks(
   inventory: any[] = [],
   sourceNames: string[] = [],
 ) {
-  const basic = batchSeoFailures(text, article, targetWords)
-  const missing = batchMissingOutlineCoverage(article)
-  const missingDraftCoverage = batchMissingDraftCoverage(article, text)
-  const urls = [...text.matchAll(/https?:\/\/[^\s)\]}>"']+/gi)].map((match) =>
-    match[0].replace(/[.,;:!?]+$/, ""),
-  )
-  const canonicalUrl = (value: string) => {
-    try {
-      const url = new URL(value)
-      url.hash = ""
-      url.search = ""
-      url.hostname = url.hostname.toLocaleLowerCase().replace(/^www\./, "")
-      url.protocol = "https:"
-      if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, "")
-      return url.toString()
-    } catch {
-      return value.trim()
-    }
-  }
-  const approved = new Set(
-    inventory
-      .filter(
-        (item) =>
-          item.eligibleForInternalLink &&
-          ["active", "redirected"].includes(item.status),
-      )
-      .flatMap((item) =>
-        [item.url, item.canonicalUrl, item.redirectTarget].filter(Boolean),
-      )
-      .map((value) => canonicalUrl(String(value))),
-  )
-  const inventoryHosts = new Set(
-    [...approved].flatMap((value: any) => {
-      try {
-        return [new URL(String(value)).hostname.replace(/^www\./, "")]
-      } catch {
-        return []
-      }
-    }),
-  )
-  const internalUrls = urls.filter((value) => {
-    try {
-      return inventoryHosts.has(new URL(value).hostname.toLocaleLowerCase().replace(/^www\./, ""))
-    } catch {
-      return false
-    }
-  })
-  const approvedInternalUrls = internalUrls.filter((url) => approved.has(canonicalUrl(url)))
-  const unapprovedInternalUrls = internalUrls.filter((url) => !approved.has(canonicalUrl(url)))
-  const internalLinkRequired = Boolean(article.articleSpec?.internalLinkRequirements?.length)
-  const leaked = sourceNames.filter(
-    (name) =>
-      /\.[a-z0-9]{1,8}$/i.test(String(name).trim()) &&
-      text.toLocaleLowerCase().includes(String(name).trim().toLocaleLowerCase()),
-  )
-  const checks = [
-    {
-      id: "seo-contract",
-      label: "SEO and structure contract",
-      kind: "deterministic",
-      status: basic.failures.length ? "fail" : "pass",
-      reason:
-        basic.failures.join("; ") ||
-        "Structure, primary query and word budget pass.",
-      autoFixAllowed: true,
-    },
-    {
-      id: "must-cover",
-      label: "Must-cover topic coverage",
-      kind: "deterministic",
-      status: missing.length ? "fail" : "pass",
-      reason: missing.length
-        ? `Not mapped in the approved outline: ${missing.join(", ")}`
-        : "Every required topic is covered by the approved outline or draft.",
-      autoFixAllowed: true,
-    },
-    {
-      id: "must-cover-draft",
-      label: "Must-cover topics in draft",
-      kind: "deterministic",
-      status: missingDraftCoverage.length ? "fail" : "pass",
-      reason: missingDraftCoverage.length
-        ? `Draft does not cover required topics: ${missingDraftCoverage.join(", ")}`
-        : "Every required topic is covered in the draft.",
-      autoFixAllowed: true,
-    },
-    {
-      id: "placeholders",
-      label: "No placeholders",
-      kind: "deterministic",
-      status: /\[(?:needs?|todo|tbd)[^\]]*\]|lorem ipsum|about:blank/i.test(
-        text,
-      )
-        ? "fail"
-        : "pass",
-      reason: "Draft must not contain placeholders.",
-      autoFixAllowed: true,
-    },
-    {
-      id: "source-confidentiality",
-      label: "No internal source leakage",
-      kind: "deterministic",
-      status: leaked.length ? "fail" : "pass",
-      reason: leaked.length
-        ? `Leaked source names: ${leaked.join(", ")}`
-        : "No infrastructure filenames detected.",
-      autoFixAllowed: false,
-    },
-    {
-      id: "link-correctness",
-      label: "Approved internal links",
-      kind: "deterministic",
-      status: !unapprovedInternalUrls.length && (!internalLinkRequired || approvedInternalUrls.length > 0) ? "pass" : "fail",
-      reason: unapprovedInternalUrls.length
-        ? `Not approved in Website Inventory: ${unapprovedInternalUrls.join(", ")}`
-        : internalLinkRequired && !approvedInternalUrls.length
-          ? "Article Spec requires an internal link, but the draft does not contain an approved URL."
-          : approvedInternalUrls.length
-            ? "Every internal URL matches an approved Website Inventory entry."
-            : "No internal link is required by the Article Spec.",
-      autoFixAllowed: true,
-    },
-  ]
-  return [...checks, ...outlineQualityChecks(article, text), ...internalLinkChecks(text, approved, targetWords)]
+  // Same Universal QC as the Draft screen, so a batch "pass" stays a pass when opened.
+  return deterministicQualityChecks(article, text, targetWords, inventory, sourceNames)
 }
 
 function parseBatchSemanticChecks(raw: string) {
@@ -1807,14 +1629,8 @@ function reconcileBatchSemanticChecks(
   )
 }
 
-function batchSemanticReviewInstruction(article: any, draft: string) {
-  const keyword = String(
-    article.articleSpec?.primaryQuery ??
-      article.coreIdeaSuggestions?.[0]?.primaryKeyword ??
-      String(article.keywords ?? "").split(",")[0] ??
-      article.topic ??
-      "",
-  ).trim()
+function batchSemanticReviewInstruction(article: any, draft: string, checklist: string) {
+  const keyword = primaryKeyword(article)
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
   const exactMatches = keyword
     ? draft.match(new RegExp(escaped, "gi"))?.length ?? 0
@@ -1828,6 +1644,7 @@ function batchSemanticReviewInstruction(article: any, draft: string) {
     "Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.",
     "Fail only for material keyword stuffing that blocks publication.",
     `PRIMARY KEYWORD METRICS: ${JSON.stringify({ keyword, exactMatches, approximateDensityPercent: Number(((exactMatches / Math.max(wordCount, 1)) * 100).toFixed(2)) })}`,
+    checklist,
   ].join("\n")
 }
 
@@ -1907,7 +1724,6 @@ function batchFieldBudgetChecks(
       ? count(lines.slice(conclusionIndex + 1).join(" "))
       : 0
   return [
-    introductionCheck(draft),
     {
       id: "conclusion-word-budget",
       label: "Conclusion word budget",
@@ -2066,8 +1882,8 @@ const semanticQualityJsonSchema: Record<string, unknown> = {
     checks: {
       type: "object",
       additionalProperties: false,
-      required: ["intent-satisfied", "reader-outcome", "intro-quality", "keyword-naturalness", "evidence-support", "brand-pov"],
-      properties: Object.fromEntries(["intent-satisfied", "reader-outcome", "intro-quality", "keyword-naturalness", "evidence-support", "brand-pov"].map((id) => [id, {
+      required: [...SEMANTIC_IDS],
+      properties: Object.fromEntries(SEMANTIC_IDS.map((id) => [id, {
         type: "object",
         additionalProperties: false,
         required: ["label", "status", "reason", "evidence", "location", "recommendedAction", "autoFixAllowed"],
@@ -2889,6 +2705,7 @@ async function runBatchArticle(
       draftResponses.length = 0
       beginStep("quality")
       const qualityFiles = (await kvGet<any[]>("writer:files")) ?? []
+      const checklistInstruction = checklistReviewInstruction(step4ChecklistDocs(qualityFiles, runtimeConfig, article))
       const internalNames = qualityFiles
         .filter(
           (item) =>
@@ -2961,9 +2778,7 @@ async function runBatchArticle(
           (item) => item.status !== "pass",
         )
         const needsStructuredRecovery = deterministicFailures.some(
-          (item) =>
-            item.id === "seo-contract" &&
-            /headings|conclusion heading/i.test(String(item.reason ?? "")),
+          (item) => ["complete-structure", "single-conclusion"].includes(item.id),
         )
         const repair = await runBatchModel(
           article,
@@ -3057,11 +2872,11 @@ async function runBatchArticle(
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
             introductionReviewInstruction(candidate),
             `DRAFT: ${candidate}`,
-            batchSemanticReviewInstruction(article, candidate),
+            batchSemanticReviewInstruction(article, candidate, checklistInstruction),
             incompleteRecovery
               ? "The prior report was structurally incomplete. Return a fresh complete report."
               : "",
-            'Return checks as an object with exactly these keys: intent-satisfied, reader-outcome, intro-quality, keyword-naturalness, evidence-support, brand-pov. Each value has label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. Evidence support passes when concrete claims are supported by the registry and declared section mapping; do not penalize general explanatory prose for lacking a citation. Never evaluate URLs, internal links, link targets, or Website Inventory in a semantic check; those are validated separately by deterministic code. Use warning only for a genuine non-blocking publish-quality concern and fail only for a blocking unsupported claim or contract violation.',
+            `Return checks as an object with exactly these keys: ${SEMANTIC_IDS.join(", ")}. Each value has label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. Evidence support passes when concrete claims are supported by the registry and declared section mapping; do not penalize general explanatory prose for lacking a citation. Never evaluate URLs, internal links, link targets, or Website Inventory in a semantic check; those are validated separately by deterministic code. Use warning only for a genuine non-blocking publish-quality concern and fail only for a blocking unsupported claim or contract violation.`,
           ].filter(Boolean).join("\n\n"),
           true,
           1600,
@@ -3077,7 +2892,7 @@ async function runBatchArticle(
         article = await saveStepCheckpoint(article, {
           draft: assembledDraft,
           draftEvidenceUsage: assembled.evidenceUsage,
-          semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage),
+          semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage, checklistInstruction),
           semanticReviewChecks: [],
           qualityReport: { version: QUALITY_VERSION, status: "warning", checkedAt: new Date().toISOString(), articleSpecFingerprint: canonicalSpecFingerprint(article.articleSpec), inputFingerprint: qualityInputFingerprint(article, assembledDraft, effectiveDraftWords, qualityFiles, runtimeConfig.workflowRules), checks: [...deterministic, processCheck] },
           aiUsageByStep: { ...article.aiUsageByStep, 4: [...(article.aiUsageByStep?.[4] ?? []), ...draftResponses.map(item => batchUsage(4, item.provider ?? "unknown", item))].slice(-50) },
@@ -3136,6 +2951,7 @@ async function runBatchArticle(
             `ARTICLE SPEC: ${JSON.stringify(article.articleSpec)}`,
             `APPROVED OUTLINE AND EVIDENCE: ${JSON.stringify(verifiedOutline)}`,
             `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
+            checklistInstruction,
             'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Declare only evidence IDs approved for each section.',
           ].join("\n\n"),
           true,
@@ -3197,7 +3013,7 @@ async function runBatchArticle(
           draft: assembledDraft,
           draftEvidenceUsage: assembled.evidenceUsage,
           qualityReport: report,
-          semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage),
+          semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage, checklistInstruction),
           semanticReviewChecks: semantic,
           aiUsageByStep: {
             ...article.aiUsageByStep,
@@ -3217,7 +3033,7 @@ async function runBatchArticle(
         draft: assembledDraft,
         draftEvidenceUsage: assembled.evidenceUsage,
         qualityReport: report,
-        semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage),
+        semanticReviewFingerprint: semanticReviewInputFingerprint(article, assembledDraft, assembled.evidenceUsage, checklistInstruction),
         semanticReviewChecks: semantic,
         draftScannedAt: new Date().toISOString(),
         currentStep: 4,

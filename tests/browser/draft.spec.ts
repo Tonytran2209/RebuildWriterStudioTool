@@ -71,12 +71,12 @@ async function openQcFixture(page:import('@playwright/test').Page,status:string)
  await page.goto(`/?qc=${status}`);
  await page.getByRole('button',{name:'QC',exact:true}).click();
 }
-test('qc-schema accepts six checks and preserves saved draft on incomplete schema',async({page})=>{
+test('qc-schema accepts all semantic checks and preserves saved draft on incomplete schema',async({page})=>{
  await openQcFixture(page,'incomplete');
  const before=await page.getByTestId('stored-source').textContent();
  const result=await page.evaluate(()=>{
   const h=(window as any).qcHarness;
-  const ids=['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov'];
+  const ids=['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov','checklist-compliance'];
   const checks=Object.fromEntries(ids.map(id=>[id,{status:'pass',reason:'Reviewed',autoFixAllowed:false}]));
   const complete=h.parseSemanticQuality(JSON.stringify({checks}));
   delete checks['brand-pov'];
@@ -92,9 +92,9 @@ test('qc-cache rejects incomplete, duplicate and schema-warning cache entries',a
  await openQcFixture(page,'incomplete');
  const result=await page.evaluate(()=>{
   const h=(window as any).qcHarness;
-  const ids=['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov'];
+  const ids=['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov','checklist-compliance'];
   const checks=ids.map(id=>({id,kind:'semantic',status:'pass'}));
-  return [h.completeSemanticChecks(checks),h.completeSemanticChecks(checks.slice(1)),h.completeSemanticChecks(Array(6).fill(checks[0])),h.completeSemanticChecks(h.incompleteSemanticReviewChecks('missing'))];
+  return [h.completeSemanticChecks(checks),h.completeSemanticChecks(checks.slice(1)),h.completeSemanticChecks(Array(7).fill(checks[0])),h.completeSemanticChecks(h.incompleteSemanticReviewChecks('missing'))];
  });
  expect(result).toEqual([true,false,false,false]);
 });
@@ -122,8 +122,8 @@ async function mockQcFlow(page:import('@playwright/test').Page,mode:string,incom
   const requested=staggeredRecovery
     ? body.prompt.includes('MISSING CHECKS: evidence-support, brand-pov') ? ['evidence-support']
       : body.prompt.includes('MISSING CHECKS: brand-pov') ? ['brand-pov']
-        : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness']
-    : body.systemPrompt.includes('requested missing checks') ? (mode === 'generation' && incomplete && calls.length === 3 ? [] : ['brand-pov']) : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support',...(incomplete?[]:['brand-pov'])];
+        : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','checklist-compliance']
+    : body.systemPrompt.includes('requested missing checks') ? (mode === 'generation' && incomplete && calls.length === 3 ? [] : ['brand-pov']) : ['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','checklist-compliance',...(incomplete?[]:['brand-pov'])];
   const content=reviewer ? JSON.stringify({checks:Object.fromEntries(requested.map(id=>[id,{status:evidenceWarning && id==='evidence-support'?'warning':'pass',reason:'Reviewed fixture',autoFixAllowed:evidenceWarning && id==='evidence-support'}]))}) : await page.evaluate(()=>JSON.stringify((window as any).qcFlow.payload));
   if(reviewer){const checkpoint=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));expect(checkpoint.draft).toContain('Fixture practical guide');}
   await route.fulfill({json:{content,model:'fixture',usage:{inputTokens:0,outputTokens:0}}});
@@ -218,7 +218,7 @@ for(const incomplete of [false,true])test(`qc-schema generation saves checkpoint
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
  await expect.poll(()=>calls.length).toBe(incomplete?3:2);
  expect(calls[1].systemPrompt).toContain('Never evaluate URLs, internal links, link targets, or Website Inventory in a semantic check');
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(7);
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-updates')||'[]').filter((p:any)=>p.semanticReviewChecks).length)).toBe(1);
  const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));
  expect(saved.draft).toContain('Fixture practical guide');
@@ -232,7 +232,7 @@ for(const incomplete of [false,true])test(`qc-cache recheck calls reviewer for i
  const before=await page.getByTestId('stored-source').textContent();
  await page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/}).click();
  await expect.poll(()=>calls.length).toBe(incomplete?2:1);
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(7);
  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-updates')||'[]').filter((p:any)=>p.semanticReviewChecks).length)).toBe(1);
  expect(calls.every(c=>/publishing quality reviewer/.test(c.systemPrompt))).toBe(true);
  expect(await page.getByTestId('stored-source').textContent()).toBe(before);
@@ -243,14 +243,14 @@ test('qc-recheck refreshes changed evidence context then requests only missing s
  const calls=await mockQcFlow(page,'generation',true);
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
  await expect.poll(()=>calls.length).toBe(3);
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(7);
  await page.reload();
  await page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/}).click();
  await expect.poll(()=>calls.length).toBe(5);
  expect(calls[3].systemPrompt).toContain('Re-check the repaired draft');
  expect(calls[4].systemPrompt).toContain('requested missing checks');
  expect(calls[4].prompt).toContain('MISSING CHECKS: brand-pov');
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.map((c:any)=>c.id))).toEqual(['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','brand-pov']);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.map((c:any)=>c.id))).toEqual(['intent-satisfied','reader-outcome','intro-quality','keyword-naturalness','evidence-support','checklist-compliance','brand-pov']);
 });
 
 for(const status of ['pass','warning','fail'])test(`qc-status-display qc-evidence-details preserves reviewer ${status}`,async({page})=>{
@@ -286,7 +286,7 @@ test('qc-display-preservation generated report survives reload and viewing prese
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async(text:string)=>{(window as any).__qcCopy=text;}},configurable:true}));
  const calls=await mockQcFlow(page,'generation',false,true);
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(6);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').semanticReviewChecks?.length)).toBe(7);
  const snapshot=()=>page.evaluate(()=>({article:JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'),updates:sessionStorage.getItem('qc-updates')}));
  const before=await snapshot();
  const capture=async()=>{
@@ -338,7 +338,7 @@ test('qc-display-preservation generated report survives reload and viewing prese
 test('qc-batch shared review fingerprint survives legacy spec metadata and missing browser generation fingerprint',async({page})=>{
  const calls=await mockQcFlow(page,'generation');
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-10-/);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-11-/);
  await page.evaluate(()=>{
    const saved=JSON.parse(sessionStorage.getItem('qc-fixture')!);
    saved.articleSpecFingerprint='legacy-backend-sha256';saved.activityKind='batch';
@@ -354,7 +354,7 @@ test('qc-batch shared review fingerprint survives legacy spec metadata and missi
 test('qc-advisory warning permits completion but evidence warnings remain blocking',async({page})=>{
  await mockQcFlow(page,'generation');
  await page.getByRole('button',{name:/Tạo bài viết|Generate article/}).click();
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-10-/);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-11-/);
  const complete=page.getByRole('button',{name:/Đánh dấu hoàn thành|Mark complete/});
  await page.evaluate(()=>{
    const saved=JSON.parse(sessionStorage.getItem('qc-fixture')!);
@@ -398,7 +398,7 @@ test('qc-evidence recheck repairs repeated unsupported attribution even without 
   const warning = body.prompt.includes(attribution);
   const content = body.systemPrompt.includes('surgical draft editor')
    ? { edits: Array.from({ length: 2 }, () => ({ find: attribution, replace: supported })), appendBeforeConclusion: '' }
-   : { checks: Object.fromEntries(['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov'].map(id => [id, {
+   : { checks: Object.fromEntries(['intent-satisfied', 'reader-outcome', 'intro-quality', 'keyword-naturalness', 'evidence-support', 'brand-pov', 'checklist-compliance'].map(id => [id, {
       status: warning && id === 'evidence-support' ? 'warning' : 'pass',
       reason: 'Compared the draft with the fixture excerpt.',
       evidence: warning && id === 'evidence-support' ? attribution : '',
@@ -426,7 +426,7 @@ test('qc-evidence recheck repairs repeated unsupported attribution even without 
 test('qc-evidence recheck retrieves current section KB without manufacturing usage',async({page})=>{
  const calls=await mockQcFlow(page,'recheck',false,false,true);
  await page.getByRole('button',{name:/Kiểm tra lại và sửa|Re-check and fix/}).click();
- await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-10-/);
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}').qualityReport?.inputFingerprint)).toMatch(/^qc-11-/);
  const saved=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('qc-fixture')||'{}'));
  expect(saved.outline.every((s:any)=>s.evidence.some((e:any)=>e.role==='kb' && e.quote.includes('script review')))).toBe(true);
  expect(Object.values(saved.draftEvidenceUsage).every((refs:any)=>refs.length===0)).toBe(true);
@@ -576,7 +576,7 @@ test('re-check retains partial recovery and requests only the remaining semantic
   await expect.poll(() => calls.length).toBe(3);
   expect(calls[1].prompt).toContain('MISSING CHECKS: evidence-support, brand-pov');
   expect(calls[2].prompt).toContain('MISSING CHECKS: brand-pov');
-  await expect.poll(() => page.evaluate(() => JSON.parse(sessionStorage.getItem('qc-fixture') || '{}').semanticReviewChecks?.length)).toBe(6);
+  await expect.poll(() => page.evaluate(() => JSON.parse(sessionStorage.getItem('qc-fixture') || '{}').semanticReviewChecks?.length)).toBe(7);
   await expect(page.getByRole('button', { name: /Đánh dấu hoàn thành|Mark complete/ })).toBeEnabled();
   expect(await page.getByTestId('stored-source').textContent()).toBe(draft);
 });
