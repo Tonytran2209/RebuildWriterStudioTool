@@ -336,6 +336,31 @@ function parseStructuredDraft(raw: string, article: Article) {
 
 const getPrimaryKeyword = primaryKeyword;
 
+const QC_PROCESS_IDS = ['quality-review-stale', 'semantic-review-schema'];
+const QC_GROUPS = [
+  { key: 'structure', vi: 'Cấu trúc & độ dài', en: 'Structure & length' },
+  { key: 'seo', vi: 'SEO & liên kết', en: 'SEO & links' },
+  { key: 'content', vi: 'Nội dung & dẫn chứng', en: 'Content & evidence' },
+  { key: 'images', vi: 'Hình ảnh', en: 'Images' },
+  { key: 'checklist', vi: 'SEO checklist', en: 'SEO checklist' },
+] as const;
+function qcGroupOf(id: string): typeof QC_GROUPS[number]['key'] {
+  if (id === 'checklist-compliance') return 'checklist';
+  if (id.startsWith('image-')) return 'images';
+  if (['introduction-word-budget', 'outline-structure', 'outline-fidelity', 'complete-structure', 'duplicate-headings', 'word-budget', 'single-conclusion', 'placeholders', 'conclusion-word-budget'].includes(id)) return 'structure';
+  if (['primary-query', 'title-keyword', 'keyword-naturalness', 'must-cover', 'intent-satisfied', 'link-correctness'].includes(id) || id.startsWith('internal-link')) return 'seo';
+  return 'content';
+}
+/** Reviewer reports checklist results as lines "PASS|WARN|FAIL — item". */
+export function parseChecklistLines(reason = '') {
+  return reason.split(/\r?\n/).flatMap(line => {
+    const match = /^\s*[-*]?\s*(PASS|WARN(?:ING)?|FAIL)\s*[—–:-]+\s*(.+)$/i.exec(line);
+    if (!match) return [];
+    const word = match[1].toUpperCase();
+    return [{ status: word === 'PASS' ? 'pass' as const : word === 'FAIL' ? 'fail' as const : 'warning' as const, text: match[2].trim() }];
+  });
+}
+
 export function parsePartialSemanticQuality(raw: string): QualityGateCheck[] {
   const parsed = parseAIJson(raw) as Record<string, unknown> & { checks?: Array<Record<string, unknown>> | Record<string, Record<string, unknown>> };
   const required = new Set<string>(semanticCheckIds);
@@ -747,6 +772,42 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   }));
 
   useEffect(() => { if (error) notifyWorkspace(error, 'error'); }, [error]);
+
+  const renderQcRow = (item: QualityGateCheck) => {
+    const checklistLines = item.id === 'checklist-compliance' ? parseChecklistLines(item.reason) : [];
+    const isChecklist = item.id === 'checklist-compliance';
+    const hasDetails = (item.status !== 'pass' || isChecklist) && Boolean(item.reason?.trim() || item.recommendedAction?.trim());
+    const heading = <>
+      {item.status === 'pass'
+        ? <Check data-qc-icon="pass" className="app-icon shrink-0 text-emerald-700" aria-hidden="true" />
+        : item.status === 'warning'
+          ? <TriangleAlert data-qc-icon="warning" className="app-icon shrink-0 text-amber-700" aria-hidden="true" />
+          : <CircleX data-qc-icon="fail" className="app-icon shrink-0 text-rose-700" aria-hidden="true" />}
+      <span className="min-w-0 flex-1 font-medium">
+        {item.id === 'quality-review-stale' ? tr('Đánh giá cần cập nhật', 'Review needs updating') : item.id === 'semantic-review-schema' ? tr('Đánh giá semantic chưa hoàn tất', 'Semantic review incomplete') : item.id === 'checklist-compliance' ? tr('Tuân thủ SEO checklist', 'SEO checklist compliance') : item.label}
+        {/* Pass is shown by the icon; keep the word for screen readers only. */}
+        <span className={item.status === 'pass' ? 'sr-only' : 'ml-1.5 font-normal'}>{item.status === 'pass' ? tr('Đạt', 'Pass') : item.status === 'warning' ? (QC_PROCESS_IDS.includes(item.id) ? tr('Chờ kiểm tra', 'Review pending') : tr('Cảnh báo', 'Warning')) : tr('Thất bại', 'Fail')}</span>
+      </span>
+    </>;
+    return <div key={item.id} data-qc-check={item.id} data-qc-status={item.status} className="min-w-0 break-words text-[11px] leading-snug [overflow-wrap:anywhere]">
+      {hasDetails ? <details className="group min-w-0" open={isChecklist || undefined}>
+        <summary className="flex min-w-0 cursor-pointer list-none items-start gap-2 rounded px-1 py-1 hover:bg-[var(--ui-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 [&::-webkit-details-marker]:hidden">
+          {heading}
+          <ChevronDown className="app-icon shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+        </summary>
+        <div className="ml-7 mr-1 mt-1 min-w-0 max-w-[132ch] space-y-2 border-l border-[var(--ui-border-strong)] py-1 pl-3 font-normal">
+          {checklistLines.length > 0
+            ? <ul className="space-y-1">{checklistLines.map((line, index) => <li key={index} className="flex items-start gap-1.5">
+                {line.status === 'pass' ? <Check className="mt-px h-3 w-3 shrink-0 text-emerald-700" aria-label={tr('Đạt', 'Pass')} /> : line.status === 'warning' ? <TriangleAlert className="mt-px h-3 w-3 shrink-0 text-amber-700" aria-label={tr('Cảnh báo', 'Warning')} /> : <CircleX className="mt-px h-3 w-3 shrink-0 text-rose-700" aria-label={tr('Thất bại', 'Fail')} />}
+                <span>{line.text}</span>
+              </li>)}</ul>
+            : item.reason && <p className="whitespace-pre-wrap">{item.reason}</p>}
+          {item.status !== 'pass' && item.evidence && checklistLines.length > 0 && <p className="whitespace-pre-wrap text-[var(--ui-secondary)]">{item.evidence}{item.location ? ` — ${item.location}` : ''}</p>}
+          {item.recommendedAction && <p className="whitespace-pre-wrap">{tr('Đề xuất', 'Recommended action')}: {item.recommendedAction}</p>}
+        </div>
+      </details> : <div className="flex min-w-0 items-start gap-2 px-1 py-1">{heading}</div>}
+    </div>;
+  };
 
   const handleGenerate = async (manual = false) => {
     if (completed) return;
@@ -1813,32 +1874,39 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 <p className="mt-1 text-[var(--ui-secondary)]">{tr('Đây là trạng thái kiểm tra, không tự kết luận bài viết sai. Bản nháp đã được giữ nguyên.', 'This is a review-process status, not a content failure. The saved draft is preserved.')}</p>
                 <button type="button" disabled={completed || generating || repairing || !draft || article.outlineNeedsRegeneration} onClick={() => void handleRecheckAndFix()} className="mt-2 min-h-11 rounded-lg border border-[var(--ui-control-border)] px-3">{repairing ? tr('Đang kiểm tra…', 'Reviewing…') : tr('Kiểm tra lại và hoàn tất đánh giá', 'Re-check and complete review')}</button>
               </div>}
-              <div className="space-y-1.5">
-                {displayedQualityChecks.map(item => {
-                  const hasDetails = item.status !== 'pass' && Boolean(item.reason?.trim() || item.recommendedAction?.trim());
-                  const heading = <>
-                    {item.status === 'pass'
-                      ? <Check data-qc-icon="pass" className="app-icon shrink-0 text-emerald-700" aria-hidden="true" />
-                      : item.status === 'warning'
-                        ? <TriangleAlert data-qc-icon="warning" className="app-icon shrink-0 text-amber-700" aria-hidden="true" />
-                        : <CircleX data-qc-icon="fail" className="app-icon shrink-0 text-rose-700" aria-hidden="true" />}
-                    <span className="min-w-0 flex-1 font-semibold">
-                      {item.id === 'quality-review-stale' ? tr('Đánh giá cần cập nhật', 'Review needs updating') : item.id === 'semantic-review-schema' ? tr('Đánh giá semantic chưa hoàn tất', 'Semantic review incomplete') : item.label}
-                      <span className="ml-1 font-medium">{item.status === 'pass' ? tr('Đạt', 'Pass') : item.status === 'warning' ? (['quality-review-stale', 'semantic-review-schema'].includes(item.id) ? tr('Chờ kiểm tra', 'Review pending') : tr('Cảnh báo nội dung', 'Content warning')) : tr('Thất bại', 'Fail')}</span>
-                    </span>
-                  </>;
-                  return <div key={item.id} data-qc-check={item.id} data-qc-status={item.status} className="min-w-0 break-words text-[10px] leading-snug [overflow-wrap:anywhere]">
-                    {hasDetails ? <details className="group min-w-0">
-                      <summary className="flex min-w-0 cursor-pointer list-none items-start gap-2 rounded px-1 py-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 [&::-webkit-details-marker]:hidden">
-                        {heading}
-                        <ChevronDown className="app-icon shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
-                      </summary>
-                      <div className="ml-7 mr-1 mt-2 min-w-0 max-w-[132ch] space-y-2 border-l border-neutral-700 py-1 pl-3 font-normal">
-                        {item.reason && <p className="whitespace-pre-wrap">{item.reason}</p>}
-                        {item.recommendedAction && <p className="whitespace-pre-wrap">{tr('Đề xuất', 'Recommended action')}: {item.recommendedAction}</p>}
-                      </div>
-                    </details> : <div className="flex min-w-0 items-start gap-2 px-1 py-1">{heading}</div>}
-                  </div>;
+              <div className="qc-groups space-y-1.5">
+                {displayedQualityChecks.filter(item => QC_PROCESS_IDS.includes(item.id)).map(renderQcRow)}
+                {QC_GROUPS.map(group => {
+                  const items = displayedQualityChecks.filter(item => !QC_PROCESS_IDS.includes(item.id) && qcGroupOf(item.id) === group.key);
+                  if (!items.length) return null;
+                  const fails = items.filter(item => item.status === 'fail').length;
+                  const warnings = items.filter(item => item.status === 'warning').length;
+                  const passed = items.length - fails - warnings;
+                  const issues = fails + warnings > 0;
+                  return <details key={`${group.key}-${issues}`} open={issues || group.key === 'checklist'} data-qc-group={group.key} className="qc-group group/qc rounded-lg border border-[var(--ui-border)]">
+                    <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 px-2.5 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 [&::-webkit-details-marker]:hidden">
+                      <ChevronDown className="app-icon shrink-0 -rotate-90 text-[var(--ui-muted)] transition-transform group-open/qc:rotate-0" aria-hidden="true" />
+                      <span className="min-w-0 flex-1 py-1.5 font-medium leading-snug">{tr(group.vi, group.en)}</span>
+                      {fails > 0 && <span className="inline-flex items-center gap-1 text-[11px] text-rose-700"><CircleX className="h-3 w-3" aria-hidden="true" />{fails}</span>}
+                      {warnings > 0 && <span className="inline-flex items-center gap-1 text-[11px] text-amber-700"><TriangleAlert className="h-3 w-3" aria-hidden="true" />{warnings}</span>}
+                      {!issues && <Check className="h-3.5 w-3.5 text-emerald-700" aria-hidden="true" />}
+                      <span className="font-mono text-[11px] text-[var(--ui-muted)]">{passed}/{items.length}</span>
+                    </summary>
+                    <div className="space-y-0.5 border-t border-[var(--ui-border)] px-1.5 py-1.5">
+                      {items.filter(item => item.status !== 'pass').map(renderQcRow)}
+                      {/* In a group with issues, passing checks fold into one line so findings stay in view. */}
+                      {issues && passed > 0
+                        ? <details className="group/pass">
+                            <summary className="flex min-h-7 cursor-pointer list-none items-center gap-2 rounded px-1 text-[11px] text-[var(--ui-muted)] hover:bg-[var(--ui-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-neutral-400 [&::-webkit-details-marker]:hidden">
+                              <Check className="app-icon shrink-0 text-emerald-700" aria-hidden="true" />
+                              <span className="flex-1">{tr(`${passed} mục đạt`, `${passed} passed`)}</span>
+                              <ChevronDown className="app-icon shrink-0 transition-transform group-open/pass:rotate-180" aria-hidden="true" />
+                            </summary>
+                            {items.filter(item => item.status === 'pass').map(renderQcRow)}
+                          </details>
+                        : items.filter(item => item.status === 'pass').map(renderQcRow)}
+                    </div>
+                  </details>;
                 })}
               </div>
             </section>}

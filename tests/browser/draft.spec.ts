@@ -257,6 +257,8 @@ for(const status of ['pass','warning','fail'])test(`qc-status-display qc-evidenc
  await openQcFixture(page,status);
  const row=page.locator('[data-qc-check="evidence-support"]');
  await expect(row).toHaveAttribute('data-qc-status',status);
+ // All-pass groups start collapsed; open the content group to inspect the row.
+ await page.locator('[data-qc-group="content"]').evaluate(e=>e.setAttribute('open',''));
  const panel=page.locator('.universal-qc-panel');
  await expect(panel.locator('h3')).toHaveCSS('color','rgb(235, 235, 235)');
  await expect(panel.locator('.seo-score-tag')).toHaveCSS('color','rgb(235, 235, 235)');
