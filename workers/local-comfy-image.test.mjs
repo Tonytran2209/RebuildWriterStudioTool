@@ -63,6 +63,54 @@ test("local renderer refuses non-local ComfyUI hosts", async () => {
   }), /WRITER_COMFY_URL must be a local HTTP origin/);
 });
 
+test("text-only styles use Z Image Turbo and Qwen without SDXL or IPAdapter nodes", async () => {
+  let submitted;
+  const nodeNames = ["ConditioningZeroOut", "EmptySD3LatentImage", "ModelSamplingAuraFlow", "KSampler", "CLIPTextEncode", "VAEDecode"];
+  const nodes = Object.fromEntries(nodeNames.map(name => [name, {}]));
+  Object.assign(nodes, {
+    UNETLoader: { input: { required: { unet_name: [["z_image_turbo_bf16.safetensors"]] } } },
+    CLIPLoader: { input: { required: { clip_name: [["qwen_3_4b.safetensors"]] } } },
+    VAELoader: { input: { required: { vae_name: [["ae.safetensors"]] } } },
+  });
+  const server = createServer(async (req, res) => {
+    if (req.url === "/object_info/CheckpointLoaderSimple")
+      return res.end(JSON.stringify({ CheckpointLoaderSimple: { input: { required: { ckpt_name: [["sdxl.safetensors"]] } } } }));
+    if (req.url === "/object_info") return res.end(JSON.stringify(nodes));
+    if (req.url === "/prompt") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      submitted = JSON.parse(body).prompt;
+      return res.end(JSON.stringify({ prompt_id: "z-job" }));
+    }
+    if (req.url === "/history/z-job")
+      return res.end(JSON.stringify({ "z-job": { outputs: { "7": { images: [{ filename: "z.webp", type: "output" }] } } } }));
+    if (req.url?.startsWith("/view?")) return res.end(webp);
+    res.writeHead(404).end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const folder = await mkdtemp(path.join(tmpdir(), "writer-z-image-test-"));
+  try {
+    const output = path.join(folder, "image");
+    await run(process.execPath, [renderer, JSON.stringify({ prompt: "A diagram", modelFamily: "text-only",
+      output: { width: 1280, height: 720, mime: "image/webp" } }), output], {
+      env: { ...process.env, WRITER_COMFY_URL: `http://127.0.0.1:${server.address().port}`,
+        WRITER_COMFY_CHECKPOINT: "sdxl.safetensors", WRITER_COMFY_TEXT_MODEL_FAMILY: "z-image-turbo" }, timeout: 10_000,
+    });
+    assert.equal(submitted["1"].class_type, "UNETLoader");
+    assert.equal(submitted["2"].inputs.clip_name, "qwen_3_4b.safetensors");
+    assert.equal(submitted["3"].inputs.vae_name, "ae.safetensors");
+    assert.equal(submitted["9"].inputs.steps, 8);
+    assert.equal(submitted["9"].inputs.cfg, 1);
+    assert.equal(submitted["11"].inputs.width, 1280);
+    assert.ok(!Object.values(submitted).some(node => node.class_type === "IPAdapterAdvanced"));
+    assert.deepEqual(await readFile(output), webp);
+  } finally {
+    server.close();
+    await rm(folder, { recursive: true, force: true });
+  }
+});
+
 test("local renderer recompresses an oversized WebP without regenerating the image", async () => {
   const large = Buffer.alloc(310_000);
   webp.copy(large);

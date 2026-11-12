@@ -25,7 +25,8 @@ async function checkpoints() {
   return names;
 }
 
-function workflow(prompt, checkpoint, reference = null) {
+function workflow(prompt, checkpoint, reference = null, modelFamily = "text-only") {
+  if (!reference && modelFamily === "text-only" && process.env.WRITER_COMFY_TEXT_MODEL_FAMILY === "z-image-turbo") return zImageWorkflow(prompt);
   const steps = Number(process.env.WRITER_COMFY_STEPS || 24);
   if (!Number.isInteger(steps) || steps < 1 || steps > 50) throw new Error("WRITER_COMFY_STEPS must be an integer from 1 to 50.");
   const graph = {
@@ -51,6 +52,40 @@ function workflow(prompt, checkpoint, reference = null) {
     graph["5"].inputs.model = ["12", 0];
   }
   return graph;
+}
+
+function zImageWorkflow(prompt) {
+  return {
+    "1": { class_type: "UNETLoader", inputs: { unet_name: "z_image_turbo_bf16.safetensors", weight_dtype: "default" } },
+    "2": { class_type: "CLIPLoader", inputs: { clip_name: "qwen_3_4b.safetensors", type: "lumina2", device: "default" } },
+    "3": { class_type: "VAELoader", inputs: { vae_name: "ae.safetensors" } },
+    "4": { class_type: "CLIPTextEncode", inputs: { text: prompt, clip: ["2", 0] } },
+    "5": { class_type: "ConditioningZeroOut", inputs: { conditioning: ["4", 0] } },
+    "6": { class_type: "EmptySD3LatentImage", inputs: { width: 1024, height: 576, batch_size: 1 } },
+    "8": { class_type: "ModelSamplingAuraFlow", inputs: { model: ["1", 0], shift: 3 } },
+    "9": { class_type: "KSampler", inputs: { seed: randomInt(0, 2 ** 32), steps: 8, cfg: 1,
+      sampler_name: "res_multistep", scheduler: "simple", denoise: 1,
+      model: ["8", 0], positive: ["4", 0], negative: ["5", 0], latent_image: ["6", 0] } },
+    "10": { class_type: "VAEDecode", inputs: { samples: ["9", 0], vae: ["3", 0] } },
+    "11": { class_type: "ImageScale", inputs: { image: ["10", 0], upscale_method: "lanczos", width: 1280, height: 720, crop: "center" } },
+    "7": { class_type: "SaveAnimatedWEBP", inputs: { filename_prefix: "writer-studio", images: ["11", 0], fps: 1,
+      lossless: false, quality: 88, method: "default" } },
+  };
+}
+
+async function checkZImageModels(nodes) {
+  const required = [
+    ["UNETLoader", "unet_name", "z_image_turbo_bf16.safetensors"],
+    ["CLIPLoader", "clip_name", "qwen_3_4b.safetensors"],
+    ["VAELoader", "vae_name", "ae.safetensors"],
+  ];
+  for (const [node, field, filename] of required) {
+    if (!nodes?.[node]?.input?.required?.[field]?.[0]?.includes(filename))
+      throw new Error(`Z Image Turbo requires ${filename} in ComfyUI ${node}.`);
+  }
+  for (const node of ["ConditioningZeroOut", "EmptySD3LatentImage", "ModelSamplingAuraFlow", "KSampler", "CLIPTextEncode", "VAEDecode"]) {
+    if (!nodes?.[node]) throw new Error(`Z Image Turbo requires ComfyUI node ${node}.`);
+  }
 }
 
 async function referenceFor(input) {
@@ -120,19 +155,20 @@ async function recompress(filename, quality, deadline) {
 }
 
 async function main() {
-  const names = await checkpoints();
   if (process.argv[2] === "--list-checkpoints") {
+    const names = await checkpoints();
     for (const name of names) console.log(name);
     return;
   }
-  const checkpoint = process.env.WRITER_COMFY_CHECKPOINT || (names.length === 1 ? names[0] : undefined);
-  if (!checkpoint || !names.includes(checkpoint)) {
-    throw new Error("Set WRITER_COMFY_CHECKPOINT to an installed checkpoint; run --list-checkpoints first.");
-  }
+  const zImageEnabled = process.env.WRITER_COMFY_TEXT_MODEL_FAMILY === "z-image-turbo";
   if (process.argv[2] === "--check") {
     const nodes = await (await request("/object_info")).json();
     if (!nodes?.SaveAnimatedWEBP || !nodes?.ImageScale) throw new Error("ComfyUI needs SaveAnimatedWEBP and ImageScale nodes.");
-    console.log("Local ComfyUI and checkpoint are ready.");
+    if (zImageEnabled) await checkZImageModels(nodes);
+    const names = await checkpoints();
+    const checkpoint = process.env.WRITER_COMFY_CHECKPOINT || (names.length === 1 ? names[0] : undefined);
+    if (!checkpoint || !names.includes(checkpoint)) throw new Error("Set WRITER_COMFY_CHECKPOINT to an installed SDXL checkpoint for reference styles.");
+    console.log(zImageEnabled ? "Local Z Image Turbo and SDXL reference checkpoint are ready." : "Local ComfyUI and checkpoint are ready.");
     return;
   }
   const [raw, output] = process.argv.slice(2);
@@ -140,9 +176,16 @@ async function main() {
   try { input = JSON.parse(raw); } catch { throw new Error("Renderer input must be JSON."); }
   if (!input?.prompt?.trim() || !output || input?.output?.width !== 1280 || input?.output?.height !== 720 || input?.output?.mime !== "image/webp")
     throw new Error("Renderer requires a 1280x720 WebP visual plan.");
+  const names = await checkpoints();
+  const checkpoint = process.env.WRITER_COMFY_CHECKPOINT || (names.length === 1 ? names[0] : undefined);
+  if (!checkpoint || !names.includes(checkpoint)) throw new Error("Set WRITER_COMFY_CHECKPOINT to an installed SDXL checkpoint for reference styles.");
+  if (zImageEnabled && !input.referenceImage && input.modelFamily !== "sdxl") {
+    const nodes = await (await request("/object_info")).json();
+    await checkZImageModels(nodes);
+  }
   const reference = await referenceFor(input);
   const deadline = Date.now() + 620_000;
-  const original = await awaitImage(workflow(input.prompt, checkpoint, reference), deadline);
+  const original = await awaitImage(workflow(input.prompt, checkpoint, reference, input.modelFamily), deadline);
   const dimensions = webpDimensions(original);
   if (!dimensions || dimensions.width !== 1280 || dimensions.height !== 720)
     throw new Error("Local ComfyUI image must be 1280x720 WebP.");
