@@ -10,6 +10,7 @@
     "auth:cleanup": "tsx authCleanup.ts",
     "auth:import": "tsx authImport.ts",
     "db:migrate": "tsx dbMigrate.ts",
+    "db:image-styles:migrate": "tsx imageStylesMigrate.ts",
     "db:scope": "tsx dbScope.ts",
     "db:import": "tsx dbImport.ts",
     "db:files": "tsx dbFiles.ts",

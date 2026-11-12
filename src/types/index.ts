@@ -512,7 +512,7 @@ export interface ContentType {
   color: string
 }
 
-export type ActiveTab = "step-setup" | "models" | "knowledge-base" | "image-workers"
+export type ActiveTab = "step-setup" | "models" | "knowledge-base" | "image-workers" | "image-styles"
 export type KbSubTab = "kb" | "rules" | "website" | "legacy-action"
 
 // ── Knowledge/Skill source import ────────────────────────────────────────────

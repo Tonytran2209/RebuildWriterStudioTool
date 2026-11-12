@@ -89,7 +89,7 @@ test("AI instrumentation preserves results, errors and restart-safe aggregate to
     assert.equal(report.profile.version, "profile-v1")
     assert.deepEqual(report.profile.mainJob, { job: "Writer article", steps: [
       "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Article Spec & Core Idea", "Lập outline", "Viết draft",
-      "Kiểm tra chất lượng", "Tạo ảnh minh họa", "Chèn ảnh vào bài",
+      "Kiểm tra chất lượng", "Lưu phong cách ảnh", "Duyệt phong cách ảnh", "Đồng bộ thư viện ảnh", "Tạo ảnh minh họa", "Chèn ảnh vào bài",
     ] })
     assert.deepEqual(report.profile.jobTargets, { "Writer article": 10 })
     assert.match(report.profile.kpiDescriptions.responseTime, /Tạo outline, Tạo ảnh hoặc Chèn ảnh/)

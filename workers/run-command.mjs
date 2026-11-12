@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 export function runCommand(file, args, options) {
   return new Promise((resolve, reject) => {
     const child = execFile(file, args, options, (error, stdout, stderr) => {
-      if (error) reject(error);
+      if (error) { error.stderr = stderr; reject(error); }
       else resolve({ stdout, stderr });
     });
     child.stdin?.end();

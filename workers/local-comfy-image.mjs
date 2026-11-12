@@ -55,9 +55,11 @@ function workflow(prompt, checkpoint, reference = null) {
 
 async function referenceFor(input) {
   if (!input.referenceImage) return null;
+  if (input.modelFamily === "sdxl" && process.env.WRITER_COMFY_MODEL_FAMILY !== "sdxl")
+    throw new Error("Reference style requires an SDXL checkpoint and WRITER_COMFY_MODEL_FAMILY=sdxl.");
   if (!/^[a-z0-9][a-z0-9._-]+\.(png|jpg|jpeg|webp)$/i.test(input.referenceImage)
     || !/^[a-f0-9]{64}$/.test(input.referenceSha256 || "")) throw new Error("Invalid style reference manifest.");
-  const file = path.join(path.dirname(fileURLToPath(import.meta.url)), "style-references", input.referenceImage);
+  const file = path.join(process.env.WRITER_STYLE_REFERENCE_DIR || path.join(path.dirname(fileURLToPath(import.meta.url)), "style-references"), input.referenceImage);
   const bytes = await readFile(file);
   if (createHash("sha256").update(bytes).digest("hex") !== input.referenceSha256)
     throw new Error("Style reference checksum mismatch.");

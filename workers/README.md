@@ -27,17 +27,19 @@ The server needs `backend/migrations/003_image_workers.sql` applied to the Write
 
 ## Style library and reference images
 
-Approved style definitions live in `shared/imageStyles.json`. Each has a stable ID, version, description, visual rules, and optional reference image with SHA-256. The Draft image job lets the user choose one style. The server freezes its approved rules and output specification in the job. The AI receives style rules as appearance guidance only; the article brief governs image content.
+The three built-in styles remain in `shared/imageStyles.json`. New user styles live in **Settings → Image Styles**. Enter an ID, name, visual rules and optional Markdown guide; optionally upload a reference image for an SDXL style. Save a draft, preview the saved files, and explicitly approve the version. Railway stores metadata in `writer_studio.image_style_versions` and files in the existing private document storage provider. The Draft image job shows only approved styles and freezes its style ID, version, rules and asset hashes. The AI receives the guide as untrusted appearance data only; the article brief governs image content.
 
-The included three styles work as text-only profiles immediately. No reference artwork is bundled. To attach your own approved image, run:
+After deploying this code, run `npm run db:image-styles:migrate` once on the Railway app service before saving styles. This idempotently applies `backend/migrations/004_image_style_library.sql`; the existing image-worker migration 003 must already be present. The Railway document storage must be backed by its persistent volume (`DOCUMENT_STORAGE_PROVIDER=filesystem` and `DOCUMENT_STORAGE_ROOT=RAILWAY_VOLUME_MOUNT_PATH`).
+
+The built-in styles work as text-only profiles immediately. No reference artwork is bundled. The older repo-based tool remains available for a built-in style:
 
 ```sh
 node workers/add-style-reference.mjs editorial-neutral-v1 /absolute/path/to/your-reference.png
 ```
 
-Review and commit both the changed manifest and copied image under `workers/style-references/`, then deploy the server and update the Mac checkout to the same commit. Do not add images whose rights or subject matter you have not checked. The Mac verifies the reference hash before sending it to ComfyUI.
+For a style created in Settings, no commit is needed when uploading its guide or image. Use the same style ID to save a new draft version; the previously approved version remains active until the new one is approved. The Mac worker polls approved versions once per minute, downloads only changed versions through its paired token, checks SHA-256 and writes an atomic private cache at `~/Library/Application Support/Writer Studio/style-cache` (overridable with `WRITER_STYLE_CACHE_DIR`). A job can also fetch its exact frozen version on demand. Do not upload images whose rights or subject matter you have not checked.
 
-Actual reference conditioning requires compatible IPAdapter Plus nodes, an IPAdapter model and a CLIP Vision model installed in ComfyUI. Set `WRITER_COMFY_IPADAPTER_MODEL` and `WRITER_COMFY_CLIP_VISION_MODEL` to their exact names from ComfyUI. The workflow uses `IPAdapterAdvanced` in `style transfer` mode at a restrained weight of 0.45. Verify this setup with a compatible checkpoint, preferably SDXL for style-only conditioning. If anything is missing, the job fails visibly; it will not silently ignore the reference image.
+Actual reference conditioning requires compatible IPAdapter Plus nodes, an SDXL checkpoint, an IPAdapter model and a CLIP Vision model installed in ComfyUI. Set `WRITER_COMFY_MODEL_FAMILY=sdxl`, `WRITER_COMFY_IPADAPTER_MODEL` and `WRITER_COMFY_CLIP_VISION_MODEL` on the Mac to match the installed models. The workflow uses `IPAdapterAdvanced` in `style transfer` mode at weight 0.45. If anything is missing, the job fails visibly with `STYLE_MODEL_MISSING`; a download/hash failure reports `STYLE_SYNC_FAILED`. It will not silently ignore the reference image. Text-only styles still work with the existing checkpoint.
 
 The agent returns a JSON visual plan (`mustShow`, `mustNotShow`, `prompt`). The worker checks its shape, compiles the prompt with the chosen style, and rejects non-WebP or non-1280 × 720 output. These are technical checks, not proof of semantic accuracy. In Draft, inspect the private preview and explicitly confirm that the image matches the brief, contains no invented detail or text, and uses the chosen style before inserting it. There is no automatic regeneration loop.
 

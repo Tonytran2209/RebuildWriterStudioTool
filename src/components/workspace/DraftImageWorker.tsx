@@ -143,7 +143,12 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
       {pending ? tr("Đang gửi yêu cầu…", "Submitting…") : job && status[job.status]}
     </p>}
     {(error || imageJobs.error) && <p role="alert" className="ips-worker-error">{error || imageJobs.error}</p>}
-    {job?.status === "failed" && job.error_code && <p role="alert" className="ips-worker-error">{tr("Mã lỗi tạo ảnh", "Image error code")}: {job.error_code}</p>}
+    {job?.status === "failed" && job.error_code && <p role="alert" className="ips-worker-error">
+      {job.error_code === "STYLE_MODEL_MISSING" ? tr("Mac cần SDXL, IPAdapter và CLIP Vision tương thích với style này.", "This style needs compatible SDXL, IPAdapter and CLIP Vision on the Mac.")
+        : job.error_code === "STYLE_SYNC_FAILED" ? tr("Mac không tải hoặc xác minh được style đã duyệt.", "The Mac could not download or verify the approved style.")
+        : job.error_code === "STYLE_VERSION_MISMATCH" ? tr("Phiên bản style đã lưu không khớp. Hãy tạo lại job.", "The saved style version does not match. Create a new job.")
+        : `${tr("Mã lỗi tạo ảnh", "Image error code")}: ${job.error_code}`}
+    </p>}
     {job?.status === "ready" && <WorkerImage railwayUrl={railwayUrl} jobId={job.id} alt={suggestion.altText} />}
     {!disabled && <>
       {(!job || job.status === "failed") && <div className="space-y-2">
@@ -160,7 +165,8 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
             ? <>{tr("Worker mặc định", "Default worker")}: <span className="ips-worker-name">{defaultWorker.name}</span> · {workerState(defaultWorker)}</>
             : tr("Chưa có worker mặc định. Chọn trong Settings › Image Workers.", "No default worker. Choose one in Settings › Image Workers.")}</p>
           <button type="button" className="ips-btn ips-btn-primary" disabled={pending || !defaultWorker || !selectedStyle}
-            onClick={event => defaultWorker && void act(event, imageJobs.path, "POST", {workerId:defaultWorker.id, suggestionId:suggestion.id, styleId:selectedStyle})}>
+            onClick={event => defaultWorker && void act(event, imageJobs.path, "POST", {workerId:defaultWorker.id, suggestionId:suggestion.id,
+              styleId:selectedStyle, styleVersion:styles.find(style => style.id === selectedStyle)?.version})}>
             <Sparkles className="h-3.5 w-3.5" aria-hidden />{job?.status === "failed" ? tr("Tạo lại ảnh", "Retry image") : tr("Tạo ảnh", "Generate image")}
           </button>
         </div>
