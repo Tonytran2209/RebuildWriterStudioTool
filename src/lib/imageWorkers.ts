@@ -17,7 +17,7 @@ export type ImageJob = {
   style_id?: string | null;
 };
 
-export type ImageStyle = { id: string; name: string; description: string; version: number };
+export type ImageStyle = { id: string; name: string; description: string; version: number; source: "managed" | "built-in" };
 
 export async function imageWorkerRequest<T>(railwayUrl: string, path: string, method = "GET", body?: unknown): Promise<T> {
   const response = await authenticatedRailwayFetch(`/api/image-workers${path}`, {

@@ -153,8 +153,8 @@ export function createImageWorkers(deps = {
   }
   imageWorkerApi.get("/styles", endpoint(async (req, res) => {
     const custom = await approvedStyles(owner(req))
-    res.json([...imageStyles.filter(style => style.approved).map(({ id, name, description, version }) => ({ id, name, description, version })),
-      ...custom.map(({ id, name, description, version }) => ({ id, name, description, version }))])
+    res.json([...custom.map(({ id, name, description, version }) => ({ id, name, description, version, source: "managed" })),
+      ...imageStyles.filter(style => style.approved).map(({ id, name, description, version }) => ({ id, name, description, version, source: "built-in" }))])
   }))
   imageWorkerApi.get("/styles/manage", endpoint(async (req, res) => {
     const { rows } = await query(`SELECT style_id AS id,version,name,description,visual_rules AS "visualRules",

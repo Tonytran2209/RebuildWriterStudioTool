@@ -67,7 +67,7 @@ test("paired workers claim only their assigned jobs and publish private images a
   const runner = "/internal/image-worker"
   try {
     const styles = await (await request(api + "/styles")).json()
-    assert.ok(styles.some((style: any) => style.id === "editorial-neutral-v1"))
+    assert.ok(styles.some((style: any) => style.id === "editorial-neutral-v1" && style.source === "built-in"))
     const claude = await (await request(api + "/workers", "POST", { name: "Mac One", agent: "claude" }, undefined, 201)).json()
     const codex = await (await request(api + "/workers", "POST", { name: "Mac Two", agent: "codex" }, undefined, 201)).json()
     const [claudeId] = claude.token.split(".")
@@ -87,7 +87,9 @@ test("paired workers claim only their assigned jobs and publish private images a
     const bundle = await (await request(runner + "/styles/brand-style/1/bundle", "POST", {}, codex.token)).json()
     assert.equal(bundle.guide, "# Approved style guide")
     assert.equal(bundle.referenceBase64, reference)
-    assert.ok((await (await request(api + "/styles")).json()).some((item: any) => item.id === "brand-style"))
+    const selectableStyles = await (await request(api + "/styles")).json()
+    assert.equal(selectableStyles[0].id, "brand-style")
+    assert.equal(selectableStyles[0].source, "managed")
     await request(api + "/styles", "POST", { id:"brand-style", name:"Brand style", description:"New revision",
       visualRules:"Use restrained blue.", modelFamily:"text-only" }, undefined, 201)
     assert.equal((await (await request(api + "/styles")).json()).find((item: any) => item.id === "brand-style").version, 1)

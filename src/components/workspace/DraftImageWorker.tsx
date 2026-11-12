@@ -111,6 +111,7 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
   const styles = imageJobs.styles;
   const selectedStyle = styles.find(style => style.id === styleSelection)?.id ??
     styles.find(style => style.id === job?.style_id)?.id ??
+    styles.find(style => style.source === "managed")?.id ??
     (suggestion.type === "comparison" ? styles.find(style => style.id === "comparison-v1")?.id
       : suggestion.type === "diagram" ? styles.find(style => style.id === "clean-diagram-v1")?.id : undefined) ?? styles[0]?.id ?? "";
   const status = {
@@ -156,7 +157,12 @@ export default function DraftImageWorker({ railwayUrl, suggestion, disabled, ima
           <select className="min-h-11 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] px-2.5 text-[var(--ui-text)]"
             value={selectedStyle} disabled={pending || !styles.length} onChange={event => setStyleSelection(event.target.value)}>
             {!styles.length && <option value="">{tr("Chưa có phong cách đã duyệt", "No approved styles")}</option>}
-            {styles.map(style => <option key={style.id} value={style.id}>{style.name}</option>)}
+            {styles.some(style => style.source === "managed") && <optgroup label={tr("Đã duyệt trong Settings", "Approved in Settings")}>
+              {styles.filter(style => style.source === "managed").map(style => <option key={style.id} value={style.id}>{style.name}</option>)}
+            </optgroup>}
+            {styles.some(style => style.source === "built-in") && <optgroup label={tr("Phong cách mặc định của app", "App built-in styles")}>
+              {styles.filter(style => style.source === "built-in").map(style => <option key={style.id} value={style.id}>{style.name}</option>)}
+            </optgroup>}
           </select>
           <span>{styles.find(style => style.id === selectedStyle)?.description}</span>
         </label>
