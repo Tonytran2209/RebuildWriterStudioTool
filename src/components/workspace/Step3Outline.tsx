@@ -188,6 +188,8 @@ interface Props {
   onUpdate: (updates: Partial<Article>) => Promise<boolean>;
   onNext: () => void;
   onPrev: () => void;
+  /** AI log and token usage; admins only. */
+  showTechnical?: boolean;
 }
 
 export default function Step3Outline({
@@ -200,6 +202,7 @@ export default function Step3Outline({
   onUpdate,
   onNext,
   onPrev,
+  showTechnical = true,
 }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
   const completed = isArticleCompleted(article);
@@ -599,6 +602,7 @@ export default function Step3Outline({
         onAddKeyword={kw => addKeywordToSection(section.id, kw)}
         readOnly={completed}
         processTrace={article.step3ProcessTrace}
+        showTechnical={showTechnical}
       />
     );
   };
@@ -627,14 +631,14 @@ export default function Step3Outline({
             <OutlineStructureSelect files={files} allowedIds={config.stepConfigs[3]?.fileAccess?.rules ?? []} value={article.outlineStructure} disabled={completed || generating || (article.activityKind === "batch" && !["completed", "failed"].includes(article.batchStatus ?? "queued"))} onChange={outlineStructure => void onUpdate(outlineSelectionUpdates(outlineStructure))} />
             {article.outlineNeedsRegeneration && <p role="status" className="text-xs">{tr('Cấu trúc đã đổi. Hãy tạo lại outline trước khi viết draft. Kết quả cũ vẫn được giữ.', 'Structure changed. Regenerate the outline before drafting. Previous output is preserved.')}</p>}
             <GenerationHistory articleId={article.id} stage="outline" generationId={article.outlineGenerationId} />
-            <StepUsage step={2} usage={article.aiUsageByStep?.[3]} />
+            {showTechnical && <StepUsage step={2} usage={article.aiUsageByStep?.[3]} />}
 
-            <WorkflowCheckLog key={article.id} run={generationLog.run} steps={[
+            {(showTechnical || generationLog.run) && <WorkflowCheckLog key={article.id} run={generationLog.run} steps={[
               tr('Chuẩn bị Article Spec và cấu trúc đã chọn', 'Prepare the Article Spec and selected structure'),
               tr('Dựng dàn bài từ tài liệu được cấp', 'Generate the outline from available sources'),
               tr('Kiểm tra cấu trúc và dẫn chứng', 'Validate structure and evidence'),
               tr('Lưu dàn bài', 'Save the outline'),
-            ]} />
+            ]} />}
 
             {!generating && outline.length === 0 && (
               <div className="outline-empty-state rounded-xl border border-dashed border-slate-200 p-8 text-center">
@@ -775,6 +779,7 @@ function SectionRow({
   onAddKeyword,
   processTrace,
   readOnly,
+  showTechnical,
 }: {
   isFirst: boolean;
   isLast: boolean;
@@ -786,6 +791,7 @@ function SectionRow({
   onAddKeyword: (kw: string) => void;
   processTrace?: AIProcessTraceEvent[];
   readOnly: boolean;
+  showTechnical: boolean;
 }) {
   const { tr } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -928,9 +934,9 @@ function SectionRow({
                 {isEditing ? <Check className="app-icon" aria-hidden="true" /> : <Pencil className="app-icon" aria-hidden="true" />}
                 {isEditing ? tr('Xong', 'Done') : tr('Chỉnh sửa', 'Edit')}
               </button>}
-              <button type="button" onClick={() => setShowAudit(true)} className={actionClass}>
+              {showTechnical && <button type="button" onClick={() => setShowAudit(true)} className={actionClass}>
                 <Eye className="app-icon" aria-hidden="true" />{tr('Xem AI log', 'View AI log')}
-              </button>
+              </button>}
             </div>
             {!readOnly && <div className="flex items-center gap-1">
               <button type="button" disabled={isFirst} onClick={() => onMove(-1)} aria-label={tr('Di chuyển lên', 'Move up')} title={tr('Di chuyển lên', 'Move up')} className={`${actionClass} w-11`}>
@@ -946,7 +952,7 @@ function SectionRow({
           </div>
         </div>
       )}
-      {showAudit && <ProcessTraceModal title={section.heading} events={processTrace} onClose={() => setShowAudit(false)}><div className="outline-audit-content space-y-4"><div className="outline-audit-summary rounded-lg border p-4"><div className="outline-audit-label">{tr('Lý do tạo section', 'Section rationale')}</div><p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">{section.rationale || tr('Chưa có rationale trong kết quả đã lưu.', 'No rationale in the saved result.')}</p></div><div><div className="outline-audit-label mb-2">{tr('Dẫn chứng của section', 'Section evidence')}</div><div className="space-y-2">{section.evidence?.map((e, i) => <div key={`${e.source}-${i}`} className="outline-audit-evidence rounded-lg border p-3 text-[10px]"><b>{e.role?.toUpperCase()} · {e.source}</b>{e.quote && <blockquote className="mt-1.5 whitespace-pre-wrap border-l-2 pl-2">“{e.quote}”</blockquote>}{e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}</div></div></div></ProcessTraceModal>}
+      {showTechnical && showAudit && <ProcessTraceModal title={section.heading} events={processTrace} onClose={() => setShowAudit(false)}><div className="outline-audit-content space-y-4"><div className="outline-audit-summary rounded-lg border p-4"><div className="outline-audit-label">{tr('Lý do tạo section', 'Section rationale')}</div><p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">{section.rationale || tr('Chưa có rationale trong kết quả đã lưu.', 'No rationale in the saved result.')}</p></div><div><div className="outline-audit-label mb-2">{tr('Dẫn chứng của section', 'Section evidence')}</div><div className="space-y-2">{section.evidence?.map((e, i) => <div key={`${e.source}-${i}`} className="outline-audit-evidence rounded-lg border p-3 text-[10px]"><b>{e.role?.toUpperCase()} · {e.source}</b>{e.quote && <blockquote className="mt-1.5 whitespace-pre-wrap border-l-2 pl-2">“{e.quote}”</blockquote>}{e.note && <p className="mt-1.5"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {e.note}</p>}</div>)}</div></div></div></ProcessTraceModal>}
     </div>
   );
 }

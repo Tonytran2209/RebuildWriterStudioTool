@@ -639,3 +639,20 @@ test('approved image suggestions select a worker and insert its preview without 
  await page.reload();
  await expect(page.locator('.draft-prose').getByRole('img', {name:'Visual explanation'})).toBeVisible();
 });
+
+test('writer preview renders Markdown and a QC finding scrolls to its quoted passage',async({page})=>{
+ await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.fallback():route.abort());
+ await page.goto('/?qc=warning');
+ await page.evaluate(()=>{const saved=JSON.parse(sessionStorage.getItem('qc-fixture')!);
+  saved.qualityReport.checks=saved.qualityReport.checks.map((c:any)=>c.id==='evidence-support'?{...c,evidence:'"BODY_SENTINEL: This entire section remains visible."',location:'Main body'}:c);
+  sessionStorage.setItem('qc-fixture',JSON.stringify(saved));});
+ await page.reload();
+ const preview=page.locator('.draft-rendered');
+ await expect(preview.getByRole('heading',{level:2}).first()).toBeVisible();
+ await expect(preview).not.toContainText('## ');
+ await page.getByRole('button',{name:'QC',exact:true}).click();
+ const row=page.locator('[data-qc-check="evidence-support"]');
+ await row.locator('summary').click();
+ await row.getByRole('button',{name:/Xem trong bài|Show in draft/}).click();
+ await expect(preview.locator('.qc-highlight')).toContainText('BODY_SENTINEL');
+});

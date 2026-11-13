@@ -125,14 +125,14 @@ export default function Sidebar({
       <nav className="space-y-1 px-2 py-2 text-[13px] font-medium" aria-label={tr("Điều hướng chính", "Main navigation")}>
         <button onClick={onNewArticle} className="sidebar-nav">
           <PenLine className="app-icon" aria-hidden="true" />
-          {tr("Activity mới", "New activity")}
+          {tr("Bài viết mới", "New activity")}
           <PlusCircle className="app-icon ml-auto text-[var(--ui-secondary)]" aria-hidden="true" />
         </button>
         <button
           onClick={onOpenContentPlans ?? onNewArticle}
           className="sidebar-nav"
         >
-          <FileText className="app-icon" aria-hidden="true" />Content Plan history
+          <FileText className="app-icon" aria-hidden="true" />{tr("Lịch sử Content Plan", "Content Plan history")}
         </button>
       </nav>
       <div className="mx-3 my-2 h-px bg-[var(--ui-hover)]" />

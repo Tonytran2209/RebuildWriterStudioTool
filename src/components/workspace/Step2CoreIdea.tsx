@@ -44,6 +44,8 @@ interface Props {
   onUpdate: (updates: Partial<Article>) => Promise<boolean>;
   onNext: () => void;
   onPrev: () => void;
+  /** AI log and token usage; admins only. */
+  showTechnical?: boolean;
 }
 
 function toNumber(v: unknown, fallback = 0): number {
@@ -279,6 +281,7 @@ export default function Step2CoreIdea({
   onUpdate,
   onNext,
   onPrev,
+  showTechnical = true,
 }: Props) {
   const storedIdeas = article.coreIdeaSuggestions ?? [];
   const [loading, setLoading] = useState(false);
@@ -681,7 +684,7 @@ export default function Step2CoreIdea({
                 </p>
               </div>
             </div>
-            <StepUsage step={1} usage={article.aiUsageByStep?.[2]} />
+            {showTechnical && <StepUsage step={1} usage={article.aiUsageByStep?.[2]} />}
 
             {!loading && article.articleSpec && (
               <section className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
@@ -694,13 +697,13 @@ export default function Step2CoreIdea({
               </section>
             )}
 
-            <WorkflowCheckLog key={article.id} run={generationLog.run} steps={[
+            {(showTechnical || generationLog.run) && <WorkflowCheckLog key={article.id} run={generationLog.run} steps={[
               tr('Chuẩn bị chủ đề và từ khóa gốc', 'Prepare the topic and seed keywords'),
               tr('Nghiên cứu từ khóa SEO', 'Research SEO keywords'),
               tr('Tạo Article Spec và đề xuất Core Ideas', 'Generate the Article Spec and Core Ideas'),
               tr('Kiểm tra từ khóa và dẫn chứng', 'Validate keywords and evidence'),
               tr('Lưu Article Spec và Core Ideas', 'Save the Article Spec and Core Ideas'),
-            ]} />
+            ]} />}
 
             {!loading && ideas.length > 0 && (
               <div className="core-idea-suggestions border-t pt-4">
@@ -780,7 +783,7 @@ export default function Step2CoreIdea({
               <section><h4 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{tr('Toàn bộ dẫn chứng đã kiểm chứng', 'All verified evidence')}</h4><div className="mt-2 grid gap-2">{(idea.evidence ?? []).map((evidence, index) => <div key={`${evidence.source}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3"><div className="flex flex-wrap gap-1.5"><span className="text-[9px] font-semibold uppercase text-slate-500">{evidence.role}</span><span className="text-[10px] font-semibold text-slate-700">{evidence.source}</span></div>{evidence.quote && <blockquote className="mt-1.5 border-l-2 border-slate-300 pl-2 text-[10px] leading-relaxed text-slate-700">“{evidence.quote}”</blockquote>}{evidence.note && <p className="mt-1.5 text-[10px] text-slate-500"><b>{tr('Lý do sử dụng:', 'Why it matters:')}</b> {evidence.note}</p>}</div>)}</div></section>
             </div>
             <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 sm:px-6">
-              <button type="button" onClick={() => { setDetailIdeaId(null); setAuditIdeaId(idea.id); }} className="ai-log-button inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-medium"><Search className="app-icon"/>{tr('Xem nhật ký AI', 'View AI log')}</button>
+              {showTechnical ? <button type="button" onClick={() => { setDetailIdeaId(null); setAuditIdeaId(idea.id); }} className="ai-log-button inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-medium"><Search className="app-icon"/>{tr('Xem nhật ký AI', 'View AI log')}</button> : <span />}
               <button type="button" onClick={() => { handleSelect(idea); setDetailIdeaId(null); }} disabled={completed} className={`rounded-lg px-4 py-2 text-[10px] font-semibold ${isSelected ? "border border-slate-200 bg-white text-slate-700" : "bg-slate-900 text-white hover:bg-slate-800"}`}>{isSelected ? tr('Đã chọn ý tưởng này', 'This idea is selected') : tr('Chọn ý tưởng này', 'Select this idea')}</button>
             </footer>
           </div>
@@ -788,7 +791,7 @@ export default function Step2CoreIdea({
         </div>, document.body);
       })()}
 
-      {auditIdeaId && (() => { const idea = ideas.find(item => item.id === auditIdeaId); if (!idea) return null; return <ProcessTraceModal title={idea.title} events={article.step2ProcessTrace} onClose={() => setAuditIdeaId(null)}><div className="space-y-4"><div><h4 className="text-xs font-bold text-slate-800">SEO Research Top 10</h4><div className="space-y-2 mt-2">{article.seoResearch?.keywords.map((keyword, index) => <div key={keyword.keyword} className="rounded-lg border border-cyan-100 bg-cyan-50/50 p-3 text-[10px]"><div className="flex flex-wrap gap-2"><span className="font-mono text-cyan-700">#{index + 1}</span><b>{keyword.keyword}</b><span>{keyword.intent ?? 'intent n/a'}</span></div>{keyword.marketEvidence && <p className="mt-1 text-slate-600">{keyword.marketEvidence}</p>}<div className="flex gap-2 mt-1">{keyword.sources?.map((url, i) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-cyan-700 underline">Source {i + 1}</a>)}</div></div>)}</div></div><div><h4 className="text-xs font-bold text-slate-800">{tr('Đối chứng keyword của lựa chọn', 'Keyword validation for this idea')}</h4><div className="divide-y divide-slate-100 rounded-lg border border-slate-200 mt-2">{idea.keywordAudit?.map(item => <div key={item.keyword} className="p-3 text-[10px]"><div className="flex gap-2"><span className={`font-bold ${item.decision === 'accepted' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.decision}</span><b>{item.keyword}</b></div><p className="mt-1">{item.reason}</p><p className="mt-1 text-amber-700"><b>Rules:</b> {item.ruleReason}</p><p className="mt-1 text-indigo-700"><b>KB/Action:</b> {item.kbReason}</p></div>)}</div></div></div></ProcessTraceModal>; })()}
+      {showTechnical && auditIdeaId && (() => { const idea = ideas.find(item => item.id === auditIdeaId); if (!idea) return null; return <ProcessTraceModal title={idea.title} events={article.step2ProcessTrace} onClose={() => setAuditIdeaId(null)}><div className="space-y-4"><div><h4 className="text-xs font-bold text-slate-800">SEO Research Top 10</h4><div className="space-y-2 mt-2">{article.seoResearch?.keywords.map((keyword, index) => <div key={keyword.keyword} className="rounded-lg border border-cyan-100 bg-cyan-50/50 p-3 text-[10px]"><div className="flex flex-wrap gap-2"><span className="font-mono text-cyan-700">#{index + 1}</span><b>{keyword.keyword}</b><span>{keyword.intent ?? 'intent n/a'}</span></div>{keyword.marketEvidence && <p className="mt-1 text-slate-600">{keyword.marketEvidence}</p>}<div className="flex gap-2 mt-1">{keyword.sources?.map((url, i) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-cyan-700 underline">Source {i + 1}</a>)}</div></div>)}</div></div><div><h4 className="text-xs font-bold text-slate-800">{tr('Đối chứng keyword của lựa chọn', 'Keyword validation for this idea')}</h4><div className="divide-y divide-slate-100 rounded-lg border border-slate-200 mt-2">{idea.keywordAudit?.map(item => <div key={item.keyword} className="p-3 text-[10px]"><div className="flex gap-2"><span className={`font-bold ${item.decision === 'accepted' ? 'text-emerald-700' : 'text-rose-700'}`}>{item.decision}</span><b>{item.keyword}</b></div><p className="mt-1">{item.reason}</p><p className="mt-1 text-amber-700"><b>Rules:</b> {item.ruleReason}</p><p className="mt-1 text-indigo-700"><b>KB/Action:</b> {item.kbReason}</p></div>)}</div></div></div></ProcessTraceModal>; })()}
 
       <div className={`flex gap-2 shrink-0 ${embedded ? 'continuous-step-action justify-start' : 'justify-between'}`}>
         {!embedded && (

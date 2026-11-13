@@ -829,6 +829,7 @@ export default function App() {
                   </p>}
                   <section ref={(node) => { if (node) workflowStepRefs.current.set(2, node); else workflowStepRefs.current.delete(2) }} data-workflow-step="2" className="workflow-section scroll-mt-4">
                     <Step2CoreIdea
+                      showTechnical={authSession.user.role === "admin"}
                       embedded
                       article={article}
                       config={config}
@@ -843,6 +844,7 @@ export default function App() {
                   {((article.currentStep ?? 2) >= 3 && gateArticleStep(article, 3).allowed || isArticleCompleted(article) && Boolean(article.outline?.length)) && (
                     <section ref={(node) => { if (node) workflowStepRefs.current.set(3, node); else workflowStepRefs.current.delete(3) }} data-workflow-step="3" className="workflow-section scroll-mt-4">
                       <Step3Outline
+                        showTechnical={authSession.user.role === "admin"}
                         embedded
                         article={article}
                         config={config}
@@ -858,6 +860,7 @@ export default function App() {
                   {((article.currentStep ?? 2) >= 4 && gateArticleStep(article, 4).allowed || isArticleCompleted(article)) && (
                     <section ref={(node) => { if (node) workflowStepRefs.current.set(4, node); else workflowStepRefs.current.delete(4) }} data-workflow-step="4" className="workflow-section scroll-mt-4">
                       <Step4Draft
+                        showTechnical={authSession.user.role === "admin"}
                         embedded
                         article={article}
                         config={config}

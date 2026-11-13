@@ -7,7 +7,7 @@ import { draftWithoutImagePlaceholders, semanticReviewInputFingerprint, missingS
 import SeoBrief from './SeoBrief';
 import { outlineStructurePrompt, validateOutlineStructure } from '../../../shared/outlineStructures';
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronDown, TriangleAlert, Check, CircleX, ClipboardCopy, Copy, Download, Eye, Image, LoaderCircle, RefreshCw, Sparkles } from 'lucide-react';
+import { ChevronDown, TriangleAlert, Check, CircleX, ClipboardCopy, Copy, Download, Eye, Image, ListChecks, LoaderCircle, RefreshCw, Search, Sparkles } from 'lucide-react';
 import type { Article, AIModel, AIProcessTraceEvent, AppConfig, DocumentFile, EvidenceRef, ImageSuggestion, QualityGateCheck } from '../../types';
 import { callAI } from '../../lib/aiService';
 import { authenticatedRailwayFetch } from '../../lib/db';
@@ -28,7 +28,7 @@ import { ProcessTraceModal } from './ProcessTrace';
 import { notifyWorkspace } from './WorkspaceNotification';
 import { StepUsage } from './StepUsage';
 import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionReviewInstruction, introductionCheck } from '../../lib/introductionPolicy';
-import { normalizeDraftOutput, normalizeDraftHtml } from '../../lib/draftExport';
+import { normalizeDraftOutput, normalizeDraftHtml, markdownToHtml } from '../../lib/draftExport';
 import { canonicalSpecFingerprint, qualityInputFingerprint, qualityAllowsCompletion, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, EVIDENCE_ATTRIBUTION_INSTRUCTION } from '../../lib/qualityPolicy';
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage } from '../../lib/evidencePolicy';
 import { verifyEvidence } from '../../lib/evidenceValidation';
@@ -337,6 +337,35 @@ function parseStructuredDraft(raw: string, article: Article) {
 const getPrimaryKeyword = primaryKeyword;
 
 const QC_PROCESS_IDS = ['quality-review-stale', 'semantic-review-schema'];
+// Vietnamese display names; stored labels (and English UI) stay unchanged.
+const QC_LABELS_VI: Record<string, string> = {
+  'introduction-word-budget': 'Mở bài ngắn gọn, đúng trọng tâm',
+  'outline-structure': 'Đúng cấu trúc MD đã chọn',
+  'outline-fidelity': 'Giữ đúng heading của outline',
+  'complete-structure': 'Đủ H1 và H2',
+  'duplicate-headings': 'Không lặp heading liền nhau',
+  'word-budget': 'Số từ trong khoảng mục tiêu',
+  'single-conclusion': 'Có đúng một phần Conclusion',
+  'primary-query': 'Có từ khóa chính trong bài',
+  'title-keyword': 'H1 chứa từ khóa chính',
+  'must-cover': 'Đủ các chủ đề bắt buộc',
+  'placeholders': 'Không còn placeholder',
+  'source-confidentiality': 'Không lộ tên nguồn nội bộ',
+  'link-correctness': 'Internal link đã được duyệt',
+  'internal-link-budget': 'Số lượng internal link',
+  'internal-link-distribution': 'Internal link rải đều các mục',
+  'image-purpose-duplication': 'Ảnh không trùng mục đích',
+  'image-section-length': 'Ảnh chỉ đặt sau mục đủ dài',
+  'image-evidence-boundary': 'Ảnh không thay thế dẫn chứng',
+  'evidence-mapping': 'Dẫn chứng đúng mục outline',
+  'conclusion-word-budget': 'Độ dài phần kết',
+  'intent-satisfied': 'Đáp ứng search intent',
+  'reader-outcome': 'Giá trị cho người đọc',
+  'intro-quality': 'Chất lượng mở bài',
+  'keyword-naturalness': 'Từ khóa tự nhiên',
+  'evidence-support': 'Có dẫn chứng hỗ trợ',
+  'brand-pov': 'Đúng góc nhìn thương hiệu',
+};
 const QC_GROUPS = [
   { key: 'structure', vi: 'Cấu trúc & độ dài', en: 'Structure & length' },
   { key: 'seo', vi: 'SEO & liên kết', en: 'SEO & links' },
@@ -351,6 +380,19 @@ function qcGroupOf(id: string): typeof QC_GROUPS[number]['key'] {
   if (['primary-query', 'title-keyword', 'keyword-naturalness', 'must-cover', 'intent-satisfied', 'link-correctness'].includes(id) || id.startsWith('internal-link')) return 'seo';
   return 'content';
 }
+const matchable = (text: string) => text.toLocaleLowerCase().replace(/[“”"'‘’]/g, '').replace(/[—–]/g, '-').replace(/\s+/g, ' ').trim();
+/** Finds the rendered block quoting `evidence`, else the heading named in `location`. */
+export function findDraftBlock(root: HTMLElement | null, evidence = '', location = ''): HTMLElement | null {
+  if (!root) return null;
+  const blocks = [...root.querySelectorAll<HTMLElement>('h1,h2,h3,p,li,td,th')];
+  // A long quote may span edits; its first 80 characters are enough to locate it.
+  const quote = matchable(evidence).slice(0, 80);
+  const byQuote = quote.length >= 12 ? blocks.find(block => matchable(block.textContent ?? '').includes(quote)) : undefined;
+  if (byQuote) return byQuote;
+  const place = matchable(location);
+  return place ? blocks.find(block => { const heading = matchable(block.textContent ?? ''); return /^H[1-3]$/.test(block.tagName) && heading.length > 2 && place.includes(heading); }) ?? null : null;
+}
+
 /** Reviewer reports checklist results as lines "PASS|WARN|FAIL — item". */
 export function parseChecklistLines(reason = '') {
   return reason.split(/\r?\n/).flatMap(line => {
@@ -626,9 +668,11 @@ interface Props {
   onPrev: () => void;
   onToggleComplete: () => void;
   completionSaving: boolean;
+  /** AI log, token usage and other operator detail; admins only. */
+  showTechnical?: boolean;
 }
 
-export default function Step4Draft({ embedded = false, article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving }: Props) {
+export default function Step4Draft({ embedded = false, article, config, files, model, railwayUrl, onUpdate, onPrev, onToggleComplete, completionSaving, showTechnical = true }: Props) {
   const { tr, canonicalAIOutputInstruction } = useI18n();
   const completed = isArticleCompleted(article);
   const generationLog = useWorkflowCheckLog(article.id, 4);
@@ -647,6 +691,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   const [showAudit, setShowAudit] = useState(false);
   const [editingDraft, setEditingDraft] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const generationInFlight = useRef(false);
   const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingDraft = useRef<string | null>(null);
@@ -694,7 +739,26 @@ export default function Step4Draft({ embedded = false, article, config, files, m
   useEffect(() => {
     if (draftIsStale && !generating) notifyWorkspace('Outline, tài liệu, prompting rules hoặc model đã thay đổi. Draft đã lưu vẫn được giữ nguyên cho đến khi viết lại.', 'warning');
   }, [draftIsStale, generating]);
-  const checklistInstruction = useMemo(() => checklistReviewInstruction(step4ChecklistDocs(files, config, article)), [article, config, files]);
+  const checklistDocs = useMemo(() => step4ChecklistDocs(files, config, article), [article, config, files]);
+  const checklistInstruction = useMemo(() => checklistReviewInstruction(checklistDocs), [checklistDocs]);
+  // Rendered links must not navigate away from an unsaved workspace.
+  const openPreviewLink = (event: React.MouseEvent) => {
+    const link = (event.target as HTMLElement).closest('a');
+    if (!link) return;
+    event.preventDefault();
+    window.open(link.href, '_blank', 'noopener,noreferrer');
+  };
+  // Scroll to the draft passage a QC finding quotes (or the section it names) and flash it.
+  const showFindingInDraft = (item: QualityGateCheck) => {
+    setEditingDraft(false);
+    requestAnimationFrame(() => {
+      const target = findDraftBlock(previewRef.current, item.evidence, item.location);
+      if (!target) { notifyWorkspace(tr('Không tìm thấy đoạn này trong bản nháp hiện tại.', 'This passage was not found in the current draft.'), 'warning'); return; }
+      target.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+      target.classList.add('qc-highlight');
+      setTimeout(() => target.classList.remove('qc-highlight'), 2400);
+    });
+  };
   const internalLinkCandidates = useMemo(() => selectInternalLinkCandidates(article, config.websiteInventory ?? [], 10), [article, config.websiteInventory]);
   const internalLinkPlan = internalLinkBudget(targetWords);
   const exportBrief = useMemo(() => buildExportBrief(article), [article]);
@@ -784,7 +848,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
           ? <TriangleAlert data-qc-icon="warning" className="app-icon shrink-0 text-amber-700" aria-hidden="true" />
           : <CircleX data-qc-icon="fail" className="app-icon shrink-0 text-rose-700" aria-hidden="true" />}
       <span className="min-w-0 flex-1 font-medium">
-        {item.id === 'quality-review-stale' ? tr('Đánh giá cần cập nhật', 'Review needs updating') : item.id === 'semantic-review-schema' ? tr('Đánh giá semantic chưa hoàn tất', 'Semantic review incomplete') : item.id === 'checklist-compliance' ? tr('Tuân thủ SEO checklist', 'SEO checklist compliance') : item.label}
+        {item.id === 'quality-review-stale' ? tr('Đánh giá cần cập nhật', 'Review needs updating') : item.id === 'semantic-review-schema' ? tr('Đánh giá semantic chưa hoàn tất', 'Semantic review incomplete') : item.id === 'checklist-compliance' ? tr('Tuân thủ SEO checklist', 'SEO checklist compliance') : tr(QC_LABELS_VI[item.id] ?? item.label, item.label)}
         {/* Pass is shown by the icon; keep the word for screen readers only. */}
         <span className={item.status === 'pass' ? 'sr-only' : 'ml-1.5 font-normal'}>{item.status === 'pass' ? tr('Đạt', 'Pass') : item.status === 'warning' ? (QC_PROCESS_IDS.includes(item.id) ? tr('Chờ kiểm tra', 'Review pending') : tr('Cảnh báo', 'Warning')) : tr('Thất bại', 'Fail')}</span>
       </span>
@@ -804,6 +868,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
             : item.reason && <p className="whitespace-pre-wrap">{item.reason}</p>}
           {item.status !== 'pass' && item.evidence && checklistLines.length > 0 && <p className="whitespace-pre-wrap text-[var(--ui-secondary)]">{item.evidence}{item.location ? ` — ${item.location}` : ''}</p>}
           {item.recommendedAction && <p className="whitespace-pre-wrap">{tr('Đề xuất', 'Recommended action')}: {item.recommendedAction}</p>}
+          {item.status !== 'pass' && draft && (item.evidence || item.location) && <button type="button" onClick={() => showFindingInDraft(item)} className="inline-flex min-h-8 items-center gap-1.5 rounded border border-[var(--ui-border)] px-2 hover:bg-[var(--ui-hover)]"><Search className="h-3 w-3" aria-hidden="true" />{tr('Xem trong bài', 'Show in draft')}</button>}
         </div>
       </details> : <div className="flex min-w-0 items-start gap-2 px-1 py-1">{heading}</div>}
     </div>;
@@ -1686,7 +1751,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 </button>
                 {historyTrigger}
                 </div>
-                <button
+                {showTechnical && <button
                   type="button"
                   onClick={() => setShowAudit(true)}
                   disabled={!article.step4ProcessTrace?.length}
@@ -1696,7 +1761,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                 >
                   <Eye className="app-icon" aria-hidden="true" />
                   <span className="sr-only">{tr('Xem nhật ký AI', 'View AI log')}</span>
-                </button>
+                </button>}
                 <button
                   type="button"
                   onClick={() => void handleRecheckAndFix()}
@@ -1721,21 +1786,37 @@ export default function Step4Draft({ embedded = false, article, config, files, m
               </div>
             </div>
             <div className="draft-history-panel min-w-0 shrink-0">{historyPanel}</div>
-            <div className="px-3 pt-2 sm:px-4">
+            {showTechnical && <div className="px-3 pt-2 sm:px-4">
               <StepUsage step={3} usage={article.aiUsageByStep?.[4]} />
-            </div>
+            </div>}
 
             {/* Draft editor */}
             <div className="flex-1 overflow-y-auto p-3 sm:p-5">
               <SeoBrief article={article} primaryKeyword={getPrimaryKeyword(article)} linkTarget={internalLinkPlan.target} linkMax={internalLinkPlan.max} approvedCandidates={internalLinkCandidates.length} />
+              <details className="applied-checklist mb-3 rounded-lg border border-[var(--ui-border)] text-xs">
+                <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-400 [&::-webkit-details-marker]:hidden">
+                  <ListChecks className="app-icon shrink-0 text-[var(--ui-muted)]" aria-hidden="true" />
+                  <span className="flex-1 font-medium">{tr('Checklist áp dụng cho bài này', 'Checklist applied to this article')}</span>
+                  <span className="text-[var(--ui-muted)]">{checklistDocs.length ? tr(`${checklistDocs.length} tài liệu`, `${checklistDocs.length} documents`) : tr('Chưa có', 'None')}</span>
+                  <ChevronDown className="app-icon shrink-0 transition-transform [details[open]>summary_&]:rotate-180" aria-hidden="true" />
+                </summary>
+                <div className="space-y-3 border-t border-[var(--ui-border)] px-3 py-3">
+                  {checklistDocs.length
+                    ? checklistDocs.map(doc => <section key={doc.name}>
+                        <h4 className="font-medium">{doc.name}</h4>
+                        <div className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap text-[var(--ui-secondary)]">{doc.content}</div>
+                      </section>)
+                    : <p className="text-[var(--ui-secondary)]">{tr('Step 4 chưa được gán checklist. QC chỉ chấm theo tiêu chí mặc định; hãy nhờ admin gán checklist trong Cài đặt → Step Setup.', 'No checklist is assigned to Step 4. QC uses the default criteria only; ask an admin to assign one in Settings → Step Setup.')}</p>}
+                </div>
+              </details>
               <div className="mb-3 empty:hidden">
-                <WorkflowCheckLog key={article.id} run={generationLog.run} steps={[
+                {(showTechnical || generationLog.run) && <WorkflowCheckLog key={article.id} run={generationLog.run} steps={[
                   tr('Chuẩn bị dàn bài, dẫn chứng và ngân sách từ', 'Prepare the outline, evidence and word budget'),
                   tr('Viết bản nháp theo dàn bài', 'Write the draft from the outline'),
                   tr('Kiểm tra và bổ sung phần còn thiếu', 'Validate the response and fill missing parts'),
                   tr('Lưu bản nháp', 'Save the draft'),
                   tr('Chạy SEO, Universal QC và lưu kết quả', 'Run SEO and Universal QC and save the results'),
-                ]} />
+                ]} />}
               </div>
               {!generating && (
                 <>
@@ -1744,16 +1825,16 @@ export default function Step4Draft({ embedded = false, article, config, files, m
                   className="mb-3 rounded border border-slate-300 px-3 py-1 text-xs"
                   onClick={() => setEditingDraft(value => !value)}
                 >{editingDraft ? tr('Xem bản nháp', 'Preview draft') : tr('Chỉnh sửa toàn bộ bản nháp', 'Edit full draft')}</button>}
-                {draft && (completed || !editingDraft) && <div className="draft-prose whitespace-pre-wrap">
-                  {preview.title && <div>{preview.title}</div>}
-                  <div>{preview.introduction}</div>
+                {draft && (completed || !editingDraft) && <div ref={previewRef} className="draft-prose draft-rendered" onClick={openPreviewLink}>
+                  {/* markdownToHtml escapes all text and only links http(s) URLs. */}
+                  <div dangerouslySetInnerHTML={{ __html: markdownToHtml(preview.title + preview.introduction) }} />
                   <div>{preview.body.split(/(^!\[[^\r\n]*\]\(image-placeholder:\/\/[^)\s]+\)$)/m).map((part, index) => {
                     const suggestionId = part.match(/^!\[[^\r\n]*\]\(image-placeholder:\/\/([^)\s]+)\)$/)?.[1];
                     const job = suggestionId ? insertedImages.get(suggestionId) : undefined;
                     const suggestion = imageSuggestions.find(item => item.id === suggestionId);
                     return job && suggestion
                       ? <WorkerImage key={job.id} railwayUrl={railwayUrl} jobId={job.id} alt={suggestion.altText} />
-                      : <span key={index}>{part}</span>;
+                      : <div key={index} dangerouslySetInnerHTML={{ __html: markdownToHtml(part) }} />;
                   })}</div>
                 </div>}
                 <div hidden={Boolean(draft) && (completed || !editingDraft)}>
@@ -1968,7 +2049,7 @@ export default function Step4Draft({ embedded = false, article, config, files, m
         </button>
         </div>
       </div>
-      {showAudit && (
+      {showTechnical && showAudit && (
         <ProcessTraceModal
           title={tr('Nhật ký tạo bản nháp', 'Draft generation log')}
           events={article.step4ProcessTrace}

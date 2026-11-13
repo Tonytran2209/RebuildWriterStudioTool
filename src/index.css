@@ -2845,3 +2845,21 @@ html, body, #root {
     flex-basis: 2.75rem;
   }
 }
+
+/* Rendered draft preview (writer reading view). Long-form text is 16px per design contract. */
+.draft-rendered { font-size: 1rem; line-height: 1.75; }
+.draft-rendered h1 { margin: 0 0 0.75em; font-size: 1.5rem; font-weight: 600; line-height: 1.3; color: var(--ui-text); }
+.draft-rendered h2 { margin: 1.6em 0 0.5em; font-size: 1.25rem; font-weight: 600; line-height: 1.35; color: var(--ui-text); }
+.draft-rendered h3 { margin: 1.3em 0 0.4em; font-size: 1.0625rem; font-weight: 600; color: var(--ui-text); }
+.draft-rendered p { margin: 0 0 0.9em; }
+/* Override the generic step-subtitle rule (.minimal-step-shell h2 + p) inside article prose. */
+.draft-rendered h2 + p, .draft-rendered h3 + p { font-size: inherit !important; color: inherit !important; }
+.draft-rendered ul, .draft-rendered ol { margin: 0 0 0.9em; padding-left: 1.4em; }
+.draft-rendered ul { list-style: disc; }
+.draft-rendered ol { list-style: decimal; }
+.draft-rendered a { color: var(--ui-accent-text); text-decoration: underline; text-underline-offset: 2px; }
+.draft-rendered table { margin: 0 0 1em; font-size: 0.875rem; }
+.draft-rendered th, .draft-rendered td { border-color: var(--ui-border-strong) !important; }
+.draft-rendered hr { margin: 1.5em 0; border-color: var(--ui-border); }
+.draft-rendered .qc-highlight { border-radius: 4px; background: var(--ui-warning-bg); outline: 2px solid var(--ui-warning-border); outline-offset: 2px; transition: background 0.3s; }
+@media (prefers-reduced-motion: reduce) { .draft-rendered .qc-highlight { transition: none; } }

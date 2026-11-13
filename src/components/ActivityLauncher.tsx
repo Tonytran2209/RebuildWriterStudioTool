@@ -698,7 +698,7 @@ export default function ActivityLauncher({
             className="mx-auto mt-16 max-h-[75dvh] max-w-xl overflow-y-auto rounded-2xl border border-[#353535] bg-[var(--ui-surface)] p-4 shadow-2xl"
           >
             <div className="flex items-center justify-between">
-              <div><h2 id="plan-history-title" className="text-sm font-medium text-[var(--ui-text)]">Content Plan history</h2><p className="mt-1 text-[10px] text-[var(--ui-secondary)]">{plans.length} {tr("kế hoạch và phiên bản", "plans and versions")}</p></div>
+              <div><h2 id="plan-history-title" className="text-sm font-medium text-[var(--ui-text)]">{tr("Lịch sử Content Plan", "Content Plan history")}</h2><p className="mt-1 text-[10px] text-[var(--ui-secondary)]">{plans.length} {tr("kế hoạch và phiên bản", "plans and versions")}</p></div>
               <button
                 onClick={() => setShowHistory(false)}
                 aria-label={tr('Đóng lịch sử', 'Close history')}
