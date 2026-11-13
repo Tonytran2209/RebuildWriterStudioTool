@@ -63,3 +63,6 @@ Writer Studio creates evidence-aware articles through the Core Idea, Outline and
 
 ## Hướng dẫn sử dụng
 Đọc [Hướng dẫn sử dụng Writer Studio](design/user-guide.md) cho thao tác của người dùng và các giới hạn đã đối chiếu source. Tài liệu thuộc library canonical; cập nhật cùng thay đổi workflow liên quan.
+
+## Đề xuất chuyển đổi sang AI Content Pipeline (chưa triển khai)
+[docs/AI-PIPELINE-UPGRADE.md](../docs/AI-PIPELINE-UPGRADE.md) chuẩn hoá thuật ngữ (Gate, Executor/Reviewer Agent, Storage/Shipper/Package, AI Approval, Human review), đối chiếu với workflow hiện tại và liệt kê quyết định còn mở. Tài liệu này là đề xuất: invariant "three-stage article workflow" ở trên vẫn giữ cho đến khi các quyết định trong đó được chốt.
