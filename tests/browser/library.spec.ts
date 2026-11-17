@@ -1,6 +1,6 @@
 import { test, expect } from './browser-fixture';
 
-test('Rules importer retains successful documents after a partial upload failure', async ({ page }) => {
+test('Storage importer retains successful documents after a partial upload failure', async ({ page }) => {
   let uploads = 0;
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
@@ -16,20 +16,16 @@ test('Rules importer retains successful documents after a partial upload failure
     return route.fallback();
   });
   await page.goto('/?library');
-  await expect(page.getByText(/File gốc: Volume Railway/)).toBeVisible();
-  await page.getByRole('button', { name: 'Skills & Rules', exact: true }).click();
+  await page.getByLabel(/^(Thư viện|Library)$/).selectOption('rules');
   await page.locator('input[type=file]').setInputFiles([
     { name: 'good.md', mimeType: 'text/markdown', buffer: Buffer.from('Guide one') },
     { name: 'empty.txt', mimeType: 'text/plain', buffer: Buffer.from('') },
     { name: 'another.md', mimeType: 'text/markdown', buffer: Buffer.from('Guide two') },
   ]);
-  await expect(page.getByRole('status')).toContainText('2/3');
+  await expect(page.getByRole('status')).toContainText(/Đã lưu 2 tài liệu|Saved 2 document/);
   await expect(page.getByRole('alert').filter({hasText:'empty.txt: No readable text'})).toContainText('empty.txt: No readable text');
   await expect(page.getByTestId('library-records')).toContainText('file-3');
   const records = JSON.parse(await page.getByTestId('library-records').innerText());
   expect(records).toHaveLength(2);
   expect(records.every((record: any) => record.category === 'rules')).toBe(true);
-  await expect(page.getByLabel('Draft', { exact: true }).first()).not.toBeChecked();
-  await page.getByLabel('Draft', { exact: true }).first().check();
-  await expect(page.getByTestId('library-access')).toContainText('file-1');
 });

@@ -15,9 +15,11 @@ import { draftWithoutImagePlaceholders, step4ChecklistDocs } from "../lib/qualit
 const readable = (draft?: string) => normalizeDraftOutput(draftWithoutImagePlaceholders(draft ?? ""))
 import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../lib/qcGroups"
 import StructureSelect from "./StructureSelect"
-import TabStepSetup from "../components/config/TabStepSetup"
-import TabModels from "../components/config/TabModels"
-import TabKnowledgeBase from "../components/config/TabKnowledgeBase"
+import { ModelsSettings, WorkflowAiSettings } from "./AiSettings"
+import { AddDocForm, DocDetails, LegacyArchive } from "./StorageDocs"
+import WebsiteInventory from "./WebsiteInventory"
+import WorkflowRules from "./WorkflowRules"
+import { isLegacyActionPlan } from "../lib/legacyCompatibility"
 import { GATES, STORAGE_GROUPS, batchesOf, planStats, plansOf, storageDocs, toCrmArticle, toggleShip, type CrmArticle, type CrmBatch, type CrmPlan, type HumanStatus, type StorageDoc } from "./model"
 import { Av, I, enc, errText, go, person, toast, trackHandoff } from "./ui"
 import "./crm.css"
@@ -88,7 +90,7 @@ export type CrmProps = {
   onMigrateLegacy: (article: Article) => void
 }
 
-type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "step"; i: number } | { kind: "cmd" } | null
+type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "step"; i: number } | { kind: "cmd" } | null
 type Ctx = CrmProps & {
   settings: PipelineSettings
   list: CrmArticle[]
@@ -149,6 +151,7 @@ export default function CrmApp(props: CrmProps) {
   else if (a === "object" && b === "articles") page = <ArticleShow ctx={ctx} id={c} initialTab={new URLSearchParams(query).get("tab") ?? "final"} />
   else if (a === "object" && b === "plans") page = <PlanShow ctx={ctx} id={c} />
   else if (a === "object" && b === "batches") page = <BatchShow ctx={ctx} id={c} />
+  else if (a === "storage" && (b === "website" || b === "legacy")) page = <StorageSubPage ctx={ctx} p={b} />
   else if (a === "workflows") page = <PipelineCanvas ctx={ctx} />
   else if (a === "dashboards") page = <Dashboard ctx={ctx} />
   else if (a === "settings") page = <SettingsPage ctx={ctx} p={b} />
@@ -163,6 +166,7 @@ export default function CrmApp(props: CrmProps) {
       {panel?.kind === "plan" && <AddPlanPanel ctx={ctx} />}
       {panel?.kind === "review" && <ReviewPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "doc" && <DocPanel ctx={ctx} id={panel.id} />}
+      {panel?.kind === "add-doc" && <AddDocPanel ctx={ctx} />}
       {panel?.kind === "step" && <StepPanel ctx={ctx} i={panel.i} />}
       {panel?.kind === "cmd" && <CommandMenu ctx={ctx} />}
     </div>
@@ -184,7 +188,7 @@ function NavDrawer({ ctx }: { ctx: Ctx }) {
     <a className="nav-item" href={ctx.can("settings") ? "#/settings/pipeline" : "#/settings/experience"}><I n="settings" /><span>{tr("Cài đặt", "Settings")}</span></a>
     <button className="nav-item" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="circle-plus" /><span>Add Plan</span></button>
     <div className="nav-sec">Pipeline</div>
-    {nav.filter(([, need]) => ctx.can(need)).map(([o]) => item("#/objects/" + o, objIco(o), OBJ_META[o].label, (a === "objects" || a === "object") && b === o, o === "reviews" && pending ? <span className="kbd">{pending}</span> : undefined))}
+    {nav.filter(([, need]) => ctx.can(need)).map(([o]) => item("#/objects/" + o, objIco(o), OBJ_META[o].label, ((a === "objects" || a === "object") && b === o) || (a === "storage" && o === "storage"), o === "reviews" && pending ? <span className="kbd">{pending}</span> : undefined))}
     {item("#/workflows", <span className="nav-ico" style={{ background: "#307f52" }}><I n="settings-automation" s={{ fontSize: 11 }} /></span>, tr("Quy trình 3 gate", "3-gate pipeline"), a === "workflows")}
     {item("#/dashboards", <span className="nav-ico" style={{ background: "#b23887" }}><I n="layout-dashboard" s={{ fontSize: 11 }} /></span>, "Dashboards", a === "dashboards")}
     {campaigns.length > 0 && <div className="nav-sec">Campaign</div>}
@@ -327,8 +331,13 @@ function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
   const isKanban = o === "articles" && kanban
   const sortBy = (key: string) => setSort(s => ({ key, dir: s?.key === key && s.dir === "asc" ? "desc" : "asc" }))
   const randomReview = () => { const pool = ctx.list.filter(a => a.status === "completed" && a.human.status === "not"); if (!pool.length) return toast(tr("Không còn bài chưa review", "No unreviewed articles")); ctx.setPanel({ kind: "review", id: pool[Math.floor(Math.random() * pool.length)].id }) }
-  const addDoc = () => go("#/settings/knowledge")
-  const primary = o === "storage" ? (ctx.isAdmin && <button className="btn" aria-label={tr("Thêm tài liệu", "Add document")} onClick={addDoc}><I n="upload" /><span>{tr("Thêm tài liệu", "Add document")}</span></button>)
+  const addDoc = () => ctx.setPanel({ kind: "add-doc" })
+  const legacyCount = ctx.files.filter(isLegacyActionPlan).length
+  const primary = o === "storage" ? <>
+      {legacyCount > 0 && <button className="btn" aria-label="Legacy Action Plans" onClick={() => go("#/storage/legacy")}><I n="archive" /><span>Legacy</span></button>}
+      {ctx.isAdmin && <button className="btn" aria-label="Website Inventory" onClick={() => go("#/storage/website")}><I n="world" /><span>Website Inventory</span></button>}
+      {ctx.isAdmin && <button className="btn" aria-label={tr("Thêm tài liệu", "Add document")} onClick={addDoc}><I n="upload" /><span>{tr("Thêm tài liệu", "Add document")}</span></button>}
+    </>
     : o === "reviews" ? <button className="btn" aria-label={tr("Chọn ngẫu nhiên", "Random pick")} onClick={randomReview}><I n="dice-5" /><span>{tr("Chọn ngẫu nhiên", "Random pick")} ({ctx.settings.reviewSample}%)</span></button>
     : <button className="btn primary" aria-label="Add Plan" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="plus" /><span>Add Plan</span></button>
   const gaps = o === "storage" ? ctx.docs.filter(d => d.st !== "ok") : []
@@ -352,6 +361,22 @@ function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
       </div>}
       {isKanban ? <KanbanView ctx={ctx} rows={rows} /> : <TableView ctx={ctx} o={o} rows={rows} fields={fields} sort={sort} sortBy={sortBy} onFoot={o === "storage" ? addDoc : o === "reviews" ? randomReview : () => ctx.setPanel({ kind: "plan" })} />}
     </div>
+  </>
+}
+
+function StorageSubPage({ ctx, p }: { ctx: Ctx; p: "website" | "legacy" }) {
+  const { tr } = useI18n()
+  // The server owns inventory records (saved per record); keep the live list on this page only.
+  const [records, setRecords] = useState(ctx.config.websiteInventory ?? [])
+  if (p === "website" && !ctx.isAdmin) return <Forbidden />
+  const title = p === "website" ? "Website Inventory" : "Legacy Action Plans"
+  return <>
+    <Header title={<><a className="crumb" href="#/objects/storage">Storage</a><span className="crumb">/</span>{title}</>} />
+    <div className="card"><div className="set"><div className="set-inner" style={{ maxWidth: 960 }}>
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{title}</h1>
+      {p === "website" ? <><p className="desc" style={{ color: "var(--f3)", margin: 0 }}>{tr("Danh sách URL duy nhất AI được phép đề xuất làm internal link.", "The only URLs AI may suggest as internal links.")}</p><WebsiteInventory records={records} railwayUrl={ctx.config.railwayUrl} onChange={setRecords} /></>
+        : <LegacyArchive files={ctx.files.filter(isLegacyActionPlan)} />}
+    </div></div></div>
   </>
 }
 
@@ -740,6 +765,15 @@ function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
     if (!d.file) return toast(tr("Tài liệu chưa có trong Storage", "This document is not in Storage yet"))
     try { await ctx.onSaveConfig(toggleShip(ctx.config, d.file, g), ctx.files, false); toast("Saved") } catch (err) { toast(errText(err)) }
   }
+  const saveFile = (file: DocumentFile) => ctx.onSaveConfig(ctx.config, ctx.files.map(f => f.id === file.id ? file : f), true)
+  const deleteFile = async () => {
+    const files = ctx.files.filter(f => f.id !== id)
+    // Drop the deleted file from every gate's Shipper access too.
+    const stepConfigs = Object.fromEntries(Object.entries(ctx.config.stepConfigs).map(([step, sc]) => [step, sc.fileAccess ? { ...sc, fileAccess: { kb: (sc.fileAccess.kb ?? []).filter(x => x !== id), rules: (sc.fileAccess.rules ?? []).filter(x => x !== id) } } : sc]))
+    await ctx.onSaveConfig({ ...ctx.config, stepConfigs }, files, true)
+    ctx.setPanel(null)
+    toast(tr("Đã xoá tài liệu", "Document deleted"))
+  }
   return <SidePanel ctx={ctx} title="Document" icon={<I n="file-description" />}>
     <div className="sp-title">{d.name}</div>
     <div className="fields" style={{ paddingTop: 0 }}>
@@ -750,7 +784,17 @@ function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
     <div className="fsec"><I n="git-merge" />&nbsp;Used at (Shipper)</div>
     <div className="box">{[1, 2, 3].map(g => <div key={g} className="box-row"><div className="grow">{GATES[g - 1].label}</div><button role="switch" aria-checked={d.used.includes(g)} aria-label={GATES[g - 1].label} className={`toggle${d.used.includes(g) ? " on" : ""}`} onClick={() => void flip(g)} /></div>)}</div>
     <div className="fsec"><I n="category" />&nbsp;Applies to types</div><div>{d.types.map(t => <span key={t}><TypeTag t={t} /> </span>)}</div>
+    {d.file ? <DocDetails key={d.file.id} file={d.file} railwayUrl={ctx.config.railwayUrl} canEdit={ctx.isAdmin} onSave={saveFile} onDelete={deleteFile} />
+      : d.st === "missing" && ctx.isAdmin && d.id !== "approved-articles" && <button className="btn primary" style={{ marginTop: 14 }} onClick={() => ctx.setPanel({ kind: "add-doc" })}><I n="upload" />{tr("Thêm tài liệu này", "Add this document")}</button>}
   </SidePanel>
+}
+
+function AddDocPanel({ ctx }: { ctx: Ctx }) {
+  const { tr } = useI18n()
+  if (!ctx.isAdmin) return null
+  // Upload/import already stored each record on the server; this adds them to the library list.
+  const onAdded = (docs: DocumentFile[]) => ctx.onSaveConfig(ctx.config, [...docs, ...ctx.files.filter(f => !docs.some(x => x.id === f.id))], true)
+  return <SidePanel ctx={ctx} title={tr("Thêm tài liệu", "Add document")} icon={<I n="upload" />}><AddDocForm railwayUrl={ctx.config.railwayUrl} onAdded={onAdded} /></SidePanel>
 }
 
 /* ─── command menu ─────────────────────────────────────────────────────── */
@@ -882,7 +926,7 @@ function SettingsNav({ ctx, p }: { ctx: Ctx; p: string }) {
   return <nav className="nav" aria-label={tr("Điều hướng chính", "Main navigation")}>
     <a className="nav-item" href="#/objects/articles"><I n="chevron-left" /><span>Exit Settings</span></a>
     <div className="nav-sec">User</div>{it("experience", "color-swatch", "Experience")}{it("roles", "lock", "Roles")}
-    {ctx.can("settings") && <><div className="nav-sec">Pipeline</div>{it("pipeline", "git-merge", "Pipeline")}{it("shipper", "truck-delivery", "Shipper")}{it("knowledge", "books", "Knowledge & Rules")}{it("workflow-ai", "robot", "Workflow AI")}{it("models", "cpu", "AI Models")}</>}
+    {ctx.can("settings") && <><div className="nav-sec">Pipeline</div>{it("pipeline", "git-merge", "Pipeline")}{it("shipper", "truck-delivery", "Shipper")}{it("workflow-ai", "robot", "Workflow AI")}{it("models", "cpu", "AI Models")}</>}
     <div className="nav-foot"><button className="nav-item" onClick={ctx.onSignOut}><I n="logout" /><span>Logout</span></button></div>
   </nav>
 }
@@ -890,9 +934,9 @@ const Sec = ({ title, desc, children }: { title: string; desc?: string; children
 
 function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
   const { tr, language, setLanguage } = useI18n()
-  const admin = ["pipeline", "shipper", "knowledge", "workflow-ai", "models"]
+  const admin = ["pipeline", "shipper", "workflow-ai", "models"]
   if (admin.includes(p) && !ctx.can("settings")) return <Forbidden />
-  const titles: Record<string, string> = { experience: "Experience", roles: "Roles", pipeline: "Pipeline", shipper: "Shipper", knowledge: "Knowledge & Rules", "workflow-ai": "Workflow AI", models: "AI Models" }
+  const titles: Record<string, string> = { experience: "Experience", roles: "Roles", pipeline: "Pipeline", shipper: "Shipper", "workflow-ai": "Workflow AI", models: "AI Models" }
   const st = ctx.settings
   const savePipeline = async (patch: Partial<PipelineSettings>) => { try { await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...st, ...patch } }, ctx.files, false); toast("Saved") } catch (err) { toast(errText(err)) } }
   const numField = (k: keyof PipelineSettings, label: string, min: number, max: number) =>
@@ -918,11 +962,11 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
   if (p === "shipper") body = <Sec title="Shipper mapping" desc={tr("Gate nào lấy tài liệu nào. Không bao giờ nạp cả thư viện.", "Which gate gets which documents. Never the whole library.")}><div className="box"><table className="tbl" style={{ width: "100%" }}><thead><tr><th style={{ position: "static" }}>Document</th>{["G1", "G2", "G3"].map(g => <th key={g} style={{ position: "static", textAlign: "center" }}>{g}</th>)}</tr></thead><tbody>
     {ctx.docs.filter(d => d.file).map(d => <tr key={d.id}><td>{d.name} <span className="muted">· {d.g}</span></td>{[1, 2, 3].map(g => <td key={g} style={{ textAlign: "center" }}><button role="switch" aria-checked={d.used.includes(g)} aria-label={`${d.name} G${g}`} className={`toggle${d.used.includes(g) ? " on" : ""}`} style={{ display: "inline-block" }} onClick={() => void ctx.onSaveConfig(toggleShip(ctx.config, d.file!, g), ctx.files, false).then(() => toast("Saved")).catch(err => toast(errText(err)))} /></td>)}</tr>)}
   </tbody></table></div></Sec>
-  if (["knowledge", "workflow-ai", "models"].includes(p)) body = <EmbeddedSettings ctx={ctx} p={p} />
+  if (["workflow-ai", "models"].includes(p)) body = <EmbeddedSettings ctx={ctx} p={p} />
   if (!body) body = <div className="empty-state"><I n="ghost" /><h3>Page not found</h3></div>
   return <>
     <Header title={<><I n="settings" /><span className="crumb">Settings</span><span className="crumb">/</span>{titles[p] ?? ""}</>} />
-    <div className="card"><div className="set"><div className="set-inner" style={["knowledge", "workflow-ai", "models"].includes(p) ? { maxWidth: 1040 } : undefined}><h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{titles[p] ?? ""}</h1>{body}</div></div></div>
+    <div className="card"><div className="set"><div className="set-inner"><h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{titles[p] ?? ""}</h1>{body}</div></div></div>
   </>
 }
 
@@ -930,17 +974,16 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
 function EmbeddedSettings({ ctx, p }: { ctx: Ctx; p: string }) {
   const { tr } = useI18n()
   const [config, setConfig] = useState(ctx.config)
-  const [files, setFiles] = useState(ctx.files)
+  const files = ctx.files
   const [saving, setSaving] = useState(false)
-  const dirty = config !== ctx.config || files !== ctx.files
-  const save = async () => { setSaving(true); try { await ctx.onSaveConfig(config, files, files !== ctx.files); toast("Saved") } catch (err) { toast(errText(err)) } finally { setSaving(false) } }
-  const railway = config.railwayUrl
-  return <div className="crm-embedded">
-    {p === "workflow-ai" && <TabStepSetup config={config} files={files} articles={ctx.articles} onChange={setConfig} />}
-    {p === "models" && <TabModels config={config} onChange={setConfig} />}
-    {p === "knowledge" && <TabKnowledgeBase files={files} onChange={setFiles} railwayUrl={railway} config={config} onConfigChange={setConfig} />}
-    {["workflow-ai", "models", "knowledge"].includes(p) && <div style={{ position: "sticky", bottom: 0, display: "flex", justifyContent: "flex-end", padding: "12px 0", background: "var(--bg1)" }}>
+  const dirty = config !== ctx.config
+  const save = async () => { setSaving(true); try { await ctx.onSaveConfig(config, files, false); toast("Saved") } catch (err) { toast(errText(err)) } finally { setSaving(false) } }
+  return <>
+    {p === "workflow-ai" && <WorkflowAiSettings config={config} files={files} articles={ctx.articles} onChange={setConfig} />}
+    {p === "models" && <ModelsSettings config={config} onChange={setConfig} />}
+    {p === "workflow-ai" && <WorkflowRules config={config} files={files} onChange={setConfig} />}
+    {["workflow-ai", "models"].includes(p) && <div style={{ position: "sticky", bottom: 0, display: "flex", justifyContent: "flex-end", padding: "12px 0", background: "var(--bg1)" }}>
       <button className="btn primary" disabled={!dirty || saving} onClick={() => void save()}><I n="device-floppy" />{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</button>
     </div>}
-  </div>
+  </>
 }

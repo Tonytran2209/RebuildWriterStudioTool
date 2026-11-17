@@ -10,10 +10,10 @@ import type {
 import { DEFAULT_CONFIG, mergeWithLatestModelCatalog } from "./lib/defaultData"
 import * as db from "./lib/db"
 import { fetchContentPlans } from "./lib/contentPlans"
-import BrandMark from "./components/BrandMark"
 import { notifyWorkspace } from "./components/workspace/WorkspaceNotification"
 import { useI18n } from "./lib/i18n"
 import LoginScreen from "./components/LoginScreen"
+import CrmScreen, { CrmBrand } from "./crm/Screen"
 import { isArticleCompleted } from "./lib/workflowGuards"
 import { isLegacyArticle } from "./lib/legacyCompatibility"
 import { useThemePreference } from "./lib/theme"
@@ -519,60 +519,26 @@ export default function App() {
       onSignUp={db.signUp}
       onForgotPassword={db.requestPasswordReset}
       onResetPassword={db.resetPassword}
+      theme={theme}
     />
   }
 
   if (restoringSession || syncStatus === "loading") {
-    return (
-      <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} h-dvh flex items-center justify-center bg-[var(--ui-bg)]`}>
-        <div className="text-center space-y-3">
-          <BrandMark className="mx-auto h-10 w-10" />
-          <div className="text-sm font-medium text-[var(--ui-text)]">
-            {tr("Đang tải Writer Studio...", "Loading Writer Studio...")}
-          </div>
-          <div className="w-40 h-1 bg-[#222] rounded-full overflow-hidden mx-auto">
-            <div className="h-full bg-[#9ca3af] rounded-full w-3/5 animate-pulse" />
-          </div>
-        </div>
-      </div>
-    )
+    return <CrmScreen theme={theme}>
+      <CrmBrand title="Writer Studio" sub={tr("Đang tải Writer Studio...", "Loading Writer Studio...")} />
+      <div role="progressbar" aria-label={tr("Đang tải", "Loading")} style={{ height: 4, borderRadius: 2, background: "var(--b2)", overflow: "hidden" }}><div className="crm-loading-bar" /></div>
+    </CrmScreen>
   }
 
   if (!authSession) return null
 
   if (initialLoadError) {
-    return (
-      <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} h-dvh flex items-center justify-center bg-[var(--ui-bg)] p-4 sm:p-6`}>
-        <div className="max-w-md w-full bg-[var(--ui-surface)] border border-[var(--ui-border)] rounded-2xl p-6 text-center space-y-4">
-          <div className="w-12 h-12 rounded-xl border border-red-900/50 bg-red-950/30 text-red-400 flex items-center justify-center text-xl mx-auto">
-            !
-          </div>
-          <div>
-            <h1 className="text-base font-medium text-[#e5e5e5]">
-              {tr(
-                "Không tải được dữ liệu từ Railway / Supabase",
-                "Could not load data from Railway / Supabase",
-              )}
-            </h1>
-            <p className="text-xs text-[#9ca3af] mt-2 leading-relaxed">
-              {tr(
-                "Ứng dụng đã khóa thao tác lưu để tránh ghi đè database bằng dữ liệu rỗng.",
-                "Saving is locked to prevent overwriting the database with empty data.",
-              )}
-            </p>
-          </div>
-          <div className="bg-red-950/25 border border-red-900/50 rounded-xl px-3 py-2 text-[11px] text-red-300 font-mono break-words">
-            {initialLoadError}
-          </div>
-          <button
-            onClick={() => window.location.reload()}
-            className="bg-neutral-200 hover:bg-white text-[#141414] font-medium text-sm py-2.5 px-5 rounded-xl transition-all"
-          >
-            {tr("Thử tải lại", "Try again")}
-          </button>
-        </div>
-      </div>
-    )
+    return <CrmScreen theme={theme}>
+      <CrmBrand title={tr("Không tải được dữ liệu từ Railway / Supabase", "Could not load data from Railway / Supabase")} />
+      <p style={{ margin: 0, color: "var(--f3)", lineHeight: 1.5 }}>{tr("Ứng dụng đã khóa thao tác lưu để tránh ghi đè database bằng dữ liệu rỗng.", "Saving is locked to prevent overwriting the database with empty data.")}</p>
+      <p role="alert" className="note err" style={{ margin: 0, fontFamily: "monospace", wordBreak: "break-word" }}>{initialLoadError}</p>
+      <button className="btn primary lg" onClick={() => window.location.reload()}>{tr("Thử tải lại", "Try again")}</button>
+    </CrmScreen>
   }
 
 

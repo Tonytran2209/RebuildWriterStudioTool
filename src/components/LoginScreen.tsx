@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react"
-import { ArrowLeft, KeyRound, LogIn, UserPlus } from "lucide-react"
-import BrandMark from "./BrandMark"
+import CrmScreen, { CrmBrand } from "../crm/Screen"
+import { I } from "../crm/ui"
 import { verifyEmail, resendVerification, authOptions } from "../lib/db"
 import { useI18n } from "../lib/i18n"
 
@@ -10,6 +10,7 @@ interface Props {
   onSignUp: (email: string, password: string) => Promise<string>
   onForgotPassword: (email: string) => Promise<string>
   onResetPassword: (accessToken: string, password: string) => Promise<string>
+  theme?: "light" | "dark"
 }
 
 function getRecoveryToken() {
@@ -23,7 +24,7 @@ function getVerificationToken() {
   return params.get("type") === "verification" ? params.get("access_token") : null
 }
 
-export default function LoginScreen({ onLogin, onSignUp, onForgotPassword, onResetPassword }: Props) {
+export default function LoginScreen({ onLogin, onSignUp, onForgotPassword, onResetPassword, theme = "light" }: Props) {
   const { tr } = useI18n()
   const [recoveryToken, setRecoveryToken] = useState(getRecoveryToken)
   const [verificationToken, setVerificationToken] = useState(getVerificationToken)
@@ -71,20 +72,21 @@ export default function LoginScreen({ onLogin, onSignUp, onForgotPassword, onRes
 
   const title = mode === "verify" ? tr("Xác nhận email", "Verify email") : mode === "signup" ? tr("Tạo tài khoản", "Create account") : mode === "forgot" ? tr("Đặt lại mật khẩu", "Reset password") : mode === "reset" ? tr("Tạo mật khẩu mới", "Create a new password") : "Writer Studio"
   const description = mode === "signup" ? tr("Tài khoản mới sẽ có quyền User.", "New accounts receive the User role.") : mode === "forgot" ? tr("Chúng tôi sẽ gửi link đặt lại qua email.", "We will email you a reset link.") : mode === "reset" ? tr("Nhập mật khẩu mới cho tài khoản của bạn.", "Enter a new password for your account.") : tr("Đăng nhập để tiếp tục", "Sign in to continue")
-  return <main className="writer-login flex min-h-dvh items-center justify-center bg-[var(--ui-bg)] p-5 text-[var(--ui-text)]"><form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-7 shadow-2xl shadow-black/25">
-    <div className="mb-7 flex items-center gap-4"><BrandMark className="h-12 w-12" /><div><h1 className="text-lg font-semibold">{title}</h1><p className="text-xs text-[var(--ui-secondary)]">{description}</p></div></div>
-    {mode !== "reset" && mode !== "verify" && <label className="mb-4 block text-sm text-[var(--ui-text)]">Email<input required autoComplete="email" type="email" value={email} onChange={event => setEmail(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] px-3 text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-focus)]" /></label>}
-    {mode !== "forgot" && mode !== "verify" && <label className="mb-5 block text-sm text-[var(--ui-text)]">{mode === "reset" ? tr("Mật khẩu mới", "New password") : tr("Mật khẩu", "Password")}<input required minLength={mode === "login" ? 8 : options.passwordMin} autoComplete={mode === "login" ? "current-password" : "new-password"} type="password" value={password} onChange={event => setPassword(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] px-3 text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-focus)]" /></label>}
-    {mode === "reset" && <label className="mb-5 block text-sm text-[var(--ui-text)]">{tr("Xác nhận mật khẩu mới", "Confirm new password")}<input required minLength={options.passwordMin} autoComplete="new-password" type="password" value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} className="mt-1.5 h-11 w-full rounded-lg border border-[var(--ui-border)] bg-[var(--ui-control)] px-3 text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-focus)]" /></label>}
-    {mode === "signup" && options.provider === "postgres" && <button type="button" disabled={loading || !email} className="mb-4 text-xs text-[var(--ui-link)]" onClick={async () => {
+  const icon = mode === "signup" ? "user-plus" : mode === "login" ? "login-2" : "key"
+  return <CrmScreen theme={theme}><form onSubmit={submit} style={{ display: "contents" }}>
+    <CrmBrand title={title} sub={description} />
+    {mode !== "reset" && mode !== "verify" && <label className="fl">Email<input className="inp" required autoComplete="email" type="email" value={email} onChange={event => setEmail(event.target.value)} /></label>}
+    {mode !== "forgot" && mode !== "verify" && <label className="fl">{mode === "reset" ? tr("Mật khẩu mới", "New password") : tr("Mật khẩu", "Password")}<input className="inp" required minLength={mode === "login" ? 8 : options.passwordMin} autoComplete={mode === "login" ? "current-password" : "new-password"} type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>}
+    {mode === "reset" && <label className="fl">{tr("Xác nhận mật khẩu mới", "Confirm new password")}<input className="inp" required minLength={options.passwordMin} autoComplete="new-password" type="password" value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} /></label>}
+    {mode === "signup" && options.provider === "postgres" && <button type="button" disabled={loading || !email} className="link" style={{ alignSelf: "flex-start" }} onClick={async () => {
       setLoading(true); setError(null)
       try { setMessage(await resendVerification(email)) }
       catch (e) { setError(e instanceof Error ? e.message : "Không thể gửi email.") }
       finally { setLoading(false) }
     }}>{tr("Gửi lại email xác minh", "Resend verification email")}</button>}
-    {error && <p role="alert" className="mb-4 rounded-lg border border-red-900/70 bg-red-950/30 px-3 py-2 text-xs text-red-300">{error}</p>}
-    {message && <p role="status" className="mb-4 rounded-lg border border-blue-900/70 bg-blue-950/30 px-3 py-2 text-xs text-blue-200">{message}</p>}
-    <button type="submit" disabled={loading} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--ui-primary-bg)] text-sm font-medium text-[var(--ui-primary-text)] transition hover:opacity-90 disabled:opacity-60">{mode === "signup" ? <UserPlus className="h-4 w-4" /> : mode === "login" ? <LogIn className="h-4 w-4" /> : <KeyRound className="h-4 w-4" />}{loading ? tr("Đang xử lý…", "Working…") : mode === "verify" ? tr("Xác nhận email", "Verify email") : mode === "signup" ? tr("Đăng ký", "Create account") : mode === "forgot" ? tr("Gửi link đặt lại", "Send reset link") : mode === "reset" ? tr("Lưu mật khẩu mới", "Save new password") : tr("Đăng nhập", "Sign in")}</button>
-    {mode !== "reset" && <div className="mt-5 flex flex-wrap justify-center gap-x-4 gap-y-2 border-t border-[var(--ui-border)] pt-4 text-xs">{options.allowSignup && <button type="button" onClick={() => changeMode("signup")} className="text-[var(--ui-link)] hover:underline">{tr("Đăng ký", "Create account")}</button>}<button type="button" onClick={() => changeMode("forgot")} className="text-[var(--ui-link)] hover:underline">{tr("Quên mật khẩu?", "Forgot password?")}</button>{mode !== "login" && <button type="button" onClick={() => changeMode("login")} className="flex items-center gap-1 text-[var(--ui-secondary)] hover:text-[var(--ui-text)]"><ArrowLeft className="h-3 w-3" />{tr("Đăng nhập", "Sign in")}</button>}</div>}
-  </form></main>
+    {error && <p role="alert" className="note err" style={{ margin: 0 }}>{error}</p>}
+    {message && <p role="status" className="note ok" style={{ margin: 0 }}>{message}</p>}
+    <button type="submit" disabled={loading} className="btn primary lg" style={{ width: "100%" }}><I n={loading ? "loader-2" : icon} />{loading ? tr("Đang xử lý…", "Working…") : mode === "verify" ? tr("Xác nhận email", "Verify email") : mode === "signup" ? tr("Đăng ký", "Create account") : mode === "forgot" ? tr("Gửi link đặt lại", "Send reset link") : mode === "reset" ? tr("Lưu mật khẩu mới", "Save new password") : tr("Đăng nhập", "Sign in")}</button>
+    {mode !== "reset" && <div className="links">{options.allowSignup && <button type="button" onClick={() => changeMode("signup")} className="link">{tr("Đăng ký", "Create account")}</button>}<button type="button" onClick={() => changeMode("forgot")} className="link">{tr("Quên mật khẩu?", "Forgot password?")}</button>{mode !== "login" && <button type="button" onClick={() => changeMode("login")} className="link" style={{ color: "var(--f3)" }}><I n="arrow-left" />{tr("Đăng nhập", "Sign in")}</button>}</div>}
+  </form></CrmScreen>
 }

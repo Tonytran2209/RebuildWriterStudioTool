@@ -370,3 +370,17 @@
   --c-blue:#4159c1;--c-blue-bg:#eef2fd;--c-orange:#c25700;--c-orange-bg:#fcefd9;
   --c-gray:#666;--c-gray-bg:#f1f1f1;--c-pink:#b23887;--c-pink-bg:#faeaf5;
 }
+/* Login / loading / error screens */
+.crm.crm-screen{align-items:center;justify-content:center;padding:16px;overflow:auto}
+.crm .crm-auth{width:100%;max-width:360px;background:var(--bg1);border:1px solid var(--b2);border-radius:8px;padding:24px;display:flex;flex-direction:column;gap:14px}
+.crm .crm-auth label.fl{display:flex;flex-direction:column;gap:6px;color:var(--f2)}
+.crm .crm-auth .note{border-radius:6px;padding:8px 10px}
+.crm .crm-auth .note.err{background:var(--danger-bg);color:var(--danger)}
+.crm .crm-auth .note.ok{background:var(--accent-bg);color:var(--accent)}
+.crm .crm-auth .links{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px;border-top:1px solid var(--b2);padding-top:12px}
+.crm .crm-auth .link{color:var(--accent);background:none;border:0;padding:0;cursor:pointer;font:inherit}
+.crm .crm-auth .link:hover{text-decoration:underline}
+.crm .crm-auth h1{font-size:16px!important;font-weight:600!important}
+.crm .crm-loading-bar{height:100%;width:40%;background:var(--accent);border-radius:2px;animation:crm-load 1.2s var(--ease) infinite}
+@keyframes crm-load{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+@media (prefers-reduced-motion:reduce){.crm .crm-loading-bar{animation:none;width:60%}}

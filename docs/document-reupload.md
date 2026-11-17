@@ -16,7 +16,7 @@ Keep the existing DATABASE_URL and auth configuration. The storage root must mat
 
 ## User workflow
 
-Open Settings → Knowledge & Rules. The storage banner must show Railway Volume and PostgreSQL Railway. A configuration error is not a successful storage check; the banner checks directory access, while an actual upload/download confirms the full workflow.
+Open Storage → Add document. An actual upload followed by Download in the document panel confirms the full storage workflow.
 
 Upload evidence and reference documents in Knowledge Base. Upload writing guides/checklists in Skills & Rules above the workflow rules editor. Both support multiple DOCX, PDF, TXT, MD, CSV, TSV, XLSX, JSON and XML files, maximum 15 MB each. Uploads run sequentially; failed files are listed individually and successful files remain visible. Only retry failed files to avoid duplicate records. Uploading the same name creates a new document ID; it does not replace an existing source.
 

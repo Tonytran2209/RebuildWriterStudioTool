@@ -21,7 +21,7 @@ const structureFile = { id: 'outline-md', name: 'Outline forms.md', category: 'r
 
 async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
   const user = { id: role, email: role + '@example.com', role };
-  const log = { reruns: [] as any[], puts: [] as any[], configs: [] as any[], created: [] as any[], started: [] as string[], imported: [] as any[] };
+  const log = { files: [] as any[][], imports: [] as any[], reruns: [] as any[], puts: [] as any[], configs: [] as any[], created: [] as any[], started: [] as string[], imported: [] as any[] };
   await page.addInitScript(user => localStorage.setItem('writer:auth-session', JSON.stringify({ authProvider: 'postgres', accessToken: '', expiresAt: null, user })), user);
   const config = { ...DEFAULT_CONFIG, stepConfigs: { ...DEFAULT_CONFIG.stepConfigs, 3: { ...DEFAULT_CONFIG.stepConfigs[3], fileAccess: { kb: [], rules: ['outline-md'] } } } };
   await page.route('**/*', async route => {
@@ -43,7 +43,9 @@ async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
       { id: 'n3', title: 'Why E matters', keywords: [], type: 'needs-review', sourceLine: 'Why E matters' },
     ] } } });
     if (url.pathname === '/api/content-plans') return route.fulfill({ json: [plan] });
+    if (url.pathname === '/api/files' && method === 'POST') { log.files.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } }); }
     if (url.pathname === '/api/files') return route.fulfill({ json: [structureFile] });
+    if (url.pathname === '/api/import/source') { const body = route.request().postDataJSON(); log.imports.push(body); return route.fulfill({ json: { target: 'writer:files', record: { ...body, id: 'imported-1', content: body.content, scanStatus: 'ready' } } }); }
     const start = url.pathname.match(/^\/api\/batches\/([^/]+)\/start$/);
     if (start) { log.started.push(decodeURIComponent(start[1])); return route.fulfill({ json: { ok: true } }); }
     if (url.pathname.startsWith('/api/batches/')) return route.fulfill({ json: { articles: [] } });
@@ -88,6 +90,17 @@ test('CRM (demo UI): kanban, table, record, review and pipeline settings on real
   await threshold.press('Enter');
   await expect.poll(() => log.configs.length).toBe(1);
   expect(log.configs[0].pipeline.threshold).toBe(85);
+
+  // Changing a gate model must keep the Shipper's document access.
+  await goHash(page, '/settings/workflow-ai');
+  await page.getByLabel(/Số từ tiếng Anh mục tiêu|Target English words/).fill('2000');
+  await page.getByRole('button', { name: /Lưu thay đổi|Save changes/ }).click();
+  await expect.poll(() => log.configs.length).toBe(2);
+  expect(log.configs[1].stepConfigs[4].maxDraftWords).toBe(2000);
+  expect(log.configs[1].stepConfigs[3].fileAccess).toEqual({ kb: [], rules: ['outline-md'] });
+
+  await goHash(page, '/settings/models');
+  await expect(page.getByText('ANTHROPIC_API_KEY')).toBeVisible();
 });
 
 test('CRM Add Plan imports, classifies, splits into batches and starts them', async ({ page }) => {
@@ -130,4 +143,28 @@ test('CRM manual mode uses the demo layout and re-runs gates through the pipelin
   await page.getByRole('button', { name: /Chấm lại AI|Re-check AI/ }).click();
   await expect.poll(() => log.reruns.length).toBe(1);
   expect(log.reruns[0]).toEqual({ id: 'a-approved', gate: 4 });
+});
+
+test('CRM Storage adds, governs and deletes documents without the old settings page', async ({ page }) => {
+  const log = await mockApp(page);
+  await goHash(page, '/objects/storage');
+  await page.locator('.ph-actions').getByRole('button', { name: /Thêm tài liệu|Add document/ }).click();
+  const panel = page.getByRole('dialog', { name: /Thêm tài liệu|Add document/ });
+  await panel.getByRole('tab', { name: 'Paste' }).click();
+  await panel.getByLabel(/Tên nguồn|Source name/).fill('Brand facts');
+  await panel.getByLabel(/^(Nội dung|Content)$/).fill('fact one\nfact two');
+  await panel.getByRole('button', { name: /Nhập qua Railway|Import through Railway/ }).click();
+  await expect.poll(() => log.files.length).toBe(1);
+  expect(log.imports[0]).toMatchObject({ sourceType: 'paste', category: 'kb', name: 'Brand facts' });
+  expect(log.files[0].map((f: any) => f.id)).toEqual(['imported-1', 'outline-md']);
+  expect(log.files[0][0].category).toBe('kb');
+
+  await page.getByRole('button', { name: 'Close' }).click();
+  await page.getByText('Outline forms.md').click();
+  const doc = page.getByRole('dialog', { name: 'Document' });
+  page.once('dialog', d => d.accept());
+  await doc.getByRole('button', { name: /^(Xoá|Delete)$/ }).click();
+  await expect.poll(() => log.files.length).toBe(2);
+  expect(log.files[1].map((f: any) => f.id)).toEqual(['imported-1']);
+  expect(log.configs.at(-1).stepConfigs[3].fileAccess.rules).toEqual([]);
 });

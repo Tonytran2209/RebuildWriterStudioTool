@@ -16,7 +16,7 @@ Hướng dẫn đối chiếu source ở commit ghi trên; không mô tả các 
 
 ## 1. Đăng nhập và chuẩn bị
 - Đăng nhập tài khoản của app. Nếu quên mật khẩu, dùng chức năng khôi phục được cung cấp hoặc liên hệ người quản trị; không gửi mật khẩu/API key trong feedback.
-- Trong Settings, **Workflow AI** chọn model và context cho từng bước; **AI Models** quản lý model/provider; **Knowledge & Rules** quản lý kiến thức, quy tắc và Website Inventory.
+- Trong Settings, **Workflow AI** chọn model và context cho từng bước; **AI Models** quản lý model/provider; tài liệu (Knowledge Base, Skills & Rules), Website Inventory và Action Plan cũ nằm ở mục **Storage** trên sidebar; Workflow AI còn chứa phần quy tắc workflow.
 - Chuẩn bị Knowledge Base đúng chủ đề và nguồn tin trước khi viết. Content Plan định hướng bài; Rules hướng dẫn cách viết; chúng không tự trở thành bằng chứng cho các khẳng định thực tế.
 
 ## 2. New activity và Content Plan
@@ -57,10 +57,10 @@ Phần mở đầu được hiển thị đầy đủ. Quy tắc viết hướng
 - **Pause / Resume** cần chờ server xác nhận. Trong lúc batch đang sở hữu bài, app hạn chế thao tác AI thủ công trùng để tránh ghi đè.
 - Retry mục lỗi thay vì chạy lại toàn bộ mục đã xong. Mở pipeline của từng bài để đọc/sửa khi trạng thái cho phép; tải draft khi đã có kết quả.
 
-## 8. Quản lý Knowledge & Rules
+## 8. Quản lý tài liệu trong Storage
 - Đưa tài liệu factual vào Knowledge Base; hướng dẫn giọng văn, cấu trúc và quy tắc vào Skills & Rules theo mục nhập của giao diện. Website Inventory cung cấp nguồn liên kết nội bộ hợp lệ.
 - Chọn file/nguồn thuộc định dạng app hỗ trợ. Nhiều file được xử lý theo từng file; kiểm tra trạng thái thành công/thất bại riêng và thử lại file lỗi.
-- Upload lưu tài liệu theo luồng server của app. Đóng Settings rồi kiểm tra danh sách/nguồn cập nhật trước khi chạy bài; lưu một cài đặt không liên quan không có nghĩa đã nhập lại thư viện.
+- Bấm **Thêm tài liệu** trong Storage, chọn thư viện và cách nhập. Tài liệu được lưu trên server ngay và hiện trong danh sách; tài liệu mới chưa được cấp cho gate nào — bật trong **Shipper** hoặc panel tài liệu. Bấm vào một tài liệu để xem nội dung AI đọc, chỉnh quyền sử dụng, tải về hoặc xoá.
 - Sau khi đổi thư viện, bài/QC cũ có thể cần kiểm tra lại theo context mới. Không giả định mọi bài đã được tự viết lại.
 
 ## 9. Khi gặp lỗi

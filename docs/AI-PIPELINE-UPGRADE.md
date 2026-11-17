@@ -306,7 +306,7 @@ Queued (batch đang chờ) → G1 (chưa chọn Core Idea) → G2 (đã chọn, 
 
 ### Giao diện
 
-Cập nhật 2026-11-17: giao diện chép đúng `pipeline-crm.html` (CSS sinh từ demo, icon Tabler, theme Light mặc định). Add Plan là side panel như demo: dán topic, chọn số bài/batch, số bài song song và cấu trúc outline (bắt buộc), rồi app import plan, phân loại type, chia batch và chạy từng batch (kể cả plan 1 topic). Settings dùng nav riêng của demo và nhúng trực tiếp các trình chỉnh sửa hiện có (Workflow AI, AI Models, Knowledge & Rules, ). Shipper và "Used at" trong Storage sửa thẳng quyền file theo gate (`stepConfigs[2..4].fileAccess`). Review panel có công tắc Approved Article (`article.approvedArticle`), đếm vào Storage › Approved Articles.
+Cập nhật 2026-11-17: giao diện chép đúng `pipeline-crm.html` (CSS sinh từ demo, icon Tabler, theme Light mặc định). Add Plan là side panel như demo: dán topic, chọn số bài/batch, số bài song song và cấu trúc outline (bắt buộc), rồi app import plan, phân loại type, chia batch và chạy từng batch (kể cả plan 1 topic). Settings dùng nav riêng của demo và dùng style CRM cho Workflow AI (kèm quy tắc workflow) và AI Models; Knowledge & Rules đã gộp vào Storage (thêm/xoá tài liệu, Website Inventory, Legacy). Shipper và "Used at" trong Storage sửa thẳng quyền file theo gate (`stepConfigs[2..4].fileAccess`). Review panel có công tắc Approved Article (`article.approvedArticle`), đếm vào Storage › Approved Articles.
 
 
 Giao diện CRM (`src/crm/`) là mặc định. Gồm: Bài viết (Table/Kanban theo gate), Content Plans, Batches, Review Workspace, Storage (Used at theo G1–G3, danh sách tài liệu còn thiếu), Quy trình 3 gate, Dashboard (First-pass Approval Rate, bài theo gate, human review, tiêu chí trượt nhiều nhất, chi phí AI), Cài đặt và ⌘K. Ba bước cũ nằm trong tab "Chế độ thủ công" của trang bài viết. Nút "Giao diện cũ" chuyển về sidebar cũ, lưu theo trình duyệt.
@@ -336,6 +336,6 @@ Giao diện cũ (sidebar, launcher, 3 bước Core Idea/Outline/Draft dạng cũ
 | Settings: Pipeline (threshold, maxParallel, mẫu review) | **Chạy thật** | |
 | Settings: số option G2/G3, vòng sửa, No-pass Logic, perBatch tự xếp lịch nhiều batch | **Để sẵn** | Chờ quyết định mục 8 |
 | Meta title/description, Key takeaways, FAQ, author bio | **Để sẵn** | Chờ chốt mâu thuẫn mục 7 |
-| Checklist Gate 1–2, Quy tắc chỉnh sửa, Vocabulary, Writing Patterns | **Chờ tài liệu** | Hiện "Missing" trong Storage; upload vào Knowledge & Rules với tên chứa "Gate 1", "chỉnh sửa", "Vocab", "Writing Pattern" là hệ thống nhận |
+| Checklist Gate 1–2, Quy tắc chỉnh sửa, Vocabulary, Writing Patterns | **Chờ tài liệu** | Hiện "Missing" trong Storage; upload trong Storage › Thêm tài liệu với tên chứa "Gate 1", "chỉnh sửa", "Vocab", "Writing Pattern" là hệ thống nhận |
 | Gợi ý ảnh, worker tạo ảnh, thư viện style ảnh | **Đã gỡ khỏi mã nguồn (2026-11-18)** | Bảng `writer_studio.image_*` (nếu đã tạo) vẫn còn trong Postgres, không còn code đọc |
 | Lịch sử phiên bản, AI log, SEO brief của 3 bước cũ | **Đã gỡ cùng giao diện cũ** | Dữ liệu vẫn lưu trong bài |
