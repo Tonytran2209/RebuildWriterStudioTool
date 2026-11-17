@@ -1,7 +1,6 @@
 import type { OutlineStructureSnapshot } from '../shared/outlineStructures';
 import { useState, useEffect, useCallback, useRef } from "react"
 import type {
-  AICallUsage,
   Article,
   AppConfig,
   ContentPlan,
@@ -11,23 +10,14 @@ import type {
 import { DEFAULT_CONFIG, mergeWithLatestModelCatalog } from "./lib/defaultData"
 import * as db from "./lib/db"
 import { fetchContentPlans } from "./lib/contentPlans"
-import Sidebar from "./components/Sidebar"
 import BrandMark from "./components/BrandMark"
-import StepNav from "./components/StepNav"
-import VerticalWorkflowRail from "./components/VerticalWorkflowRail"
-import ConfigModal from "./components/config/ConfigModal"
-import Step2CoreIdea from "./components/workspace/Step2CoreIdea"
-import Step3Outline from "./components/workspace/Step3Outline"
-import Step4Draft from "./components/workspace/Step4Draft"
-import WorkspaceNotificationHost, { notifyWorkspace } from "./components/workspace/WorkspaceNotification"
-import LegacyArticleView from "./components/workspace/LegacyArticleView"
+import { notifyWorkspace } from "./components/workspace/WorkspaceNotification"
 import { useI18n } from "./lib/i18n"
-import ActivityLauncher from "./components/ActivityLauncher"
-import BatchActivity from "./components/BatchActivity"
 import LoginScreen from "./components/LoginScreen"
-import { clampArticleStep, gateArticleStep, gateStepCompletion, isArticleCompleted } from "./lib/workflowGuards"
+import { isArticleCompleted } from "./lib/workflowGuards"
 import { isLegacyArticle } from "./lib/legacyCompatibility"
 import { useThemePreference } from "./lib/theme"
+import type { RerunGate } from "./lib/pipeline"
 import CrmApp, { CrmToastHost } from "./crm/CrmApp"
 
 function generateId() {
@@ -52,6 +42,7 @@ function hasPasswordRecoveryLink() {
 
 type SyncStatus = "idle" | "loading" | "saving" | "error"
 type ArticleUpdateOptions = { silent?: boolean }
+
 
 export default function App() {
   const { tr } = useI18n()
@@ -80,7 +71,7 @@ export default function App() {
     })
     return () => { active = false }
   }, [restoringSession])
-  const [activeId, setActiveId] = useState<string | null>(null)
+
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG)
   const [contentPlans, setContentPlans] = useState<ContentPlan[]>([])
   const campaignRevision = useRef(0)
@@ -101,10 +92,7 @@ export default function App() {
     return () => { active = false }
   }, [campaignScope])
   const [files, setFiles] = useState<DocumentFile[]>([])
-  const [showConfig, setShowConfig] = useState(false)
-  const [uiMode, setUiMode] = useState<"crm" | "classic">(() => { try { return localStorage.getItem("writer:ui") === "classic" ? "classic" : "crm" } catch { return "crm" } })
-  const [showBatchOverview, setShowBatchOverview] = useState(true)
-  const [launcherHistoryOpen, setLauncherHistoryOpen] = useState(false)
+
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading")
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null)
   const [articleActionError, setArticleActionError] = useState<string | null>(
@@ -116,30 +104,16 @@ export default function App() {
   const [completionSavingId, setCompletionSavingId] = useState<string | null>(
     null,
   )
+
   const [deletingArticleId, setDeletingArticleId] = useState<string | null>(
     null,
   )
   const [migratingLegacyId, setMigratingLegacyId] = useState<string | null>(null)
-  const [visibleWorkflowStep, setVisibleWorkflowStep] = useState<2 | 3 | 4>(2)
-  const workflowStepRefs = useRef(new Map<2 | 3 | 4, HTMLElement>())
   const articleMutationQueues = useRef(new Map<string, Promise<void>>())
   const failedArticleMutations = useRef(new Set<string>())
   const deletingOrDeletedIds = useRef(new Set<string>())
   const articlesRef = useRef<Article[]>([])
-  const activeIdRef = useRef<string | null>(null)
   articlesRef.current = articles
-  activeIdRef.current = activeId
-
-  const scrollToWorkflowStep = useCallback((step: 2 | 3 | 4) => {
-    const target = workflowStepRefs.current.get(step)
-    if (!target) return
-    setVisibleWorkflowStep(step)
-    target.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" })
-  }, [])
-
-  useEffect(() => {
-    setVisibleWorkflowStep(2)
-  }, [activeId])
 
   const enqueueArticleMutation = useCallback(
     (articleId: string, operation: () => Promise<Article>): Promise<Article> => {
@@ -162,9 +136,10 @@ export default function App() {
   const waitForArticleMutations = useCallback((articleId: string) =>
     articleMutationQueues.current.get(articleId) ?? Promise.resolve(), [])
 
+
   // Load all data from Supabase / Railway on mount
   useEffect(() => {
-    const expired = () => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }
+    const expired = () => { setAuthSession(null); setArticles([]); setFiles([]) }
     window.addEventListener("writer:auth-expired", expired)
     return () => window.removeEventListener("writer:auth-expired", expired)
   }, [])
@@ -187,7 +162,7 @@ export default function App() {
         if (remoteArticles?.length) {
           setArticles(remoteArticles.map((item) => isLegacyArticle(item)
             ? { ...item, legacyReadOnly: true }
-            : { ...item, currentStep: clampArticleStep(item) }))
+            : item))
         }
         if (remoteConfig) {
           setConfig(mergeWithLatestModelCatalog(remoteConfig))
@@ -209,6 +184,7 @@ export default function App() {
     }
     load()
   }, [authSession])
+
 
   const handleUpdateArticle = useCallback(
     (id: string, updates: Partial<Article>, options: ArticleUpdateOptions = {}) => {
@@ -253,51 +229,6 @@ export default function App() {
     },
     [enqueueArticleMutation],
   )
-
-  useEffect(() => {
-    const recordUsage = (event: Event) => {
-      const usage = (event as CustomEvent<AICallUsage>).detail
-      const articleId = usage?.articleId ?? activeIdRef.current
-      const current = articlesRef.current.find((item) => item.id === articleId)
-      if (!articleId || !current || !usage) return
-      try {
-        const summary = JSON.parse(
-          localStorage.getItem("writer:usage-summary") ?? "{}",
-        ) as Record<string, AICallUsage[]>
-        summary[String(usage.step)] = [
-          ...(summary[String(usage.step)] ?? []),
-          usage,
-        ].slice(-500)
-        localStorage.setItem("writer:usage-summary", JSON.stringify(summary))
-      } catch {
-        /* usage persistence in the article remains authoritative */
-      }
-      const previous = current.aiUsageByStep?.[usage.step] ?? []
-      const aiUsageByStep = {
-        ...current.aiUsageByStep,
-        [usage.step]: [...previous, usage].slice(-50),
-      }
-      const updated = articlesRef.current.map((item) =>
-        item.id === articleId
-          ? { ...item, aiUsageByStep, updatedAt: new Date().toISOString() }
-          : item,
-      )
-      articlesRef.current = updated
-      setArticles(updated)
-      enqueueArticleMutation(articleId, () =>
-        db.updateArticle(articleId, { aiUsageByStep }),
-      ).catch((error: unknown) => {
-        setArticleActionError(
-          `Không lưu được usage AI: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        )
-        setSyncStatus("error")
-      })
-    }
-    window.addEventListener("writer:ai-usage", recordUsage)
-    return () => window.removeEventListener("writer:ai-usage", recordUsage)
-  }, [enqueueArticleMutation])
 
   const handleCreateActivity = async (
     type: "comparison-seo" | "editorial-originality",
@@ -358,10 +289,6 @@ export default function App() {
       for (const record of records)
         saved.push(await enqueueArticleMutation(record.id, () => db.saveArticle(record)))
       setArticles((current) => [...saved, ...current])
-      if (options.select !== false) {
-        setActiveId(saved[0]?.id ?? null)
-        setShowBatchOverview(isBatch)
-      }
       if (isBatch) await db.startBatch(activityId)
       setSyncStatus("idle")
     } catch (error: unknown) {
@@ -377,9 +304,11 @@ export default function App() {
           error instanceof Error ? error.message : String(error)
         }`,
       )
-      setSyncStatus("error")
+      setSyncStatus("error")      // The CRM Add Plan flow must stop and report instead of announcing success.
+      throw error
     }
   }
+
 
   const handleToggleComplete = useCallback(
     async (target: Article) => {
@@ -419,6 +348,7 @@ export default function App() {
     [completionSavingId, enqueueArticleMutation],
   )
 
+
   const handleMigrateLegacy = useCallback(async (target: Article) => {
     if (migratingLegacyId) return
     setMigratingLegacyId(target.id)
@@ -426,8 +356,7 @@ export default function App() {
     try {
       const copy = await db.migrateLegacyArticle(target.id)
       setArticles((current) => [copy, ...current])
-      setActiveId(copy.id)
-      setShowBatchOverview(false)
+      window.location.hash = `/object/articles/${encodeURIComponent(copy.id)}`
     } catch (error) {
       setArticleActionError(
         `${tr("Không tạo được bản workflow mới", "Could not create current-workflow copy")}: ${error instanceof Error ? error.message : String(error)}`,
@@ -436,6 +365,7 @@ export default function App() {
       setMigratingLegacyId(null)
     }
   }, [migratingLegacyId, tr])
+
 
   const handleDeleteArticle = useCallback(
     async (target: Article, deleteGroup = false) => {
@@ -465,9 +395,7 @@ export default function App() {
           await db.deleteBatch(target.activityId)
         else
           await db.deleteArticle(target.id)
-        const remaining = articlesRef.current.filter(item => !targetIds.has(item.id))
         setArticles(current => current.filter(item => !targetIds.has(item.id)))
-        if (activeIdRef.current && targetIds.has(activeIdRef.current)) setActiveId(remaining[0]?.id ?? null)
         setSyncStatus("idle")
         notifyWorkspace(deleteGroup ? `Đã xóa batch gồm ${targets.length} bài.` : "Đã xóa bài viết.", "success")
       } catch (error: unknown) {
@@ -507,59 +435,7 @@ export default function App() {
     }
   }
 
-  const handleComposerModelChange = (modelId: string) => {
-    const next = {
-      ...config,
-      // Storage step 1 is now the Content Plan classifier, not an article step.
-      stepConfigs: {
-        ...config.stepConfigs,
-        1: { ...config.stepConfigs[1], modelId },
-      },
-    }
-    setConfig(next)
-    void db
-      .saveConfig(next)
-      .catch((error) =>
-        setArticleActionError(
-          `Không lưu được model: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        ),
-      )
-  }
 
-  const article = activeId
-    ? (articles.find((a) => a.id === activeId) ?? null)
-    : null
-
-  useEffect(() => {
-    const workspace = document.querySelector<HTMLElement>(".continuous-workspace")
-    if (!workspace) return
-    let frame = 0
-    const updateActiveStep = () => {
-      frame = 0
-      const anchor = workspace.getBoundingClientRect().top + Math.min(180, workspace.clientHeight * 0.24)
-      const sections = [...workflowStepRefs.current.entries()]
-        .filter(([, node]) => node.isConnected)
-        .sort(([, left], [, right]) => left.offsetTop - right.offsetTop)
-      if (!sections.length) return
-      const current = sections.reduce((selected, candidate) =>
-        candidate[1].getBoundingClientRect().top <= anchor ? candidate : selected,
-      sections[0])
-      setVisibleWorkflowStep(current[0])
-    }
-    const onScroll = () => {
-      if (!frame) frame = window.requestAnimationFrame(updateActiveStep)
-    }
-    updateActiveStep()
-    workspace.addEventListener("scroll", onScroll, { passive: true })
-    window.addEventListener("resize", onScroll)
-    return () => {
-      workspace.removeEventListener("scroll", onScroll)
-      window.removeEventListener("resize", onScroll)
-      if (frame) window.cancelAnimationFrame(frame)
-    }
-  }, [article?.id, article?.selectedCoreIdeaId, article?.outline?.length])
   const activeBatchIds = Array.from(new Set(
     articles
       .filter((item) => item.activityKind === "batch" && item.activityId && !["completed", "failed"].includes(item.batchStatus ?? "queued"))
@@ -601,62 +477,40 @@ export default function App() {
     }
   }, [activeBatchIds])
 
-  const handleStepChange = async (step: number) => {
-    if (!article) return
-    const requestedStep = Math.min(4, Math.max(2, step)) as 2 | 3 | 4
-    if (requestedStep === article.currentStep) return
-    const movingForward = requestedStep > article.currentStep
-    const gate = gateArticleStep(article, requestedStep)
-    if (!gate.allowed) {
-      setArticleActionError(tr(gate.reasonVi, gate.reason))
-      return
+  const retryBatchArticle = async (activityId: string, id: string) => {
+    const previous = articlesRef.current.find((item) => item.id === id)
+    setArticles((current) =>
+      current.map((item) => item.id === id
+        ? {
+            ...item,
+            batchStatus: "queued",
+            batchError: null,
+            updatedAt: new Date().toISOString(),
+          }
+        : item),
+    )
+    try {
+      const queued = await db.retryBatchArticle(activityId, id)
+      setArticles((current) =>
+        current.map((item) => item.id === queued.id ? queued : item),
+      )
+    } catch (error) {
+      if (previous)
+        setArticles((current) =>
+          current.map((item) => item.id === id ? previous : item),
+        )
+      throw error
     }
-    if (movingForward) await waitForArticleMutations(article.id)
-    if (movingForward && failedArticleMutations.current.has(article.id)) {
-      setArticleActionError(tr("Không thể chuyển bước vì dữ liệu của thao tác trước chưa được lưu vào Supabase.", "Cannot change steps because the previous update was not saved to Supabase."))
-      return
-    }
-    setArticleActionError(null)
-    await handleUpdateArticle(article.id, { currentStep: requestedStep }, { silent: true })
   }
 
-  const handleNext = async () => {
-    if (!article) return
-    const currentStep = Math.min(4, Math.max(2, article.currentStep)) as 2 | 3 | 4
-    const completion = gateStepCompletion(article, currentStep)
-    if (!completion.allowed) {
-      setArticleActionError(tr(completion.reasonVi, completion.reason))
-      return
-    }
-    const next = Math.min(Math.max(article.currentStep, 2) + 1, 4)
-    // Wait for the selected output from the current step to reach Supabase
-    // before exposing the next step and its AI controls.
-    await waitForArticleMutations(article.id)
-    if (failedArticleMutations.current.has(article.id)) {
-      setArticleActionError(tr("Không thể tiếp tục vì output hoặc lựa chọn hiện tại chưa được lưu vào Supabase.", "Cannot continue because the current output or selection was not saved to Supabase."))
-      return
-    }
-    setArticleActionError(null)
-    await handleUpdateArticle(article.id, {
-      currentStep: next,
-      status: next === 4 ? "review" : "in_progress",
-    }, { silent: true })
-  }
 
-  const handlePrev = () => {
-    if (!article) return
-    const previousStep = Math.max(article.currentStep - 1, 2)
-    if (previousStep === article.currentStep) return
-    void handleUpdateArticle(article.id, { currentStep: previousStep }, { silent: true })
+  const handleRerun = async (target: Article, gate: RerunGate) => {
+    await waitForArticleMutations(target.id)
+    const queued = await db.rerunArticle(target.id, gate)
+    setArticles((current) => current.map((item) => item.id === queued.id ? queued : item))
   }
+  const signOut = () => { void db.logout().then(() => { setAuthSession(null); setArticles([]); setFiles([]) }).catch(error => notifyWorkspace(error.message, "error")) }
 
-  const stepCfg = article ? config.stepConfigs[article.currentStep] : null
-  const currentModel =
-    (stepCfg?.modelId
-      ? config.models.find((m) => m.id === stepCfg.modelId && m.enabled)
-      : null) ||
-    config.models.find((m) => m.enabled) ||
-    undefined
 
   // ── Loading screen ──
   if (!authSession && !restoringSession) {
@@ -721,159 +575,8 @@ export default function App() {
     )
   }
 
-  const retryBatchArticle = async (activityId: string, id: string) => {
-    const previous = articlesRef.current.find((item) => item.id === id)
-    setArticles((current) =>
-      current.map((item) => item.id === id
-        ? {
-            ...item,
-            batchStatus: "queued",
-            batchError: null,
-            updatedAt: new Date().toISOString(),
-          }
-        : item),
-    )
-    try {
-      const queued = await db.retryBatchArticle(activityId, id)
-      setArticles((current) =>
-        current.map((item) => item.id === queued.id ? queued : item),
-      )
-    } catch (error) {
-      if (previous)
-        setArticles((current) =>
-          current.map((item) => item.id === id ? previous : item),
-        )
-      throw error
-    }
-  }
 
-  const renderBatch = (activityId: string, onOpen: (id: string) => void) => (
-          <BatchActivity
-            articles={articles.filter(
-              (item) => item.activityId === activityId,
-            )}
-            onDeleteBatch={() => { const first = articles.find(item => item.activityId === activityId); if (first) void handleDeleteArticle(first, true) }}
-            deletingBatch={Boolean(deletingArticleId)}
-            onOpen={onOpen}
-            onStart={() =>
-db.startBatch(activityId)
-            }
-            onPause={() =>
-db.pauseBatch(activityId)
-            }
-            onRetry={(id) => retryBatchArticle(activityId, id)}
-          />
-  )
-
-  const renderWorkflow = (article: Article) => (
-          <>
-            <StepNav
-              currentStep={visibleWorkflowStep}
-              onStepChange={handleStepChange}
-              articleTitle={article.title || article.topic}
-              currentModel={currentModel}
-              syncStatus={syncStatus}
-              canAccessStep={(step) => {
-                const gate = gateArticleStep(article, step)
-                return { allowed: gate.allowed, reason: tr(gate.reasonVi, gate.reason) }
-              }}
-            />
-            <main className="continuous-workspace flex-1 min-h-0 overflow-y-auto p-2.5 md:p-5">
-              <div className="workflow-layout">
-                <div className="workflow-content min-w-0 space-y-6">
-                  {isArticleCompleted(article) && <p className="rounded-xl border border-[var(--ui-border)] px-4 py-3 text-sm text-[var(--ui-secondary)]">
-                    {tr("Bài đã hoàn thành. Chọn Mở lại bài viết ở bước Draft Content để chỉnh sửa hoặc chạy AI lại.", "This article is complete. Choose Reopen article in Draft Content to edit or run AI again.")}
-                  </p>}
-                  <section ref={(node) => { if (node) workflowStepRefs.current.set(2, node); else workflowStepRefs.current.delete(2) }} data-workflow-step="2" className="workflow-section scroll-mt-4">
-                    <Step2CoreIdea
-                      showTechnical={authSession.user.role === "admin"}
-                      embedded
-                      article={article}
-                      config={config}
-                      files={files}
-                      model={currentModel || config.models[0]}
-                      railwayUrl={config.railwayUrl}
-                      onUpdate={(u) => handleUpdateArticle(article.id, u)}
-                      onNext={async () => { await handleStepChange(3); window.setTimeout(() => scrollToWorkflowStep(3), 80) }}
-                      onPrev={() => { setActiveId(null); setLauncherHistoryOpen(true) }}
-                    />
-                  </section>
-                  {((article.currentStep ?? 2) >= 3 && gateArticleStep(article, 3).allowed || isArticleCompleted(article) && Boolean(article.outline?.length)) && (
-                    <section ref={(node) => { if (node) workflowStepRefs.current.set(3, node); else workflowStepRefs.current.delete(3) }} data-workflow-step="3" className="workflow-section scroll-mt-4">
-                      <Step3Outline
-                        showTechnical={authSession.user.role === "admin"}
-                        embedded
-                        article={article}
-                        config={config}
-                        files={files}
-                        model={currentModel || config.models[0]}
-                        railwayUrl={config.railwayUrl}
-                        onUpdate={(u) => handleUpdateArticle(article.id, u)}
-                        onNext={async () => { await handleStepChange(4); window.setTimeout(() => scrollToWorkflowStep(4), 80) }}
-                        onPrev={() => scrollToWorkflowStep(2)}
-                      />
-                    </section>
-                  )}
-                  {((article.currentStep ?? 2) >= 4 && gateArticleStep(article, 4).allowed || isArticleCompleted(article)) && (
-                    <section ref={(node) => { if (node) workflowStepRefs.current.set(4, node); else workflowStepRefs.current.delete(4) }} data-workflow-step="4" className="workflow-section scroll-mt-4">
-                      <Step4Draft
-                        showTechnical={authSession.user.role === "admin"}
-                        embedded
-                        article={article}
-                        config={config}
-                        files={files}
-                        model={currentModel || config.models[0]}
-                        railwayUrl={config.railwayUrl}
-                        onUpdate={(u) => handleUpdateArticle(article.id, u)}
-                        onPrev={() => scrollToWorkflowStep(3)}
-                        onToggleComplete={() => handleToggleComplete(article)}
-                        completionSaving={completionSavingId === article.id}
-                      />
-                    </section>
-                  )}
-                </div>
-                <VerticalWorkflowRail article={article} activeStep={visibleWorkflowStep} onNavigate={scrollToWorkflowStep} />
-              </div>
-            </main>
-          </>
-  )
-
-  const renderLauncher = () => (
-          <ActivityLauncher
-            files={files}
-            outlineRuleIds={config.stepConfigs[3]?.fileAccess?.rules ?? []}
-            railwayUrl={config.railwayUrl}
-            models={config.models}
-            modelId={config.stepConfigs[1]?.modelId ?? ""}
-            onContentPlansChange={(plans, removedId) => { if (campaignScopeRef.current === campaignScope) receiveContentPlans(plans, removedId) }}
-            recentArticles={articles}
-            initialHistoryOpen={launcherHistoryOpen}
-            onOpenArticle={(id) => {
-              setActiveId(id)
-              setShowBatchOverview(true)
-            }}
-            onModelChange={handleComposerModelChange}
-            onCreate={handleCreateActivity}
-          />
-  )
-
-  const switchUi = (mode: "crm" | "classic") => {
-    try { localStorage.setItem("writer:ui", mode) } catch { /* per-viewer preference only */ }
-    setUiMode(mode)
-  }
-  const signOut = (all = false) => { void db.logout(all).then(() => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }).catch(error => notifyWorkspace(error.message, "error")) }
-  const openAdvancedSettings = () => { void db.fetchFiles().then(latest => { setFiles(latest); setShowConfig(true) }).catch(error => notifyWorkspace(error.message, "error")) }
-  const configModal = showConfig && (
-    <ConfigModal
-      config={config}
-      files={files}
-      articles={articles}
-      onSave={handleSaveConfig}
-      onClose={() => { setShowConfig(false); void db.fetchFiles().then(setFiles).catch(error => notifyWorkspace(error.message, "error")) }}
-    />
-  )
-
-  if (uiMode === "crm") return (
+  return (
     <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} writer-app h-dvh overflow-hidden bg-[var(--ui-bg)]`}>
       <CrmToastHost />
       <CrmApp
@@ -882,83 +585,19 @@ db.pauseBatch(activityId)
         contentPlans={contentPlans}
         files={files}
         config={config}
-        activeId={activeId}
-        onSelectArticle={(id) => { setActiveId(id); setShowBatchOverview(false) }}
         onUpdateArticle={(id, updates) => handleUpdateArticle(id, updates)}
         onDeleteArticle={(target, batch) => void handleDeleteArticle(target, batch)}
         onRetry={(target) => retryBatchArticle(target.activityId ?? "", target.id)}
+        onRerun={handleRerun}
+        onToggleComplete={(target) => void handleToggleComplete(target)}
+        onMigrateLegacy={(target) => void handleMigrateLegacy(target)}
         onCreate={handleCreateActivity}
         onContentPlansChange={(plans) => receiveContentPlans(plans)}
         onSaveConfig={handleSaveConfig}
-        onSwitchClassic={() => switchUi("classic")}
-        onSignOut={() => signOut()}
+        onSignOut={signOut}
         themePreference={themePreference}
         onThemeChange={setThemePreference}
-        renderManual={() => article ? (isLegacyArticle(article)
-          ? <LegacyArticleView article={article} migrating={migratingLegacyId === article.id} onMigrate={() => void handleMigrateLegacy(article)} />
-          : <div className="flex min-h-0 flex-1 flex-col">{renderWorkflow(article)}</div>) : null}
       />
-    </div>
-  )
-
-
-  return (
-    <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} writer-app h-dvh flex flex-col md:flex-row overflow-hidden bg-[var(--ui-bg)]`}>
-      <Sidebar
-        articles={articles}
-        contentPlans={contentPlans}
-        activeArticleId={activeId}
-        onSelectArticle={(id) => {
-          setActiveId(id)
-          setShowBatchOverview(true)
-        }}
-        onNewArticle={() => {
-          setActiveId(null)
-          setShowBatchOverview(true)
-          setLauncherHistoryOpen(false)
-        }}
-        onOpenContentPlans={() => {
-          setActiveId(null)
-          setShowBatchOverview(true)
-          setLauncherHistoryOpen(true)
-          window.setTimeout(
-            () => window.dispatchEvent(new Event("writer:open-plan-history")),
-            0,
-          )
-        }}
-        onOpenConfig={openAdvancedSettings}
-        onOpenCrm={() => switchUi("crm")}
-        canManageSettings={authSession.user.role === "admin"}
-        currentUser={authSession.user}
-        themePreference={themePreference}
-        onThemeChange={setThemePreference}
-        onSignOut={() => signOut()}
-        onSignOutAll={authSession.authProvider === "postgres" ? () => signOut(true) : undefined}
-        onToggleComplete={handleToggleComplete}
-        completionSavingId={completionSavingId}
-        onDeleteArticle={handleDeleteArticle}
-        deletingArticleId={deletingArticleId}
-      />
-
-      <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden">
-        <WorkspaceNotificationHost />
-        {article && isLegacyArticle(article) ? (
-          <LegacyArticleView
-            article={article}
-            migrating={migratingLegacyId === article.id}
-            onMigrate={() => void handleMigrateLegacy(article)}
-          />
-        ) : article?.activityKind === "batch" && showBatchOverview ? (
-          renderBatch(article.activityId ?? "", (id) => { setActiveId(id); setShowBatchOverview(false) })
-        ) : article ? (
-          renderWorkflow(article)
-        ) : (
-          // Article selected from sidebar but not found (shouldn't happen)
-          renderLauncher()
-        )}
-      </div>
-
-      {configModal}
     </div>
   )
 }

@@ -1,62 +1,10 @@
 import App from '../../src/App';
-import Sidebar from '../../src/components/Sidebar';
-import ActivityLauncher from '../../src/components/ActivityLauncher';
 import {mountFixture} from './bootstrap';
 import React,{useState,useEffect} from 'react';
 import LoginScreen from '../../src/components/LoginScreen';
 import TabKnowledgeBase from '../../src/components/config/TabKnowledgeBase';
 import * as auth from '../../src/lib/db';
-import Step2CoreIdea from '../../src/components/workspace/Step2CoreIdea';
-import Step3Outline from '../../src/components/workspace/Step3Outline';
-import Step4Draft, {parseSemanticQuality, completeSemanticChecks, incompleteSemanticReviewChecks} from '../../src/components/workspace/Step4Draft';
-import {normalizeArticleSpec,articleSpecFingerprint} from '../../src/lib/articleSpec';
-import {INTRODUCTION_INSTRUCTION} from '../../src/lib/introductionPolicy';
-import {semanticReviewInputFingerprint,EVIDENCE_REVIEW_INSTRUCTION,SEMANTIC_IDS,checklistReviewInstruction} from '../../src/lib/qualityPolicy';
-import {DEFAULT_CONFIG,DEFAULT_MODELS} from '../../src/lib/defaultData';
-const original='# Browser fixture\n\n'+Array.from({length:9},(_,i)=>`Introduction line ${i+1} — unchanged source.`).join('\n')+'\n\n## Main body\nBODY_SENTINEL: This entire section remains visible.\n\n| Option | Benefit |\n| --- | --- |\n| **A — B** | [Details](https://example.com/details) |\n\n## Conclusion\nCONCLUSION_SENTINEL: Keep this section.';
-const qcIds=[...SEMANTIC_IDS];
-const qcStatus=new URLSearchParams(location.search).get('qc');
-const flow=qcStatus==='generation'||qcStatus==='recheck';
-const intro=Array(13).fill('Readers can compare practical choices carefully.').join(' ');
-const sections=Array.from({length:3},(_,i)=>({id:'section-'+i,heading:'Practical guide '+i,level:'h2',content:Array(24).fill('Consider the available options and explain each useful practical decision.').join(' ')+` [More guidance](https://example.com/guide-${i})`,evidenceRefs:[]}));
-const payload={title:'Fixture practical guide',introduction:intro,sections,conclusion:Array(6).fill('Choose useful steps and review your practical decisions carefully.').join(' ')};
-const flowDraft='# '+payload.title+'\n\n'+intro+'\n\n'+sections.map(s=>'## '+s.heading+'\n\n'+s.content).join('\n\n')+'\n\n## Conclusion\n\n'+payload.conclusion;
-const fixtureSpec=normalizeArticleSpec({primaryQuery:'fixture',mustCover:[]},{topic:'Browser fixture'});
-const fixtureSpecFingerprint=articleSpecFingerprint(fixtureSpec);
-const incompleteCacheFingerprint=semanticReviewInputFingerprint({articleSpec:fixtureSpec,outline:sections as any},flowDraft,{},checklistReviewInstruction([]));
-const flowConfig={...DEFAULT_CONFIG,stepConfigs:{...DEFAULT_CONFIG.stepConfigs,4:{...DEFAULT_CONFIG.stepConfigs[4],maxDraftWords:900}},websiteInventory:sections.map((_,i)=>({id:'link-'+i,title:'Practical guide '+i,url:`https://example.com/guide-${i}`,eligibleForInternalLink:true,status:'active'}))};
-const fixtureFiles = new URLSearchParams(location.search).has('kb') ? [{id:'fixture-kb',name:'Expert knowledge.md',category:'kb',content:'The fixture production process begins with script review, followed by storyboard approval and final production.',scanStatus:'ready',fileType:'md',size:'1 KB',uploadedAt:'2026-10-23'}] : [];
-Object.assign(window,{qcFlow:{payload,flowDraft}});
-const semanticChecks=qcStatus==='incomplete' ? incompleteSemanticReviewChecks('missing checks') : qcIds.map(id=>({id,label:id==='evidence-support'?'Evidence support':id,kind:'semantic',status:qcStatus || 'pass',reason:'Fixture review finding: verify the concrete claim against approved evidence.',recommendedAction:'Compare the claim with the approved source before publishing.',autoFixAllowed:false}));
-Object.assign(window,{qcHarness:{parseSemanticQuality,completeSemanticChecks,incompleteSemanticReviewChecks}});
-function Fixture(){
- const [article,setArticle]=useState<any>(()=>{const saved=qcStatus && sessionStorage.getItem('qc-fixture');return saved ? JSON.parse(saved) : {id:'browser-fixture',topic:'Browser fixture',draft:qcStatus==='generation'?'':flow?flowDraft:original,keywords:'fixture',tone:'professional',outline:[],currentStep:4,status:'draft',...(flow?{contentPlanId:'fixture-plan',contentPlanItemId:'fixture-item',contentPlanInput:'Practical fixture guide',contentType:'guide',selectedCoreIdeaId:'fixture-idea',coreIdeaSuggestions:[{id:'fixture-idea',primaryKeyword:'fixture'}],articleSpec:fixtureSpec,articleSpecFingerprint:fixtureSpecFingerprint,outline:sections,semanticReviewFingerprint:incompleteCacheFingerprint,draftEvidenceUsage:{}}:{}),...(qcStatus ? {qualityReport:{status:qcStatus,checks:semanticChecks},semanticReviewChecks:flow?incompleteSemanticReviewChecks('missing'):semanticChecks} : {})};});
- const [otherArticle, setOtherArticle] = useState(false);
- useEffect(()=>{if(qcStatus)sessionStorage.setItem('qc-fixture',JSON.stringify(article));},[article]);
- return <main>{flow && <button onClick={() => setOtherArticle(value => !value)}>Switch fixture article</button>}{qcStatus && <button onClick={()=>setArticle((a:any)=>({...a,articleSpecFingerprint:'changed-fixture-spec',keywords:'changed configuration'}))}>Change QC configuration</button>}<details><summary>Fixture source (local only)</summary><pre data-testid="stored-source">{article.draft}</pre></details><Step4Draft article={otherArticle ? { ...article, id: "other-fixture-article" } : article} config={flow?flowConfig as any:DEFAULT_CONFIG} files={fixtureFiles as any} model={DEFAULT_MODELS[0]} railwayUrl={flow?"http://127.0.0.1:4173":""} onUpdate={async p=>{if(flow){const history=JSON.parse(sessionStorage.getItem("qc-updates")||"[]");history.push(p);sessionStorage.setItem("qc-updates",JSON.stringify(history));}setArticle((a:any)=>{const next={...a,...p};if(qcStatus)sessionStorage.setItem('qc-fixture',JSON.stringify(next));return next;});return true;}} onPrev={()=>{}} onToggleComplete={()=>{}}/></main>;
-}
-const reopenIdeas=['one','two'].map((id,index)=>({id,title:'Idea '+id,mainArgument:'Saved argument '+id,primaryKeyword:'fixture',secondaryKeywords:[],rating:{overall:8,seoPotential:8,audienceFit:8,docSupport:8,uniqueness:8},matchedDocs:[],ruleRefs:[],evidence:[]}));
-const reopenArticles=['draft','completed','missing','unmatched'].map((status,index)=>({id:'reopen-'+index,title:index===0?'Hướng dẫn viết bài tiếng Việt đầy đủ với tiêu đề dài để kiểm tra xuống dòng trên màn hình nhỏ và giữ nguyên toàn bộ nội dung':'Tiêu đề bài '+index,topic:'Saved topic',status:status==='completed'?'done':'draft',currentStep:4,draft:'Saved draft '+index,outline:[{id:'section',level:'h2',heading:'Section heading differs from title',notes:'Saved notes'}],coreIdeaSuggestions:reopenIdeas,selectedCoreIdeaId:index===2?undefined:index===3?'absent':index===0?'one':'two'}));
-const hierarchyOutline = [
- {id:'legacy-h3',level:'h3',heading:'Legacy subsection'},
- {id:'first-h2',level:'h2',heading:'First section',notes:'First section notes'},
- {id:'child-h3',level:'h3',heading:'Supporting detail',notes:'Supporting detail notes'},
- {id:'second-h2',level:'h2',heading:'Second section'},
-];
-function ReopenFixture(){
- const [state,setState]=useState<any>(()=>JSON.parse(sessionStorage.getItem('reopen-state')||'null')||{articles:new URLSearchParams(location.search).has('outline-tree') ? reopenArticles.map((article,index)=>index===0?{...article,outline:hierarchyOutline}:article) : reopenArticles,index:0,updates:[]});
- useEffect(()=>{sessionStorage.setItem('reopen-state',JSON.stringify(state));},[state]);
- const article=state.articles[state.index];
- const props={article,config:DEFAULT_CONFIG,files:[],model:DEFAULT_MODELS[0],railwayUrl:'http://127.0.0.1:4173',onUpdate:async(p:any)=>{const versionFixture=new URLSearchParams(location.search).has("versions");setState((s:any)=>({...s,articles:versionFixture?s.articles.map((a:any)=>a.id===article.id?{...a,...p}:a):s.articles,updates:[...s.updates,versionFixture?{articleId:article.id,patch:p}:p]}));return true;},onPrev:()=>{},onNext:()=>{}};
- return <main>
-  {state.articles.map((a:any,index:number)=><button key={a.id} onClick={()=>setState((s:any)=>({...s,index}))}>Open {index}</button>)}
-  <button onClick={()=>setState((s:any)=>({...s,articles:s.articles.map((a:any,index:number)=>index===s.index?{...a,selectedCoreIdeaId:'two',title:'Tiêu đề cập nhật cùng ID'}:a)}))}>Update snapshot</button>
-  <pre data-testid="reopen-state">{JSON.stringify(state)}</pre>
-  <section data-testid="reopen-core"><Step2CoreIdea {...props}/></section>
-  <section data-testid="reopen-outline"><Step3Outline {...props}/></section>
-  {new URLSearchParams(location.search).has("versions") && <Step4Draft {...props} onToggleComplete={()=>{}}/>}
- </main>;
-}
+import {DEFAULT_CONFIG} from '../../src/lib/defaultData';
 function AuthFixture(){
  const [session,setSession]=useState(auth.getAuthSession);
  useEffect(()=>{void auth.refreshStoredAuthSession().then(value=>{if(value)setSession(value);});},[]);
@@ -68,16 +16,5 @@ function LibraryFixture(){
  const [config,setConfig]=useState(DEFAULT_CONFIG);
  return <main><TabKnowledgeBase files={files} onChange={setFiles} railwayUrl="http://127.0.0.1:4173" config={config} onConfigChange={setConfig}/><pre data-testid="library-records">{JSON.stringify(files)}</pre><pre data-testid="library-access">{JSON.stringify(config.stepConfigs[4].fileAccess)}</pre></main>;
 }
-// Synthetic component contract fixture; does not represent production records.
-function CampaignFixture(){
- const [plans,setPlans]=useState<any[]>([]);
- const [selected,setSelected]=useState('');
- const [deleted,setDeleted]=useState('');
- const articles:any[]=[{id:'single',title:'Single article',contentPlanId:'campaign-a',status:'done'},{id:'batch',title:'Batch article',contentPlanId:'campaign-a',activityKind:'batch',activityId:'batch-run'},{id:'missing',title:'Missing metadata article',contentPlanId:'missing-plan'},{id:'legacy',title:'Ungrouped article'}];
- return <div className="writer-app flex min-h-screen flex-col md:flex-row">
- <Sidebar articles={articles} contentPlans={plans} activeArticleId={selected} onSelectArticle={setSelected} onNewArticle={()=>{}} onOpenConfig={()=>{}} canManageSettings={false} currentUser={{email:'fixture@example.com',role:'user'}} themePreference="dark" onThemeChange={()=>{}} onSignOut={()=>{}} onToggleComplete={()=>{}} completionSavingId={null} onDeleteArticle={a=>setDeleted(a.id)} deletingArticleId={null}/>
- <main className="min-w-0 flex-1"><output data-testid="campaign-selected">{selected}</output><output data-testid="campaign-deleted">{deleted}</output>
- <ActivityLauncher files={[]} outlineRuleIds={[]} railwayUrl="http://127.0.0.1:4173" models={DEFAULT_MODELS} modelId={DEFAULT_MODELS[0].id} recentArticles={articles} onOpenArticle={setSelected} onModelChange={()=>{}} onCreate={async()=>{}} onContentPlansChange={(loaded,removed)=>setPlans(current=>[...loaded,...current.filter(p=>p.id!==removed&&!loaded.some(n=>n.id===p.id))])}/>
- </main></div>;
-}
-mountFixture(new URLSearchParams(location.search).has('app-auth')?<App/>:new URLSearchParams(location.search).has('campaigns')?<CampaignFixture/>:new URLSearchParams(location.search).has('library')?<LibraryFixture/>:new URLSearchParams(location.search).has('auth')?<AuthFixture/>:new URLSearchParams(location.search).has('reopen')?<ReopenFixture/>:<Fixture/>);
+const query=new URLSearchParams(location.search);
+mountFixture(query.has('app-auth')?<App/>:query.has('auth')?<AuthFixture/>:<LibraryFixture/>);

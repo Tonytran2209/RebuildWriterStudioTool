@@ -7,7 +7,8 @@ const pass = (id: string) => ({ id, label: 'Check ' + id, kind: 'semantic', stat
 const articles = [
   { id: 'a-approved', title: 'Approved article', topic: 'Approved article', currentStep: 4, status: 'review', createdAt: now, updatedAt: now,
     contentPlanId: 'plan-1', contentPlanItemId: 'i1', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-1', batchStatus: 'completed',
-    selectedCoreIdeaId: 'x', outline: [{ id: 's', heading: 'H', notes: '', level: 'h2' }], draft: '# Approved article\n\nREADING_SENTINEL body text.',
+    selectedCoreIdeaId: 'x', coreIdeaSuggestions: [{ id: 'x', title: 'Idea X', angleLabel: 'Decision guide', rating: { overall: 9.2 } }, { id: 'y', title: 'Idea Y', angleLabel: 'Myth', rating: { overall: 7.5 } }],
+    outlineStructure: { id: 'comparison', name: 'Comparison form', sourceId: 'outline-md', sourceHash: 'h' }, outline: [{ id: 's', heading: 'OUTLINE_SENTINEL heading', notes: 'Section notes', level: 'h2' }], draft: '# Approved article\n\nREADING_SENTINEL body text.',
     qualityReport: { version: 11, status: 'pass', checkedAt: now, articleSpecFingerprint: '', checks: Array.from({ length: 10 }, (_, i) => pass('c' + i)) } },
   { id: 'a-failed', title: 'Failed article', currentStep: 2, status: 'in_progress', createdAt: now, updatedAt: now,
     contentPlanId: 'plan-1', contentPlanItemId: 'i2', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-1', batchStatus: 'failed', batchError: 'timeout' },
@@ -18,7 +19,7 @@ const structureFile = { id: 'outline-md', name: 'Outline forms.md', category: 'r
 
 async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
   const user = { id: role, email: role + '@example.com', role };
-  const log = { puts: [] as any[], configs: [] as any[], created: [] as any[], started: [] as string[], imported: [] as any[] };
+  const log = { reruns: [] as any[], puts: [] as any[], configs: [] as any[], created: [] as any[], started: [] as string[], imported: [] as any[] };
   await page.addInitScript(user => localStorage.setItem('writer:auth-session', JSON.stringify({ authProvider: 'postgres', accessToken: '', expiresAt: null, user })), user);
   const config = { ...DEFAULT_CONFIG, stepConfigs: { ...DEFAULT_CONFIG.stepConfigs, 3: { ...DEFAULT_CONFIG.stepConfigs[3], fileAccess: { kb: [], rules: ['outline-md'] } } } };
   await page.route('**/*', async route => {
@@ -30,6 +31,8 @@ async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
     if (url.pathname === '/api/config') return route.fulfill({ json: { ...config, railwayUrl: url.origin } });
     if (url.pathname === '/api/articles' && method === 'GET') return route.fulfill({ json: articles });
     if (url.pathname === '/api/articles' && method === 'POST') { const body = route.request().postDataJSON(); log.created.push(body); return route.fulfill({ json: { ok: true, article: body } }); }
+    const rerun = url.pathname.match(/^\/api\/articles\/([^/]+)\/rerun$/);
+    if (rerun) { const body = route.request().postDataJSON(); log.reruns.push({ id: rerun[1], ...body }); return route.fulfill({ status: 202, json: { ok: true, article: { ...articles[0], qualityReport: null, batchStatus: 'queued' } } }); }
     if (url.pathname.startsWith('/api/articles/') && method === 'PUT') { const patch = route.request().postDataJSON(); log.puts.push(patch); return route.fulfill({ json: { ok: true, article: { ...articles[0], ...patch } } }); }
     if (url.pathname === '/api/content-plans/import') { log.imported.push(route.request().postDataJSON()); return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3 } } }); }
     if (url.pathname === '/api/content-plans/plan-new/classify') return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3, items: [
@@ -83,10 +86,6 @@ test('CRM (demo UI): kanban, table, record, review and pipeline settings on real
   await threshold.press('Enter');
   await expect.poll(() => log.configs.length).toBe(1);
   expect(log.configs[0].pipeline.threshold).toBe(85);
-
-  await goHash(page, '/settings/experience');
-  await page.getByRole('button', { name: /Chuyển về giao diện cũ|Switch to classic UI/ }).click();
-  await expect(page.getByRole('button', { name: 'Writer Studio', exact: true })).toBeAttached();
 });
 
 test('CRM Add Plan imports, classifies, splits into batches and starts them', async ({ page }) => {
@@ -111,4 +110,19 @@ test('CRM Add Plan imports, classifies, splits into batches and starts them', as
   expect(log.created[2].activityType).toBe('editorial-originality');
   expect(log.created[0].outlineStructure?.id).toBe('comparison');
   expect(log.started).toHaveLength(3);
+});
+
+test('CRM manual mode uses the demo layout and re-runs gates through the pipeline', async ({ page }) => {
+  const log = await mockApp(page);
+  await goHash(page, '/object/articles/a-approved?tab=manual');
+  await expect(page.getByRole('tab', { name: /Chế độ thủ công|Manual mode/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('radio', { name: /Idea X/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('radio', { name: /Idea Y/ })).toHaveAttribute('aria-checked', 'false');
+  await page.getByRole('button', { name: /OUTLINE_SENTINEL heading/ }).click();
+  await expect(page.getByText('Section notes')).toBeVisible();
+  await expect(page.getByLabel(/Bản nháp|Draft/)).toHaveValue(/READING_SENTINEL/);
+  await expect(page.locator('.outline-picker')).toHaveCount(0);
+  await page.getByRole('button', { name: /Chấm lại AI|Re-check AI/ }).click();
+  await expect.poll(() => log.reruns.length).toBe(1);
+  expect(log.reruns[0]).toEqual({ id: 'a-approved', gate: 4 });
 });

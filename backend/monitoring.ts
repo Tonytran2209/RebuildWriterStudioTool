@@ -1,4 +1,3 @@
-import { readImageWorkerRuns } from "./imageWorkers.ts"
 import {createTaskUsage} from './taskUsage.ts';
 import crypto from "node:crypto"
 import { performance } from "node:perf_hooks"
@@ -166,7 +165,6 @@ export function createMonitoring(
   appId: string,
   options: {
     readData?: typeof readMonitoringData
-    readImageRuns?: typeof readImageWorkerRuns
     getConfig?: () => Promise<any>
     save?: (key: string, value: unknown) => Promise<void>
     token?: () => string | undefined
@@ -395,15 +393,11 @@ export function createMonitoring(
         Date.parse(new Date().toISOString().slice(0, 10)) -
           (days - 1) * 86400000,
       ).toISOString()
-      const [source, imageHistory] = await Promise.all([
-        (options.readData ?? readMonitoringData)(since),
-        (options.readImageRuns ?? (options.readData ? async () => ({ runs: [], complete: true }) : readImageWorkerRuns))()
-          .catch((error: { code?: string }) => ({ runs: [], complete: error.code === "42P01" })),
-      ])
+      const source = await (options.readData ?? readMonitoringData)(since)
       const articleHistory = "jobRuns" in source ? source.jobRuns : null
-      const historyRuns = [...(articleHistory?.runs ?? []), ...imageHistory.runs]
+      const historyRuns = [...(articleHistory?.runs ?? [])]
         .sort((a, b) => Date.parse(b.endedAt ?? b.startedAt ?? "") - Date.parse(a.endedAt ?? a.startedAt ?? ""))
-      const jobRunsTruncated = historyRuns.length > 2500 || articleHistory?.complete === false || !imageHistory.complete
+      const jobRunsTruncated = historyRuns.length > 2500 || articleHistory?.complete === false
       const jobHistorySince = articleHistory?.since ?? new Date(Date.now() - 61 * 86400000).toISOString()
       const byKey = new Map<string, Bucket>(
         (source.buckets || []).map((b: any) => [b.key, b.value]),

@@ -464,3 +464,12 @@ export async function getArticleStages(id: string): Promise<ArticleStageVersion[
   const result = await railwayRequest<{ stages: ArticleStageVersion[] }>(`/api/articles/${encodeURIComponent(id)}/stages`)
   return Array.isArray(result.stages) ? result.stages : []
 }
+
+/** Regenerate an article from a gate (1 Core Idea, 2 Outline, 3 Draft, 4 AI review) through the batch runner. */
+export async function rerunArticle(id: string, gate: 1 | 2 | 3 | 4): Promise<Article> {
+  const result = await railwayRequest<{ article: Article }>(
+    `/api/articles/${encodeURIComponent(id)}/rerun`,
+    jsonRequest("POST", { gate }),
+  )
+  return result.article
+}

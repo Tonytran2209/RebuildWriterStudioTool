@@ -74,3 +74,7 @@ Draft preview renders the saved Markdown (headings, paragraphs, lists, tables, l
 ## CRM pipeline workspace (2026-11-17)
 
 Default flow: Add Plan (launcher inside the CRM page) → batch record → article record. Articles list shows gate, AI Approval (Universal QC score vs. the Settings threshold, evidence failures hard-block) and human review. Article record tabs: Final Article (rendered, Copy to Docs), AI Review (score and criteria, failures first), Generation History (timeline, AI calls and cost), Manual mode (the existing Core Idea, Outline and Draft steps). Review Workspace filters by review status and the random sample; Request Revision requires a comment. Completion stays a human action. See `docs/AI-PIPELINE-UPGRADE.md` §10.
+
+## CRM only (2026-11-18)
+
+The classic sidebar/launcher/step UI is removed. Manual mode follows the demo: ideas as radio rows with scores, outline rows (H2/H3, expandable notes), draft textarea with explicit save. Regenerate G1/G2/Draft and Re-check AI call `POST /api/articles/:id/rerun`, which clears that gate's output and lets the batch runner resume. Retry on an AI Review failure re-runs the review gate.

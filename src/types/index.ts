@@ -183,7 +183,6 @@ export interface PipelineSettings {
   maxParallel: number
   noPass: "best-flagged" | "fail"
   reviewSample: number
-  keepImages: boolean
 }
 
 export interface HumanReview {
@@ -361,20 +360,6 @@ export interface EditorialApproval {
   outlineFingerprint?: string
 }
 
-export type ImageSuggestionStatus = "suggested" | "approved" | "dismissed"
-
-export interface ImageSuggestion {
-  id: string
-  afterSectionId: string
-  afterHeading: string
-  type: "hero" | "infographic" | "comparison" | "diagram" | "illustration"
-  purpose: string
-  brief: string
-  altText: string
-  evidenceSafe: boolean
-  status: ImageSuggestionStatus
-}
-
 export interface Article {
   id: string
   title: string
@@ -428,7 +413,6 @@ export interface Article {
   draftEvidenceUsage?: Record<string, string[]>
   semanticReviewFingerprint?: string | null
   semanticReviewChecks?: QualityGateCheck[] | null
-  imageSuggestions?: ImageSuggestion[]
   qualityReport?: UniversalQualityReport | null
   editorialApproval?: EditorialApproval | null
   humanReview?: HumanReview | null
@@ -535,7 +519,7 @@ export interface ContentType {
   color: string
 }
 
-export type ActiveTab = "step-setup" | "models" | "knowledge-base" | "image-workers" | "image-styles"
+export type ActiveTab = "step-setup" | "models" | "knowledge-base"
 export type KbSubTab = "kb" | "rules" | "website" | "legacy-action"
 
 // ── Knowledge/Skill source import ────────────────────────────────────────────

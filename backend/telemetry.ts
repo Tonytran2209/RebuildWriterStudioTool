@@ -42,11 +42,6 @@ export const STAGE_CONFIG: Record<BatchStepKey, { nameEn: string; stepType: "AI"
   outline: { nameEn: "Outline Generation", stepType: "AI", description: "AI lập dàn ý H2/H3 chuẩn cấu trúc SEO." },
   draft: { nameEn: "Draft Writing", stepType: "AI", description: "AI viết bản thảo bài viết hoàn chỉnh theo outline và nguồn dẫn chứng." },
   quality: { nameEn: "Quality Check", stepType: "AI", description: "AI kiểm tra chất lượng, internal links và tính xác thực." },
-  imageStyleSave: { nameEn: "Save Image Style", stepType: "NON_AI", description: "Lưu cấu hình phong cách ảnh minh họa vào hệ thống." },
-  imageStyleApprove: { nameEn: "Approve Image Style", stepType: "NON_AI", description: "Xác nhận phê duyệt phong cách ảnh để dùng cho sản xuất." },
-  imageStyleSync: { nameEn: "Sync Image Library", stepType: "NON_AI", description: "Đồng bộ thư viện style ảnh xuống worker xử lý." },
-  imageGenerate: { nameEn: "Generate Illustration", stepType: "AI", description: "AI (ComfyUI / ImageGen) sinh ảnh minh họa WebP theo nội dung bài." },
-  imageInsert: { nameEn: "Insert Image into Draft", stepType: "NON_AI", description: "Chèn ảnh minh họa đã duyệt vào đúng vị trí trong bài viết." },
 };
 
 const TOOL_SLUG = "writer-studio";

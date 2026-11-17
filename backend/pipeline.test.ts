@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_PIPELINE, aiApproval, articleStage, firstPassApprovalRate, inReviewSample, pipelineSettings } from '../src/lib/pipeline.ts'
+import { DEFAULT_PIPELINE, rerunPatch, aiApproval, articleStage, firstPassApprovalRate, inReviewSample, pipelineSettings } from '../src/lib/pipeline.ts'
 import type { Article } from '../src/types/index.ts'
 
 const base = { id: 'a', title: 'T', currentStep: 2, status: 'in_progress', createdAt: '', updatedAt: '' } as Article
@@ -34,4 +34,17 @@ test('review sample is stable per article and respects 0/100', () => {
   assert.equal(inReviewSample('abc', 20), inReviewSample('abc', 20))
   assert.equal(inReviewSample('abc', 0), false)
   assert.equal(inReviewSample('abc', 100), true)
+})
+
+test('rerun clears the chosen gate and everything after it, and queues the article as a batch', () => {
+  const g2 = rerunPatch({ id: 'a1', activityKind: 'batch', activityId: 'b1' }, 2)
+  assert.deepEqual([g2.outline, g2.outlineNeedsRegeneration, g2.draft, g2.qualityReport, g2.batchStatus], [[], true, '', null, 'queued'])
+  assert.equal('coreIdeaSuggestions' in g2, false)
+  assert.equal('activityId' in g2, false)
+  const g4 = rerunPatch({ id: 'a1', activityKind: 'batch', activityId: 'b1' }, 4)
+  assert.equal('draft' in g4, false)
+  assert.equal(g4.qualityReport, null)
+  const single = rerunPatch({ id: 'a2', activityKind: 'single' }, 3)
+  assert.deepEqual([single.activityKind, single.activityId, single.draftNeedsRegeneration], ['batch', 'activity-a2', true])
+  assert.deepEqual(rerunPatch({ id: 'a3' }, 1).coreIdeaSuggestions, [])
 })

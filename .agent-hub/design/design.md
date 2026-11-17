@@ -99,5 +99,5 @@ User decision (2026-11-17): the CRM UI copies `twenty-demo-ui/pipeline-crm.html`
 
 - Authority for everything under `.crm`: the demo's own stylesheet and markup. `src/crm/crm.css` is generated from the demo `<style>` (selectors prefixed with `.crm`, rem converted to px at 13px, keyframes prefixed `crm-`). Demo tokens (hex, Twenty tag palette, Tabler icons via `@tabler/icons-webfont`) replace `src/theme-tokens.css` inside the CRM.
 - Additions at the end of `crm.css` only undo app-wide `!important` rules (dark `main`/`input`, heading sizes) and style the embedded draft; keep them minimal.
-- Default theme is Light, like the demo. Embedded classic components (Manual mode, Settings editors, outline picker) keep their own styles.
-- The rules above this section still govern the classic UI only.
+- Default theme is Light, like the demo. Manual mode is native CRM markup (`src/crm/ManualTab.tsx`); only the Settings editors and the outline picker are embedded components with their own styles.
+- 2026-11-18: the classic UI was removed; the CRM is the only interface. The rules above this section are historical until the contract is rewritten.

@@ -1,6 +1,7 @@
 import type { AppConfig, Article, ContentPlan, DocumentFile, PipelineSettings } from "../types/index.ts"
 import { aiApproval, articleStage } from "../lib/pipeline.ts"
 import { isArticleCompleted } from "../lib/workflowGuards.ts"
+import { articleSpecFingerprint } from "../lib/articleSpec.ts"
 
 // Vocabulary of twenty-demo-ui pipeline-crm.html, filled from real Writer Studio records.
 export type CrmStatus = "queued" | "running" | "failed" | "completed"
@@ -143,4 +144,19 @@ export function toggleShip(config: AppConfig, file: DocumentFile, gate: number):
   const list = current.fileAccess?.[key] ?? []
   const next = list.includes(file.id) ? list.filter(id => id !== file.id) : [...list, file.id]
   return { ...config, stepConfigs: { ...config.stepConfigs, [step]: { ...current, fileAccess: { ...current.fileAccess, [key]: next } } } }
+}
+
+/** Manual idea pick: same fields the runner sets at G1; a different idea clears G2/G3 output. */
+export function selectIdeaPatch(article: Article, ideaId: string): Partial<Article> {
+  const idea = article.coreIdeaSuggestions?.find(item => item.id === ideaId)
+  if (!idea) return {}
+  const changed = article.selectedCoreIdeaId !== idea.id
+  const spec = article.articleSpec ? { ...article.articleSpec, primaryQuery: idea.primaryKeyword || article.articleSpec.primaryQuery, secondaryQueries: idea.secondaryKeywords?.length ? idea.secondaryKeywords : article.articleSpec.secondaryQueries, thesis: idea.mainArgument, audience: idea.targetAudience || article.articleSpec.audience } : null
+  return {
+    selectedCoreIdeaId: idea.id, title: idea.title, topic: idea.title, angle: idea.angleLabel,
+    keywords: [idea.primaryKeyword, ...(idea.secondaryKeywords ?? [])].filter(Boolean).join(", "),
+    targetAudience: idea.targetAudience, tone: idea.recommendedTone, wordCount: idea.recommendedWordCount,
+    articleSpec: spec, articleSpecFingerprint: spec ? articleSpecFingerprint(spec) : article.articleSpecFingerprint,
+    ...(changed ? { outline: [], outlineNeedsRegeneration: true, draft: "", draftNeedsRegeneration: true, qualityReport: null } : {}),
+  }
 }
