@@ -6,9 +6,9 @@ const STORAGE_KEY = 'writer:theme-preference';
 function storedPreference(): ThemePreference {
   try {
     const value = window.localStorage.getItem(STORAGE_KEY);
-    return value === 'light' || value === 'dark' || value === 'system' ? value : 'dark';
+    return value === 'light' || value === 'dark' || value === 'system' ? value : 'light';
   } catch {
-    return 'dark';
+    return 'light';
   }
 }
 

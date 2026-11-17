@@ -5118,8 +5118,8 @@ app.put("/api/articles/:id", async (req, res) => {
           const fields = Object.keys(updates)
           const reopening = updates.status === "review" && updates.completedAt === null &&
             fields.every(field => field === "status" || field === "completedAt")
-          // Human review is a verdict on the finished text, so it may be recorded after completion.
-          if (!reopening && fields.some(field => field !== "currentStep" && field !== "aiUsageByStep" && field !== "humanReview"))
+          // Human review and the Approved Article flag judge the finished text, so they may be recorded after completion.
+          if (!reopening && fields.some(field => field !== "currentStep" && field !== "aiUsageByStep" && field !== "humanReview" && field !== "approvedArticle"))
             throw new Error("ARTICLE_COMPLETED:Hãy mở lại bài viết trước khi chỉnh sửa.")
         }
         const next = {

@@ -338,7 +338,7 @@ const getPrimaryKeyword = primaryKeyword;
 
 const QC_PROCESS_IDS = ['quality-review-stale', 'semantic-review-schema'];
 // Vietnamese display names; stored labels (and English UI) stay unchanged.
-const QC_LABELS_VI: Record<string, string> = {
+export const QC_LABELS_VI: Record<string, string> = {
   'introduction-word-budget': 'Mở bài ngắn gọn, đúng trọng tâm',
   'outline-structure': 'Đúng cấu trúc MD đã chọn',
   'outline-fidelity': 'Giữ đúng heading của outline',
@@ -366,14 +366,14 @@ const QC_LABELS_VI: Record<string, string> = {
   'evidence-support': 'Có dẫn chứng hỗ trợ',
   'brand-pov': 'Đúng góc nhìn thương hiệu',
 };
-const QC_GROUPS = [
+export const QC_GROUPS = [
   { key: 'structure', vi: 'Cấu trúc & độ dài', en: 'Structure & length' },
   { key: 'seo', vi: 'SEO & liên kết', en: 'SEO & links' },
   { key: 'content', vi: 'Nội dung & dẫn chứng', en: 'Content & evidence' },
   { key: 'images', vi: 'Hình ảnh', en: 'Images' },
   { key: 'checklist', vi: 'SEO checklist', en: 'SEO checklist' },
 ] as const;
-function qcGroupOf(id: string): typeof QC_GROUPS[number]['key'] {
+export function qcGroupOf(id: string): typeof QC_GROUPS[number]['key'] {
   if (id === 'checklist-compliance') return 'checklist';
   if (id.startsWith('image-')) return 'images';
   if (['introduction-word-budget', 'outline-structure', 'outline-fidelity', 'complete-structure', 'duplicate-headings', 'word-budget', 'single-conclusion', 'placeholders', 'conclusion-word-budget'].includes(id)) return 'structure';

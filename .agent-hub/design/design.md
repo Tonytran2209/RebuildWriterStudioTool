@@ -93,13 +93,11 @@ Use a neutral token-based SEO brief above the draft. Feature the primary keyword
 
 Distinguish content findings from incomplete/outdated review process. Explain whether the report is missing, uses old QC rules, or no longer matches reviewed inputs; show pending-review wording and a visible explicit Re-check action. Preserve draft content and completion blocking for stale/incomplete reviews. Semantic evaluation uses the article’s frozen MD structure, not a generic comparison template; the introduction contract stays independent of body structure and responsive pixel line count.
 
-## CRM shell (2026-11-17)
+## CRM shell (2026-11-17, superseded the same day)
 
-User-authorized redesign: Writer Studio's default UI becomes the CRM layout from `twenty-demo-ui` (`pipeline-crm.html`) for the 3-gate AI Content Pipeline (`docs/AI-PIPELINE-UPGRADE.md`). Implementation: `src/crm/CrmApp.tsx`, `src/crm/crm.css` (scoped under `.crm`, colors mapped to the tokens above; no demo hex values for neutrals or accent).
+User decision (2026-11-17): the CRM UI copies `twenty-demo-ui/pipeline-crm.html` exactly and ignores the earlier design rules in this file; the design contract will be rewritten around the CRM later. Until then:
 
-- Layout: 220px navigation drawer on the soft background, page header (breadcrumb + actions), one bordered 8px card per page. Record pages use a 340px field column and underline tabs.
-- Patterns: sticky-header tables with sortable columns and grouped rows; Kanban by pipeline stage; side panel (560px) for review; command menu on ⌘K/Ctrl+K; workflow canvas with dotted grid; dashboard widgets with horizontal bars.
-- Stage tags exception: pipeline stages may use the Twenty tag palette (gray, sky, purple, blue, orange, red, green) to tell gates apart. This is limited to stage, AI approval and review tags; blue stays the only action accent.
-- Mobile (≤768px): the drawer becomes an off-canvas panel with a scrim, nav items are 44px, record pages stack.
-- The classic UI stays reachable from the drawer ("Giao diện cũ") and the classic profile menu ("Giao diện CRM mới"); the choice is a per-browser preference.
-- Motion follows the demo (side panel slide, card hover lift) and is disabled under reduced motion.
+- Authority for everything under `.crm`: the demo's own stylesheet and markup. `src/crm/crm.css` is generated from the demo `<style>` (selectors prefixed with `.crm`, rem converted to px at 13px, keyframes prefixed `crm-`). Demo tokens (hex, Twenty tag palette, Tabler icons via `@tabler/icons-webfont`) replace `src/theme-tokens.css` inside the CRM.
+- Additions at the end of `crm.css` only undo app-wide `!important` rules (dark `main`/`input`, heading sizes) and style the embedded draft; keep them minimal.
+- Default theme is Light, like the demo. Embedded classic components (Manual mode, Settings editors, outline picker) keep their own styles.
+- The rules above this section still govern the classic UI only.

@@ -298,13 +298,16 @@ Người dùng đã duyệt: chuyển sang giao diện CRM của repo `twenty-de
 | Số vòng sửa | 1 | Chưa |
 | No-pass Logic | Lấy option tốt nhất, gắn cờ | Chưa |
 | "Needs Revision" | Chỉ ghi nhận xét; người sửa trong Chế độ thủ công | Có |
-| Hoàn thành bài | Người bấm "Hoàn thành"; AI Approval chỉ là gợi ý | Có (mâu thuẫn mục 7 chưa chốt) |
+| Hoàn thành bài | Theo luồng mới: AI Approval ≥ ngưỡng thì bài hiện Completed (AI Approved); bài trượt AI Review hiện Failed (gate AI), sửa và chấm lại ở Chế độ thủ công | Có (hiển thị; khoá chỉnh sửa vẫn chỉ khi người bấm hoàn thành) |
 
 ### Ánh xạ dữ liệu hiện có sang 3 gate (`src/lib/pipeline.ts`)
 
 Queued (batch đang chờ) → G1 (chưa chọn Core Idea) → G2 (đã chọn, chưa có outline) → G3 (có outline, chưa có draft) → AI Approval (có draft) → Completed (đã hoàn thành). `batchStatus = failed` → Failed, Retry từ batch. Human review lưu ở `article.humanReview` (`approved` | `needs_revision`, nhận xét bắt buộc khi yêu cầu sửa), và vẫn ghi được sau khi bài đã hoàn thành.
 
 ### Giao diện
+
+Cập nhật 2026-11-17: giao diện chép đúng `pipeline-crm.html` (CSS sinh từ demo, icon Tabler, theme Light mặc định). Add Plan là side panel như demo: dán topic, chọn số bài/batch, số bài song song và cấu trúc outline (bắt buộc), rồi app import plan, phân loại type, chia batch và chạy từng batch (kể cả plan 1 topic). Settings dùng nav riêng của demo và nhúng trực tiếp các trình chỉnh sửa hiện có (Workflow AI, AI Models, Knowledge & Rules, Worker tạo ảnh, Image Styles). Shipper và "Used at" trong Storage sửa thẳng quyền file theo gate (`stepConfigs[2..4].fileAccess`). Review panel có công tắc Approved Article (`article.approvedArticle`), đếm vào Storage › Approved Articles.
+
 
 Giao diện CRM (`src/crm/`) là mặc định. Gồm: Bài viết (Table/Kanban theo gate), Content Plans, Batches, Review Workspace, Storage (Used at theo G1–G3, danh sách tài liệu còn thiếu), Quy trình 3 gate, Dashboard (First-pass Approval Rate, bài theo gate, human review, tiêu chí trượt nhiều nhất, chi phí AI), Cài đặt và ⌘K. Ba bước cũ nằm trong tab "Chế độ thủ công" của trang bài viết. Nút "Giao diện cũ" chuyển về sidebar cũ, lưu theo trình duyệt.
 

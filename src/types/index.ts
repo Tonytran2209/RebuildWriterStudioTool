@@ -432,6 +432,8 @@ export interface Article {
   qualityReport?: UniversalQualityReport | null
   editorialApproval?: EditorialApproval | null
   humanReview?: HumanReview | null
+  /** Human-confirmed example for G2/G3 (Storage › Approved Articles). */
+  approvedArticle?: { by: string; at: string } | null
   workflowRuleSnapshots?: Partial<Record<2 | 3 | 4, WorkflowRuleSnapshot>>
   aiUsageByStep?: Partial<Record<1 | 2 | 3 | 4, AICallUsage[]>>
   // Activity workspace / per-run content plan

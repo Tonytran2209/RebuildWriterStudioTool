@@ -28,7 +28,7 @@ import LoginScreen from "./components/LoginScreen"
 import { clampArticleStep, gateArticleStep, gateStepCompletion, isArticleCompleted } from "./lib/workflowGuards"
 import { isLegacyArticle } from "./lib/legacyCompatibility"
 import { useThemePreference } from "./lib/theme"
-import CrmApp from "./crm/CrmApp"
+import CrmApp, { CrmToastHost } from "./crm/CrmApp"
 
 function generateId() {
   return `art-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -214,7 +214,7 @@ export default function App() {
     (id: string, updates: Partial<Article>, options: ArticleUpdateOptions = {}) => {
       const previous = articlesRef.current.find((article) => article.id === id)
       if (deletingOrDeletedIds.current.has(id)) return Promise.resolve(false)
-      if (previous && isArticleCompleted(previous) && Object.keys(updates).some(key => key !== "currentStep" && key !== "humanReview")) return Promise.resolve(false)
+      if (previous && isArticleCompleted(previous) && Object.keys(updates).some(key => key !== "currentStep" && key !== "humanReview" && key !== "approvedArticle")) return Promise.resolve(false)
       setArticles((prev) =>
         prev.map((a) =>
           a.id === id
@@ -305,9 +305,11 @@ export default function App() {
     items: ContentPlanItem[],
     batchSize?: 5 | 10 | 15 | 20,
     outlineStructure?: OutlineStructureSnapshot,
+    options: { forceBatch?: boolean; select?: boolean } = {},
   ) => {
     const activityId = `activity-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-    const isBatch = items.length > 1
+    // The CRM pipeline runs every topic as a batch, including a one-topic plan.
+    const isBatch = items.length > 1 || Boolean(options.forceBatch)
     setArticleActionError(null)
     setSyncStatus("saving")
     const saved: Article[] = []
@@ -356,8 +358,10 @@ export default function App() {
       for (const record of records)
         saved.push(await enqueueArticleMutation(record.id, () => db.saveArticle(record)))
       setArticles((current) => [...saved, ...current])
-      setActiveId(saved[0]?.id ?? null)
-      setShowBatchOverview(isBatch)
+      if (options.select !== false) {
+        setActiveId(saved[0]?.id ?? null)
+        setShowBatchOverview(isBatch)
+      }
       if (isBatch) await db.startBatch(activityId)
       setSyncStatus("idle")
     } catch (error: unknown) {
@@ -871,7 +875,7 @@ db.pauseBatch(activityId)
 
   if (uiMode === "crm") return (
     <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} writer-app h-dvh overflow-hidden bg-[var(--ui-bg)]`}>
-      <WorkspaceNotificationHost />
+      <CrmToastHost />
       <CrmApp
         user={authSession.user}
         articles={articles}
@@ -881,12 +885,11 @@ db.pauseBatch(activityId)
         activeId={activeId}
         onSelectArticle={(id) => { setActiveId(id); setShowBatchOverview(false) }}
         onUpdateArticle={(id, updates) => handleUpdateArticle(id, updates)}
-        onToggleComplete={handleToggleComplete}
-        completionSavingId={completionSavingId}
         onDeleteArticle={(target, batch) => void handleDeleteArticle(target, batch)}
         onRetry={(target) => retryBatchArticle(target.activityId ?? "", target.id)}
-        onSavePipeline={(pipeline) => handleSaveConfig({ ...config, pipeline }, files, false)}
-        onOpenAdvancedSettings={openAdvancedSettings}
+        onCreate={handleCreateActivity}
+        onContentPlansChange={(plans) => receiveContentPlans(plans)}
+        onSaveConfig={handleSaveConfig}
         onSwitchClassic={() => switchUi("classic")}
         onSignOut={() => signOut()}
         themePreference={themePreference}
@@ -894,12 +897,10 @@ db.pauseBatch(activityId)
         renderManual={() => article ? (isLegacyArticle(article)
           ? <LegacyArticleView article={article} migrating={migratingLegacyId === article.id} onMigrate={() => void handleMigrateLegacy(article)} />
           : <div className="flex min-h-0 flex-1 flex-col">{renderWorkflow(article)}</div>) : null}
-        renderBatch={renderBatch}
-        renderLauncher={renderLauncher}
       />
-      {configModal}
     </div>
   )
+
 
   return (
     <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} writer-app h-dvh flex flex-col md:flex-row overflow-hidden bg-[var(--ui-bg)]`}>

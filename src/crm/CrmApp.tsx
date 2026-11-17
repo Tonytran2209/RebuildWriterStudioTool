@@ -1,32 +1,82 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
-import {
-  BarChart3, Boxes, CheckCircle2, ChevronRight, ClipboardCheck, Command, Copy, FileText, FolderKanban, GitBranch,
-  History, KanbanSquare, LayoutList, LogOut, Menu, Monitor, Moon, Plus, RotateCcw, Search, Settings, Sparkles, Sun,
-  Trash2, Undo2, Workflow, X,
-} from "lucide-react"
-import type { AppConfig, Article, ContentPlan, DocumentFile, PipelineSettings } from "../types"
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
+import type { AppConfig, Article, ContentPlan, ContentPlanItem, DocumentFile, PipelineSettings } from "../types"
+import type { OutlineStructureSnapshot } from "../../shared/outlineStructures"
 import type { ThemePreference } from "../lib/theme"
 import { useI18n } from "../lib/i18n"
+import * as db from "../lib/db"
+import { classifyContentPlan, importContentPlan } from "../lib/contentPlans"
 import { markdownToHtml, normalizeDraftOutput } from "../lib/draftExport"
-import { isLegacyArticle } from "../lib/legacyCompatibility"
-import {
-  PIPELINE_STAGES, aiApproval, articleStage, firstPassApprovalRate, humanReviewStatus, inReviewSample, pipelineSettings,
-  type PipelineStage,
-} from "../lib/pipeline"
-import { notifyWorkspace } from "../components/workspace/WorkspaceNotification"
+import { buildBatchZip } from "../lib/zipExport"
+import { pipelineSettings } from "../lib/pipeline"
+import { step4ChecklistDocs } from "../lib/qualityPolicy"
+import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../components/workspace/Step4Draft"
+import OutlineStructureSelect from "../components/OutlineStructureSelect"
+import TabStepSetup from "../components/config/TabStepSetup"
+import TabModels from "../components/config/TabModels"
+import TabKnowledgeBase from "../components/config/TabKnowledgeBase"
+import ImageWorkersSettings from "../components/config/ImageWorkersSettings"
+import ImageStylesSettings from "../components/config/ImageStylesSettings"
+import { GATES, STORAGE_GROUPS, batchesOf, planStats, plansOf, storageDocs, toCrmArticle, toggleShip, type CrmArticle, type CrmBatch, type CrmPlan, type HumanStatus, type StorageDoc } from "./model"
 import "./crm.css"
 
-type View = "articles" | "plans" | "batches" | "review" | "storage" | "workflow" | "dashboard" | "settings" | "new" | "article" | "plan" | "batch"
-type Route = { view: View; id?: string }
-const VIEWS: View[] = ["articles", "plans", "batches", "review", "storage", "workflow", "dashboard", "settings", "new", "article", "plan", "batch"]
+/* ─── helpers (same as the demo) ───────────────────────────────────────── */
 
-function parseRoute(hash: string): Route {
-  const [view, id] = hash.replace(/^#\/?/, "").split("/")
-  return VIEWS.includes(view as View) ? { view: view as View, id: id ? decodeURIComponent(id) : undefined } : { view: "articles" }
+const I = ({ n, s }: { n: string; s?: CSSProperties }) => <i className={`ti ti-${n}`} style={s} aria-hidden="true" />
+const PALETTE = ["#4662d5", "#d45452", "#7948af", "#14806e", "#c25700", "#317299", "#b23887", "#307f52", "#997000"]
+const colorOf = (s: string) => PALETTE[[...String(s)].reduce((a, c) => a + c.charCodeAt(0), 0) % PALETTE.length]
+const Av = ({ name, round, xl }: { name?: string; round?: boolean; xl?: boolean }) =>
+  <span className={`av${round ? " round" : ""}${xl ? " xl" : ""}`} style={{ background: colorOf(name ?? "?") }}>{((name ?? "?").trim()[0] ?? "?").toUpperCase()}</span>
+const person = (email?: string) => email ? email.split("@")[0] : ""
+const go = (h: string) => { window.location.hash = h }
+const enc = encodeURIComponent
+
+const TYPES = { A: ["So sánh format", "Format vs format"], B: ["So sánh khái niệm", "Concept comparison"], C: ["Nhiều lựa chọn", "Multiple options"], ED: ["Editorial", "Editorial"] } as const
+const STATUS = { queued: ["Queued", "gray"], running: ["Running", "blue"], failed: ["Failed (No-pass)", "red"], completed: ["AI Approved", "green"], attention: ["Needs attention", "red"] } as const
+const HUMAN = { not: ["Not Reviewed", "gray"], approved: ["Approved", "green"], revision: ["Needs Revision", "orange"] } as const
+const OBJ_META = {
+  plans: { label: "Content Plans", icon: "list-details", color: "#4662d5" },
+  batches: { label: "Batches", icon: "stack-2", color: "#7948af" },
+  articles: { label: "Articles", icon: "file-text", color: "#c25700" },
+  reviews: { label: "Review Workspace", icon: "checklist", color: "#14806e" },
+  storage: { label: "Storage", icon: "folders", color: "#317299" },
+} as const
+type Obj = keyof typeof OBJ_META
+
+function useAgo() {
+  const { tr } = useI18n()
+  return (d?: string | null) => {
+    if (!d) return "—"
+    const s = (Date.now() - new Date(d).getTime()) / 1000
+    if (s < 60) return tr("vừa xong", "just now")
+    if (s < 3600) return Math.floor(s / 60) + tr(" phút trước", " min ago")
+    if (s < 86400) return Math.floor(s / 3600) + tr(" giờ trước", "h ago")
+    return Math.floor(s / 86400) + tr(" ngày trước", " days ago")
+  }
 }
-const go = (view: View, id?: string) => { window.location.hash = `/${view}${id ? `/${encodeURIComponent(id)}` : ""}` }
+const fmtTime = (d?: string | null, lang = "vi") => d ? new Date(d).toLocaleString(lang === "vi" ? "vi-VN" : "en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"
 
-type Props = {
+/* ─── toast (demo style), fed by the app-wide notice event ─────────────── */
+
+export function CrmToastHost() {
+  const [items, setItems] = useState<Array<{ id: number; message: string; out?: boolean }>>([])
+  useEffect(() => {
+    const on = (event: Event) => {
+      const { id, message } = (event as CustomEvent<{ id: number; message: string }>).detail
+      setItems(list => [...list, { id, message }])
+      window.setTimeout(() => setItems(list => list.map(t => t.id === id ? { ...t, out: true } : t)), 2400)
+      window.setTimeout(() => setItems(list => list.filter(t => t.id !== id)), 2620)
+    }
+    window.addEventListener("writer:workspace-notice", on)
+    return () => window.removeEventListener("writer:workspace-notice", on)
+  }, [])
+  return <div className="crm" style={{ position: "fixed", height: 0, width: 0, overflow: "visible" }}>{items.slice(-1).map(t => <div key={t.id} role="status" className={`toast${t.out ? " out" : ""}`}><I n="info-circle" />{t.message}</div>)}</div>
+}
+const toast = (message: string) => window.dispatchEvent(new CustomEvent("writer:workspace-notice", { detail: { id: Date.now() + Math.random(), message, kind: "success" } }))
+const errText = (err: unknown) => err instanceof Error ? err.message : String(err)
+
+/* ─── props ────────────────────────────────────────────────────────────── */
+
+export type CrmProps = {
   user: { email: string; role: "user" | "admin" }
   articles: Article[]
   contentPlans: ContentPlan[]
@@ -35,649 +85,878 @@ type Props = {
   activeId: string | null
   onSelectArticle: (id: string | null) => void
   onUpdateArticle: (id: string, updates: Partial<Article>) => Promise<boolean>
-  onToggleComplete: (article: Article) => void
-  completionSavingId: string | null
   onDeleteArticle: (article: Article, batch?: boolean) => void
   onRetry: (article: Article) => Promise<void>
-  onSavePipeline: (pipeline: PipelineSettings) => Promise<void>
-  onOpenAdvancedSettings: () => void
+  onCreate: (type: "comparison-seo" | "editorial-originality", plan: ContentPlan, items: ContentPlanItem[], batchSize?: 5 | 10 | 15 | 20, outlineStructure?: OutlineStructureSnapshot, options?: { forceBatch?: boolean; select?: boolean }) => Promise<void>
+  onContentPlansChange: (plans: ContentPlan[]) => void
+  onSaveConfig: (config: AppConfig, files: DocumentFile[], filesChanged: boolean) => Promise<void>
   onSwitchClassic: () => void
   onSignOut: () => void
   themePreference: ThemePreference
   onThemeChange: (preference: ThemePreference) => void
   renderManual: () => ReactNode
-  renderBatch: (activityId: string, onOpen: (id: string) => void) => ReactNode
-  renderLauncher: () => ReactNode
 }
 
-const STAGE_META: Record<PipelineStage, { label: string; tone: string }> = {
-  queued: { label: "Queued", tone: "t-gray" },
-  g1: { label: "G1 Research/Topic", tone: "t-sky" },
-  g2: { label: "G2 Outline", tone: "t-purple" },
-  g3: { label: "G3 Final Article", tone: "t-blue" },
-  ai: { label: "AI Approval", tone: "t-orange" },
-  failed: { label: "Failed", tone: "t-red" },
-  completed: { label: "Completed", tone: "t-green" },
-}
-const GATE_ORDER: PipelineStage[] = ["g1", "g2", "g3", "ai"]
-
-const fmt = (iso?: string | null) => iso ? new Date(iso).toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"
-const titleOf = (article: Article) => article.title?.trim() || article.topic || "Bài viết"
-
-function StageTag({ stage }: { stage: PipelineStage }) {
-  return <span className={`tag ${STAGE_META[stage].tone}`}>{STAGE_META[stage].label}</span>
-}
-function GateBar({ article }: { article: Article }) {
-  const stage = articleStage(article)
-  // A failed article stops at the gate its saved data reached.
-  const reached = stage === "failed" ? articleStage({ ...article, batchStatus: undefined }) : stage
-  const at = reached === "completed" ? 4 : Math.max(0, GATE_ORDER.indexOf(reached))
-  return <span className="gbar" aria-hidden="true">{GATE_ORDER.map((gate, index) =>
-    <i key={gate} className={index < at ? "done" : index === at ? (stage === "failed" ? "fail" : "now") : ""} />)}</span>
+type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "step"; i: number } | { kind: "cmd" } | null
+type Ctx = CrmProps & {
+  settings: PipelineSettings
+  list: CrmArticle[]
+  plans: CrmPlan[]
+  batches: CrmBatch[]
+  docs: StorageDoc[]
+  can: (what: string) => boolean
+  isAdmin: boolean
+  panel: Panel
+  setPanel: (panel: Panel) => void
+  route: string[]
 }
 
-export default function CrmApp(props: Props) {
-  const { tr } = useI18n()
-  const { articles, contentPlans, files, config, user } = props
-  const isAdmin = user.role === "admin"
-  const settings = pipelineSettings(config)
-  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash))
+const ROLES = {
+  operator: { name: "Content Operator", desc: "Add Plan, run pipeline, view articles, Retry, Copy" },
+  reviewer: { name: "Reviewer", desc: "Review Workspace, Approve / Request Revision, Approved Articles" },
+  admin: { name: "Admin", desc: "Storage, Shipper, models, threshold, perBatch, maxParallel" },
+} as const
+
+const NavToggle = createContext<() => void>(() => {})
+
+/* ─── shell ────────────────────────────────────────────────────────────── */
+
+export default function CrmApp(props: CrmProps) {
+  const settings = pipelineSettings(props.config)
+  const [hash, setHash] = useState(() => window.location.hash)
+  const [panel, setPanel] = useState<Panel>(null)
   const [navOpen, setNavOpen] = useState(false)
-  const [cmdOpen, setCmdOpen] = useState(false)
-
   useEffect(() => {
-    const onHash = () => { setRoute(parseRoute(window.location.hash)); setNavOpen(false) }
-    window.addEventListener("hashchange", onHash)
-    return () => window.removeEventListener("hashchange", onHash)
+    const on = () => { setHash(window.location.hash); setNavOpen(false); setPanel(null) }
+    window.addEventListener("hashchange", on)
+    return () => window.removeEventListener("hashchange", on)
   }, [])
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setCmdOpen(open => !open) }
+    const on = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPanel({ kind: "cmd" }) }
+      if (e.key === "Escape") setPanel(null)
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    document.addEventListener("keydown", on)
+    return () => document.removeEventListener("keydown", on)
   }, [])
-  // Manual mode and completion in App act on the active article, so the record route drives it.
-  useEffect(() => {
-    if (route.view === "article" && route.id && route.id !== props.activeId) props.onSelectArticle(route.id)
-  }, [route.view, route.id, props.activeId])
-  // After Add Plan creates records, App selects the first one: follow it to its batch or record.
-  const [launchedFrom, setLaunchedFrom] = useState<string | null>(null)
-  useEffect(() => { if (route.view === "new") setLaunchedFrom(props.activeId ?? "") }, [route.view])
-  useEffect(() => {
-    if (route.view !== "new" || launchedFrom === null || !props.activeId || props.activeId === launchedFrom) return
-    const created = articles.find(item => item.id === props.activeId)
-    if (created?.activityKind === "batch" && created.activityId) go("batch", created.activityId)
-    else go("article", props.activeId)
-  }, [props.activeId, route.view, launchedFrom])
+  const [path, query = ""] = hash.replace(/^#\/?/, "").split("?")
+  const route = (path || "objects/articles").split("/").map(decodeURIComponent)
+  const [a, b, c] = route
+  // Manual mode in App acts on the active article, so the record route drives it.
+  useEffect(() => { if (a === "object" && b === "articles" && c && c !== props.activeId) props.onSelectArticle(c) }, [a, b, c, props.activeId])
 
-  const planName = useMemo(() => new Map(contentPlans.map(plan => [plan.id, plan.name])), [contentPlans])
-  const batches = useMemo(() => {
-    const groups = new Map<string, Article[]>()
-    for (const article of articles) if (article.activityKind === "batch" && article.activityId)
-      groups.set(article.activityId, [...(groups.get(article.activityId) ?? []), article])
-    return [...groups.entries()].map(([id, items]) => ({
-      id, items,
-      plan: items[0]?.contentPlanId ? planName.get(items[0].contentPlanId) ?? "" : "",
-      createdAt: items.reduce((min, item) => item.createdAt < min ? item.createdAt : min, items[0].createdAt),
-    })).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  }, [articles, planName])
-  const reviewQueue = articles.filter(article => article.draft?.trim() && !isLegacyArticle(article))
+  const settingsKey = JSON.stringify(settings)
+  const list = useMemo(() => props.articles.map(x => toCrmArticle(x, settings)), [props.articles, settingsKey])
+  const plans = useMemo(() => plansOf(props.contentPlans, list, settings), [props.contentPlans, list, settingsKey])
+  const batches = useMemo(() => batchesOf(list), [list])
+  const docs = useMemo(() => storageDocs(props.files, props.config, props.articles.filter(x => x.approvedArticle).length), [props.files, props.config, props.articles])
+  const isAdmin = props.user.role === "admin"
+  // No reviewer role in the database yet: every signed-in user may review.
+  const can = (what: string) => isAdmin || ["plans", "retry", "copy", "manual", "review", "approveArticles"].includes(what)
+  const ctx: Ctx = { ...props, settings, list, plans, batches, docs, can, isAdmin, panel, setPanel, route }
 
-  const nav: Array<{ view: View; label: string; icon: ReactNode; count?: number; admin?: boolean }> = [
-    { view: "articles", label: tr("Bài viết", "Articles"), icon: <FileText size={16} />, count: articles.length },
-    { view: "plans", label: "Content Plans", icon: <FolderKanban size={16} />, count: contentPlans.length },
-    { view: "batches", label: "Batches", icon: <Boxes size={16} />, count: batches.length },
-    { view: "review", label: "Review Workspace", icon: <ClipboardCheck size={16} />, count: reviewQueue.filter(a => humanReviewStatus(a) === "not_reviewed").length },
-    { view: "storage", label: "Storage", icon: <LayoutList size={16} />, admin: true },
-    { view: "workflow", label: tr("Quy trình 3 gate", "3-gate workflow"), icon: <Workflow size={16} /> },
-    { view: "dashboard", label: "Dashboard", icon: <BarChart3 size={16} /> },
-  ]
-  const activeNav: View = route.view === "article" ? "articles" : route.view === "plan" ? "plans" : route.view === "batch" ? "batches" : route.view
-  const article = route.view === "article" ? articles.find(item => item.id === route.id) : undefined
-
-  let content: ReactNode
-  switch (route.view) {
-    case "article": content = article
-      ? <ArticleRecord {...props} article={article} settings={settings} planName={planName} />
-      : <Missing label={tr("Không tìm thấy bài viết.", "Article not found.")} />; break
-    case "plans": content = <PlansView plans={contentPlans} articles={articles} settings={settings} />; break
-    case "plan": content = <PlanRecord plan={contentPlans.find(plan => plan.id === route.id)} articles={articles.filter(a => a.contentPlanId === route.id)} settings={settings} />; break
-    case "batches": content = <BatchesView batches={batches} settings={settings} />; break
-    case "batch": content = <Page crumbs={[["Batches", "batches"]]} title={batches.find(b => b.id === route.id)?.plan || route.id || ""}>
-      <div className="card"><div className="embed">{route.id && props.renderBatch(route.id, id => go("article", id))}</div></div>
-    </Page>; break
-    case "review": content = <ReviewView {...props} queue={reviewQueue} settings={settings} planName={planName} />; break
-    case "storage": content = <StorageView files={files} config={config} isAdmin={isAdmin} onManage={props.onOpenAdvancedSettings} />; break
-    case "workflow": content = <WorkflowView config={config} files={files} settings={settings} />; break
-    case "dashboard": content = <DashboardView articles={articles} settings={settings} />; break
-    case "settings": content = <SettingsView {...props} settings={settings} isAdmin={isAdmin} />; break
-    case "new": content = <Page title={tr("Thêm Plan", "Add Plan")}><div className="card"><div className="embed">{props.renderLauncher()}</div></div></Page>; break
-    default: content = <ArticlesView articles={articles} settings={settings} planName={planName} onRetry={props.onRetry} />
-  }
+  let page: ReactNode
+  if (a === "objects" && b in OBJ_META) page = <ObjectIndex ctx={ctx} o={b as Obj} />
+  else if (a === "object" && b === "articles") page = <ArticleShow ctx={ctx} id={c} initialTab={new URLSearchParams(query).get("tab") ?? "final"} />
+  else if (a === "object" && b === "plans") page = <PlanShow ctx={ctx} id={c} />
+  else if (a === "object" && b === "batches") page = <BatchShow ctx={ctx} id={c} />
+  else if (a === "workflows") page = <PipelineCanvas ctx={ctx} />
+  else if (a === "dashboards") page = <Dashboard ctx={ctx} />
+  else if (a === "settings") page = <SettingsPage ctx={ctx} p={b} />
+  else page = <NotFound />
 
   return (
-    <div className={`crm${navOpen ? " nav-open" : ""}`}>
-      <nav className="nav" aria-label={tr("Điều hướng chính", "Main navigation")}>
-        <div className="ws"><Sparkles size={16} /> Writer Studio</div>
-        <button className="nav-item" onClick={() => setCmdOpen(true)}><Search size={16} /> {tr("Tìm kiếm", "Search")}<span className="kbd">⌘K</span></button>
-        <button className={`nav-item${route.view === "new" ? " on" : ""}`} onClick={() => go("new")}><Plus size={16} /> {tr("Thêm Plan", "Add Plan")}</button>
-        <div className="nav-sec">{tr("Dữ liệu", "Records")}</div>
-        {nav.filter(item => !item.admin || isAdmin).map(item =>
-          <button key={item.view} className={`nav-item${activeNav === item.view ? " on" : ""}`} aria-current={activeNav === item.view ? "page" : undefined} onClick={() => go(item.view)}>
-            {item.icon} {item.label}{item.count !== undefined && <span className="n">{item.count}</span>}
-          </button>)}
-        <div className="nav-foot">
-          <button className={`nav-item${route.view === "settings" ? " on" : ""}`} onClick={() => go("settings")}><Settings size={16} /> {tr("Cài đặt", "Settings")}</button>
-          <button className="nav-item" onClick={props.onSwitchClassic}><Undo2 size={16} /> {tr("Giao diện cũ", "Classic UI")}</button>
-          <button className="nav-item" onClick={props.onSignOut} title={user.email}><LogOut size={16} /> {tr("Đăng xuất", "Sign out")}</button>
-        </div>
-      </nav>
-      <div className="page">
-        <button className="btn ghost menu-btn" style={{ alignSelf: "flex-start" }} aria-label={tr("Mở menu", "Open menu")} onClick={() => setNavOpen(true)}><Menu size={16} /></button>
-        {content}
+    <div className={`crm enter tab-enter${navOpen ? " nav-open" : ""}`} onClick={e => { if (navOpen && !(e.target as HTMLElement).closest(".nav,.menu-btn")) setNavOpen(false) }}>
+      {a === "settings" ? <SettingsNav ctx={ctx} p={b} /> : <NavDrawer ctx={ctx} />}
+      <div className="page" role="main" key={path}>
+        <NavToggle.Provider value={() => setNavOpen(v => !v)}>{page}</NavToggle.Provider>
       </div>
-      {navOpen && <div className="nav-scrim" aria-hidden="true" onClick={() => setNavOpen(false)} />}
-      {cmdOpen && <CommandMenu {...props} onClose={() => setCmdOpen(false)} />}
+      {panel?.kind === "plan" && <AddPlanPanel ctx={ctx} />}
+      {panel?.kind === "review" && <ReviewPanel ctx={ctx} id={panel.id} />}
+      {panel?.kind === "doc" && <DocPanel ctx={ctx} id={panel.id} />}
+      {panel?.kind === "step" && <StepPanel ctx={ctx} i={panel.i} />}
+      {panel?.kind === "cmd" && <CommandMenu ctx={ctx} />}
     </div>
   )
 }
 
-function Page({ title, crumbs = [], actions, children }: { title: ReactNode; crumbs?: Array<[string, View]>; actions?: ReactNode; children: ReactNode }) {
+function NavDrawer({ ctx }: { ctx: Ctx }) {
+  const { tr, language, toggleLanguage } = useI18n()
+  const [a, b, c] = ctx.route
+  const pending = ctx.list.filter(x => x.status === "completed" && x.human.status === "not").length
+  const item = (href: string, icon: ReactNode, label: ReactNode, on: boolean, extra?: ReactNode) =>
+    <a key={href} className={`nav-item${on ? " on" : ""}`} href={href} aria-current={on ? "page" : undefined}>{icon}<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>{extra}</a>
+  const objIco = (o: Obj) => <span className="nav-ico" style={{ background: OBJ_META[o].color }}><I n={OBJ_META[o].icon} s={{ fontSize: 11 }} /></span>
+  const nav: Array<[Obj, string]> = [["plans", "plans"], ["batches", "plans"], ["articles", "plans"], ["reviews", "review"], ["storage", "storage"]]
+  const campaigns = ctx.plans.filter(p => p.articles.length)
+  return <nav className="nav" aria-label={tr("Điều hướng chính", "Main navigation")}>
+    <div className="ws"><span className="ws-logo" style={{ background: "#ff8f2b", color: "#fff" }}>F</span>Writer Studio<I n="chevron-down" s={{ marginLeft: "auto", color: "var(--f3)", fontSize: 14 }} /></div>
+    <button className="nav-item" onClick={() => ctx.setPanel({ kind: "cmd" })}><I n="search" /><span>{tr("Tìm kiếm", "Search")}</span><span className="kbd">⌘K</span></button>
+    <a className="nav-item" href={ctx.can("settings") ? "#/settings/pipeline" : "#/settings/experience"}><I n="settings" /><span>{tr("Cài đặt", "Settings")}</span></a>
+    <button className="nav-item" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="circle-plus" /><span>Add Plan</span></button>
+    <div className="nav-sec">Pipeline</div>
+    {nav.filter(([, need]) => ctx.can(need)).map(([o]) => item("#/objects/" + o, objIco(o), OBJ_META[o].label, (a === "objects" || a === "object") && b === o, o === "reviews" && pending ? <span className="kbd">{pending}</span> : undefined))}
+    {item("#/workflows", <span className="nav-ico" style={{ background: "#307f52" }}><I n="settings-automation" s={{ fontSize: 11 }} /></span>, tr("Quy trình 3 gate", "3-gate pipeline"), a === "workflows")}
+    {item("#/dashboards", <span className="nav-ico" style={{ background: "#b23887" }}><I n="layout-dashboard" s={{ fontSize: 11 }} /></span>, "Dashboards", a === "dashboards")}
+    {campaigns.length > 0 && <div className="nav-sec">Campaign</div>}
+    {campaigns.map(p => { const s = planStats(p.articles); return item("#/object/plans/" + p.id, <Av name={p.name} />, p.name, a === "object" && b === "plans" && c === p.id, <span className="kbd">{s.c}/{s.n}</span>) })}
+    <div className="nav-foot">
+      <button className="nav-item" onClick={toggleLanguage}><I n="world" /><span>{language === "vi" ? "Tiếng Việt" : "English"}</span></button>
+      <a className="nav-item" href="#/settings/roles"><Av name={person(ctx.user.email)} round /><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{person(ctx.user.email)}</span><span className="kbd">{ctx.isAdmin ? "Admin" : "Content Operator"}</span></a>
+    </div>
+  </nav>
+}
+
+function Header({ title, actions }: { title: ReactNode; actions?: ReactNode }) {
+  const toggle = useContext(NavToggle)
+  const { tr } = useI18n()
+  return <div className="ph">
+    <button className="icon-btn menu-btn" aria-label={tr("Mở menu", "Open menu")} onClick={toggle}><I n="menu-2" /></button>
+    <div className="ph-title" style={{ minWidth: 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{title}</div>
+    <div className="ph-actions">{actions}</div>
+  </div>
+}
+function NotFound({ t = "Not found" }: { t?: string }) {
+  return <><Header title={t} /><div className="card"><div className="empty-state"><I n="ghost" /><h3>{t}</h3><a className="btn" href="#/objects/articles">Articles</a></div></div></>
+}
+function Forbidden() {
+  const { tr } = useI18n()
+  return <><Header title={tr("Không có quyền", "No access")} /><div className="card"><div className="empty-state"><I n="lock" /><h3>Content Operator</h3><span>{tr("Vai trò này không mở được mục này.", "This role cannot open this area.")}</span><a className="btn" href="#/settings/roles"><I n="lock" />Roles</a></div></div></>
+}
+
+/* ─── chips & tags ─────────────────────────────────────────────────────── */
+
+const Tag = ({ c, children, s }: { c: string; children: ReactNode; s?: CSSProperties }) => <span className={`tag t-${c}`} style={s}>{children}</span>
+const StatusTag = ({ k }: { k: keyof typeof STATUS }) => <Tag c={STATUS[k][1]}>{STATUS[k][0]}</Tag>
+const HumanTag = ({ h }: { h: HumanStatus }) => <Tag c={HUMAN[h][1]}>{HUMAN[h][0]}</Tag>
+function TypeTag({ t }: { t: CrmArticle["type"] }) { const { tr } = useI18n(); return <Tag c={({ A: "blue", B: "purple", C: "turq", ED: "pink" })[t]}>{t} · {tr(TYPES[t][0], TYPES[t][1])}</Tag> }
+function GateTag({ a }: { a: CrmArticle }) {
+  if (a.status === "completed") return <Tag c="green"><I n="check" />&nbsp;Completed</Tag>
+  if (a.status === "queued") return <Tag c="gray">Queued</Tag>
+  const g = GATES[(a.status === "failed" ? a.failGate! : a.gate) - 1]
+  return <Tag c={a.status === "failed" ? "red" : g.color}>{g.label}</Tag>
+}
+const ScoreTag = ({ s, t }: { s: number | null; t: number }) => s == null ? <span className="muted">—</span> : <Tag c={s >= t ? "green" : "red"}>{s}%</Tag>
+function GateBar({ a }: { a: CrmArticle }) {
+  return <span style={{ display: "inline-flex", gap: 2, verticalAlign: "middle" }}>{GATES.map(g => {
+    let bg = "var(--bg4)"
+    if (a.status === "completed" || a.gate > g.id) bg = "var(--c-green)"
+    else if (a.status === "failed" && a.failGate === g.id) bg = "var(--c-red)"
+    const live = a.status === "running" && a.gate === g.id
+    return <span key={g.id} title={g.label} style={{ position: "relative", width: 26, height: 6, borderRadius: 2, background: bg, overflow: "hidden" }}>
+      {live && <span style={{ position: "absolute", inset: "0 auto 0 0", width: a.a.batchStatus === "running" ? "60%" : "30%", background: "var(--accent)" }} />}
+    </span>
+  })}</span>
+}
+function PlanChip({ ctx, id }: { ctx: Ctx; id?: string }) {
+  const p = ctx.plans.find(x => x.id === id)
+  return p ? <a className="rchip" href={`#/object/plans/${p.id}`} onClick={e => e.stopPropagation()}><Av name={p.name} />{p.name}</a> : null
+}
+function BatchChip({ ctx, a }: { ctx: Ctx; a: CrmArticle }) {
+  const b = ctx.batches.find(x => x.id === a.batchId)
+  return b ? <a className="rchip" href={`#/object/batches/${enc(b.id)}`} onClick={e => e.stopPropagation()}><I n="stack-2" />Batch {b.idx}</a> : <span className="muted">—</span>
+}
+const PersonChip = ({ n }: { n?: string }) => n ? <span className="rchip"><Av name={n} round />{n}</span> : null
+
+/* ─── object index (table / kanban) ────────────────────────────────────── */
+
+type Field = { key: string; label: string; icon: string; num?: boolean; render?: (r: any) => ReactNode; sortVal?: (r: any) => string | number; text?: (r: any) => string }
+const docStatus = (d: StorageDoc) => ({ ok: ["Ready", "green"], partial: ["Partial", "orange"], draft: ["Draft", "orange"], missing: ["Missing", "red"] } as const)[d.st]
+const nameOf = (o: Obj, r: any): string => o === "batches" ? `Batch ${r.idx}` : r.name ?? r.title
+
+function fieldsFor(ctx: Ctx, o: Obj, ago: (d?: string | null) => string): Field[] {
+  const t = ctx.settings.threshold
+  const planPaused = (id: string) => { const bs = ctx.batches.filter(x => x.planId === id); return bs.length > 0 && bs.some(x => x.paused) && !bs.some(x => x.status === "running" && !x.paused) }
+  if (o === "plans") return [
+    { key: "name", label: "Name", icon: "abc", text: (r: CrmPlan) => r.name },
+    { key: "progress", label: "Progress", icon: "progress-check", render: (r: CrmPlan) => { const s = planStats(r.articles); return <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 90, height: 6, borderRadius: 3, background: "var(--bg4)", overflow: "hidden", display: "inline-block" }}><span style={{ display: "block", height: "100%", width: `${s.pct}%`, background: "var(--c-green)" }} /></span>{s.c}/{s.n}</span> }, sortVal: (r: CrmPlan) => planStats(r.articles).pct },
+    { key: "status", label: "Status", icon: "player-play", render: (r: CrmPlan) => { const s = planStats(r.articles); return planPaused(r.id) ? <Tag c="orange">Paused</Tag> : s.n && s.c === s.n ? <Tag c="green">Done</Tag> : s.n ? <Tag c="blue">Running</Tag> : <Tag c="gray">{r.plan.status}</Tag> } },
+    { key: "batches", label: "Batches", icon: "stack-2", num: true, render: (r: CrmPlan) => ctx.batches.filter(x => x.planId === r.id).length },
+    { key: "topics", label: "Topics", icon: "list", num: true, render: (r: CrmPlan) => r.plan.totalArticles },
+    { key: "perBatch", label: "Per batch", icon: "layout-rows", num: true, render: (r: CrmPlan) => r.perBatch },
+    { key: "failed", label: "Failed", icon: "alert-triangle", num: true, render: (r: CrmPlan) => { const f = planStats(r.articles).f; return f ? <span style={{ color: "var(--danger)" }}>{f}</span> : "0" } },
+    { key: "created", label: "Creation date", icon: "calendar", render: (r: CrmPlan) => <span className="muted">{ago(r.created)}</span>, sortVal: (r: CrmPlan) => r.created },
+  ]
+  if (o === "batches") return [
+    { key: "name", label: "Name", icon: "abc", sortVal: (r: CrmBatch) => (r.planId ?? "") + String(r.idx).padStart(4, "0") },
+    { key: "planId", label: "Content Plan", icon: "list-details", render: (r: CrmBatch) => <PlanChip ctx={ctx} id={r.planId} /> },
+    { key: "status", label: "Status", icon: "progress-check", render: (r: CrmBatch) => r.paused ? <Tag c="orange">Paused</Tag> : <StatusTag k={r.status} /> },
+    { key: "done", label: "AI Approved", icon: "circle-check", render: (r: CrmBatch) => `${r.done}/${r.articles.length}` },
+    { key: "schedule", label: "Schedule", icon: "calendar-event", render: (r: CrmBatch) => fmtTime(r.schedule), sortVal: (r: CrmBatch) => r.schedule },
+  ]
+  if (o === "articles") return [
+    { key: "name", label: "Title", icon: "abc", text: (r: CrmArticle) => r.title },
+    { key: "gate", label: "Gate", icon: "git-merge", render: (r: CrmArticle) => <GateTag a={r} />, sortVal: (r: CrmArticle) => r.gate },
+    { key: "bar", label: "G1 · G2 · G3 · AI", icon: "progress", render: (r: CrmArticle) => <GateBar a={r} />, sortVal: (r: CrmArticle) => r.gate },
+    { key: "status", label: "Status", icon: "progress-check", render: (r: CrmArticle) => <StatusTag k={r.status} /> },
+    { key: "score", label: "AI score", icon: "gauge", num: true, render: (r: CrmArticle) => <ScoreTag s={r.score} t={t} />, sortVal: (r: CrmArticle) => r.score ?? -1 },
+    { key: "type", label: "Type", icon: "category", render: (r: CrmArticle) => <TypeTag t={r.type} /> },
+    { key: "planId", label: "Content Plan", icon: "list-details", render: (r: CrmArticle) => <PlanChip ctx={ctx} id={r.planId} /> },
+    { key: "batch", label: "Batch", icon: "stack-2", render: (r: CrmArticle) => <BatchChip ctx={ctx} a={r} /> },
+    { key: "human", label: "Human review", icon: "user-check", render: (r: CrmArticle) => r.status === "completed" ? <HumanTag h={r.human.status} /> : <span className="muted">—</span>, sortVal: (r: CrmArticle) => r.human.status },
+    { key: "keyword", label: "Keyword", icon: "key", text: (r: CrmArticle) => r.keyword },
+  ]
+  if (o === "reviews") return [
+    { key: "name", label: "Article", icon: "abc", text: (r: CrmArticle) => r.title },
+    { key: "human", label: "Human review", icon: "user-check", render: (r: CrmArticle) => <HumanTag h={r.human.status} />, sortVal: (r: CrmArticle) => r.human.status },
+    { key: "score", label: "AI score", icon: "gauge", render: (r: CrmArticle) => <ScoreTag s={r.score} t={t} />, sortVal: (r: CrmArticle) => r.score ?? -1 },
+    { key: "planId", label: "Content Plan", icon: "list-details", render: (r: CrmArticle) => <PlanChip ctx={ctx} id={r.planId} /> },
+    { key: "batch", label: "Batch", icon: "stack-2", render: (r: CrmArticle) => <BatchChip ctx={ctx} a={r} /> },
+    { key: "reviewer", label: "Reviewer", icon: "user-circle", render: (r: CrmArticle) => <PersonChip n={person(r.human.reviewer)} /> },
+    { key: "approvedArticle", label: "Approved Article", icon: "star", render: (r: CrmArticle) => r.a.approvedArticle ? <Tag c="yellow">Yes</Tag> : <Tag c="gray">No</Tag> },
+  ]
+  return [
+    { key: "name", label: "Document", icon: "abc", text: (r: StorageDoc) => r.name },
+    { key: "g", label: "Group", icon: "folder", render: (r: StorageDoc) => <Tag c={STORAGE_GROUPS.find(g => g[0] === r.g)![1]}>{r.g}</Tag> },
+    { key: "st", label: "Status", icon: "progress-check", render: (r: StorageDoc) => { const [l, c] = docStatus(r); return <Tag c={c}>{l}</Tag> } },
+    { key: "used", label: "Used at", icon: "git-merge", render: (r: StorageDoc) => r.used.map(u => <Tag key={u} c="blue" s={{ marginRight: 4 }}>{u === 4 ? "Final" : "G" + u}</Tag>) },
+    { key: "types", label: "Applies to types", icon: "category", render: (r: StorageDoc) => r.types.map(x => <Tag key={x} c="gray" s={{ marginRight: 4 }}>{x}</Tag>) },
+    { key: "note", label: "Note", icon: "notes", render: (r: StorageDoc) => <span className="muted">{r.note}</span> },
+    { key: "updatedAt", label: "Last update", icon: "calendar", render: (r: StorageDoc) => <span className="muted">{r.updatedAt ? ago(r.updatedAt) : ""}</span>, sortVal: (r: StorageDoc) => r.updatedAt ?? "" },
+  ]
+}
+
+const VIEW_KEY = "writer:crm-view"
+function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
+  const { tr } = useI18n()
+  const ago = useAgo()
+  const need = ({ plans: "plans", batches: "plans", articles: "plans", reviews: "review", storage: "storage" } as const)[o]
+  const [filter, setFilter] = useState("")
+  const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null)
+  const [kanban, setKanban] = useState(() => { try { return localStorage.getItem(VIEW_KEY) !== "table" } catch { return true } })
+  useEffect(() => { try { localStorage.setItem(VIEW_KEY, kanban ? "kanban" : "table") } catch { /* per-viewer convenience */ } }, [kanban])
+  if (!ctx.can(need)) return <Forbidden />
+  const m = OBJ_META[o], fields = fieldsFor(ctx, o, ago)
+  const data: any[] = o === "plans" ? ctx.plans : o === "batches" ? ctx.batches : o === "articles" ? ctx.list : o === "reviews" ? ctx.list.filter(x => x.status === "completed") : ctx.docs
+  const q = filter.toLowerCase()
+  let rows = data.filter(r => !q || nameOf(o, r).toLowerCase().includes(q) || String(r.keyword ?? r.g ?? "").toLowerCase().includes(q))
+  if (sort) {
+    const f = fields.find(x => x.key === sort.key)!
+    const val = (r: any) => f.sortVal ? f.sortVal(r) : f.key === "name" ? nameOf(o, r) : f.text ? f.text(r) : r[f.key]
+    rows = [...rows].sort((x, y) => { const A = val(x) ?? "", B = val(y) ?? ""; return (A > B ? 1 : A < B ? -1 : 0) * (sort.dir === "asc" ? 1 : -1) })
+  }
+  const isKanban = o === "articles" && kanban
+  const sortBy = (key: string) => setSort(s => ({ key, dir: s?.key === key && s.dir === "asc" ? "desc" : "asc" }))
+  const randomReview = () => { const pool = ctx.list.filter(a => a.status === "completed" && a.human.status === "not"); if (!pool.length) return toast(tr("Không còn bài chưa review", "No unreviewed articles")); ctx.setPanel({ kind: "review", id: pool[Math.floor(Math.random() * pool.length)].id }) }
+  const addDoc = () => go("#/settings/knowledge")
+  const primary = o === "storage" ? (ctx.isAdmin && <button className="btn" aria-label={tr("Thêm tài liệu", "Add document")} onClick={addDoc}><I n="upload" /><span>{tr("Thêm tài liệu", "Add document")}</span></button>)
+    : o === "reviews" ? <button className="btn" aria-label={tr("Chọn ngẫu nhiên", "Random pick")} onClick={randomReview}><I n="dice-5" /><span>{tr("Chọn ngẫu nhiên", "Random pick")} ({ctx.settings.reviewSample}%)</span></button>
+    : <button className="btn primary" aria-label="Add Plan" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="plus" /><span>Add Plan</span></button>
+  const gaps = o === "storage" ? ctx.docs.filter(d => d.st !== "ok") : []
+  const desc = ({ reviews: tr("Thư viện bài đã AI Approved. Chọn bài bất kỳ, không cần phân công. Human review không chặn việc bài hoàn thành.", "Library of AI-approved articles. Pick any; no assignment needed. Human review never blocks completion."), storage: tr("Shipper chỉ nạp phần tài liệu cần cho từng gate và article type.", "The Shipper loads only what each gate and article type needs.") } as Partial<Record<Obj, string>>)[o]
+  const sortField = sort && fields.find(f => f.key === sort.key)
   return <>
-    <header className="ph">
-      <div className="ph-title">
-        {crumbs.map(([label, view]) => <span key={view} style={{ display: "contents" }}><button className="crumb" onClick={() => go(view)}>{label}</button><ChevronRight size={14} className="muted" /></span>)}
-        <b>{title}</b>
-      </div>
-      {actions && <div className="ph-actions">{actions}</div>}
-    </header>
-    {children}
-  </>
-}
-function Missing({ label }: { label: string }) {
-  return <Page title="—"><div className="card"><div className="empty-state"><h3>{label}</h3></div></div></Page>
-}
-
-function AiTag({ article, settings }: { article: Article; settings: PipelineSettings }) {
-  const { tr } = useI18n()
-  const result = aiApproval(article, settings)
-  if (result.state === "pending") return <span className="tag t-gray">{tr("Chưa chấm", "Not scored")}</span>
-  return <span className={`tag ${result.state === "approved" ? "t-green" : "t-red"}`} title={result.hardBlocked ? tr("Có lỗi chặn cứng (dẫn chứng)", "Hard block (evidence)") : undefined}>
-    {result.state === "approved" ? tr("AI duyệt", "AI approved") : tr("Chưa đạt", "Below")} · {result.score}%
-  </span>
-}
-function HumanTag({ article }: { article: Article }) {
-  const { tr } = useI18n()
-  const status = humanReviewStatus(article)
-  if (status === "approved") return <span className="tag t-green">Approved</span>
-  if (status === "needs_revision") return <span className="tag t-orange">Needs Revision</span>
-  return <span className="tag t-gray">{tr("Chưa review", "Not Reviewed")}</span>
-}
-
-/* ─── Articles ─────────────────────────────────────────────────────────── */
-
-function ArticlesView({ articles, settings, planName, onRetry }: { articles: Article[]; settings: PipelineSettings; planName: Map<string, string>; onRetry: (a: Article) => Promise<void> }) {
-  const { tr } = useI18n()
-  const [mode, setMode] = useState<"table" | "kanban">(() => { try { return localStorage.getItem("writer:crm-articles") === "kanban" ? "kanban" : "table" } catch { return "table" } })
-  const [query, setQuery] = useState("")
-  const [plan, setPlan] = useState("")
-  const [sort, setSort] = useState<{ key: "title" | "updated" | "score"; dir: 1 | -1 }>({ key: "updated", dir: -1 })
-  useEffect(() => { try { localStorage.setItem("writer:crm-articles", mode) } catch { /* per-viewer convenience only */ } }, [mode])
-  const plans = [...new Set(articles.map(a => a.contentPlanId).filter(Boolean) as string[])]
-  const rows = articles
-    .filter(a => (!plan || a.contentPlanId === plan) && titleOf(a).toLowerCase().includes(query.trim().toLowerCase()))
-    .sort((a, b) => sort.dir * (sort.key === "title" ? titleOf(a).localeCompare(titleOf(b))
-      : sort.key === "score" ? (aiApproval(a, settings).score ?? -1) - (aiApproval(b, settings).score ?? -1)
-      : a.updatedAt.localeCompare(b.updatedAt)))
-  const sortBy = (key: typeof sort.key) => setSort(current => ({ key, dir: current.key === key ? (current.dir === 1 ? -1 : 1) : 1 }))
-  const arrow = (key: typeof sort.key) => sort.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : ""
-
-  return <Page title={tr("Bài viết", "Articles")} actions={<button className="btn primary" onClick={() => go("new")}><Plus size={14} /><span>{tr("Thêm Plan", "Add Plan")}</span></button>}>
+    <Header title={<><span className="nav-ico" style={{ background: m.color }}><I n={m.icon} s={{ fontSize: 11 }} /></span>{m.label}</>} actions={primary} />
     <div className="card">
       <div className="vbar">
-        <div className="seg" role="group" aria-label={tr("Kiểu xem", "View")}>
-          <button className={mode === "table" ? "on" : ""} aria-pressed={mode === "table"} onClick={() => setMode("table")}><LayoutList size={14} /> Table</button>
-          <button className={mode === "kanban" ? "on" : ""} aria-pressed={mode === "kanban"} onClick={() => setMode("kanban")}><KanbanSquare size={14} /> Kanban</button>
-        </div>
-        <span className="count">{rows.length}</span>
+        <button className="btn ghost"><I n={isKanban ? "layout-kanban" : "list"} />All {m.label}<span className="count">· {rows.length}</span><I n="chevron-down" /></button>
+        {desc && <span className="muted" style={{ color: "var(--f3)", marginLeft: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{desc}</span>}
         <span className="grow" />
-        <Search size={14} className="muted" />
-        <input aria-label={tr("Tìm bài viết", "Search articles")} placeholder={tr("Tìm bài viết…", "Search…")} value={query} onChange={e => setQuery(e.target.value)} />
-        <select aria-label="Plan" value={plan} onChange={e => setPlan(e.target.value)}>
-          <option value="">{tr("Mọi plan", "All plans")}</option>
-          {plans.map(id => <option key={id} value={id}>{planName.get(id) ?? id}</option>)}
-        </select>
+        {sortField && <span className="chip-f"><I n={sort!.dir === "asc" ? "arrow-up" : "arrow-down"} />{sortField.label}<button aria-label="Clear sort" onClick={() => setSort(null)}><I n="x" /></button></span>}
+        <span className="btn ghost" style={{ cursor: "text" }}><I n="filter" /><input aria-label="Filter" placeholder="Filter…" value={filter} onChange={e => setFilter(e.target.value)} /></span>
+        <button className="btn ghost" onClick={() => toast(tr("Bấm vào tiêu đề cột để sắp xếp", "Click a column header to sort"))}><I n="arrows-sort" /><span>Sort</span></button>
+        {o === "articles" && <button className="btn ghost" onClick={() => setKanban(k => !k)}><I n={isKanban ? "table" : "layout-kanban"} /><span>{isKanban ? "Table" : "Kanban"}</span></button>}
       </div>
-      {!articles.length ? <div className="empty-state"><FileText size={36} /><h3>{tr("Chưa có bài viết", "No articles yet")}</h3><button className="btn primary" onClick={() => go("new")}>{tr("Thêm Plan", "Add Plan")}</button></div>
-        : mode === "kanban" ? <div className="kb">
-          {PIPELINE_STAGES.map(stage => {
-            const cards = rows.filter(a => articleStage(a) === stage)
-            return <section key={stage} className="kcol" aria-label={STAGE_META[stage].label}>
-              <div className="khead"><StageTag stage={stage} /><span className="n">{cards.length}</span></div>
-              {cards.map(a => <div key={a.id} className="kcard">
-                <button className="kt" style={{ textAlign: "left" }} onClick={() => go("article", a.id)}>{titleOf(a)}</button>
-                <div className="kf"><AiTag article={a} settings={settings} /><HumanTag article={a} /></div>
-                {a.contentPlanId && <div className="kf muted">{planName.get(a.contentPlanId) ?? ""}</div>}
-                {stage === "failed" && a.activityId && <button className="btn" onClick={() => void onRetry(a).catch(error => notifyWorkspace(error.message, "error"))}><RotateCcw size={14} /> Retry</button>}
-              </div>)}
-            </section>
-          })}
-        </div>
-        : <div className="tbl-wrap"><table className="tbl">
-          <thead><tr>
-            <th className="first"><button onClick={() => sortBy("title")}>{tr("Bài viết", "Article")}{arrow("title")}</button></th>
-            <th>Gate</th>
-            <th><button onClick={() => sortBy("score")}>AI Approval{arrow("score")}</button></th>
-            <th>Human review</th><th>Plan</th>
-            <th><button onClick={() => sortBy("updated")}>{tr("Cập nhật", "Updated")}{arrow("updated")}</button></th>
-          </tr></thead>
-          <tbody>{rows.map(a => { const stage = articleStage(a); return <tr key={a.id} onClick={() => go("article", a.id)}>
-            <td className="first"><a href={`#/article/${encodeURIComponent(a.id)}`} onClick={e => e.stopPropagation()}>{titleOf(a)}</a></td>
-            <td><GateBar article={a} /> <StageTag stage={stage} /></td>
-            <td><AiTag article={a} settings={settings} /></td>
-            <td><HumanTag article={a} /></td>
-            <td className="muted">{a.contentPlanId ? planName.get(a.contentPlanId) ?? "" : tr("Bài lẻ", "Single")}</td>
-            <td className="muted">{fmt(a.updatedAt)}</td>
-          </tr> })}</tbody>
-        </table></div>}
+      {gaps.length > 0 && <div style={{ margin: 8, border: "1px solid var(--c-orange-bg)", background: "var(--c-orange-bg)", borderRadius: 6, padding: "10px 12px", color: "var(--c-orange)" }}>
+        <b style={{ fontWeight: 600 }}><I n="alert-triangle" /> Open gaps · {gaps.length}</b>
+        <div style={{ color: "var(--f2)", marginTop: 4 }}>{gaps.map(d => <span key={d.id} className="rchip" style={{ margin: "2px 4px 2px 0", background: "var(--bg1)" }}>{d.name}</span>)}</div>
+      </div>}
+      {isKanban ? <KanbanView ctx={ctx} rows={rows} /> : <TableView ctx={ctx} o={o} rows={rows} fields={fields} sort={sort} sortBy={sortBy} onFoot={o === "storage" ? addDoc : o === "reviews" ? randomReview : () => ctx.setPanel({ kind: "plan" })} />}
     </div>
-  </Page>
+  </>
 }
 
-async function copyToDocs(article: Article) {
-  const markdown = normalizeDraftOutput(article.draft ?? "")
+function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o: Obj; rows: any[]; fields: Field[]; sort: { key: string; dir: string } | null; sortBy: (k: string) => void; onFoot: () => void }) {
+  const { tr } = useI18n()
+  const m = OBJ_META[o]
+  if (!rows.length) return <div className="empty-state"><I n={m.icon} /><h3>{tr("Không có dữ liệu", "Nothing here")}</h3><span>{tr("Thử bộ lọc khác.", "Try another filter.")}</span></div>
+  const groups: Array<{ label?: ReactNode; rows: any[] }> = o === "reviews" ? (Object.keys(HUMAN) as HumanStatus[]).map(k => ({ label: <HumanTag h={k} />, rows: rows.filter(r => r.human.status === k) }))
+    : o === "storage" ? STORAGE_GROUPS.map(([g, c]) => ({ label: <Tag c={c}>{g}</Tag>, rows: rows.filter(r => r.g === g) }))
+    : o === "batches" ? [...new Set(rows.map(r => r.planId))].map(id => ({ label: ctx.plans.some(p => p.id === id) ? <PlanChip ctx={ctx} id={id} /> : <span className="muted">—</span>, rows: rows.filter(r => r.planId === id) }))
+    : [{ rows }]
+  const click = (r: any) => o === "reviews" ? ctx.setPanel({ kind: "review", id: r.id }) : o === "storage" ? ctx.setPanel({ kind: "doc", id: r.id }) : go(`#/object/${o}/${enc(r.id)}`)
+  const name = (r: any) => {
+    if (o === "storage") return <span className="rchip plain"><I n="file-description" />{r.name}</span>
+    if (o === "reviews") return <span className="rchip plain"><Av name={r.title} />{r.title}</span>
+    if (o === "batches") return <a className="rchip" href={`#/object/batches/${enc(r.id)}`}><I n="stack-2" />Batch {r.idx}</a>
+    return <a className="rchip" href={`#/object/${o}/${enc(r.id)}`}><Av name={nameOf(o, r)} />{nameOf(o, r)}</a>
+  }
+  let n = 0
+  return <>
+    <div className="tbl-wrap"><table className="tbl">
+      <thead><tr><th className="cb"><input type="checkbox" aria-label="Select all" /></th>{fields.map((f, i) => <th key={f.key} className={i === 0 ? "first" : ""} onClick={() => sortBy(f.key)}><I n={f.icon} />{f.label}{sort?.key === f.key && <> <I n={sort.dir === "asc" ? "arrow-up" : "arrow-down"} /></>}</th>)}<th className="add"><I n="plus" /></th></tr></thead>
+      <tbody>{groups.map((g, gi) => <GroupRows key={gi} label={g.label} count={g.rows.length} span={fields.length + 1}>
+        {g.rows.map(r => <tr key={r.id} style={{ cursor: "pointer", animationDelay: `${Math.min(n++, 14) * 16}ms` }} onClick={() => click(r)}>
+          <td className="cb"><input type="checkbox" aria-label="Select" onClick={e => e.stopPropagation()} /></td>
+          {fields.map((f, i) => <td key={f.key} className={`${i === 0 ? "first" : ""}${f.num ? " num" : ""}`}>{f.key === "name" ? name(r) : f.render ? f.render(r) : f.text ? f.text(r) : r[f.key]}</td>)}<td />
+        </tr>)}
+      </GroupRows>)}</tbody>
+    </table></div>
+    {(o !== "storage" || ctx.isAdmin) && o !== "batches" && <div className="foot" onClick={onFoot}><I n={o === "reviews" ? "dice-5" : "plus"} /> {o === "storage" ? tr("Thêm tài liệu", "Add document") : o === "reviews" ? tr("Chọn ngẫu nhiên 1 bài", "Pick a random article") : "Add Plan"}</div>}
+  </>
+}
+function GroupRows({ label, count, span, children }: { label?: ReactNode; count: number; span: number; children: ReactNode }) {
+  return <>{label && <tr className="grp"><td className="cb" /><td className="first" colSpan={span}>{label} <span className="muted">{count}</span></td></tr>}{children}</>
+}
+
+const COLS = [
+  { key: "queued", label: "Queued", color: "gray", test: (a: CrmArticle) => a.status === "queued" },
+  ...GATES.map(g => ({ key: g.short, label: g.label, color: g.color, test: (a: CrmArticle) => a.status === "running" && a.gate === g.id })),
+  { key: "failed", label: "Failed (No-pass)", color: "red", test: (a: CrmArticle) => a.status === "failed" },
+  { key: "completed", label: "Completed", color: "green", test: (a: CrmArticle) => a.status === "completed" },
+]
+function RetryButton({ ctx, a, primary }: { ctx: Ctx; a: CrmArticle; primary?: boolean }) {
+  if (!ctx.can("retry") || a.status !== "failed") return null
+  const g = GATES[(a.failGate ?? 1) - 1]
+  const run = (e: ReactMouseEvent) => {
+    e.stopPropagation()
+    // Batch failures re-run on the server; an AI Review failure is fixed and re-checked in Manual mode.
+    if (a.a.batchStatus === "failed" && a.batchId) void ctx.onRetry(a.a).then(() => toast(`Retry ${g.short}`)).catch(err => toast(errText(err)))
+    else go(`#/object/articles/${enc(a.id)}?tab=manual`)
+  }
+  return <button className={`btn${primary ? " primary" : ""}`} aria-label={`Retry ${g.short}`} onClick={run}><I n="refresh" /><span>Retry {g.short}</span></button>
+}
+function KanbanView({ ctx, rows }: { ctx: Ctx; rows: CrmArticle[] }) {
+  return <div className="kb">{COLS.map((col, ci) => {
+    const items = rows.filter(col.test)
+    return <section key={col.key} className="kcol" aria-label={col.label} style={{ animationDelay: `${ci * 45}ms` }}>
+      <div className="khead"><Tag c={col.color}>{col.label}</Tag><span className="n">{items.length}</span>{col.key === "completed" && <span className="sum">{items.filter(a => a.human.status === "approved").length} human ✓</span>}</div>
+      {items.map((a, i) => <div key={a.id} className="kcard" role="link" tabIndex={0} style={{ cursor: "pointer", animationDelay: `${ci * 45 + Math.min(i, 8) * 30}ms` }} onClick={() => go(`#/object/articles/${enc(a.id)}`)} onKeyDown={e => { if (e.key === "Enter") go(`#/object/articles/${enc(a.id)}`) }}>
+        <div className="kt"><Av name={a.title} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</span></div>
+        <div className="kf"><I n="progress" /><GateBar a={a} /></div>
+        <div className="kf"><I n="category" /><TypeTag t={a.type} /></div>
+        {a.planId && <div className="kf"><I n="list-details" /><PlanChip ctx={ctx} id={a.planId} /></div>}
+        {a.score != null && <div className="kf"><I n="gauge" /><ScoreTag s={a.score} t={ctx.settings.threshold} />{a.status === "completed" && <HumanTag h={a.human.status} />}</div>}
+        {a.status === "failed" && <><div className="kf" style={{ color: "var(--danger)" }}><I n="alert-triangle" />{a.failReason}</div><RetryButton ctx={ctx} a={a} /></>}
+      </div>)}
+      {col.key === "queued" && <button className="kadd" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="plus" /> Add Plan</button>}
+    </section>
+  })}</div>
+}
+
+/* ─── record show pages ────────────────────────────────────────────────── */
+
+const Frow = ({ icon, label, children }: { icon: string; label: ReactNode; children?: ReactNode }) =>
+  <div className="frow"><div className="flabel"><I n={icon} />{label}</div><div className="fval">{children || <span className="empty">Empty</span>}</div></div>
+function ShowShell({ crumbs, actions, left, tabs, tab, setTab, children }: { crumbs: ReactNode; actions?: ReactNode; left: ReactNode; tabs: Array<[string, string, string, (number | string)?]>; tab: string; setTab: (t: string) => void; children: ReactNode }) {
+  return <>
+    <Header title={crumbs} actions={actions} />
+    <div className="card"><div className="show"><aside className="show-left">{left}</aside><section className="show-right">
+      <div className="tabs" role="tablist">{tabs.map(([k, i, l, n]) => <button key={k} role="tab" aria-selected={tab === k} className={`tab${tab === k ? " on" : ""}`} onClick={() => setTab(k)}><I n={i} />{l}{n ? <span className="n">{n}</span> : null}</button>)}</div>
+      <div className="tab-body" key={tab}>{children}</div>
+    </section></div></div>
+  </>
+}
+
+async function copyToDocs(a: Article) {
+  const markdown = normalizeDraftOutput(a.draft ?? "")
   if (navigator.clipboard.write && typeof ClipboardItem !== "undefined")
-    await navigator.clipboard.write([new ClipboardItem({
-      "text/html": new Blob([markdownToHtml(markdown)], { type: "text/html" }),
-      "text/plain": new Blob([markdown], { type: "text/plain" }),
-    })])
+    await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([markdownToHtml(markdown)], { type: "text/html" }), "text/plain": new Blob([markdown], { type: "text/plain" }) })])
   else await navigator.clipboard.writeText(markdown)
 }
 
-function ArticleRecord(props: Props & { article: Article; settings: PipelineSettings; planName: Map<string, string> }) {
+function ArticleShow({ ctx, id, initialTab }: { ctx: Ctx; id: string; initialTab: string }) {
   const { tr } = useI18n()
-  const { article, settings, planName } = props
-  const stage = articleStage(article)
-  const approval = aiApproval(article, settings)
-  const legacy = isLegacyArticle(article)
-  const [tab, setTab] = useState<"final" | "review" | "history" | "manual">(article.draft?.trim() && !legacy ? "final" : "manual")
-  useEffect(() => { setTab(article.draft?.trim() && !legacy ? "final" : "manual") }, [article.id])
-  const ready = props.activeId === article.id
-  const completed = stage === "completed"
-
-  const field = (label: string, value: ReactNode) => <div className="frow"><span className="flabel">{label}</span><span className="fval">{value}</span></div>
-  return <Page crumbs={[[tr("Bài viết", "Articles"), "articles"]]} title={titleOf(article)} actions={<>
-    {article.draft?.trim() && <button className="btn" onClick={() => void copyToDocs(article).then(() => notifyWorkspace(tr("Đã copy, dán vào Google Docs.", "Copied — paste into Google Docs."), "success")).catch(error => notifyWorkspace(error.message, "error"))}><Copy size={14} /><span>Copy to Docs</span></button>}
-    {(stage === "ai" || completed) && !legacy && <button className="btn primary" disabled={!ready || props.completionSavingId === article.id} title={!completed && approval.state !== "approved" ? tr("AI chưa duyệt — vẫn có thể hoàn thành thủ công.", "AI has not approved — you can still complete manually.") : undefined} onClick={() => props.onToggleComplete(article)}>
-      <CheckCircle2 size={14} /><span>{completed ? tr("Mở lại", "Reopen") : tr("Hoàn thành", "Complete")}</span>
-    </button>}
-    <button className="btn ghost danger" aria-label={tr("Xoá bài viết", "Delete article")} onClick={() => props.onDeleteArticle(article)}><Trash2 size={14} /></button>
-  </>}>
-    <div className="card"><div className="show">
-      <aside className="show-left">
-        <div className="rec-head"><div className="av-xl"><FileText size={20} /></div><h1>{titleOf(article)}</h1><div className="sub">{tr("Tạo", "Created")} {fmt(article.createdAt)}</div></div>
-        <div className="fields">
-          <div className="fsec">Pipeline</div>
-          {field("Gate", <><GateBar article={article} /> <StageTag stage={stage} /></>)}
-          {field("AI Approval", <AiTag article={article} settings={settings} />)}
-          {field("Human review", <HumanTag article={article} />)}
-          {field(tr("Ngưỡng", "Threshold"), `${settings.threshold}%`)}
-          <div className="fsec">{tr("Thông tin", "Details")}</div>
-          {field("Plan", article.contentPlanId ? <a className="link" href={`#/plan/${encodeURIComponent(article.contentPlanId)}`}>{planName.get(article.contentPlanId) ?? "Plan"}</a> : <span className="muted">{tr("Bài lẻ", "Single")}</span>)}
-          {field("Batch", article.activityKind === "batch" && article.activityId ? <a className="link" href={`#/batch/${encodeURIComponent(article.activityId)}`}>{tr("Mở batch", "Open batch")}</a> : <span className="muted">—</span>)}
-          {field("Keyword", article.articleSpec?.primaryQuery || article.keywords || "—")}
-          {field(tr("Loại bài", "Type"), article.activityType === "editorial-originality" ? "Editorial" : article.activityType ? "Comparison SEO" : "—")}
-          {field(tr("Cập nhật", "Updated"), fmt(article.updatedAt))}
-          {article.batchError && field(tr("Lỗi", "Error"), <span className="tag t-red" title={article.batchError}>{article.batchError}</span>)}
-        </div>
-      </aside>
-      <section className="show-right">
-        <div className="tabs" role="tablist">
-          {([["final", "Final Article"], ["review", "AI Review"], ["history", "Generation History"], ["manual", tr("Chế độ thủ công", "Manual mode")]] as const).map(([key, label]) =>
-            <button key={key} role="tab" aria-selected={tab === key} className={`tab${tab === key ? " on" : ""}`} onClick={() => setTab(key)}>
-              {label}{key === "review" && approval.failed.length > 0 && <span className="n">{approval.failed.length}</span>}
-            </button>)}
-        </div>
-        {tab === "final" && <div className="tab-body">{article.draft?.trim()
-          ? <article className="reading draft-prose draft-rendered" dangerouslySetInnerHTML={{ __html: markdownToHtml(normalizeDraftOutput(article.draft)) }} />
-          : <div className="empty-state"><h3>{tr("Chưa có bài hoàn chỉnh", "No final article yet")}</h3><p>{tr("Bài sẽ hiện ở đây khi qua Gate 3.", "It appears here after Gate 3.")}</p></div>}</div>}
-        {tab === "review" && <div className="tab-body"><div className="reading"><AiReviewPanel article={article} settings={settings} /></div></div>}
-        {tab === "history" && <div className="tab-body"><div className="reading"><Timeline article={article} /></div></div>}
-        {tab === "manual" && <div className="tab-body flush"><div className="embed">{ready ? props.renderManual() : <div className="empty-state">{tr("Đang mở…", "Opening…")}</div>}</div></div>}
-      </section>
-    </div></div>
-  </Page>
+  const ago = useAgo()
+  const [tab, setTab] = useState(initialTab)
+  const a = ctx.list.find(x => x.id === id)
+  if (!a) return <NotFound t="Article not found" />
+  const idx = ctx.list.indexOf(a)
+  const ideas = a.a.coreIdeaSuggestions ?? []
+  const selected = ideas.find(i => i.id === a.a.selectedCoreIdeaId)
+  const failed = (a.a.qualityReport?.checks ?? []).filter(c => c.status !== "pass").length
+  const actions = <>
+    <button className="icon-btn" aria-label="Previous" disabled={idx <= 0} onClick={() => go(`#/object/articles/${enc(ctx.list[idx - 1].id)}`)}><I n="chevron-up" /></button>
+    <button className="icon-btn" aria-label="Next" disabled={idx >= ctx.list.length - 1} onClick={() => go(`#/object/articles/${enc(ctx.list[idx + 1].id)}`)}><I n="chevron-down" /></button>
+    <RetryButton ctx={ctx} a={a} primary />
+    {a.status === "completed" && ctx.can("review") && <button className="btn" aria-label="Review" onClick={() => ctx.setPanel({ kind: "review", id: a.id })}><I n="checklist" /><span>Review</span></button>}
+    {a.a.draft?.trim() && ctx.can("copy") && <button className="btn" aria-label="Copy to Docs" onClick={() => void copyToDocs(a.a).then(() => toast(tr("Đã copy (giữ heading, bảng, link) để dán vào Google Docs", "Copied for Google Docs"))).catch(err => toast(errText(err)))}><I n="brand-google-drive" /><span>Copy to Docs</span></button>}
+    <button className="icon-btn" aria-label={tr("Xoá bài viết", "Delete article")} onClick={() => ctx.onDeleteArticle(a.a)}><I n="trash" /></button>
+  </>
+  const left = <>
+    <div className="rec-head"><Av name={a.title} xl /><h1>{a.title}</h1><div className="sub">Topic: {a.topic}</div><div><GateBar a={a} /></div></div>
+    <div className="fields">
+      <Frow icon="progress-check" label="Status"><StatusTag k={a.status} /></Frow>
+      <Frow icon="git-merge" label="Gate"><GateTag a={a} /></Frow>
+      {a.status === "failed" && <Frow icon="alert-triangle" label="Fail reason"><span style={{ color: "var(--danger)" }}>{a.failReason}</span></Frow>}
+      <Frow icon="gauge" label="AI score">{a.score != null && <><ScoreTag s={a.score} t={ctx.settings.threshold} /><span className="muted" style={{ color: "var(--f3)" }}>&nbsp;/ {tr("ngưỡng", "threshold")} {ctx.settings.threshold}%</span></>}</Frow>
+      <Frow icon="user-check" label="Human review">{a.status === "completed" ? <HumanTag h={a.human.status} /> : <span className="empty">—</span>}</Frow>
+      <Frow icon="category" label="Type"><TypeTag t={a.type} /></Frow>
+      <Frow icon="key" label="Keyword">{a.keyword}</Frow>
+      <Frow icon="list-details" label="Content Plan"><PlanChip ctx={ctx} id={a.planId} /></Frow>
+      <Frow icon="stack-2" label="Batch"><BatchChip ctx={ctx} a={a} /></Frow>
+      <Frow icon="circle-check" label={tr("Option được chọn", "Selected option")}>{selected && `${selected.title} · ${Math.round((selected.rating?.overall ?? 0) * 10)}%`}</Frow>
+      <Frow icon="calendar" label="Started">{a.startedAt && <span className="muted" style={{ color: "var(--f3)" }}>{ago(a.startedAt)}</span>}</Frow>
+    </div>
+  </>
+  const tabs: Array<[string, string, string, (number | string)?]> = [["final", "file-text", "Final Article"], ["review", "checklist", "AI Review", failed || ""], ["history", "history", "Generation History", [ideas.length, a.a.outline?.length, a.a.draft?.trim()].filter(Boolean).length], ["timeline", "timeline-event", "Timeline"]]
+  if (ctx.can("manual")) tabs.push(["manual", "adjustments", tr("Chế độ thủ công", "Manual mode")])
+  return <ShowShell crumbs={<><a className="crumb" href="#/objects/articles">Articles</a><span className="crumb">/</span>{a.title}</>} actions={actions} left={left} tabs={tabs} tab={tab} setTab={setTab}>
+    {tab === "final" && <FinalTab a={a} />}
+    {tab === "review" && <ReviewTab ctx={ctx} a={a} />}
+    {tab === "history" && <HistoryTab ctx={ctx} a={a} />}
+    {tab === "timeline" && <TimelineTab ctx={ctx} a={a} />}
+    {tab === "manual" && <>
+      <div style={{ background: "var(--accent-bg)", color: "var(--accent)", borderRadius: 6, padding: "8px 12px", marginBottom: 16 }}><I n="info-circle" /> {tr("Đề xuất, cần chốt: giữ 3 bước chỉnh tay hiện có để sửa bài bị Failed. Sửa ở đây không gửi bài lại cho pipeline.", "Proposal, pending decision: the 3 manual steps stay available to fix Failed articles. Edits here do not resubmit the article.")}</div>
+      <div className="embed">{ctx.activeId === a.id ? ctx.renderManual() : <div className="empty-state">…</div>}</div>
+    </>}
+  </ShowShell>
 }
 
-function AiReviewPanel({ article, settings }: { article: Article; settings: PipelineSettings }) {
+function FinalTab({ a }: { a: CrmArticle }) {
   const { tr } = useI18n()
-  const approval = aiApproval(article, settings)
-  const checks = [...(article.qualityReport?.checks ?? [])].sort((a, b) => ["fail", "warning", "pass"].indexOf(a.status) - ["fail", "warning", "pass"].indexOf(b.status))
-  if (approval.state === "pending") return <div className="empty-state"><h3>{tr("Chưa có kết quả AI Review", "No AI review yet")}</h3><p>{tr("Chạy QC ở Gate 3 (Chế độ thủ công → Draft) để chấm điểm.", "Run QC in Gate 3 (Manual mode → Draft) to score.")}</p></div>
-  return <>
-    <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
-      <div className="score">{approval.score}%</div>
-      <div><AiTag article={article} settings={settings} /><div className="muted" style={{ marginTop: 4 }}>{tr("Ngưỡng", "Threshold")} {settings.threshold}% · {checks.length} {tr("tiêu chí", "criteria")} · {fmt(article.qualityReport?.checkedAt)}</div></div>
+  if (!a.a.draft?.trim()) return <div className="empty-state"><I n="hourglass" /><h3>{tr("Chưa có bài", "No article yet")}</h3><span>{tr("Bài xuất hiện khi G3 Final Article chọn được option đạt ngưỡng.", "Appears once G3 Final Article selects an option above the threshold.")}</span></div>
+  const h1 = a.a.draft.match(/^#\s+(.+)$/m)?.[1]?.trim() || a.title
+  return <div style={{ maxWidth: 720 }}>
+    <div className="box" style={{ marginBottom: 20 }}>
+      <div className="box-row"><div className="grow"><div className="s">Meta title · {h1.length} chars</div>{h1}</div></div>
+      <div className="box-row"><div className="grow"><div className="s">Meta description</div><span style={{ color: "var(--f4)" }}>{tr("Chưa tạo (bổ sung ở giai đoạn P1)", "Not generated yet (P1)")}</span></div></div>
     </div>
-    {approval.hardBlocked && <p className="note">{tr("Có tiêu chí chặn cứng bị trượt (dẫn chứng không được hỗ trợ) nên bài không được AI duyệt dù điểm cao.", "A hard-block criterion failed (unsupported evidence), so AI does not approve regardless of score.")}</p>}
-    {checks.map(check => <div key={check.id} className="qc-row">
-      <span className={`tag ${check.status === "pass" ? "t-green" : check.status === "warning" ? "t-yellow" : "t-red"}`}>{check.status === "pass" ? "Pass" : check.status === "warning" ? "Warn" : "Fail"}</span>
-      <div className="grow"><b style={{ fontWeight: 500 }}>{check.label}</b>{check.status !== "pass" && <p>{check.reason}</p>}{check.recommendedAction && check.status !== "pass" && <p className="muted">{check.recommendedAction}</p>}</div>
-    </div>)}
+    <article className="crm-draft" dangerouslySetInnerHTML={{ __html: markdownToHtml(normalizeDraftOutput(a.a.draft)) }} />
+  </div>
+}
+
+const GROUP_COLOR: Record<string, string> = { structure: "blue", seo: "purple", content: "turq", images: "orange", checklist: "pink" }
+function ReviewTab({ ctx, a }: { ctx: Ctx; a: CrmArticle }) {
+  const { tr, language } = useI18n()
+  const checks = a.a.qualityReport?.checks ?? []
+  if (!checks.length) return <div className="empty-state"><I n="hourglass" /><h3>{tr("Chưa có AI Review", "No AI Review yet")}</h3><span>{tr("AI Review chạy ở bước AI Approval sau G3.", "AI Review runs at the AI Approval step after G3.")}</span></div>
+  const met = checks.filter(c => c.status === "pass").length, pass = a.status === "completed"
+  const groups = QC_GROUPS.filter(g => checks.some(c => qcGroupOf(c.id) === g.key))
+  return <div className="dash" style={{ padding: 0, gridTemplateColumns: "repeat(4,1fr)" }}>
+    <div className="widget"><h4><I n="gauge" />Score</h4><div className="kpi" style={{ color: pass ? "var(--c-green)" : "var(--danger)" }}>{a.score}%</div><div className="kpi-sub">{met}/{checks.length} · {tr("ngưỡng", "threshold")} {ctx.settings.threshold}% <Tag c="orange">{tr("chưa chốt", "not final")}</Tag></div></div>
+    {groups.map(g => { const it = checks.filter(c => qcGroupOf(c.id) === g.key), ok = it.filter(c => c.status === "pass").length; return <div key={g.key} className="widget"><h4><I n="list-check" />{language === "vi" ? g.vi : g.en}</h4><div className="kpi">{ok}/{it.length}</div><div className="kpi-sub">{ok === it.length ? tr("đạt toàn bộ", "all met") : `${it.length - ok} ${tr("tiêu chí chưa đạt", "not met")}`}</div></div> })}
+    <div className="widget w4"><h4><I n="list-check" />{tr("Kết quả theo tiêu chí", "Criteria results")}</h4><table className="tbl"><thead><tr><th style={{ position: "static" }}>Section</th><th style={{ position: "static" }}>Criterion</th><th style={{ position: "static" }}>Result</th><th style={{ position: "static" }}>Note</th></tr></thead><tbody>
+      {checks.map(c => { const g = QC_GROUPS.find(x => x.key === qcGroupOf(c.id))!; return <tr key={c.id}><td><Tag c={GROUP_COLOR[g.key]}>{language === "vi" ? g.vi : g.en}</Tag></td><td>{(language === "vi" && QC_LABELS_VI[c.id]) || c.label}</td><td>{c.status === "pass" ? <Tag c="green">Pass</Tag> : c.status === "warning" ? <Tag c="orange">Warn</Tag> : <Tag c="red">Fail</Tag>}</td><td className="muted" style={{ whiteSpace: "normal", maxWidth: 420 }}>{c.status === "pass" ? "" : c.reason}</td></tr> })}
+    </tbody></table></div>
+  </div>
+}
+
+function stepFiles(ctx: Ctx, step: number) {
+  const access = ctx.config.stepConfigs[step]?.fileAccess
+  return ctx.files.filter(f => access?.kb?.includes(f.id) || access?.rules?.includes(f.id))
+}
+function reviewerPackage(ctx: Ctx, gate: number, article?: Article) {
+  if (gate === 1) return ["Core Idea rating (Outline Generator)", "Checklist Gate 1–2 (chưa có)"]
+  if (gate === 2) return ["Outline review (MD structure)", "Checklist Gate 1–2 (chưa có)"]
+  return ["Universal QC", ...step4ChecklistDocs(ctx.files, ctx.config, article ?? {}).map(d => d.name)]
+}
+
+function HistoryTab({ ctx, a }: { ctx: Ctx; a: CrmArticle }) {
+  const { tr, language } = useI18n()
+  const x = a.a, t = ctx.settings.threshold
+  const runs: Array<{ g: number; at?: string | null; options: Array<{ id: string; out: ReactNode; met: string; score: number | null }>; selectedId?: string }> = []
+  if (x.coreIdeaSuggestions?.length) runs.push({ g: 1, at: x.coreIdeaScannedAt, selectedId: x.selectedCoreIdeaId, options: x.coreIdeaSuggestions.map(i => ({ id: i.id, out: <>{i.title} <span className="muted">· {i.angleLabel}</span></>, met: "—", score: Math.round((i.rating?.overall ?? 0) * 10) })) })
+  if (x.outline?.length) runs.push({ g: 2, at: x.outlineScannedAt, selectedId: "outline", options: [{ id: "outline", out: <>{x.outlineStructure?.name ?? "Outline"} <span className="muted">· {x.outline.filter(s => s.level === "h2").length} H2</span></>, met: "—", score: null }] })
+  if (x.draft?.trim()) runs.push({ g: 3, at: x.draftScannedAt, selectedId: "draft", options: [{ id: "draft", out: <>Draft A <span className="muted">· {x.draft.split(/\s+/).filter(Boolean).length} words</span></>, met: x.qualityReport ? `${x.qualityReport.checks.filter(c => c.status === "pass").length}/${x.qualityReport.checks.length}` : "—", score: a.score }] })
+  if (!runs.length) return <div className="empty-state"><I n="history" /><h3>{tr("Chưa có gate nào xong", "No gate finished yet")}</h3></div>
+  return <>{runs.map(run => {
+    const G = GATES[run.g - 1], files = stepFiles(ctx, G.step)
+    return <div key={run.g} className="widget" style={{ marginBottom: 12 }}>
+      <h4><Tag c={G.color}>{G.label}</Tag><span style={{ marginLeft: "auto", color: "var(--f3)", fontWeight: 400 }}>{fmtTime(run.at, language)}</span>{run.options.length > 1 ? <Tag c="green">{run.options.length} options</Tag> : <Tag c="gray">1 option</Tag>}</h4>
+      <div className="frow"><div className="flabel"><I n="package" />Executor</div><div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{files.length ? files.map(f => <Tag key={f.id} c="blue">{f.name}</Tag>) : <span className="empty">—</span>}</div></div>
+      <div className="frow"><div className="flabel"><I n="checklist" />Reviewer</div><div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{reviewerPackage(ctx, run.g, x).map(d => <Tag key={d} c="purple">{d}</Tag>)}</div></div>
+      <div className="frow"><div className="flabel"><I n="truck-delivery" />Retrieved</div><div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{files.map(f => <span key={f.id} className="rchip"><I n="file-description" />{f.name}</span>)}</div></div>
+      <table className="tbl" style={{ border: "1px solid var(--b2)", borderRadius: 6 }}><thead><tr><th style={{ position: "static" }}>Option</th><th style={{ position: "static" }}>Output</th><th style={{ position: "static" }}>Criteria</th><th style={{ position: "static" }}>Score</th></tr></thead><tbody>
+        {run.options.map((o, i) => <tr key={o.id} className={o.id === run.selectedId ? "sel" : ""}><td><b>{"ABCDEFGH"[i] ?? i + 1}</b>{o.id === run.selectedId && <> <Tag c="green">selected</Tag></>}</td><td style={{ maxWidth: 360 }}>{o.out}</td><td className="num">{o.met}</td><td><ScoreTag s={o.score} t={t} /></td></tr>)}
+      </tbody></table>
+    </div>
+  })}</>
+}
+
+function TimelineTab({ ctx, a }: { ctx: Ctx; a: CrmArticle }) {
+  const { tr } = useI18n()
+  const ago = useAgo()
+  const x = a.a, plan = ctx.plans.find(p => p.id === a.planId), batch = ctx.batches.find(b => b.id === a.batchId)
+  const ev: Array<{ icon: string; who: string; what: ReactNode; at?: string | null }> = [{ icon: "plus", who: "Content Operator", what: <>{tr("thêm topic vào", "added topic to")} <b>{plan?.name ?? tr("bài lẻ", "single article")}</b></>, at: x.createdAt }]
+  if (x.batchStartedAt) ev.push({ icon: "player-play", who: "Pipeline", what: <>{tr("bắt đầu", "started")} <b>Batch {batch?.idx}</b></>, at: x.batchStartedAt })
+  if (x.coreIdeaScannedAt) ev.push({ icon: GATES[0].icon, who: "Reviewer Agent", what: <>{x.selectedCoreIdeaId ? tr("chọn ý tưởng ở", "selected an idea at") : tr("tạo option ở", "drafted options at")} <Tag c={GATES[0].color}>{GATES[0].label}</Tag></>, at: x.coreIdeaScannedAt })
+  if (x.outlineScannedAt) ev.push({ icon: GATES[1].icon, who: "Executor Agent", what: <>{tr("tạo outline ở", "produced the outline at")} <Tag c={GATES[1].color}>{GATES[1].label}</Tag></>, at: x.outlineScannedAt })
+  if (x.draftScannedAt) ev.push({ icon: GATES[2].icon, who: "Executor Agent", what: <>{tr("viết bài ở", "wrote the article at")} <Tag c={GATES[2].color}>{GATES[2].label}</Tag></>, at: x.draftScannedAt })
+  if (x.qualityReport?.checkedAt) ev.push({ icon: "shield-check", who: "Reviewer Agent", what: <>{tr("chấm AI Review", "scored AI Review")} <ScoreTag s={a.score} t={ctx.settings.threshold} /></>, at: x.qualityReport.checkedAt })
+  if (a.human.status !== "not") ev.push({ icon: "user-check", who: person(a.human.reviewer), what: <>{tr("đánh dấu", "marked")} <HumanTag h={a.human.status} />{a.human.comment && <> · <span style={{ color: "var(--f3)" }}>{a.human.comment}</span></>}</>, at: a.human.at })
+  if (x.batchError) ev.push({ icon: "alert-triangle", who: "Pipeline", what: <span style={{ color: "var(--danger)" }}>{x.batchError}</span>, at: x.updatedAt })
+  ev.sort((p, q) => String(q.at).localeCompare(String(p.at)))
+  return <div className="tl">{ev.map((e, i) => <div key={i} className="tl-item"><span className="dot"><I n={e.icon} /></span><span><b>{e.who}</b> {e.what}</span><span className="when">{ago(e.at)}</span></div>)}</div>
+}
+
+function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
+  const { tr } = useI18n()
+  const ago = useAgo()
+  const [tab, setTab] = useState("batches")
+  const p = ctx.plans.find(x => x.id === id)
+  if (!p) return <NotFound t="Plan not found" />
+  const st = planStats(p.articles), bs = ctx.batches.filter(b => b.planId === p.id)
+  const paused = bs.length > 0 && bs.some(b => b.paused) && !bs.some(b => b.status === "running" && !b.paused)
+  const togglePause = async () => {
+    try {
+      for (const b of bs) if (b.status !== "completed") await (paused ? db.startBatch(b.id) : db.pauseBatch(b.id))
+      toast(paused ? "Resumed" : "Paused")
+    } catch (err) { toast(errText(err)) }
+  }
+  const left = <><div className="rec-head"><Av name={p.name} xl /><h1>{p.name}</h1><div className="sub">{tr("Tạo", "Added")} {ago(p.created)}</div></div><div className="fields">
+    <Frow icon="progress-check" label="Status">{paused ? <Tag c="orange">Paused</Tag> : st.n && st.c === st.n ? <Tag c="green">Done</Tag> : st.n ? <Tag c="blue">Running</Tag> : <Tag c="gray">{p.plan.status}</Tag>}</Frow>
+    <Frow icon="file-text" label="Articles">{st.n} · <span style={{ color: "var(--c-green)" }}>{st.c} AI Approved</span></Frow>
+    <Frow icon="alert-triangle" label="Failed">{String(st.f)}</Frow>
+    <Frow icon="list" label="Topics">{String(p.plan.totalArticles)}</Frow>
+    <Frow icon="stack-2" label="Batches">{String(bs.length)}</Frow>
+    <Frow icon="layout-rows" label="Per batch">{String(p.perBatch)}</Frow>
+    <Frow icon="arrows-split" label="Max parallel">{String(ctx.settings.maxParallel)}</Frow>
+  </div></>
+  return <ShowShell crumbs={<><a className="crumb" href="#/objects/plans">Content Plans</a><span className="crumb">/</span>{p.name}</>}
+    actions={bs.length > 0 && <button className="btn" aria-label={paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")} onClick={() => void togglePause()}><I n={paused ? "player-play" : "player-pause"} /><span>{paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")}</span></button>}
+    left={left} tabs={[["batches", "stack-2", "Batches", bs.length], ["articles", "file-text", "Articles", st.n]]} tab={tab} setTab={setTab}>
+    {tab === "batches" ? <>
+      {bs.length ? <table className="tbl" style={{ border: "1px solid var(--b2)", borderRadius: 6 }}><thead><tr><th style={{ position: "static" }}>Batch</th><th style={{ position: "static" }}>Schedule</th><th style={{ position: "static" }}>Status</th><th style={{ position: "static" }}>AI Approved</th></tr></thead><tbody>
+        {bs.map(b => <tr key={b.id} style={{ cursor: "pointer" }} onClick={() => go(`#/object/batches/${enc(b.id)}`)}><td><span className="rchip"><I n="stack-2" />Batch {b.idx}</span></td><td>{fmtTime(b.schedule)}</td><td>{b.paused ? <Tag c="orange">Paused</Tag> : <StatusTag k={b.status} />}</td><td>{b.done}/{b.articles.length}</td></tr>)}
+      </tbody></table> : <div className="empty-state"><I n="stack-2" /><h3>{tr("Chưa có batch", "No batches yet")}</h3></div>}
+      <p style={{ color: "var(--f3)", marginTop: 10 }}><I n="info-circle" /> {tr("Mỗi batch chạy tối đa", "Each batch runs at most")} {ctx.settings.maxParallel} {tr("bài cùng lúc.", "articles at a time.")}</p>
+    </> : <div>{p.articles.map(a => <div key={a.id} className="list-row" onClick={() => go(`#/object/articles/${enc(a.id)}`)}><span className="grow">{a.title}</span><GateBar a={a} /><StatusTag k={a.status} /></div>)}</div>}
+  </ShowShell>
+}
+
+function BatchShow({ ctx, id }: { ctx: Ctx; id: string }) {
+  const { tr } = useI18n()
+  const b = ctx.batches.find(x => x.id === id)
+  if (!b) return <NotFound t="Batch not found" />
+  const p = ctx.plans.find(x => x.id === b.planId)
+  const running = b.articles.some(a => a.a.batchStatus === "running")
+  const control = async () => { try { await (running ? db.pauseBatch(b.id) : db.startBatch(b.id)); toast(running ? "Paused" : "Running") } catch (err) { toast(errText(err)) } }
+  const zip = () => { const blob = buildBatchZip(b.articles.map(a => a.a)); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `batch-${b.idx}.zip`; link.click(); URL.revokeObjectURL(url) }
+  const left = <><div className="rec-head"><span className="av xl" style={{ background: "#7948af" }}><I n="stack-2" /></span><h1>Batch {b.idx}</h1><div className="sub">{p?.name}</div></div><div className="fields">
+    <Frow icon="progress-check" label="Status">{b.paused ? <Tag c="orange">Paused</Tag> : <StatusTag k={b.status} />}</Frow>
+    <Frow icon="list-details" label="Content Plan"><PlanChip ctx={ctx} id={b.planId} /></Frow>
+    <Frow icon="calendar-event" label="Schedule">{fmtTime(b.schedule)}</Frow>
+    <Frow icon="circle-check" label="AI Approved">{`${b.done}/${b.articles.length}`}</Frow>
+  </div><p style={{ color: "var(--f3)", fontSize: 12 }}>{tr("Mỗi bài chạy độc lập; output được chọn ở gate trước là input duy nhất của gate sau. Retry chỉ chạy lại từ gate bị lỗi.", "Each article runs independently; a gate's selected output is the only input to the next. Retry re-runs only from the failed gate.")}</p></>
+  return <ShowShell crumbs={<><a className="crumb" href="#/objects/batches">Batches</a><span className="crumb">/</span>{p?.name} · Batch {b.idx}</>}
+    actions={<>{b.status !== "completed" && <button className="btn" aria-label={running ? tr("Tạm dừng", "Pause") : tr("Chạy", "Run")} onClick={() => void control()}><I n={running ? "player-pause" : "player-play"} /><span>{running ? tr("Tạm dừng", "Pause") : tr("Chạy", "Run")}</span></button>}<button className="btn" aria-label="ZIP" onClick={zip}><I n="download" /><span>ZIP</span></button><button className="icon-btn" aria-label={tr("Xoá batch", "Delete batch")} onClick={() => ctx.onDeleteArticle(b.articles[0].a, true)}><I n="trash" /></button></>}
+    left={left} tabs={[["articles", "file-text", "Articles", b.articles.length]]} tab="articles" setTab={() => {}}>
+    <div>{b.articles.map(a => <div key={a.id} className="list-row" onClick={() => go(`#/object/articles/${enc(a.id)}`)} style={{ height: "auto", minHeight: 48, padding: "8px 12px" }}>
+      <span className="grow"><b style={{ fontWeight: 500 }}>{a.title}</b><br /><span style={{ color: "var(--f3)", fontSize: 12 }}>{a.keyword}</span></span><GateBar a={a} /><StatusTag k={a.status} /><RetryButton ctx={ctx} a={a} />
+    </div>)}</div>
+  </ShowShell>
+}
+
+/* ─── side panels ──────────────────────────────────────────────────────── */
+
+function SidePanel({ ctx, title, icon, extra, children }: { ctx: Ctx; title: ReactNode; icon: ReactNode; extra?: ReactNode; children: ReactNode }) {
+  return <>
+    <div className="sp-overlay" onClick={() => ctx.setPanel(null)} />
+    <div className="sp" role="dialog" aria-label={typeof title === "string" ? title : undefined}>
+      <div className="sp-head"><span className="t">{icon}{title}</span>{extra}<button className="icon-btn" aria-label="Close" onClick={() => ctx.setPanel(null)}><I n="x" /></button></div>
+      <div className="sp-body">{children}</div>
+    </div>
   </>
 }
 
-function Timeline({ article }: { article: Article }) {
+function AddPlanPanel({ ctx }: { ctx: Ctx }) {
   const { tr } = useI18n()
-  const usage = Object.values(article.aiUsageByStep ?? {}).flat()
-  const cost = usage.reduce((sum, call) => sum + (call?.costUsd ?? 0), 0)
-  const events = ([
-    [article.createdAt, tr("Tạo bài", "Created")],
-    [article.coreIdeaScannedAt, "G1 · Core Idea"],
-    [article.outlineScannedAt, "G2 · Outline"],
-    [article.draftScannedAt, "G3 · Final Article"],
-    [article.qualityReport?.checkedAt, "AI Review"],
-    [article.humanReview?.reviewedAt, `Human review · ${article.humanReview?.status === "approved" ? "Approved" : "Needs Revision"}${article.humanReview?.comment ? ` — ${article.humanReview.comment}` : ""}`],
-    [article.completedAt, "Completed"],
-  ] as Array<[string | null | undefined, string]>).filter(([when]) => when).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
-  return <>
-    <p className="muted" style={{ marginTop: 0 }}>{usage.length} {tr("lượt gọi AI", "AI calls")}{cost ? ` · $${cost.toFixed(3)}` : ""} · {article.coreIdeaSuggestions?.length ?? 0} {tr("option ở G1", "G1 options")}</p>
-    <div className="tl">{events.map(([when, label], index) => <div key={index} className="tl-item"><span className="dot"><History size={12} /></span><b>{label}</b><span className="when">{fmt(when)}</span></div>)}</div>
-  </>
-}
-
-/* ─── Plans & batches ──────────────────────────────────────────────────── */
-
-function progress(items: Article[], settings: PipelineSettings) {
-  const done = items.filter(a => articleStage(a) === "completed").length
-  return { done, total: items.length, failed: items.filter(a => articleStage(a) === "failed").length, rate: firstPassApprovalRate(items, settings) }
-}
-
-function PlansView({ plans, articles, settings }: { plans: ContentPlan[]; articles: Article[]; settings: PipelineSettings }) {
-  const { tr } = useI18n()
-  return <Page title="Content Plans" actions={<button className="btn primary" onClick={() => go("new")}><Plus size={14} /><span>{tr("Thêm Plan", "Add Plan")}</span></button>}>
-    <div className="card">{!plans.length ? <div className="empty-state"><FolderKanban size={36} /><h3>{tr("Chưa có Content Plan", "No content plans")}</h3></div>
-      : <div className="tbl-wrap"><table className="tbl">
-        <thead><tr><th className="first">Plan</th><th>{tr("Trạng thái", "Status")}</th><th>{tr("Topic", "Topics")}</th><th>{tr("Đã tạo bài", "Articles")}</th><th>Completed</th><th>First-pass</th><th>{tr("Cập nhật", "Updated")}</th></tr></thead>
-        <tbody>{plans.map(plan => { const items = articles.filter(a => a.contentPlanId === plan.id); const p = progress(items, settings)
-          return <tr key={plan.id} onClick={() => go("plan", plan.id)}>
-            <td className="first">{plan.name}</td><td><span className="tag t-gray">{plan.status}</span></td>
-            <td className="num">{plan.totalArticles}</td><td className="num">{items.length}</td><td className="num">{p.done}/{p.total}</td>
-            <td className="num">{p.rate === null ? "—" : `${p.rate}%`}</td><td className="muted">{fmt(plan.updatedAt)}</td>
-          </tr> })}</tbody>
-      </table></div>}</div>
-  </Page>
-}
-
-function PlanRecord({ plan, articles, settings }: { plan?: ContentPlan; articles: Article[]; settings: PipelineSettings }) {
-  const { tr } = useI18n()
-  if (!plan) return <Missing label={tr("Không tìm thấy plan.", "Plan not found.")} />
-  const p = progress(articles, settings)
-  return <Page crumbs={[["Content Plans", "plans"]]} title={plan.name}>
-    <div className="card">
-      <div className="vbar"><span>{p.done}/{p.total} completed</span><span className="muted">· {p.failed} failed · First-pass {p.rate === null ? "—" : `${p.rate}%`}</span></div>
-      <div className="tbl-wrap"><table className="tbl">
-        <thead><tr><th className="first">{tr("Bài viết", "Article")}</th><th>Gate</th><th>AI Approval</th><th>Human review</th><th>{tr("Cập nhật", "Updated")}</th></tr></thead>
-        <tbody>{articles.map(a => { const stage = articleStage(a); return <tr key={a.id} onClick={() => go("article", a.id)}>
-          <td className="first">{titleOf(a)}</td><td><GateBar article={a} /> <StageTag stage={stage} /></td>
-          <td><AiTag article={a} settings={settings} /></td><td><HumanTag article={a} /></td><td className="muted">{fmt(a.updatedAt)}</td>
-        </tr> })}</tbody>
-      </table></div>
+  const [name, setName] = useState("")
+  const [per, setPer] = useState(ctx.settings.perBatch)
+  const [par, setPar] = useState(ctx.settings.maxParallel)
+  const [topics, setTopics] = useState("")
+  const [structure, setStructure] = useState<OutlineStructureSnapshot | null>(null)
+  const [busy, setBusy] = useState("")
+  const nameRef = useRef<HTMLInputElement>(null)
+  useEffect(() => nameRef.current?.focus(), [])
+  const lines = topics.split("\n").map(t => t.trim()).filter(Boolean)
+  const perBatch = Math.max(1, Math.min(20, per || 1))
+  const create = async () => {
+    if (!lines.length) return toast(tr("Cần ít nhất một topic", "At least one topic is required"))
+    if (!structure) return toast(tr("Chọn cấu trúc outline trước khi chạy.", "Choose an outline structure first."))
+    try {
+      setBusy(tr("Đang import plan…", "Importing plan…"))
+      const railway = ctx.config.railwayUrl
+      const imported = await importContentPlan({ name: name.trim() || `Content Plan ${new Date().toLocaleDateString()}`, sourceType: "paste", content: lines.join("\n") }, railway)
+      ctx.onContentPlansChange([imported])
+      setBusy(tr("Đang phân loại article type…", "Classifying article types…"))
+      const plan = await classifyContentPlan(imported.id, railway)
+      ctx.onContentPlansChange([plan])
+      if (par !== ctx.settings.maxParallel) await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...ctx.settings, maxParallel: Math.max(1, Math.min(5, par)) } }, ctx.files, false)
+      const items = plan.items ?? []
+      // needs-review items run as editorial: the pipeline must not silently drop a topic.
+      const byType: Array<["comparison-seo" | "editorial-originality", ContentPlanItem[]]> = [["comparison-seo", items.filter(i => i.type === "comparison-seo")], ["editorial-originality", items.filter(i => i.type !== "comparison-seo")]]
+      let made = 0
+      for (const [type, group] of byType)
+        for (let i = 0; i < group.length; i += perBatch) {
+          const chunk = group.slice(i, i + perBatch)
+          setBusy(`${tr("Đang tạo batch", "Creating batch")} ${++made}…`)
+          await ctx.onCreate(type, plan, chunk, ([5, 10, 15, 20].find(s => s >= chunk.length) ?? 20) as 5 | 10 | 15 | 20, structure, { forceBatch: true, select: false })
+        }
+      ctx.setPanel(null)
+      go(`#/object/plans/${plan.id}`)
+      toast(tr("Đã tạo plan và bắt đầu chạy", "Plan created and running"))
+    } catch (err) {
+      toast(errText(err))
+    } finally { setBusy("") }
+  }
+  return <SidePanel ctx={ctx} title="Add Plan" icon={<I n="list-details" />}>
+    <input ref={nameRef} className="sp-title" aria-label={tr("Tên Content Plan", "Content Plan name")} placeholder={tr("Tên Content Plan", "Content Plan name")} value={name} onChange={e => setName(e.target.value)} />
+    <div className="fields" style={{ paddingTop: 0 }}>
+      <div className="frow"><div className="flabel"><I n="layout-rows" />Per batch</div><div className="fval"><input aria-label="Per batch" type="number" min={1} max={20} value={per} onChange={e => setPer(+e.target.value)} /></div></div>
+      <div className="frow"><div className="flabel"><I n="arrows-split" />Max parallel</div><div className="fval"><input aria-label="Max parallel" type="number" min={1} max={5} value={par} onChange={e => setPar(+e.target.value)} /></div></div>
+      <div className="frow"><div className="flabel"><I n="stack-2" />Batches</div><div className="fval">{lines.length ? <>{lines.length} topic → <b>&nbsp;{Math.ceil(lines.length / perBatch)} batch</b></> : <span className="empty">—</span>}</div></div>
     </div>
-  </Page>
+    <div style={{ margin: "4px 0 12px" }}><OutlineStructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
+    <div style={{ borderTop: "1px solid var(--b2)", margin: "8px 0 12px" }} />
+    <textarea aria-label="Topics" value={topics} onChange={e => setTopics(e.target.value)} placeholder={tr("Mỗi dòng một topic (hướng chủ đề, chưa có title). Title được chọn ở G1; article type được phân loại tự động.", "One topic per line (a direction, not a title). The title is chosen at G1; article type is classified automatically.")} />
+    <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy)} onClick={() => void create()}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>
+  </SidePanel>
 }
 
-function BatchesView({ batches, settings }: { batches: Array<{ id: string; items: Article[]; plan: string; createdAt: string }>; settings: PipelineSettings }) {
+function ReviewPanel({ ctx, id }: { ctx: Ctx; id: string }) {
   const { tr } = useI18n()
-  return <Page title="Batches">
-    <div className="card">{!batches.length ? <div className="empty-state"><Boxes size={36} /><h3>{tr("Chưa có batch", "No batches")}</h3></div>
-      : <div className="tbl-wrap"><table className="tbl">
-        <thead><tr><th className="first">Batch</th><th>{tr("Trạng thái", "Status")}</th><th>{tr("Tiến độ", "Progress")}</th><th>Failed</th><th>First-pass</th><th>{tr("Tạo lúc", "Created")}</th></tr></thead>
-        <tbody>{batches.map(batch => { const p = progress(batch.items, settings)
-          const running = batch.items.some(a => a.batchStatus === "running"), paused = batch.items.some(a => a.batchStatus === "paused")
-          return <tr key={batch.id} onClick={() => go("batch", batch.id)}>
-            <td className="first">{batch.plan || batch.id}</td>
-            <td><span className={`tag ${running ? "t-blue" : paused ? "t-yellow" : p.done === p.total ? "t-green" : "t-gray"}`}>{running ? "Running" : paused ? "Paused" : p.done === p.total ? "Done" : "Queued"}</span></td>
-            <td className="num">{p.done}/{p.total}</td><td className="num">{p.failed}</td>
-            <td className="num">{p.rate === null ? "—" : `${p.rate}%`}</td><td className="muted">{fmt(batch.createdAt)}</td>
-          </tr> })}</tbody>
-      </table></div>}</div>
-  </Page>
-}
-
-/* ─── Review workspace ─────────────────────────────────────────────────── */
-
-function ReviewView(props: Props & { queue: Article[]; settings: PipelineSettings; planName: Map<string, string> }) {
-  const { tr } = useI18n()
-  const { queue, settings, planName } = props
-  const [filter, setFilter] = useState<"all" | "not_reviewed" | "approved" | "needs_revision">("not_reviewed")
-  const [sampleOnly, setSampleOnly] = useState(false)
-  const [openId, setOpenId] = useState<string | null>(null)
-  const rows = queue.filter(a => (filter === "all" || humanReviewStatus(a) === filter) && (!sampleOnly || inReviewSample(a.id, settings.reviewSample)))
-  const open = queue.find(a => a.id === openId)
-  return <Page title="Review Workspace">
-    <div className="card">
-      <div className="vbar">
-        <div className="seg" role="group" aria-label={tr("Lọc", "Filter")}>
-          {([["not_reviewed", tr("Chưa review", "Not Reviewed")], ["needs_revision", "Needs Revision"], ["approved", "Approved"], ["all", tr("Tất cả", "All")]] as const).map(([key, label]) =>
-            <button key={key} className={filter === key ? "on" : ""} aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}
-        </div>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><input type="checkbox" checked={sampleOnly} onChange={e => setSampleOnly(e.target.checked)} style={{ width: 14 }} /> {tr("Chỉ mẫu ngẫu nhiên", "Random sample only")} ({settings.reviewSample}%)</label>
-        <span className="grow" /><span className="count">{rows.length}</span>
-      </div>
-      {!rows.length ? <div className="empty-state"><ClipboardCheck size={36} /><h3>{tr("Không có bài cần review", "Nothing to review")}</h3></div>
-        : <div className="tbl-wrap"><table className="tbl">
-          <thead><tr><th className="first">{tr("Bài viết", "Article")}</th><th>AI Approval</th><th>Human review</th><th>Plan</th><th>Reviewer</th><th>{tr("Ngày", "Date")}</th></tr></thead>
-          <tbody>{rows.map(a => <tr key={a.id} onClick={() => setOpenId(a.id)}>
-            <td className="first">{titleOf(a)}</td><td><AiTag article={a} settings={settings} /></td><td><HumanTag article={a} /></td>
-            <td className="muted">{a.contentPlanId ? planName.get(a.contentPlanId) ?? "" : "—"}</td>
-            <td className="muted">{a.humanReview?.reviewer ?? "—"}</td><td className="muted">{fmt(a.humanReview?.reviewedAt ?? a.draftScannedAt ?? a.updatedAt)}</td>
-          </tr>)}</tbody>
-        </table></div>}
-    </div>
-    {open && <ReviewPanel {...props} article={open} onClose={() => setOpenId(null)} />}
-  </Page>
-}
-
-function ReviewPanel(props: Props & { article: Article; settings: PipelineSettings; onClose: () => void }) {
-  const { tr } = useI18n()
-  const { article, settings, onClose } = props
-  const [comment, setComment] = useState(article.humanReview?.comment ?? "")
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { setComment(article.humanReview?.comment ?? "") }, [article.id])
-  useEffect(() => { const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey) }, [onClose])
+  const ago = useAgo()
+  const [comment, setComment] = useState("")
+  const ref = useRef<HTMLTextAreaElement>(null)
+  const a = ctx.list.find(x => x.id === id)
+  if (!a) return null
+  const checks = a.a.qualityReport?.checks ?? [], failed = checks.filter(c => c.status === "fail")
   const save = async (status: "approved" | "needs_revision") => {
-    if (status === "needs_revision" && !comment.trim()) return notifyWorkspace(tr("Cần ghi nhận xét khi yêu cầu sửa.", "A comment is required to request revision."), "error")
-    setSaving(true)
-    const ok = await props.onUpdateArticle(article.id, { humanReview: { status, comment: comment.trim() || undefined, reviewer: props.user.email, reviewedAt: new Date().toISOString() } })
-    setSaving(false)
-    if (ok) { notifyWorkspace(status === "approved" ? "Approved" : "Needs Revision", "success"); onClose() }
+    if (status === "needs_revision" && !comment.trim()) { toast(tr("Cần nhập nhận xét cho Request Revision", "A comment is required for Request Revision")); ref.current?.focus(); return }
+    const ok = await ctx.onUpdateArticle(a.id, { humanReview: { status, comment: comment.trim() || (status === "approved" ? tr("Đạt.", "Approved.") : undefined), reviewer: ctx.user.email, reviewedAt: new Date().toISOString() } })
+    if (ok) { ctx.setPanel(null); toast(status === "approved" ? "Approved" : "Needs Revision") }
   }
+  const markApproved = async () => {
+    const next = a.a.approvedArticle ? null : { by: ctx.user.email, at: new Date().toISOString() }
+    if (await ctx.onUpdateArticle(a.id, { approvedArticle: next })) toast(next ? "Added to Approved Articles" : "Removed from Approved Articles")
+  }
+  return <SidePanel ctx={ctx} title="Review" icon={<I n="checklist" />} extra={<a className="icon-btn" href={`#/object/articles/${enc(a.id)}`} title="Open article"><I n="arrow-up-right" /></a>}>
+    <div className="sp-title" style={{ paddingBottom: 4 }}>{a.title}</div><div style={{ color: "var(--f3)", marginBottom: 12 }}>{a.keyword}</div>
+    <div className="fields" style={{ paddingTop: 0 }}>
+      <div className="frow"><div className="flabel"><I n="gauge" />AI score</div><div className="fval"><ScoreTag s={a.score} t={ctx.settings.threshold} />&nbsp;<span style={{ color: "var(--f3)" }}>{checks.filter(c => c.status === "pass").length}/{checks.length}</span></div></div>
+      {QC_GROUPS.filter(g => checks.some(c => qcGroupOf(c.id) === g.key)).map(g => { const it = checks.filter(c => qcGroupOf(c.id) === g.key), ok = it.filter(c => c.status === "pass").length; return <div key={g.key} className="frow"><div className="flabel"><I n="list-check" />{tr(g.vi, g.en)}</div><div className="fval"><Tag c={ok === it.length ? "green" : "orange"}>{ok}/{it.length}</Tag></div></div> })}
+      <div className="frow"><div className="flabel"><I n="user-check" />Human review</div><div className="fval"><HumanTag h={a.human.status} />{a.human.reviewer && <>&nbsp;<span style={{ color: "var(--f3)" }}>{person(a.human.reviewer)}</span></>}</div></div>
+      <div className="frow"><div className="flabel"><I n="list-details" />Content Plan</div><div className="fval"><PlanChip ctx={ctx} id={a.planId} /></div></div>
+    </div>
+    {failed.length > 0 && <><div className="fsec"><I n="x" />&nbsp;{tr("Tiêu chí chưa đạt", "Criteria not met")}</div>{failed.map(c => <div key={c.id} className="list-row" style={{ height: "auto", padding: "8px 12px", cursor: "default" }}><span className="grow" style={{ whiteSpace: "normal" }}><b style={{ fontWeight: 500 }}>{tr(QC_LABELS_VI[c.id] ?? c.label, c.label)}</b><br /><span style={{ color: "var(--f3)" }}>{c.reason}</span></span><Tag c="red">Fail</Tag></div>)}</>}
+    {a.human.comment && <><div className="fsec"><I n="message-2" />&nbsp;{tr("Nhận xét trước", "Previous comment")}</div><div className="note-card" style={{ height: "auto", cursor: "default" }}><p>{a.human.comment}</p><div className="meta">{person(a.human.reviewer)} · {ago(a.human.at)}</div></div></>}
+    <details style={{ marginTop: 12 }}><summary style={{ cursor: "pointer", color: "var(--f2)" }}>{tr("Xem bài", "Read article")}</summary><article className="crm-draft" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: markdownToHtml(normalizeDraftOutput(a.a.draft ?? "")) }} /></details>
+    <div style={{ borderTop: "1px solid var(--b2)", margin: "16px 0 12px" }} />
+    <textarea ref={ref} aria-label={tr("Nhận xét", "Comment")} style={{ minHeight: 110 }} value={comment} onChange={e => setComment(e.target.value)} placeholder={tr("Nhận xét (bắt buộc khi Request Revision)…", "Comment (required for Request Revision)…")} />
+    <div style={{ display: "flex", gap: 6, marginTop: 8 }}><button className="btn primary" onClick={() => void save("approved")}><I n="check" />Approve</button><button className="btn" onClick={() => void save("needs_revision")}><I n="message-2" />Request Revision</button></div>
+    {ctx.can("approveArticles") && <div className="box" style={{ marginTop: 12 }}><div className="box-row"><div className="grow">Approved Article<div className="s">{tr("Dùng làm mẫu cho G2/G3", "Used as a G2/G3 example")}</div></div><button role="switch" aria-checked={Boolean(a.a.approvedArticle)} aria-label="Approved Article" className={`toggle${a.a.approvedArticle ? " on" : ""}`} onClick={() => void markApproved()} /></div></div>}
+    <p style={{ color: "var(--f4)", fontSize: 12 }}>{tr("Request Revision chỉ ghi lại feedback, không gửi bài lại cho AI.", "Request Revision only records feedback; it does not send the article back to the AI.")}</p>
+  </SidePanel>
+}
+
+function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
+  const { tr } = useI18n()
+  const d = ctx.docs.find(x => x.id === id)
+  if (!d) return null
+  const [l, c] = docStatus(d)
+  const flip = async (g: number) => {
+    if (!ctx.can("settings")) return toast(tr("Chỉ Admin sửa được Shipper", "Only Admin can edit the Shipper"))
+    if (!d.file) return toast(tr("Tài liệu chưa có trong Storage", "This document is not in Storage yet"))
+    try { await ctx.onSaveConfig(toggleShip(ctx.config, d.file, g), ctx.files, false); toast("Saved") } catch (err) { toast(errText(err)) }
+  }
+  return <SidePanel ctx={ctx} title="Document" icon={<I n="file-description" />}>
+    <div className="sp-title">{d.name}</div>
+    <div className="fields" style={{ paddingTop: 0 }}>
+      <div className="frow"><div className="flabel"><I n="folder" />Group</div><div className="fval">{d.g}</div></div>
+      <div className="frow"><div className="flabel"><I n="progress-check" />Status</div><div className="fval"><Tag c={c}>{l}</Tag></div></div>
+      <div className="frow"><div className="flabel"><I n="notes" />Note</div><div className="fval">{d.note || <span className="empty">Empty</span>}</div></div>
+    </div>
+    <div className="fsec"><I n="git-merge" />&nbsp;Used at (Shipper)</div>
+    <div className="box">{[1, 2, 3].map(g => <div key={g} className="box-row"><div className="grow">{GATES[g - 1].label}</div><button role="switch" aria-checked={d.used.includes(g)} aria-label={GATES[g - 1].label} className={`toggle${d.used.includes(g) ? " on" : ""}`} onClick={() => void flip(g)} /></div>)}</div>
+    <div className="fsec"><I n="category" />&nbsp;Applies to types</div><div>{d.types.map(t => <span key={t}><TypeTag t={t} /> </span>)}</div>
+  </SidePanel>
+}
+
+/* ─── command menu ─────────────────────────────────────────────────────── */
+
+function CommandMenu({ ctx }: { ctx: Ctx }) {
+  const { tr, toggleLanguage } = useI18n()
+  const [q, setQ] = useState("")
+  const [idx, setIdx] = useState(0)
+  const m = (s: string) => !q || s.toLowerCase().includes(q.toLowerCase().trim())
+  type Item = { label: string; run: () => void; icon?: string; av?: ReactNode; hint?: string }
+  const groups: Array<[string, Item[]]> = []
+  if (q) {
+    const as = ctx.list.filter(a => m(a.title) || m(a.keyword)).slice(0, 6).map(a => ({ label: a.title, run: () => go(`#/object/articles/${enc(a.id)}`), av: <Av name={a.title} />, hint: STATUS[a.status][0] }))
+    const ps = ctx.plans.filter(p => m(p.name)).map(p => ({ label: p.name, run: () => go(`#/object/plans/${p.id}`), av: <Av name={p.name} />, hint: `${planStats(p.articles).c}/${p.articles.length}` }))
+    if (as.length) groups.push(["Articles", as])
+    if (ps.length) groups.push(["Content Plans", ps])
+  }
+  const act: Item[] = [{ label: "Add Plan", run: () => ctx.setPanel({ kind: "plan" }), icon: "plus" }, { label: "Toggle dark mode", run: () => ctx.onThemeChange(ctx.themePreference === "dark" ? "light" : "dark"), icon: "moon" }, { label: "Switch language (vi/en)", run: toggleLanguage, icon: "world" }].filter(x => m(x.label))
+  const nav: Item[] = ([["Go to Articles", "#/objects/articles", "file-text"], ["Go to Content Plans", "#/objects/plans", "list-details"], ["Go to Batches", "#/objects/batches", "stack-2"], ["Go to Review Workspace", "#/objects/reviews", "checklist"], ["Go to Storage", "#/objects/storage", "folders"], ["Go to 3-gate pipeline", "#/workflows", "settings-automation"], ["Go to Dashboards", "#/dashboards", "layout-dashboard"], ["Go to Settings", ctx.can("settings") ? "#/settings/pipeline" : "#/settings/experience", "settings"]] as const).filter(n => m(n[0])).map(([label, h, icon]) => ({ label, run: () => go(h), icon }))
+  if (act.length) groups.push(["Actions", act])
+  if (nav.length) groups.push(["Navigate", nav])
+  const flat = groups.flatMap(g => g[1])
+  // Actions like Add Plan open another panel, so close first and then run.
+  const run = (k: number) => { const item = flat[k]; if (!item) return; ctx.setPanel(null); item.run() }
+  let k = 0
+  return <div className="cmd-overlay" onClick={e => { if (e.target === e.currentTarget) ctx.setPanel(null) }}>
+    <div className="cmd" role="dialog" aria-label={tr("Tìm kiếm", "Search")}>
+      <input autoFocus aria-label={tr("Tìm kiếm", "Search")} placeholder={tr("Tìm bài viết, plan, trang và hành động…", "Search articles, plans, pages and actions…")} value={q} onChange={e => { setQ(e.target.value); setIdx(0) }}
+        onKeyDown={e => { if (e.key === "ArrowDown") { setIdx(i => Math.min(i + 1, flat.length - 1)); e.preventDefault() } if (e.key === "ArrowUp") { setIdx(i => Math.max(i - 1, 0)); e.preventDefault() } if (e.key === "Enter") run(idx); if (e.key === "Escape") ctx.setPanel(null) }} />
+      <div className="cmd-list">{groups.length ? groups.map(([g, items]) => <div key={g}><div className="cmd-grp">{g}</div>{items.map(item => { const n = k++; return <button key={n} className={`cmd-item${n === idx ? " on" : ""}`} onMouseEnter={() => setIdx(n)} onClick={() => run(n)}>{item.av ?? <I n={item.icon!} />}{item.label}{item.hint && <span className="hint">{item.hint}</span>}</button> })}</div>) : <div className="empty-state" style={{ padding: 30 }}>No results</div>}</div>
+    </div>
+  </div>
+}
+
+/* ─── 3-gate pipeline (workflow canvas) ────────────────────────────────── */
+
+function steps(ctx: Ctx) {
+  const s = ctx.settings
+  return [
+    { kind: "Trigger", icon: "bolt", color: "blue", label: "Plan is added", detail: "Content Operator · Add Plan" },
+    { kind: "Action", icon: "stack-2", color: "orange", label: "Auto split batches", detail: `${s.perBatch}/batch · max ${s.maxParallel} parallel` },
+    ...[1, 2, 3].map(g => ({ kind: "Gate " + g, icon: GATES[g - 1].icon, color: GATES[g - 1].color, label: GATES[g - 1].label, detail: `Executor × ${g === 1 ? "N" : 1} → Reviewer → ≥ ${s.threshold}%`, gate: g })),
+    { kind: "Approval", icon: "shield-check", color: "yellow", label: "AI Approval", detail: `Universal QC ≥ ${s.threshold}%`, gate: 4 },
+    { kind: "Parallel", icon: "user-check", color: "green", label: "Human review (sampled)", detail: `${s.reviewSample}% · Approve | Needs Revision` },
+    { kind: "Output", icon: "brand-google-drive", color: "gray", label: "Copy to Docs", detail: "Heading · table · link", gate: 5 },
+  ] as Array<{ kind: string; icon: string; color: string; label: string; detail: string; gate?: number }>
+}
+function PipelineCanvas({ ctx }: { ctx: Ctx }) {
+  const { tr } = useI18n()
+  const open = ctx.panel?.kind === "step" ? ctx.panel.i : null
   return <>
-    <div className="crm-sp-overlay" onClick={onClose} />
-    <aside className="sp" role="dialog" aria-label={titleOf(article)}>
-      <div className="sp-head"><span className="t">{titleOf(article)}</span><AiTag article={article} settings={settings} /><button className="btn ghost" aria-label={tr("Đóng", "Close")} onClick={onClose}><X size={14} /></button></div>
-      <div className="sp-body"><article className="draft-prose draft-rendered" dangerouslySetInnerHTML={{ __html: markdownToHtml(normalizeDraftOutput(article.draft ?? "")) }} /></div>
-      <div className="sp-foot">
-        <label className="fl">{tr("Nhận xét (bắt buộc khi yêu cầu sửa)", "Comment (required for revision)")}<textarea className="inp" value={comment} onChange={e => setComment(e.target.value)} /></label>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button className="btn" onClick={() => go("article", article.id)}>{tr("Mở bài", "Open")}</button>
-          <button className="btn" disabled={saving} onClick={() => void save("needs_revision")}>Request Revision</button>
-          <button className="btn primary" disabled={saving} onClick={() => void save("approved")}>Approve</button>
+    <Header title={<><span className="nav-ico" style={{ background: "#307f52" }}><I n="settings-automation" s={{ fontSize: 11 }} /></span>{tr("Quy trình 3 gate", "3-gate pipeline")} <Tag c="green">Active</Tag></>}
+      actions={<span style={{ display: "flex", gap: 4, alignItems: "center" }}>{GATES.map(g => <Tag key={g.id} c={g.color}>{g.short} · {ctx.list.filter(a => a.status === "running" && a.gate === g.id).length}</Tag>)}</span>} />
+    <div className="card"><div className="canvas">
+      {steps(ctx).map((s, i) => <div key={i} style={{ display: "contents" }}>
+        {i > 0 && <div className="wline" />}
+        <div className={`wnode${open === i ? " on" : ""}`} role="button" tabIndex={0} onClick={() => ctx.setPanel({ kind: "step", i })} onKeyDown={e => { if (e.key === "Enter") ctx.setPanel({ kind: "step", i }) }}>
+          <span className={`wi t-${s.color}`}><I n={s.icon} /></span>
+          <div><div className="wk">{s.kind}</div><div className="wn">{s.label}</div><div style={{ color: "var(--f3)", fontSize: 12 }}>{s.detail}</div></div>
         </div>
-      </div>
-    </aside>
+      </div>)}
+      <div style={{ marginTop: 16, color: "var(--f3)", fontSize: 12 }}><I n="alert-triangle" /> {tr("Gate không có option đạt sau vòng sửa → Failed (No-pass) → Retry từ gate đó", "No passing option after revision → Failed (No-pass) → Retry from that gate")}</div>
+    </div></div>
+  </>
+}
+function StepPanel({ ctx, i }: { ctx: Ctx; i: number }) {
+  const { tr } = useI18n()
+  const s = steps(ctx)[i], st = ctx.settings
+  const gate = s.gate && s.gate <= 3 ? s.gate : null
+  const exec = gate ? stepFiles(ctx, GATES[gate - 1].step).map(f => f.name) : []
+  const info: Record<number, string> = {
+    0: tr("Content Plan gồm danh sách topic, keyword, loại bài và internal link gợi ý.", "A Content Plan lists topics, keywords, article type and suggested internal links."),
+    1: tr("Mỗi bài chạy độc lập. Mỗi batch chạy tối đa maxParallel bài cùng lúc.", "Each article runs independently; each batch runs up to maxParallel articles at a time."),
+    6: tr("Không chặn việc bài hoàn thành. Request Revision chỉ ghi feedback.", "Never blocks completion. Request Revision only records feedback."),
+    7: tr("Copy giữ heading, bảng và link để dán vào Google Docs.", "Copy keeps headings, tables and links for Google Docs."),
+  }
+  const body = gate ? <>
+    <div className="fsec"><I n="package" />&nbsp;Executor package</div><div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{exec.length ? exec.map(d => <Tag key={d} c="blue">{d}</Tag>) : <span style={{ color: "var(--f4)" }}>{tr("Chưa cấp tài liệu nào", "No documents shipped")}</span>}</div>
+    <div className="fsec"><I n="checklist" />&nbsp;Reviewer package</div><div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{reviewerPackage(ctx, gate).map(d => <Tag key={d} c="purple">{d}</Tag>)}</div>
+    <div className="fsec"><I n="adjustments" />&nbsp;Rules</div>
+    <div className="box">
+      <div className="box-row"><div className="grow">Options<div className="s">{gate === 1 ? tr("Core Idea có chấm điểm", "Scored core ideas") : tr(`Đề xuất ${st.options}, hiện tạo 1`, `Proposed ${st.options}, currently 1`)}</div></div>{gate === 1 ? "N" : 1}</div>
+      <div className="box-row"><div className="grow">Threshold<div className="s">{tr("chưa chốt", "not final")}</div></div>{st.threshold}%</div>
+      <div className="box-row"><div className="grow">Revision rounds<div className="s">{tr("chưa bật", "not active")}</div></div>{st.revisionRounds}</div>
+      <div className="box-row"><div className="grow">No-pass Logic<div className="s">{tr("chưa chốt", "not final")}</div></div>{st.noPass}</div>
+    </div>
+  </> : s.gate === 4 ? <>
+    <div className="fsec"><I n="list-check" />&nbsp;Checklist</div>
+    {QC_GROUPS.map(g => <div key={g.key} className="frow"><Tag c="gray">{tr(g.vi, g.en)}</Tag></div>)}
+    <p style={{ color: "var(--f3)" }}>{tr("Điểm = pass 1, warning 0,5, fail 0. Trượt dẫn chứng là chặn cứng.", "Score = pass 1, warning 0.5, fail 0. Unsupported evidence is a hard block.")}</p>
+  </> : <p>{info[i]}</p>
+  return <SidePanel ctx={ctx} title={s.label} icon={<span className={`av t-${s.color}`} style={{ width: 20, height: 20 }}><I n={s.icon} /></span>}>
+    {body}{ctx.can("settings") && <a className="btn" style={{ marginTop: 16 }} href="#/settings/pipeline"><I n="settings" />{tr("Chỉnh trong Settings", "Edit in Settings")}</a>}
+  </SidePanel>
+}
+
+/* ─── dashboard ────────────────────────────────────────────────────────── */
+
+function Dashboard({ ctx }: { ctx: Ctx }) {
+  const { tr, language } = useI18n()
+  const all = ctx.list, done = all.filter(a => a.status === "completed"), scored = all.filter(a => a.score != null)
+  const firstPass = scored.length ? Math.round(scored.filter(a => a.status === "completed").length / scored.length * 100) : 0
+  const Kpi = ({ icon, label, v, sub }: { icon: string; label: string; v: ReactNode; sub: ReactNode }) => <div className="widget"><h4><I n={icon} />{label}</h4><div className="kpi">{v}</div><div className="kpi-sub">{sub}</div></div>
+  const byCol = COLS.map(c => ({ ...c, v: all.filter(c.test).length })), max = Math.max(1, ...byCol.map(c => c.v))
+  const hs = (Object.keys(HUMAN) as HumanStatus[]).map(k => done.filter(a => a.human.status === k).length), tot = Math.max(1, done.length), hcol = ["var(--c-gray)", "var(--c-green)", "var(--c-orange)"]
+  let acc = 0
+  const grad = hs.map((n, i) => { const a0 = acc; acc += n / tot * 360; return `${hcol[i]} ${a0}deg ${acc}deg` }).join(",")
+  const secAvg = QC_GROUPS.map(g => { const r = scored.map(a => { const it = (a.a.qualityReport?.checks ?? []).filter(c => qcGroupOf(c.id) === g.key); return it.length ? it.filter(c => c.status === "pass").length / it.length : null }).filter((v): v is number => v != null); return [language === "vi" ? g.vi : g.en, r.length ? Math.round(r.reduce((x, y) => x + y, 0) / r.length * 100) : 0] as const })
+  return <>
+    <Header title={<><span className="nav-ico" style={{ background: "#b23887" }}><I n="layout-dashboard" s={{ fontSize: 11 }} /></span>Dashboards<span className="crumb">/</span>Pipeline overview</>} />
+    <div className="card"><div className="dash">
+      <Kpi icon="file-text" label="Articles" v={all.length} sub={`${ctx.plans.length} plans · ${ctx.batches.length} batches`} />
+      <Kpi icon="circle-check" label="AI Approved" v={done.length} sub={`${all.filter(a => a.status === "running").length} running`} />
+      <Kpi icon="target-arrow" label="First-pass Approval Rate" v={firstPass + "%"} sub={tr("KPI chính, chưa có baseline", "Main KPI, no baseline yet")} />
+      <Kpi icon="alert-triangle" label="Failed (No-pass)" v={all.filter(a => a.status === "failed").length} sub={tr("Retry từ gate bị lỗi", "Retry from the failed gate")} />
+      <div className="widget w2"><h4><I n="chart-bar" />Articles by gate</h4>{byCol.map(c => <div key={c.key} className="hbar"><span className="lbl">{c.key === "completed" ? "Completed" : c.key === "failed" ? "Failed" : c.key === "queued" ? "Queued" : c.key}</span><span className="track"><span className="fill" style={{ display: "block", width: `${c.v / max * 100}%`, background: `var(--c-${c.color})` }} /></span><span className="v">{c.v}</span></div>)}</div>
+      <div className="widget w2"><h4><I n="chart-donut" />Human review (sampled)</h4><div style={{ display: "flex", alignItems: "center", gap: 24 }}><div className="donut" style={{ background: `conic-gradient(${done.length ? grad : "var(--bg3) 0 360deg"})` }} /><div className="legend">{(Object.keys(HUMAN) as HumanStatus[]).map((k, i) => <div key={k}><span style={{ background: hcol[i] }} />{HUMAN[k][0]} · {hs[i]}</div>)}</div></div></div>
+      <div className="widget w2"><h4><I n="list-check" />Average pass rate by checklist</h4>{secAvg.map(([s, v]) => <div key={s} className="hbar"><span className="lbl" title={s}>{s}</span><span className="track"><span className="fill" style={{ display: "block", width: `${v}%`, background: "var(--accent)" }} /></span><span className="v">{v}%</span></div>)}</div>
+      <div className="widget w2"><h4><I n="trophy" />Top AI scores</h4>{[...done].filter(a => a.score != null).sort((x, y) => (y.score ?? 0) - (x.score ?? 0)).slice(0, 5).map(a => <div key={a.id} className="frow"><a className="rchip" href={`#/object/articles/${enc(a.id)}`}><Av name={a.title} />{a.title}</a><span style={{ marginLeft: "auto" }}><ScoreTag s={a.score} t={ctx.settings.threshold} /></span></div>)}{!done.length && <span style={{ color: "var(--f4)" }}>—</span>}</div>
+    </div></div>
   </>
 }
 
-/* ─── Storage & workflow ───────────────────────────────────────────────── */
+/* ─── settings ─────────────────────────────────────────────────────────── */
 
-const GATE_STEPS: Array<[2 | 3 | 4, string]> = [[2, "G1"], [3, "G2"], [4, "G3"]]
-const STORAGE_GAPS = ["Checklist Gate 1–2", "Quy tắc chỉnh sửa", "Vocabulary Library", "Writing Patterns (bản duyệt)", "Approved Articles"]
-
-function usedAt(file: DocumentFile, config: AppConfig) {
-  return GATE_STEPS.filter(([step]) => { const access = config.stepConfigs[step]?.fileAccess; return access?.kb?.includes(file.id) || access?.rules?.includes(file.id) }).map(([, gate]) => gate)
-}
-
-function StorageView({ files, config, isAdmin, onManage }: { files: DocumentFile[]; config: AppConfig; isAdmin: boolean; onManage: () => void }) {
+function SettingsNav({ ctx, p }: { ctx: Ctx; p: string }) {
   const { tr } = useI18n()
-  const groups: Array<[string, DocumentFile[]]> = [["Knowledge Base", files.filter(f => f.category === "kb")], ["Skills & Rules", files.filter(f => f.category === "rules")]]
-  return <Page title="Storage" actions={isAdmin && <button className="btn" onClick={onManage}><Settings size={14} /><span>{tr("Quản lý tài liệu", "Manage documents")}</span></button>}>
-    <div className="card">
-      <div className="vbar"><span className="muted">{tr("Còn thiếu:", "Open gaps:")}</span>{STORAGE_GAPS.map(gap => <span key={gap} className="tag t-yellow">{gap}</span>)}</div>
-      <div className="tbl-wrap"><table className="tbl">
-        <thead><tr><th className="first">{tr("Tài liệu", "Document")}</th><th>Used at</th><th>{tr("Loại file", "Type")}</th><th>{tr("Cập nhật", "Updated")}</th></tr></thead>
-        <tbody>{groups.map(([label, items]) => <FragmentRows key={label} label={`${label} · ${items.length}`}>
-          {items.map(file => { const gates = usedAt(file, config); return <tr key={file.id} style={{ cursor: "default" }}>
-            <td className="first">{file.name}</td>
-            <td>{gates.length ? gates.map(g => <span key={g} className="tag t-blue" style={{ marginRight: 4 }}>{g}</span>) : <span className="muted">{tr("Chưa cấp cho gate nào", "Not shipped")}</span>}</td>
-            <td className="muted">{file.fileType}</td><td className="muted">{file.contentUpdatedAt ? fmt(file.contentUpdatedAt) : file.uploadedAt}</td>
-          </tr> })}
-        </FragmentRows>)}</tbody>
-      </table></div>
-    </div>
-  </Page>
+  const it = (k: string, icon: string, l: string) => <a key={k} className={`nav-item${p === k ? " on" : ""}`} href={`#/settings/${k}`}><I n={icon} /><span>{l}</span></a>
+  return <nav className="nav" aria-label={tr("Điều hướng chính", "Main navigation")}>
+    <a className="nav-item" href="#/objects/articles"><I n="chevron-left" /><span>Exit Settings</span></a>
+    <div className="nav-sec">User</div>{it("experience", "color-swatch", "Experience")}{it("roles", "lock", "Roles")}
+    {ctx.can("settings") && <><div className="nav-sec">Pipeline</div>{it("pipeline", "git-merge", "Pipeline")}{it("shipper", "truck-delivery", "Shipper")}{it("knowledge", "books", "Knowledge & Rules")}{it("workflow-ai", "robot", "Workflow AI")}{it("models", "cpu", "AI Models")}
+      <div className="nav-sec">Media</div>{it("image-workers", "photo", tr("Worker tạo ảnh", "Image Workers"))}{it("image-styles", "palette", "Image Styles")}</>}
+    <div className="nav-foot"><button className="nav-item" onClick={ctx.onSignOut}><I n="logout" /><span>Logout</span></button></div>
+  </nav>
 }
-function FragmentRows({ label, children }: { label: string; children: ReactNode }) {
-  return <><tr className="grp"><td colSpan={4}>{label}</td></tr>{children}</>
-}
+const Sec = ({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) => <section><h2>{title}</h2>{desc ? <p className="desc">{desc}</p> : <div style={{ height: 12 }} />}{children}</section>
 
-function WorkflowView({ config, files, settings }: { config: AppConfig; files: DocumentFile[]; settings: PipelineSettings }) {
-  const { tr } = useI18n()
-  const [open, setOpen] = useState<string | null>(null)
-  const model = (step: number) => config.models.find(m => m.id === config.stepConfigs[step]?.modelId)?.name ?? "—"
-  const docs = (step: number) => { const access = config.stepConfigs[step]?.fileAccess; return files.filter(f => access?.kb?.includes(f.id) || access?.rules?.includes(f.id)) }
-  const nodes: Array<{ key: string; kind: string; name: string; detail: string; step?: number }> = [
-    { key: "plan", kind: "Trigger", name: "Add Plan", detail: tr("Import topic từ Content Plan", "Import topics from a content plan") },
-    { key: "batch", kind: "Scheduler", name: "Auto Split Batches", detail: tr(`Batch theo cỡ chọn khi tạo · ${settings.maxParallel} bài song song`, `Batch size chosen at creation · ${settings.maxParallel} in parallel`) },
-    { key: "g1", kind: "Gate 1", name: "Research/Topic", detail: `${model(2)} · ${docs(2).length} ${tr("tài liệu", "docs")}`, step: 2 },
-    { key: "g2", kind: "Gate 2", name: "Outline", detail: `${model(3)} · ${docs(3).length} ${tr("tài liệu", "docs")}`, step: 3 },
-    { key: "g3", kind: "Gate 3", name: "Final Article", detail: `${model(4)} · ${docs(4).length} ${tr("tài liệu", "docs")}`, step: 4 },
-    { key: "ai", kind: "Reviewer", name: "AI Approval", detail: `Universal QC · ${tr("ngưỡng", "threshold")} ${settings.threshold}%` },
-    { key: "human", kind: "Human", name: "Human review", detail: tr(`Song song, không chặn · mẫu ${settings.reviewSample}%`, `Parallel, non-blocking · ${settings.reviewSample}% sample`) },
-  ]
-  const node = nodes.find(n => n.key === open)
-  return <Page title={tr("Quy trình 3 gate", "3-gate workflow")}>
-    <div className="card"><div className="canvas">
-      {nodes.map((n, index) => <div key={n.key} style={{ display: "contents" }}>
-        {index > 0 && <div className="wline" />}
-        <button className={`wnode${open === n.key ? " on" : ""}`} onClick={() => setOpen(open === n.key ? null : n.key)}>
-          <span className="wi">{n.step ? <GitBranch size={16} /> : <Command size={16} />}</span>
-          <span><span className="wk">{n.kind}</span><br /><span className="wn">{n.name}</span><br /><span className="muted">{n.detail}</span></span>
-        </button>
-      </div>)}
-      {node && <div className="note" style={{ marginTop: 24, maxWidth: 520 }}>
-        <b style={{ fontWeight: 600 }}>{node.kind} · {node.name}</b>
-        {node.step ? <>
-          <p style={{ margin: "6px 0" }}>{tr("Executor package (Shipper):", "Executor package (Shipper):")} {docs(node.step).map(f => f.name).join(", ") || "—"}</p>
-          <p style={{ margin: 0 }} className="muted">{tr(`Đề xuất ${settings.options} option/gate, ${settings.revisionRounds} vòng sửa. Bản chạy thử hiện tạo option theo cách của Writer Studio (G1 nhiều ý tưởng có điểm; G2, G3 một bản).`, `Proposed ${settings.options} options/gate, ${settings.revisionRounds} revision round. The trial currently generates options the existing way (G1 scored ideas; G2, G3 single output).`)}</p>
-        </> : <p style={{ margin: "6px 0 0" }}>{node.detail}</p>}
-      </div>}
-    </div></div>
-  </Page>
-}
-
-/* ─── Dashboard ────────────────────────────────────────────────────────── */
-
-function DashboardView({ articles, settings }: { articles: Article[]; settings: PipelineSettings }) {
-  const { tr } = useI18n()
-  const rate = firstPassApprovalRate(articles, settings)
-  const byStage = PIPELINE_STAGES.map(stage => [STAGE_META[stage].label, articles.filter(a => articleStage(a) === stage).length] as const)
-  const reviewed = articles.filter(a => a.draft?.trim())
-  const human = [["Not Reviewed", reviewed.filter(a => humanReviewStatus(a) === "not_reviewed").length], ["Approved", reviewed.filter(a => humanReviewStatus(a) === "approved").length], ["Needs Revision", reviewed.filter(a => humanReviewStatus(a) === "needs_revision").length]] as const
-  const failCounts = new Map<string, number>()
-  for (const a of articles) for (const check of a.qualityReport?.checks ?? []) if (check.status === "fail") failCounts.set(check.label, (failCounts.get(check.label) ?? 0) + 1)
-  const topFails = [...failCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
-  const cost = articles.reduce((sum, a) => sum + Object.values(a.aiUsageByStep ?? {}).flat().reduce((s, call) => s + (call?.costUsd ?? 0), 0), 0)
-  const bars = (rows: ReadonlyArray<readonly [string, number]>) => { const max = Math.max(1, ...rows.map(([, v]) => v)); return rows.map(([label, value]) =>
-    <div key={label} className="hbar"><span className="lbl" title={label}>{label}</span><span className="track"><span className="fill" style={{ width: `${(value / max) * 100}%`, display: "block" }} /></span><span className="v">{value}</span></div>) }
-  return <Page title="Dashboard">
-    <div className="card"><div className="dash">
-      <div className="widget"><h4>First-pass Approval Rate</h4><div className="kpi">{rate === null ? "—" : `${rate}%`}</div><div className="kpi-sub">{tr("Ngưỡng", "Threshold")} {settings.threshold}%</div></div>
-      <div className="widget"><h4>{tr("Tổng bài", "Articles")}</h4><div className="kpi">{articles.length}</div><div className="kpi-sub">{byStage.find(([l]) => l === "Completed")?.[1]} completed</div></div>
-      <div className="widget"><h4>Needs Revision</h4><div className="kpi">{human[2][1]}</div><div className="kpi-sub">{human[1][1]} approved</div></div>
-      <div className="widget"><h4>{tr("Chi phí AI", "AI cost")}</h4><div className="kpi">${cost.toFixed(2)}</div><div className="kpi-sub">{tr("theo usage đã ghi", "from recorded usage")}</div></div>
-      <div className="widget w2"><h4>{tr("Bài theo gate", "Articles by gate")}</h4>{bars(byStage)}</div>
-      <div className="widget w2"><h4>Human review</h4>{bars(human)}</div>
-      <div className="widget w4"><h4>{tr("Tiêu chí trượt nhiều nhất", "Most failed criteria")}</h4>{topFails.length ? bars(topFails) : <span className="muted">{tr("Chưa có dữ liệu", "No data yet")}</span>}</div>
-    </div></div>
-  </Page>
-}
-
-/* ─── Settings ─────────────────────────────────────────────────────────── */
-
-function SettingsView(props: Props & { settings: PipelineSettings; isAdmin: boolean }) {
-  const { tr } = useI18n()
-  const [draft, setDraft] = useState(props.settings)
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { setDraft(props.settings) }, [JSON.stringify(props.settings)])
-  const num = (key: keyof PipelineSettings, label: string, min: number, max: number, hint?: string) =>
-    <label className="fl">{label}<input className="inp" type="number" min={min} max={max} disabled={!props.isAdmin} value={Number(draft[key])}
-      onChange={e => setDraft(d => ({ ...d, [key]: Math.max(min, Math.min(max, Number(e.target.value) || min)) }))} />{hint && <span>{hint}</span>}</label>
-  const save = async () => {
-    setSaving(true)
-    try { await props.onSavePipeline(draft); notifyWorkspace(tr("Đã lưu cài đặt pipeline.", "Pipeline settings saved."), "success") }
-    catch (error) { notifyWorkspace(error instanceof Error ? error.message : String(error), "error") }
-    finally { setSaving(false) }
+function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
+  const { tr, language, setLanguage } = useI18n()
+  const admin = ["pipeline", "shipper", "knowledge", "workflow-ai", "models", "image-workers", "image-styles"]
+  if (admin.includes(p) && !ctx.can("settings")) return <Forbidden />
+  const titles: Record<string, string> = { experience: "Experience", roles: "Roles", pipeline: "Pipeline", shipper: "Shipper", knowledge: "Knowledge & Rules", "workflow-ai": "Workflow AI", models: "AI Models", "image-workers": tr("Worker tạo ảnh", "Image Workers"), "image-styles": "Image Styles" }
+  const st = ctx.settings
+  const savePipeline = async (patch: Partial<PipelineSettings>) => { try { await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...st, ...patch } }, ctx.files, false); toast("Saved") } catch (err) { toast(errText(err)) } }
+  const numField = (k: keyof PipelineSettings, label: string, min: number, max: number) =>
+    <label className="fl">{label}<input className="inp" type="number" min={min} max={max} defaultValue={Number(st[k])} onBlur={e => { const v = Math.max(min, Math.min(max, +e.target.value || min)); e.target.value = String(v); if (v !== st[k]) void savePipeline({ [k]: v }) }} onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }} /></label>
+  let body: ReactNode
+  if (p === "experience") {
+    const card = (k: ThemePreference, l: string, bg: string, fg: string) => <button key={k} className={`theme-card${ctx.themePreference === k ? " on" : ""}`} onClick={() => ctx.onThemeChange(k)}><div className="pv" style={{ background: bg }}><i style={{ width: "60%", background: fg }} /><i style={{ width: "80%", background: fg, opacity: .5 }} /><i style={{ width: "40%", background: fg, opacity: .5 }} /></div>{l}</button>
+    body = <>
+      <Sec title="Appearance" desc="Choose how the app looks"><div className="theme-cards">{card("light", "Light", "#fff", "#ccc")}{card("dark", "Dark", "#1b1b1b", "#555")}{card("system", "System settings", "linear-gradient(90deg,#fff 50%,#1b1b1b 50%)", "#888")}</div></Sec>
+      <Sec title="Language" desc="Select your preferred language"><select className="inp" style={{ maxWidth: 300 }} value={language} onChange={e => setLanguage(e.target.value as typeof language)}><option value="vi">Tiếng Việt</option><option value="en">English</option></select></Sec>
+      <Sec title={tr("Giao diện cũ", "Classic UI")} desc={tr("Tạm giữ trong thời gian chạy thử.", "Kept during the trial.")}><button className="btn" onClick={ctx.onSwitchClassic}><I n="arrow-back-up" />{tr("Chuyển về giao diện cũ", "Switch to classic UI")}</button></Sec>
+    </>
   }
-  const themes: Array<[ThemePreference, string, ReactNode]> = [["light", "Light", <Sun size={14} />], ["dark", "Dark", <Moon size={14} />], ["system", "System", <Monitor size={14} />]]
-  return <Page title={tr("Cài đặt", "Settings")}>
-    <div className="card"><div className="set"><div className="set-inner">
-      <section>
-        <h2>Experience</h2><p className="desc">{tr("Giao diện", "Appearance")}</p>
-        <div className="seg" role="group">{themes.map(([key, label, icon]) => <button key={key} className={props.themePreference === key ? "on" : ""} aria-pressed={props.themePreference === key} onClick={() => props.onThemeChange(key)}>{icon} {label}</button>)}</div>
-      </section>
-      <section>
-        <h2>Pipeline</h2>
-        <p className="desc">{tr("Giá trị tạm cho bản chạy thử (spec mục 8). Đổi khi team chốt.", "Provisional trial values (spec §8). Change when the team decides.")}{!props.isAdmin && ` ${tr("Chỉ Admin được sửa.", "Admins only.")}`}</p>
-        <div className="grid2">
-          {num("threshold", tr("Ngưỡng AI Approval (%)", "AI approval threshold (%)"), 50, 100, tr("Đang áp dụng", "Active"))}
-          {num("maxParallel", tr("Bài chạy song song trong batch", "Articles in parallel per batch"), 1, 5, tr("Đang áp dụng", "Active"))}
-          {num("reviewSample", tr("Tỉ lệ review ngẫu nhiên (%)", "Random review rate (%)"), 0, 100, tr("Đang áp dụng", "Active"))}
-          {num("perBatch", tr("Số bài mỗi batch (đề xuất)", "Articles per batch (proposed)"), 1, 20, tr("Hiện chọn khi tạo batch", "Chosen when creating a batch"))}
-          {num("options", tr("Số option mỗi gate (đề xuất)", "Options per gate (proposed)"), 1, 5, tr("Chưa bật ở G2, G3", "Not active for G2, G3 yet"))}
-          {num("revisionRounds", tr("Số vòng sửa (đề xuất)", "Revision rounds (proposed)"), 0, 3, tr("Chưa bật", "Not active yet"))}
-          <label className="fl">No-pass Logic<select className="inp" disabled={!props.isAdmin} value={draft.noPass} onChange={e => setDraft(d => ({ ...d, noPass: e.target.value as PipelineSettings["noPass"] }))}>
-            <option value="best-flagged">{tr("Lấy option tốt nhất, gắn cờ", "Take best option, flag it")}</option>
-            <option value="fail">{tr("Dừng ở Failed, chờ người", "Stop as Failed, wait for a person")}</option>
-          </select><span>{tr("Chưa bật", "Not active yet")}</span></label>
-        </div>
-        {props.isAdmin && <div style={{ marginTop: 12 }}><button className="btn primary" disabled={saving} onClick={() => void save()}>{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu", "Save")}</button></div>}
-      </section>
-      {props.isAdmin && <section>
-        <h2>{tr("Nâng cao", "Advanced")}</h2><p className="desc">Workflow AI, AI Models, Knowledge & Rules, Worker tạo ảnh, Image Styles</p>
-        <button className="btn" onClick={props.onOpenAdvancedSettings}><Settings size={14} /> {tr("Mở cài đặt nâng cao", "Open advanced settings")}</button>
-      </section>}
-    </div></div></div>
-  </Page>
+  if (p === "roles") body = <Sec title="All roles" desc={tr("Vai trò do Admin cấp trong hệ thống. Reviewer chưa tách riêng: mọi tài khoản đều review được.", "Roles are assigned by an admin. Reviewer is not separate yet: every account can review.")}><div className="box">{(Object.keys(ROLES) as Array<keyof typeof ROLES>).map(k => {
+    const r = ROLES[k], current = (ctx.isAdmin ? "admin" : "operator") === k
+    return <div key={k} className="box-row"><I n={k === "admin" ? "lock-open" : k === "reviewer" ? "checklist" : "user"} /><div className="grow">{r.name}<div className="s">{r.desc}</div></div>{current ? <Tag c="blue">Current</Tag> : k === "reviewer" ? <Tag c="orange">{tr("chưa có", "not yet")}</Tag> : null}</div>
+  })}</div></Sec>
+  if (p === "pipeline") body = <>
+    <Sec title="Scoring" desc={tr("Score là tỉ lệ % tiêu chí đạt (warning tính nửa). Các giá trị dưới đây chưa chốt.", "Score is the % of criteria met (warnings count half). Values below are not final.")}><div className="row2">{numField("threshold", "Threshold (%)", 50, 100)}{numField("options", tr("Options per gate (chưa bật ở G2, G3)", "Options per gate (not active for G2, G3)"), 1, 5)}{numField("revisionRounds", tr("Max revision rounds (chưa bật)", "Max revision rounds (not active)"), 0, 3)}</div></Sec>
+    <Sec title="Batches" desc={tr("Áp dụng cho plan mới.", "Applies to new plans.")}><div className="row2">{numField("perBatch", "Articles per batch", 1, 20)}{numField("maxParallel", "Parallel articles / batch", 1, 5)}{numField("reviewSample", "Random review (%)", 0, 100)}</div></Sec>
+    <Sec title="No-pass Logic" desc={tr("Khi không option nào đạt, kể cả sau vòng sửa. Chưa bật: hiện bài trượt AI Review được đánh dấu Failed.", "When no option passes, even after revision. Not active: articles failing AI Review are marked Failed.")}><select className="inp" style={{ maxWidth: 420 }} value={st.noPass} onChange={e => void savePipeline({ noPass: e.target.value as PipelineSettings["noPass"] })}><option value="fail">Stop at Failed and wait for a person</option><option value="best-flagged">Take the best option with a warning flag</option></select></Sec>
+    <Sec title="Capacity" desc={tr("Mục tiêu 30 bài/ngày.", "Target: 30 articles/day.")}><div className="box"><div className="box-row"><div className="grow">T = 24h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 24 * 60 / 30)} min / article</div><div className="box-row"><div className="grow">T = 8h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 8 * 60 / 30)} min / article</div></div></Sec>
+    <Sec title="Illustrations"><div className="box"><div className="box-row"><div className="grow">{tr("Giữ bước ảnh minh họa trong pipeline", "Keep the illustration step in the pipeline")}<div className="s">{tr("Cần chốt", "Pending decision")}</div></div><button role="switch" aria-checked={st.keepImages} aria-label="Illustrations" className={`toggle${st.keepImages ? " on" : ""}`} onClick={() => void savePipeline({ keepImages: !st.keepImages })} /></div></div></Sec>
+  </>
+  if (p === "shipper") body = <Sec title="Shipper mapping" desc={tr("Gate nào lấy tài liệu nào. Không bao giờ nạp cả thư viện.", "Which gate gets which documents. Never the whole library.")}><div className="box"><table className="tbl" style={{ width: "100%" }}><thead><tr><th style={{ position: "static" }}>Document</th>{["G1", "G2", "G3"].map(g => <th key={g} style={{ position: "static", textAlign: "center" }}>{g}</th>)}</tr></thead><tbody>
+    {ctx.docs.filter(d => d.file).map(d => <tr key={d.id}><td>{d.name} <span className="muted">· {d.g}</span></td>{[1, 2, 3].map(g => <td key={g} style={{ textAlign: "center" }}><button role="switch" aria-checked={d.used.includes(g)} aria-label={`${d.name} G${g}`} className={`toggle${d.used.includes(g) ? " on" : ""}`} style={{ display: "inline-block" }} onClick={() => void ctx.onSaveConfig(toggleShip(ctx.config, d.file!, g), ctx.files, false).then(() => toast("Saved")).catch(err => toast(errText(err)))} /></td>)}</tr>)}
+  </tbody></table></div></Sec>
+  if (["knowledge", "workflow-ai", "models", "image-workers", "image-styles"].includes(p)) body = <EmbeddedSettings ctx={ctx} p={p} />
+  if (!body) body = <div className="empty-state"><I n="ghost" /><h3>Page not found</h3></div>
+  return <>
+    <Header title={<><I n="settings" /><span className="crumb">Settings</span><span className="crumb">/</span>{titles[p] ?? ""}</>} />
+    <div className="card"><div className="set"><div className="set-inner" style={["knowledge", "workflow-ai", "models", "image-styles"].includes(p) ? { maxWidth: 1040 } : undefined}><h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{titles[p] ?? ""}</h1>{body}</div></div></div>
+  </>
 }
 
-/* ─── Command menu ─────────────────────────────────────────────────────── */
-
-function CommandMenu(props: Props & { onClose: () => void }) {
+/** The existing configuration editors, saved through the same handler as the classic settings dialog. */
+function EmbeddedSettings({ ctx, p }: { ctx: Ctx; p: string }) {
   const { tr } = useI18n()
-  const [query, setQuery] = useState("")
-  const [index, setIndex] = useState(0)
-  const q = query.trim().toLowerCase()
-  const items: Array<{ group: string; label: string; hint?: string; run: () => void }> = [
-    { group: tr("Thao tác", "Actions"), label: tr("Thêm Plan", "Add Plan"), run: () => go("new") },
-    ...(["articles", "plans", "batches", "review", "workflow", "dashboard", "settings"] as View[]).map(view => ({ group: tr("Đi tới", "Go to"), label: view[0].toUpperCase() + view.slice(1), run: () => go(view) })),
-    { group: tr("Thao tác", "Actions"), label: tr("Đổi theme sáng/tối", "Toggle theme"), run: () => props.onThemeChange(props.themePreference === "dark" ? "light" : "dark") },
-    { group: tr("Thao tác", "Actions"), label: tr("Chuyển sang giao diện cũ", "Switch to classic UI"), run: props.onSwitchClassic },
-    ...props.articles.map(a => ({ group: tr("Bài viết", "Articles"), label: titleOf(a), hint: STAGE_META[articleStage(a)].label, run: () => go("article", a.id) })),
-    ...props.contentPlans.map(p => ({ group: "Plans", label: p.name, run: () => go("plan", p.id) })),
-  ].filter(item => !q || item.label.toLowerCase().includes(q)).slice(0, 40)
-  useEffect(() => setIndex(0), [query])
-  const run = (i: number) => { items[i]?.run(); props.onClose() }
-  return <div className="cmd-overlay" onClick={props.onClose}>
-    <div className="cmd" role="dialog" aria-label={tr("Tìm kiếm", "Search")} onClick={e => e.stopPropagation()}>
-      <input autoFocus placeholder={tr("Tìm bài, plan hoặc thao tác…", "Search articles, plans or actions…")} value={query} onChange={e => setQuery(e.target.value)}
-        onKeyDown={e => { if (e.key === "Escape") props.onClose(); if (e.key === "ArrowDown") { e.preventDefault(); setIndex(i => Math.min(items.length - 1, i + 1)) } if (e.key === "ArrowUp") { e.preventDefault(); setIndex(i => Math.max(0, i - 1)) } if (e.key === "Enter") run(index) }} />
-      <div className="cmd-list" role="listbox">{items.map((item, i) => <div key={i}>
-        {(i === 0 || items[i - 1].group !== item.group) && <div className="cmd-grp">{item.group}</div>}
-        <button role="option" aria-selected={i === index} className={`cmd-item${i === index ? " on" : ""}`} onMouseEnter={() => setIndex(i)} onClick={() => run(i)}>{item.label}{item.hint && <span className="hint">{item.hint}</span>}</button>
-      </div>)}{!items.length && <div className="cmd-grp">{tr("Không có kết quả", "No results")}</div>}</div>
-    </div>
+  const [config, setConfig] = useState(ctx.config)
+  const [files, setFiles] = useState(ctx.files)
+  const [saving, setSaving] = useState(false)
+  const dirty = config !== ctx.config || files !== ctx.files
+  const save = async () => { setSaving(true); try { await ctx.onSaveConfig(config, files, files !== ctx.files); toast("Saved") } catch (err) { toast(errText(err)) } finally { setSaving(false) } }
+  const railway = config.railwayUrl
+  return <div className="crm-embedded">
+    {p === "workflow-ai" && <TabStepSetup config={config} files={files} articles={ctx.articles} onChange={setConfig} />}
+    {p === "models" && <TabModels config={config} onChange={setConfig} />}
+    {p === "knowledge" && <TabKnowledgeBase files={files} onChange={setFiles} railwayUrl={railway} config={config} onConfigChange={setConfig} />}
+    {p === "image-workers" && <ImageWorkersSettings railwayUrl={railway} />}
+    {p === "image-styles" && <ImageStylesSettings railwayUrl={railway} />}
+    {["workflow-ai", "models", "knowledge"].includes(p) && <div style={{ position: "sticky", bottom: 0, display: "flex", justifyContent: "flex-end", padding: "12px 0", background: "var(--bg1)" }}>
+      <button className="btn primary" disabled={!dirty || saving} onClick={() => void save()}><I n="device-floppy" />{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</button>
+    </div>}
   </div>
 }
