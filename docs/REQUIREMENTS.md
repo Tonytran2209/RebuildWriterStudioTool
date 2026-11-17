@@ -10,12 +10,12 @@
 | Tool | Writer Studio (repo `Tonytran2209/RebuildWriterStudioTool`) |
 | `toolSlug` | `writer-studio` |
 | Main Job (`jobName`) | `Writer article` — dùng hằng `ARTICLE_JOB` trong `backend/batchSteps.ts` |
-| Đơn vị đo (1 run) | 1 bài viết SEO hoàn chỉnh kèm ảnh AI minh họa |
-| `workload` mặc định | `1 article` (có thể kèm số ảnh, vd. `1 article / 3 images`) |
+| Đơn vị đo (1 run) | 1 bài viết SEO hoàn chỉnh |
+| `workload` mặc định | `1 article` |
 
 **Trong phạm vi**
 - Chạy batch (`runBatchArticle` trong `backend/index.ts`) và chạy từng bước (single) — cả hai đều báo về cùng Main Job.
-- 11 sub-jobs (stages) bên dưới, bao gồm các bước ảnh chạy trong worker (`backend/imageWorkers.ts`).
+- 6 sub-jobs (stages) bên dưới. Các bước ảnh đã bị gỡ khỏi sản phẩm (2026-11-18).
 - Ghi nhận cả run thành công và run lỗi (kèm stage lỗi).
 
 **Ngoài phạm vi**
@@ -23,7 +23,7 @@
 - Thay thế hệ thống ghi nhận nội bộ hiện có (`recordRun`, `batchStepRuns`, AI Agent Lab `labProfile`) — telemetry chạy **song song**, không thay thế.
 - Đo KPI phía trình duyệt (ui-kpi-v2) — chỉ nhận giá trị nếu đã có, không đo mới.
 
-## 2. Danh sách 11 stages
+## 2. Danh sách 6 stages
 
 Mã `code` = `BatchStepKey`; `name` = `batchStepLabels[key]` (không nhân bản chuỗi, import từ `batchSteps.ts`).
 
@@ -35,11 +35,6 @@ Mã `code` = `BatchStepKey`; `name` = `batchStepLabels[key]` (không nhân bản
 | 4 | `outline` | Lập outline | Outline Generation | batch runner |
 | 5 | `draft` | Viết draft | Draft Writing | batch runner |
 | 6 | `quality` | Kiểm tra chất lượng | Quality Check | batch runner |
-| 7 | `imageStyleSave` | Lưu phong cách ảnh | Save Image Style | imageWorkers |
-| 8 | `imageStyleApprove` | Duyệt phong cách ảnh | Approve Image Style | imageWorkers |
-| 9 | `imageStyleSync` | Đồng bộ thư viện ảnh | Sync Image Library | imageWorkers |
-| 10 | `imageGenerate` | Tạo ảnh minh họa | Generate Illustration | imageWorkers (hàng đợi) |
-| 11 | `imageInsert` | Chèn ảnh vào bài | Insert Image into Draft | imageWorkers |
 
 Đề xuất: thêm `batchStepLabelsEn: Record<BatchStepKey, string>` vào `batchSteps.ts` để TypeScript bắt thiếu key.
 

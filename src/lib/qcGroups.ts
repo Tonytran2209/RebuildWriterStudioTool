@@ -15,9 +15,6 @@ export const QC_LABELS_VI: Record<string, string> = {
   'link-correctness': 'Internal link đã được duyệt',
   'internal-link-budget': 'Số lượng internal link',
   'internal-link-distribution': 'Internal link rải đều các mục',
-  'image-purpose-duplication': 'Ảnh không trùng mục đích',
-  'image-section-length': 'Ảnh chỉ đặt sau mục đủ dài',
-  'image-evidence-boundary': 'Ảnh không thay thế dẫn chứng',
   'evidence-mapping': 'Dẫn chứng đúng mục outline',
   'conclusion-word-budget': 'Độ dài phần kết',
   'intent-satisfied': 'Đáp ứng search intent',
@@ -32,12 +29,10 @@ export const QC_GROUPS = [
   { key: 'structure', vi: 'Cấu trúc & độ dài', en: 'Structure & length' },
   { key: 'seo', vi: 'SEO & liên kết', en: 'SEO & links' },
   { key: 'content', vi: 'Nội dung & dẫn chứng', en: 'Content & evidence' },
-  { key: 'images', vi: 'Hình ảnh', en: 'Images' },
   { key: 'checklist', vi: 'SEO checklist', en: 'SEO checklist' },
 ] as const;
 export function qcGroupOf(id: string): typeof QC_GROUPS[number]['key'] {
   if (id === 'checklist-compliance') return 'checklist';
-  if (id.startsWith('image-')) return 'images';
   if (['introduction-word-budget', 'outline-structure', 'outline-fidelity', 'complete-structure', 'duplicate-headings', 'word-budget', 'single-conclusion', 'placeholders', 'conclusion-word-budget'].includes(id)) return 'structure';
   if (['primary-query', 'title-keyword', 'keyword-naturalness', 'must-cover', 'intent-satisfied', 'link-correctness'].includes(id) || id.startsWith('internal-link')) return 'seo';
   return 'content';

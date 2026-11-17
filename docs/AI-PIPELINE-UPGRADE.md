@@ -181,7 +181,7 @@ Mức độ: ✅ đã có · 🟡 có một phần · ❌ chưa có.
 | Approved Articles có cờ người duyệt | Chưa có | ❌ | — |
 | Meta title, meta description | Chưa có | ❌ | Prototype xuất kèm bài |
 | Copy sang Google Docs giữ heading, bảng, link | Có | ✅ | `formatDraftExport`, `markdownToHtml` |
-| Ảnh minh họa | Có (image worker) | ✅ | BA doc không nhắc đến. Cần quyết định có giữ trong pipeline 3 gate không |
+| Ảnh minh họa | Đã gỡ (2026-11-18) | — | Tạm bỏ theo yêu cầu; có thể làm lại khi chốt quyết định 8 |
 | Monitoring và telemetry theo sub-job | Có 11 sub-job | ✅ | `batchSteps.ts`, `telemetry.ts`. Sẽ phải khai báo lại theo gate |
 
 ## 6. Các thay đổi cần thiết
@@ -306,7 +306,7 @@ Queued (batch đang chờ) → G1 (chưa chọn Core Idea) → G2 (đã chọn, 
 
 ### Giao diện
 
-Cập nhật 2026-11-17: giao diện chép đúng `pipeline-crm.html` (CSS sinh từ demo, icon Tabler, theme Light mặc định). Add Plan là side panel như demo: dán topic, chọn số bài/batch, số bài song song và cấu trúc outline (bắt buộc), rồi app import plan, phân loại type, chia batch và chạy từng batch (kể cả plan 1 topic). Settings dùng nav riêng của demo và nhúng trực tiếp các trình chỉnh sửa hiện có (Workflow AI, AI Models, Knowledge & Rules, Worker tạo ảnh, Image Styles). Shipper và "Used at" trong Storage sửa thẳng quyền file theo gate (`stepConfigs[2..4].fileAccess`). Review panel có công tắc Approved Article (`article.approvedArticle`), đếm vào Storage › Approved Articles.
+Cập nhật 2026-11-17: giao diện chép đúng `pipeline-crm.html` (CSS sinh từ demo, icon Tabler, theme Light mặc định). Add Plan là side panel như demo: dán topic, chọn số bài/batch, số bài song song và cấu trúc outline (bắt buộc), rồi app import plan, phân loại type, chia batch và chạy từng batch (kể cả plan 1 topic). Settings dùng nav riêng của demo và nhúng trực tiếp các trình chỉnh sửa hiện có (Workflow AI, AI Models, Knowledge & Rules, ). Shipper và "Used at" trong Storage sửa thẳng quyền file theo gate (`stepConfigs[2..4].fileAccess`). Review panel có công tắc Approved Article (`article.approvedArticle`), đếm vào Storage › Approved Articles.
 
 
 Giao diện CRM (`src/crm/`) là mặc định. Gồm: Bài viết (Table/Kanban theo gate), Content Plans, Batches, Review Workspace, Storage (Used at theo G1–G3, danh sách tài liệu còn thiếu), Quy trình 3 gate, Dashboard (First-pass Approval Rate, bài theo gate, human review, tiêu chí trượt nhiều nhất, chi phí AI), Cài đặt và ⌘K. Ba bước cũ nằm trong tab "Chế độ thủ công" của trang bài viết. Nút "Giao diện cũ" chuyển về sidebar cũ, lưu theo trình duyệt.
@@ -334,8 +334,8 @@ Giao diện cũ (sidebar, launcher, 3 bước Core Idea/Outline/Draft dạng cũ
 | Storage 5 nhóm, Used at, Shipper | **Chạy thật (quyền file theo gate)** | Nhóm suy ra từ tên file; type A/B/C/ED chưa lọc riêng |
 | Dashboard, Timeline, Generation History | **Chạy thật** | History chỉ có option của G1 |
 | Settings: Pipeline (threshold, maxParallel, mẫu review) | **Chạy thật** | |
-| Settings: số option G2/G3, vòng sửa, No-pass Logic, giữ bước ảnh, perBatch tự xếp lịch nhiều batch | **Để sẵn** | Chờ quyết định mục 8 |
+| Settings: số option G2/G3, vòng sửa, No-pass Logic, perBatch tự xếp lịch nhiều batch | **Để sẵn** | Chờ quyết định mục 8 |
 | Meta title/description, Key takeaways, FAQ, author bio | **Để sẵn** | Chờ chốt mâu thuẫn mục 7 |
 | Checklist Gate 1–2, Quy tắc chỉnh sửa, Vocabulary, Writing Patterns | **Chờ tài liệu** | Hiện "Missing" trong Storage; upload vào Knowledge & Rules với tên chứa "Gate 1", "chỉnh sửa", "Vocab", "Writing Pattern" là hệ thống nhận |
-| Gợi ý và chèn ảnh minh hoạ | **Tạm ngưng trên giao diện** | Chỉ có ở Step 4 cũ (client); batch chưa bao giờ tạo ảnh. Worker ảnh và Image Styles vẫn chạy; chờ quyết định 8 |
+| Gợi ý ảnh, worker tạo ảnh, thư viện style ảnh | **Đã gỡ khỏi mã nguồn (2026-11-18)** | Bảng `writer_studio.image_*` (nếu đã tạo) vẫn còn trong Postgres, không còn code đọc |
 | Lịch sử phiên bản, AI log, SEO brief của 3 bước cũ | **Đã gỡ cùng giao diện cũ** | Dữ liệu vẫn lưu trong bài |

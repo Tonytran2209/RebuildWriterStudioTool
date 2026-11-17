@@ -48,7 +48,7 @@ function fingerprint(value: unknown) {
   for (let index = 0; index < text.length; index++) { hash ^= text.charCodeAt(index); hash = Math.imul(hash, 16777619); }
   return (hash >>> 0).toString(16);
 }
-// Approved image placeholders are layout metadata stored alongside Markdown prose.
+// Placeholders left by the removed image step stay in some saved drafts; they are not prose.
 export function draftWithoutImagePlaceholders(draft: string): string {
   return draft.replace(/(?:^|\r?\n\r?\n)[ \t]*!\[[^\r\n]*\]\(image-placeholder:\/\/[^)\s]+\)[ \t]*(?=\r?\n|$)/g, '');
 }

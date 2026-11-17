@@ -1,4 +1,3 @@
-import { imageWorkerApi, imageWorkerRunner } from "./imageWorkers.ts"
 import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
 import { rerunPatch, type RerunGate } from "../src/lib/pipeline.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
@@ -231,8 +230,6 @@ app.use("/api", async (req: AuthenticatedRequest, res, next) => {
   }
 })
 
-app.use("/internal/image-worker", imageWorkerRunner)
-app.use("/api/image-workers", imageWorkerApi)
 app.post("/api/monitoring/ui-sample", monitoring.browserSample)
 
 const ARTICLE_PREFIX = "writer:article:"

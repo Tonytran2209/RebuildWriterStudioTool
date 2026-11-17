@@ -28,11 +28,6 @@ export const STAGE_CONFIG: Record<BatchStepKey, { nameEn: string }> = {
   outline: { nameEn: "Outline Generation" },
   draft: { nameEn: "Draft Writing" },
   quality: { nameEn: "Quality Check" },
-  imageStyleSave: { nameEn: "Save Image Style" },
-  imageStyleApprove: { nameEn: "Approve Image Style" },
-  imageStyleSync: { nameEn: "Sync Image Library" },
-  imageGenerate: { nameEn: "Generate Illustration" },
-  imageInsert: { nameEn: "Insert Image into Draft" },
 };
 
 const TOOL_SLUG = "writer-studio";

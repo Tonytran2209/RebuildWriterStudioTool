@@ -9,14 +9,15 @@ import { markdownToHtml, normalizeDraftOutput } from "../lib/draftExport"
 import { buildBatchZip } from "../lib/zipExport"
 import { pipelineSettings, type RerunGate } from "../lib/pipeline"
 import ManualTab from "./ManualTab"
-import { step4ChecklistDocs } from "../lib/qualityPolicy"
+import { draftWithoutImagePlaceholders, step4ChecklistDocs } from "../lib/qualityPolicy"
+
+// Drafts saved before the image step was removed may still hold image placeholders.
+const readable = (draft?: string) => normalizeDraftOutput(draftWithoutImagePlaceholders(draft ?? ""))
 import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../lib/qcGroups"
 import OutlineStructureSelect from "../components/OutlineStructureSelect"
 import TabStepSetup from "../components/config/TabStepSetup"
 import TabModels from "../components/config/TabModels"
 import TabKnowledgeBase from "../components/config/TabKnowledgeBase"
-import ImageWorkersSettings from "../components/config/ImageWorkersSettings"
-import ImageStylesSettings from "../components/config/ImageStylesSettings"
 import { GATES, STORAGE_GROUPS, batchesOf, planStats, plansOf, storageDocs, toCrmArticle, toggleShip, type CrmArticle, type CrmBatch, type CrmPlan, type HumanStatus, type StorageDoc } from "./model"
 import { Av, I, enc, errText, go, person, toast, trackHandoff } from "./ui"
 import "./crm.css"
@@ -437,7 +438,7 @@ function ShowShell({ crumbs, actions, left, tabs, tab, setTab, children }: { cru
 }
 
 async function copyToDocs(a: Article) {
-  const markdown = normalizeDraftOutput(a.draft ?? "")
+  const markdown = readable(a.draft)
   if (navigator.clipboard.write && typeof ClipboardItem !== "undefined")
     await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([markdownToHtml(markdown)], { type: "text/html" }), "text/plain": new Blob([markdown], { type: "text/plain" }) })])
   else await navigator.clipboard.writeText(markdown)
@@ -497,11 +498,11 @@ function FinalTab({ a }: { a: CrmArticle }) {
       <div className="box-row"><div className="grow"><div className="s">Meta title · {h1.length} chars</div>{h1}</div></div>
       <div className="box-row"><div className="grow"><div className="s">Meta description</div><span style={{ color: "var(--f4)" }}>{tr("Chưa tạo (bổ sung ở giai đoạn P1)", "Not generated yet (P1)")}</span></div></div>
     </div>
-    <article className="crm-draft" dangerouslySetInnerHTML={{ __html: markdownToHtml(normalizeDraftOutput(a.a.draft)) }} />
+    <article className="crm-draft" dangerouslySetInnerHTML={{ __html: markdownToHtml(readable(a.a.draft)) }} />
   </div>
 }
 
-const GROUP_COLOR: Record<string, string> = { structure: "blue", seo: "purple", content: "turq", images: "orange", checklist: "pink" }
+const GROUP_COLOR: Record<string, string> = { structure: "blue", seo: "purple", content: "turq", checklist: "pink" }
 function ReviewTab({ ctx, a }: { ctx: Ctx; a: CrmArticle }) {
   const { tr, language } = useI18n()
   const checks = a.a.qualityReport?.checks ?? []
@@ -720,7 +721,7 @@ function ReviewPanel({ ctx, id }: { ctx: Ctx; id: string }) {
     </div>
     {failed.length > 0 && <><div className="fsec"><I n="x" />&nbsp;{tr("Tiêu chí chưa đạt", "Criteria not met")}</div>{failed.map(c => <div key={c.id} className="list-row" style={{ height: "auto", padding: "8px 12px", cursor: "default" }}><span className="grow" style={{ whiteSpace: "normal" }}><b style={{ fontWeight: 500 }}>{tr(QC_LABELS_VI[c.id] ?? c.label, c.label)}</b><br /><span style={{ color: "var(--f3)" }}>{c.reason}</span></span><Tag c="red">Fail</Tag></div>)}</>}
     {a.human.comment && <><div className="fsec"><I n="message-2" />&nbsp;{tr("Nhận xét trước", "Previous comment")}</div><div className="note-card" style={{ height: "auto", cursor: "default" }}><p>{a.human.comment}</p><div className="meta">{person(a.human.reviewer)} · {ago(a.human.at)}</div></div></>}
-    <details style={{ marginTop: 12 }}><summary style={{ cursor: "pointer", color: "var(--f2)" }}>{tr("Xem bài", "Read article")}</summary><article className="crm-draft" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: markdownToHtml(normalizeDraftOutput(a.a.draft ?? "")) }} /></details>
+    <details style={{ marginTop: 12 }}><summary style={{ cursor: "pointer", color: "var(--f2)" }}>{tr("Xem bài", "Read article")}</summary><article className="crm-draft" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: markdownToHtml(readable(a.a.draft)) }} /></details>
     <div style={{ borderTop: "1px solid var(--b2)", margin: "16px 0 12px" }} />
     <textarea ref={ref} aria-label={tr("Nhận xét", "Comment")} style={{ minHeight: 110 }} value={comment} onChange={e => setComment(e.target.value)} placeholder={tr("Nhận xét (bắt buộc khi Request Revision)…", "Comment (required for Request Revision)…")} />
     <div style={{ display: "flex", gap: 6, marginTop: 8 }}><button className="btn primary" onClick={() => void save("approved")}><I n="check" />Approve</button><button className="btn" onClick={() => void save("needs_revision")}><I n="message-2" />Request Revision</button></div>
@@ -881,8 +882,7 @@ function SettingsNav({ ctx, p }: { ctx: Ctx; p: string }) {
   return <nav className="nav" aria-label={tr("Điều hướng chính", "Main navigation")}>
     <a className="nav-item" href="#/objects/articles"><I n="chevron-left" /><span>Exit Settings</span></a>
     <div className="nav-sec">User</div>{it("experience", "color-swatch", "Experience")}{it("roles", "lock", "Roles")}
-    {ctx.can("settings") && <><div className="nav-sec">Pipeline</div>{it("pipeline", "git-merge", "Pipeline")}{it("shipper", "truck-delivery", "Shipper")}{it("knowledge", "books", "Knowledge & Rules")}{it("workflow-ai", "robot", "Workflow AI")}{it("models", "cpu", "AI Models")}
-      <div className="nav-sec">Media</div>{it("image-workers", "photo", tr("Worker tạo ảnh", "Image Workers"))}{it("image-styles", "palette", "Image Styles")}</>}
+    {ctx.can("settings") && <><div className="nav-sec">Pipeline</div>{it("pipeline", "git-merge", "Pipeline")}{it("shipper", "truck-delivery", "Shipper")}{it("knowledge", "books", "Knowledge & Rules")}{it("workflow-ai", "robot", "Workflow AI")}{it("models", "cpu", "AI Models")}</>}
     <div className="nav-foot"><button className="nav-item" onClick={ctx.onSignOut}><I n="logout" /><span>Logout</span></button></div>
   </nav>
 }
@@ -890,9 +890,9 @@ const Sec = ({ title, desc, children }: { title: string; desc?: string; children
 
 function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
   const { tr, language, setLanguage } = useI18n()
-  const admin = ["pipeline", "shipper", "knowledge", "workflow-ai", "models", "image-workers", "image-styles"]
+  const admin = ["pipeline", "shipper", "knowledge", "workflow-ai", "models"]
   if (admin.includes(p) && !ctx.can("settings")) return <Forbidden />
-  const titles: Record<string, string> = { experience: "Experience", roles: "Roles", pipeline: "Pipeline", shipper: "Shipper", knowledge: "Knowledge & Rules", "workflow-ai": "Workflow AI", models: "AI Models", "image-workers": tr("Worker tạo ảnh", "Image Workers"), "image-styles": "Image Styles" }
+  const titles: Record<string, string> = { experience: "Experience", roles: "Roles", pipeline: "Pipeline", shipper: "Shipper", knowledge: "Knowledge & Rules", "workflow-ai": "Workflow AI", models: "AI Models" }
   const st = ctx.settings
   const savePipeline = async (patch: Partial<PipelineSettings>) => { try { await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...st, ...patch } }, ctx.files, false); toast("Saved") } catch (err) { toast(errText(err)) } }
   const numField = (k: keyof PipelineSettings, label: string, min: number, max: number) =>
@@ -914,16 +914,15 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
     <Sec title="Batches" desc={tr("Áp dụng cho plan mới.", "Applies to new plans.")}><div className="row2">{numField("perBatch", "Articles per batch", 1, 20)}{numField("maxParallel", "Parallel articles / batch", 1, 5)}{numField("reviewSample", "Random review (%)", 0, 100)}</div></Sec>
     <Sec title="No-pass Logic" desc={tr("Khi không option nào đạt, kể cả sau vòng sửa. Chưa bật: hiện bài trượt AI Review được đánh dấu Failed.", "When no option passes, even after revision. Not active: articles failing AI Review are marked Failed.")}><select className="inp" style={{ maxWidth: 420 }} value={st.noPass} onChange={e => void savePipeline({ noPass: e.target.value as PipelineSettings["noPass"] })}><option value="fail">Stop at Failed and wait for a person</option><option value="best-flagged">Take the best option with a warning flag</option></select></Sec>
     <Sec title="Capacity" desc={tr("Mục tiêu 30 bài/ngày.", "Target: 30 articles/day.")}><div className="box"><div className="box-row"><div className="grow">T = 24h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 24 * 60 / 30)} min / article</div><div className="box-row"><div className="grow">T = 8h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 8 * 60 / 30)} min / article</div></div></Sec>
-    <Sec title="Illustrations"><div className="box"><div className="box-row"><div className="grow">{tr("Giữ bước ảnh minh họa trong pipeline", "Keep the illustration step in the pipeline")}<div className="s">{tr("Cần chốt", "Pending decision")}</div></div><button role="switch" aria-checked={st.keepImages} aria-label="Illustrations" className={`toggle${st.keepImages ? " on" : ""}`} onClick={() => void savePipeline({ keepImages: !st.keepImages })} /></div></div></Sec>
   </>
   if (p === "shipper") body = <Sec title="Shipper mapping" desc={tr("Gate nào lấy tài liệu nào. Không bao giờ nạp cả thư viện.", "Which gate gets which documents. Never the whole library.")}><div className="box"><table className="tbl" style={{ width: "100%" }}><thead><tr><th style={{ position: "static" }}>Document</th>{["G1", "G2", "G3"].map(g => <th key={g} style={{ position: "static", textAlign: "center" }}>{g}</th>)}</tr></thead><tbody>
     {ctx.docs.filter(d => d.file).map(d => <tr key={d.id}><td>{d.name} <span className="muted">· {d.g}</span></td>{[1, 2, 3].map(g => <td key={g} style={{ textAlign: "center" }}><button role="switch" aria-checked={d.used.includes(g)} aria-label={`${d.name} G${g}`} className={`toggle${d.used.includes(g) ? " on" : ""}`} style={{ display: "inline-block" }} onClick={() => void ctx.onSaveConfig(toggleShip(ctx.config, d.file!, g), ctx.files, false).then(() => toast("Saved")).catch(err => toast(errText(err)))} /></td>)}</tr>)}
   </tbody></table></div></Sec>
-  if (["knowledge", "workflow-ai", "models", "image-workers", "image-styles"].includes(p)) body = <EmbeddedSettings ctx={ctx} p={p} />
+  if (["knowledge", "workflow-ai", "models"].includes(p)) body = <EmbeddedSettings ctx={ctx} p={p} />
   if (!body) body = <div className="empty-state"><I n="ghost" /><h3>Page not found</h3></div>
   return <>
     <Header title={<><I n="settings" /><span className="crumb">Settings</span><span className="crumb">/</span>{titles[p] ?? ""}</>} />
-    <div className="card"><div className="set"><div className="set-inner" style={["knowledge", "workflow-ai", "models", "image-styles"].includes(p) ? { maxWidth: 1040 } : undefined}><h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{titles[p] ?? ""}</h1>{body}</div></div></div>
+    <div className="card"><div className="set"><div className="set-inner" style={["knowledge", "workflow-ai", "models"].includes(p) ? { maxWidth: 1040 } : undefined}><h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{titles[p] ?? ""}</h1>{body}</div></div></div>
   </>
 }
 
@@ -940,8 +939,6 @@ function EmbeddedSettings({ ctx, p }: { ctx: Ctx; p: string }) {
     {p === "workflow-ai" && <TabStepSetup config={config} files={files} articles={ctx.articles} onChange={setConfig} />}
     {p === "models" && <TabModels config={config} onChange={setConfig} />}
     {p === "knowledge" && <TabKnowledgeBase files={files} onChange={setFiles} railwayUrl={railway} config={config} onConfigChange={setConfig} />}
-    {p === "image-workers" && <ImageWorkersSettings railwayUrl={railway} />}
-    {p === "image-styles" && <ImageStylesSettings railwayUrl={railway} />}
     {["workflow-ai", "models", "knowledge"].includes(p) && <div style={{ position: "sticky", bottom: 0, display: "flex", justifyContent: "flex-end", padding: "12px 0", background: "var(--bg1)" }}>
       <button className="btn primary" disabled={!dirty || saving} onClick={() => void save()}><I n="device-floppy" />{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</button>
     </div>}

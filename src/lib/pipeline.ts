@@ -10,7 +10,6 @@ export const DEFAULT_PIPELINE: PipelineSettings = {
   maxParallel: 2,
   noPass: "best-flagged",
   reviewSample: 20,
-  keepImages: true,
 }
 
 export function pipelineSettings(config: { pipeline?: Partial<PipelineSettings> } | null | undefined): PipelineSettings {
