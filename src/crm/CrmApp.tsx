@@ -14,7 +14,7 @@ import { draftWithoutImagePlaceholders, step4ChecklistDocs } from "../lib/qualit
 // Drafts saved before the image step was removed may still hold image placeholders.
 const readable = (draft?: string) => normalizeDraftOutput(draftWithoutImagePlaceholders(draft ?? ""))
 import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../lib/qcGroups"
-import OutlineStructureSelect from "../components/OutlineStructureSelect"
+import StructureSelect from "./StructureSelect"
 import TabStepSetup from "../components/config/TabStepSetup"
 import TabModels from "../components/config/TabModels"
 import TabKnowledgeBase from "../components/config/TabKnowledgeBase"
@@ -593,10 +593,10 @@ function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
     actions={bs.length > 0 && <button className="btn" aria-label={paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")} onClick={() => void togglePause()}><I n={paused ? "player-play" : "player-pause"} /><span>{paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")}</span></button>}
     left={left} tabs={[["batches", "stack-2", "Batches", bs.length], ["articles", "file-text", "Articles", st.n]]} tab={tab} setTab={setTab}>
     {tab === "batches" ? <>
+      <p style={{ color: "var(--f3)", margin: "0 0 10px" }}><I n="info-circle" /> {tr("Mỗi batch chạy tối đa", "Each batch runs at most")} {ctx.settings.maxParallel} {tr("bài cùng lúc.", "articles at a time.")}</p>
       {bs.length ? <table className="tbl" style={{ border: "1px solid var(--b2)", borderRadius: 6 }}><thead><tr><th style={{ position: "static" }}>Batch</th><th style={{ position: "static" }}>Schedule</th><th style={{ position: "static" }}>Status</th><th style={{ position: "static" }}>AI Approved</th></tr></thead><tbody>
         {bs.map(b => <tr key={b.id} style={{ cursor: "pointer" }} onClick={() => go(`#/object/batches/${enc(b.id)}`)}><td><span className="rchip"><I n="stack-2" />Batch {b.idx}</span></td><td>{fmtTime(b.schedule)}</td><td>{b.paused ? <Tag c="orange">Paused</Tag> : <StatusTag k={b.status} />}</td><td>{b.done}/{b.articles.length}</td></tr>)}
       </tbody></table> : <div className="empty-state"><I n="stack-2" /><h3>{tr("Chưa có batch", "No batches yet")}</h3></div>}
-      <p style={{ color: "var(--f3)", marginTop: 10 }}><I n="info-circle" /> {tr("Mỗi batch chạy tối đa", "Each batch runs at most")} {ctx.settings.maxParallel} {tr("bài cùng lúc.", "articles at a time.")}</p>
     </> : <div>{p.articles.map(a => <div key={a.id} className="list-row" onClick={() => go(`#/object/articles/${enc(a.id)}`)}><span className="grow">{a.title}</span><GateBar a={a} /><StatusTag k={a.status} /></div>)}</div>}
   </ShowShell>
 }
@@ -687,7 +687,7 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
       <div className="frow"><div className="flabel"><I n="arrows-split" />Max parallel</div><div className="fval"><input aria-label="Max parallel" type="number" min={1} max={5} value={par} onChange={e => setPar(+e.target.value)} /></div></div>
       <div className="frow"><div className="flabel"><I n="stack-2" />Batches</div><div className="fval">{lines.length ? <>{lines.length} topic → <b>&nbsp;{Math.ceil(lines.length / perBatch)} batch</b></> : <span className="empty">—</span>}</div></div>
     </div>
-    <div style={{ margin: "4px 0 12px" }}><OutlineStructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
+    <div style={{ margin: "4px 0 12px" }}><StructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
     <div style={{ borderTop: "1px solid var(--b2)", margin: "8px 0 12px" }} />
     <textarea aria-label="Topics" value={topics} onChange={e => setTopics(e.target.value)} placeholder={tr("Mỗi dòng một topic (hướng chủ đề, chưa có title). Title được chọn ở G1; article type được phân loại tự động.", "One topic per line (a direction, not a title). The title is chosen at G1; article type is classified automatically.")} />
     <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy)} onClick={e => void create(e.timeStamp)}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>

@@ -4,7 +4,7 @@ import type { RerunGate } from "../lib/pipeline"
 import { useI18n } from "../lib/i18n"
 import { isArticleCompleted } from "../lib/workflowGuards"
 import { isLegacyArticle } from "../lib/legacyCompatibility"
-import OutlineStructureSelect from "../components/OutlineStructureSelect"
+import StructureSelect from "./StructureSelect"
 import { selectIdeaPatch } from "./model"
 import { I, errText, toast, trackHandoff } from "./ui"
 
@@ -70,7 +70,7 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
     </div>) : <p className="muted" style={{ color: "var(--f3)" }}>{running ? tr("Đang tạo ý tưởng…", "Generating ideas…") : tr("Chưa có ý tưởng. Bấm Tạo lại G1.", "No ideas yet. Use Regenerate G1.")}</p>}
 
     <div className="fsec"><I n="list-tree" />&nbsp;{tr("Bước 2 — Dàn bài nháp", "Step 2 — Draft outline")}{a.outlineStructure && <span className="tag t-gray" style={{ marginLeft: 8 }}>{a.outlineStructure.name}</span>}{btn(2, tr("Tạo lại G2", "Regenerate G2"), outline.length ? tr("Tạo lại G2 sẽ xoá outline và draft hiện tại. Tiếp tục?", "Regenerating G2 clears the outline and draft. Continue?") : undefined, !a.selectedCoreIdeaId || !a.outlineStructure)}</div>
-    {(!a.outlineStructure || !outline.length) && !locked && <div style={{ marginBottom: 8 }}><OutlineStructureSelect files={files} allowedIds={config.stepConfigs[3]?.fileAccess?.rules ?? []} value={a.outlineStructure ?? null} onChange={value => void onUpdateArticle(a.id, { outlineStructure: value })} /></div>}
+    {(!a.outlineStructure || !outline.length) && !locked && <div style={{ marginBottom: 8 }}><StructureSelect files={files} allowedIds={config.stepConfigs[3]?.fileAccess?.rules ?? []} value={a.outlineStructure ?? null} onChange={value => void onUpdateArticle(a.id, { outlineStructure: value })} /></div>}
     {outline.length ? outline.map(s => <div key={s.id}>
       <div className="list-row" style={{ paddingLeft: s.level === "h3" ? 36 : 12 }} onClick={() => setOpen(open === s.id ? null : s.id)} role="button" tabIndex={0} aria-expanded={open === s.id} onKeyDown={e => { if (e.key === "Enter") setOpen(open === s.id ? null : s.id) }}>
         <span className="tag t-gray">{s.level.toUpperCase()}</span><span className="grow">{s.heading}</span><I n={open === s.id ? "chevron-up" : "chevron-down"} />

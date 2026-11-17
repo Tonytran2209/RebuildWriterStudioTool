@@ -99,8 +99,7 @@ test('CRM Add Plan imports, classifies, splits into batches and starts them', as
   await expect(panel.getByText('3 batch')).toBeVisible();
   await panel.getByRole('button', { name: 'Generate' }).click();
   await expect(log.created).toHaveLength(0);
-  await panel.getByRole('button', { name: /Chọn dạng cấu trúc|Select the right structure/ }).click();
-  await panel.getByRole('option', { name: /Comparison form/ }).click();
+  await panel.getByLabel(/Cấu trúc outline|Outline structure/).selectOption({ label: 'Comparison form' });
   await panel.getByRole('button', { name: 'Generate' }).click();
   await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
   expect(log.imported[0]).toMatchObject({ name: 'New plan', sourceType: 'paste', content: 'A vs B\nC vs D\nWhy E matters' });
@@ -121,7 +120,7 @@ test('CRM manual mode uses the demo layout and re-runs gates through the pipelin
   await page.getByRole('button', { name: /OUTLINE_SENTINEL heading/ }).click();
   await expect(page.getByText('Section notes')).toBeVisible();
   await expect(page.getByLabel(/Bản nháp|Draft/)).toHaveValue(/READING_SENTINEL/);
-  await expect(page.locator('.outline-picker')).toHaveCount(0);
+  await expect(page.getByLabel(/Cấu trúc outline|Outline structure/)).toHaveCount(0);
   await page.getByRole('button', { name: /Chấm lại AI|Re-check AI/ }).click();
   await expect.poll(() => log.reruns.length).toBe(1);
   expect(log.reruns[0]).toEqual({ id: 'a-approved', gate: 4 });

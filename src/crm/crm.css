@@ -341,7 +341,7 @@
 .crm .crm-draft a{color:var(--accent)}
 .crm .sp select.inp{height:32px}
 /* The app's dark theme forces backgrounds on every input with !important; give demo controls their own back. */
-.codex-dark .crm :is(input,textarea,select):not(.embed *):not(.crm-embedded *):not(.outline-picker *){background:transparent!important;color:var(--f1)!important}
+.codex-dark .crm :is(input,textarea,select):not(.embed *):not(.crm-embedded *){background:transparent!important;color:var(--f1)!important}
 .codex-dark .crm :is(.inp,.fval input,.fval select):not(.embed *):not(.crm-embedded *){background:var(--bg1)!important;color:var(--f1)!important}
 .codex-dark .crm .inp:disabled{background:var(--bg2)!important}
 /* The app's theme files force heading sizes and colors with !important; restore the demo's values. */
