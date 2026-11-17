@@ -37,7 +37,7 @@ async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
     const rerun = url.pathname.match(/^\/api\/articles\/([^/]+)\/rerun$/);
     if (rerun) { const body = route.request().postDataJSON(); log.reruns.push({ id: rerun[1], ...body }); return route.fulfill({ status: 202, json: { ok: true, article: { ...articles[0], qualityReport: null, batchStatus: 'queued' } } }); }
     if (url.pathname.startsWith('/api/articles/') && method === 'PUT') { const patch = route.request().postDataJSON(); log.puts.push(patch); return route.fulfill({ json: { ok: true, article: { ...articles[0], ...patch } } }); }
-    if (url.pathname === '/api/content-plans/import') { log.imported.push(route.request().postDataJSON()); return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3 } } }); }
+    if (url.pathname === '/api/content-plans/import') { const ct = route.request().headers()['content-type'] ?? ''; log.imported.push(ct.includes('multipart') ? { multipart: route.request().postDataBuffer()?.toString() } : route.request().postDataJSON()); return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3 } } }); }
     if (url.pathname === '/api/content-plans/plan-new/classify') return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3, items: [
       { id: 'n1', title: 'A vs B', keywords: ['a vs b'], type: 'comparison-seo', sourceLine: 'A vs B' },
       { id: 'n2', title: 'C vs D', keywords: [], type: 'comparison-seo', sourceLine: 'C vs D' },
@@ -173,4 +173,26 @@ test('CRM Storage adds, governs and deletes documents without the old settings p
   await expect.poll(() => log.files.length).toBe(2);
   expect(log.files[1].map((f: any) => f.id)).toEqual(['imported-1']);
   expect(log.configs.at(-1).stepConfigs[3].fileAccess.rules).toEqual([]);
+});
+
+test('CRM Add Plan imports a Content Plan file and Storage lists it as Source data', async ({ page }) => {
+  const log = await mockApp(page);
+  await goHash(page, '/objects/storage');
+  const row = page.locator('table.tbl tr', { hasText: 'Plan One' });
+  await expect(row).toContainText('Source data');
+  await row.click();
+  await expect(page).toHaveURL(/#\/object\/plans\/plan-1/);
+
+  await goHash(page, '/objects/plans');
+  await page.locator('.ph-actions').getByRole('button', { name: 'Add Plan' }).click();
+  const panel = page.getByRole('dialog', { name: 'Add Plan' });
+  await panel.getByRole('tab', { name: 'File' }).click();
+  await panel.getByLabel(/File Content Plan|Content Plan file/).setInputFiles({ name: 'Q3 plan.docx', mimeType: 'application/octet-stream', buffer: Buffer.from('A vs B') });
+  await expect(panel.getByText('Q3 plan.docx')).toBeVisible();
+  await panel.getByLabel(/Cấu trúc outline|Outline structure/).selectOption({ label: 'Comparison form' });
+  await panel.getByRole('button', { name: 'Generate' }).click();
+  await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
+  expect(log.imported[0].multipart).toContain('Q3 plan.docx');
+  expect(log.imported[0].multipart).toContain('Q3 plan');
+  expect(log.created).toHaveLength(3);
 });

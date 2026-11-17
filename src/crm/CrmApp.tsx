@@ -140,7 +140,7 @@ export default function CrmApp(props: CrmProps) {
   const list = useMemo(() => props.articles.map(x => toCrmArticle(x, settings)), [props.articles, settingsKey])
   const plans = useMemo(() => plansOf(props.contentPlans, list, settings), [props.contentPlans, list, settingsKey])
   const batches = useMemo(() => batchesOf(list), [list])
-  const docs = useMemo(() => storageDocs(props.files, props.config, props.articles.filter(x => x.approvedArticle).length), [props.files, props.config, props.articles])
+  const docs = useMemo(() => storageDocs(props.files, props.config, props.articles.filter(x => x.approvedArticle).length, props.contentPlans), [props.files, props.config, props.articles, props.contentPlans])
   const isAdmin = props.user.role === "admin"
   // No reviewer role in the database yet: every signed-in user may review.
   const can = (what: string) => isAdmin || ["plans", "retry", "copy", "manual", "review", "approveArticles"].includes(what)
@@ -388,7 +388,7 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
     : o === "storage" ? STORAGE_GROUPS.map(([g, c]) => ({ label: <Tag c={c}>{g}</Tag>, rows: rows.filter(r => r.g === g) }))
     : o === "batches" ? [...new Set(rows.map(r => r.planId))].map(id => ({ label: ctx.plans.some(p => p.id === id) ? <PlanChip ctx={ctx} id={id} /> : <span className="muted">—</span>, rows: rows.filter(r => r.planId === id) }))
     : [{ rows }]
-  const click = (r: any) => o === "reviews" ? ctx.setPanel({ kind: "review", id: r.id }) : o === "storage" ? ctx.setPanel({ kind: "doc", id: r.id }) : go(`#/object/${o}/${enc(r.id)}`)
+  const click = (r: any) => o === "reviews" ? ctx.setPanel({ kind: "review", id: r.id }) : o === "storage" ? (r.planId ? go(`#/object/plans/${enc(r.planId)}`) : ctx.setPanel({ kind: "doc", id: r.id })) : go(`#/object/${o}/${enc(r.id)}`)
   const name = (r: any) => {
     if (o === "storage") return <span className="rchip plain"><I n="file-description" />{r.name}</span>
     if (o === "reviews") return <span className="rchip plain"><Av name={r.title} />{r.title}</span>
@@ -667,6 +667,9 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
   const [per, setPer] = useState(ctx.settings.perBatch)
   const [par, setPar] = useState(ctx.settings.maxParallel)
   const [topics, setTopics] = useState("")
+  const [source, setSource] = useState<"paste" | "file" | "google_doc" | "google_sheet">("paste")
+  const [file, setFile] = useState<File | null>(null)
+  const [url, setUrl] = useState("")
   const [structure, setStructure] = useState<OutlineStructureSnapshot | null>(null)
   const [busy, setBusy] = useState("")
   const nameRef = useRef<HTMLInputElement>(null)
@@ -674,19 +677,23 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
   const lines = topics.split("\n").map(t => t.trim()).filter(Boolean)
   const perBatch = Math.max(1, Math.min(20, per || 1))
   const create = async (eventTimeStamp: number) => {
-    if (!lines.length) return toast(tr("Cần ít nhất một topic", "At least one topic is required"))
+    if (source === "paste" && !lines.length) return toast(tr("Cần ít nhất một topic", "At least one topic is required"))
+    if (source === "file" && !file) return toast(tr("Chọn file Content Plan", "Choose a Content Plan file"))
+    if (source.startsWith("google_") && !url.trim()) return toast(tr("Dán link Google", "Paste the Google link"))
     if (!structure) return toast(tr("Chọn cấu trúc outline trước khi chạy.", "Choose an outline structure first."))
     setBusy(tr("Đang import plan…", "Importing plan…"))
     try {
       const planId = await trackHandoff(eventTimeStamp, async () => {
       const railway = ctx.config.railwayUrl
-      const imported = await importContentPlan({ name: name.trim() || `Content Plan ${new Date().toLocaleDateString()}`, sourceType: "paste", content: lines.join("\n") }, railway)
+      const planName = name.trim() || file?.name.replace(/\.[^.]+$/, "") || `Content Plan ${new Date().toLocaleDateString()}`
+      const imported = await importContentPlan(source === "file" ? { name: planName, sourceType: "file", file: file! } : source === "paste" ? { name: planName, sourceType: "paste", content: lines.join("\n") } : { name: planName, sourceType: source, url: url.trim() }, railway)
       ctx.onContentPlansChange([imported])
       setBusy(tr("Đang phân loại article type…", "Classifying article types…"))
       const plan = await classifyContentPlan(imported.id, railway)
       ctx.onContentPlansChange([plan])
       if (par !== ctx.settings.maxParallel) await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...ctx.settings, maxParallel: Math.max(1, Math.min(5, par)) } }, ctx.files, false)
       const items = plan.items ?? []
+      if (!items.length) throw new Error(tr("Không tìm thấy topic nào trong Content Plan này.", "No topics were found in this Content Plan."))
       // needs-review items run as editorial: the pipeline must not silently drop a topic.
       const byType: Array<["comparison-seo" | "editorial-originality", ContentPlanItem[]]> = [["comparison-seo", items.filter(i => i.type === "comparison-seo")], ["editorial-originality", items.filter(i => i.type !== "comparison-seo")]]
       let made = 0
@@ -710,11 +717,20 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
     <div className="fields" style={{ paddingTop: 0 }}>
       <div className="frow"><div className="flabel"><I n="layout-rows" />Per batch</div><div className="fval"><input aria-label="Per batch" type="number" min={1} max={20} value={per} onChange={e => setPer(+e.target.value)} /></div></div>
       <div className="frow"><div className="flabel"><I n="arrows-split" />Max parallel</div><div className="fval"><input aria-label="Max parallel" type="number" min={1} max={5} value={par} onChange={e => setPar(+e.target.value)} /></div></div>
-      <div className="frow"><div className="flabel"><I n="stack-2" />Batches</div><div className="fval">{lines.length ? <>{lines.length} topic → <b>&nbsp;{Math.ceil(lines.length / perBatch)} batch</b></> : <span className="empty">—</span>}</div></div>
+      <div className="frow"><div className="flabel"><I n="stack-2" />Batches</div><div className="fval">{source !== "paste" ? <span className="empty">{tr("tính sau khi đọc và phân loại plan", "counted after the plan is read and classified")}</span> : lines.length ? <>{lines.length} topic → <b>&nbsp;{Math.ceil(lines.length / perBatch)} batch</b></> : <span className="empty">—</span>}</div></div>
     </div>
     <div style={{ margin: "4px 0 12px" }}><StructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
     <div style={{ borderTop: "1px solid var(--b2)", margin: "8px 0 12px" }} />
-    <textarea aria-label="Topics" value={topics} onChange={e => setTopics(e.target.value)} placeholder={tr("Mỗi dòng một topic (hướng chủ đề, chưa có title). Title được chọn ở G1; article type được phân loại tự động.", "One topic per line (a direction, not a title). The title is chosen at G1; article type is classified automatically.")} />
+    <div role="tablist" aria-label={tr("Nguồn Content Plan", "Content Plan source")} style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+      {([["paste", "clipboard-text", tr("Dán topic", "Paste topics")], ["file", "upload", "File"], ["google_doc", "file-text", "Google Doc"], ["google_sheet", "table", "Google Sheet"]] as const).map(([id, icon, label]) => <button key={id} role="tab" aria-selected={source === id} className={`btn${source === id ? " primary" : ""}`} disabled={Boolean(busy)} onClick={() => setSource(id)}><I n={icon} />{label}</button>)}
+    </div>
+    {source === "file" && <label className="box" style={{ display: "block", padding: 20, textAlign: "center", borderStyle: "dashed", background: "var(--bg2)", cursor: "pointer", color: "var(--f2)", marginBottom: 12 }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); setFile(e.dataTransfer.files[0] ?? null) }}>
+      <I n="upload" s={{ fontSize: 22, color: "var(--f3)" }} /><div style={{ marginTop: 6 }}>{file ? file.name : tr("Chọn hoặc kéo thả file Content Plan", "Choose or drop a Content Plan file")}</div>
+      <div style={{ color: "var(--f3)", fontSize: 12, marginTop: 2 }}>DOCX · PDF · XLSX · CSV · MD · TXT</div>
+      <input type="file" hidden aria-label={tr("File Content Plan", "Content Plan file")} accept=".docx,.pdf,.xlsx,.csv,.md,.txt,.tsv,.json" onChange={e => setFile(e.target.files?.[0] ?? null)} />
+    </label>}
+    {source.startsWith("google_") && <div style={{ marginBottom: 12 }}><input className="inp" aria-label={tr("Link Google", "Google link")} value={url} onChange={e => setUrl(e.target.value)} placeholder={source === "google_doc" ? "https://docs.google.com/document/d/..." : "https://docs.google.com/spreadsheets/d/..."} /><div style={{ color: "var(--f3)", fontSize: 12, marginTop: 4 }}>{tr("Bật quyền \"Anyone with the link can view\".", "Turn on \"Anyone with the link can view\".")}</div></div>}
+    {source === "paste" && <textarea aria-label="Topics" value={topics} onChange={e => setTopics(e.target.value)} placeholder={tr("Mỗi dòng một topic (hướng chủ đề, chưa có title). Title được chọn ở G1; article type được phân loại tự động.", "One topic per line (a direction, not a title). The title is chosen at G1; article type is classified automatically.")} />}
     <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy)} onClick={e => void create(e.timeStamp)}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>
   </SidePanel>
 }

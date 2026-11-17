@@ -105,7 +105,7 @@ export function plansOf(contentPlans: ContentPlan[], articles: CrmArticle[], set
 /* ─── Storage (5 groups) over real Knowledge & Rules files ─────────────── */
 
 export const STORAGE_GROUPS = [["Domain Knowledge", "red"], ["Playbooks", "purple"], ["Standards", "sky"], ["Voice & Style", "pink"], ["Source data", "turq"]] as const
-export type StorageDoc = { id: string; g: string; name: string; st: "ok" | "partial" | "draft" | "missing"; used: number[]; types: ArticleType[]; note: string; updatedAt?: string; file?: DocumentFile }
+export type StorageDoc = { id: string; g: string; name: string; st: "ok" | "partial" | "draft" | "missing"; used: number[]; types: ArticleType[]; note: string; updatedAt?: string; file?: DocumentFile; planId?: string }
 
 const SHIP_STEPS = [2, 3, 4] as const
 export function groupOf(file: DocumentFile): string {
@@ -126,14 +126,16 @@ const REQUIRED: Array<[string, string, RegExp, number[]]> = [
   ["Domain Knowledge", "Vocabulary Library", /vocab/i, [3]],
   ["Playbooks", "Writing Patterns", /writing pattern/i, [2, 3]],
 ]
-export function storageDocs(files: DocumentFile[], config: AppConfig, approvedArticles: number): StorageDoc[] {
+export function storageDocs(files: DocumentFile[], config: AppConfig, approvedArticles: number, contentPlans: ContentPlan[] = []): StorageDoc[] {
   const real: StorageDoc[] = files.filter(f => f.category === "kb" || f.category === "rules").map(file => ({
     id: file.id, g: groupOf(file), name: file.name, st: file.scanStatus === "error" ? "partial" : "ok", used: usedAt(file, config),
     types: ["A", "B", "C", "ED"], note: file.scanStatus === "error" ? "Không đọc được nội dung" : "", updatedAt: file.contentUpdatedAt || file.uploadedAt, file,
   }))
   const missing: StorageDoc[] = REQUIRED.filter(([, , test]) => !files.some(f => test.test(f.name))).map(([g, name, , used], i) => ({ id: `missing-${i}`, g, name, st: "missing", used, types: ["A", "B", "C", "ED"], note: "Chưa có trong Storage" }))
   const approved: StorageDoc = { id: "approved-articles", g: "Playbooks", name: "Approved Articles", st: approvedArticles ? "ok" : "missing", used: [2, 3], types: ["A", "B", "C", "ED"], note: approvedArticles ? `${approvedArticles} human-confirmed` : "Chưa có bài nào được người xác nhận" }
-  return [...real, ...missing, approved]
+  // Imported Content Plans are the topic source for G1; they are added through Add Plan, not Storage.
+  const plans: StorageDoc[] = contentPlans.map(plan => ({ id: `plan-${plan.id}`, planId: plan.id, g: "Source data", name: plan.name, st: "ok", used: [1], types: ["A", "B", "C", "ED"], note: `Content Plan · ${plan.totalArticles} topic${plan.status === "archived" ? " · archived" : ""}`, updatedAt: plan.updatedAt }))
+  return [...real, ...plans, ...missing, approved]
 }
 
 /** Toggle a file's Shipper access for one gate (1–3 → steps 2–4). */

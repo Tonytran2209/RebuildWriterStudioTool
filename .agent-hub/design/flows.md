@@ -73,7 +73,7 @@ Draft preview renders the saved Markdown (headings, paragraphs, lists, tables, l
 
 ## CRM pipeline workspace (2026-11-17)
 
-Default flow: Add Plan (launcher inside the CRM page) → batch record → article record. Articles list shows gate, AI Approval (Universal QC score vs. the Settings threshold, evidence failures hard-block) and human review. Article record tabs: Final Article (rendered, Copy to Docs), AI Review (score and criteria, failures first), Generation History (timeline, AI calls and cost), Manual mode (the existing Core Idea, Outline and Draft steps). Review Workspace filters by review status and the random sample; Request Revision requires a comment. Completion stays a human action. See `docs/AI-PIPELINE-UPGRADE.md` §10.
+Default flow: Add Plan (side panel; Content Plan source: pasted topics, file DOCX/PDF/XLSX/CSV/MD/TXT, Google Doc or Google Sheet — imported through `/api/content-plans/import`, then classified and split into batches; imported plans also appear in Storage › Source data and open the plan record) → batch record → article record. Articles list shows gate, AI Approval (Universal QC score vs. the Settings threshold, evidence failures hard-block) and human review. Article record tabs: Final Article (rendered, Copy to Docs), AI Review (score and criteria, failures first), Generation History (timeline, AI calls and cost), Manual mode (the existing Core Idea, Outline and Draft steps). Review Workspace filters by review status and the random sample; Request Revision requires a comment. Completion stays a human action. See `docs/AI-PIPELINE-UPGRADE.md` §10.
 
 ## CRM only (2026-11-18)
 
