@@ -90,7 +90,7 @@ export type CrmProps = {
   onMigrateLegacy: (article: Article) => void
 }
 
-type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "step"; i: number } | { kind: "cmd" } | null
+type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "run-items"; id: string } | { kind: "step"; i: number } | { kind: "cmd" } | null
 type Ctx = CrmProps & {
   settings: PipelineSettings
   list: CrmArticle[]
@@ -167,6 +167,7 @@ export default function CrmApp(props: CrmProps) {
       {panel?.kind === "review" && <ReviewPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "doc" && <DocPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "add-doc" && <AddDocPanel ctx={ctx} />}
+      {panel?.kind === "run-items" && <RunItemsPanel ctx={ctx} planId={panel.id} />}
       {panel?.kind === "step" && <StepPanel ctx={ctx} i={panel.i} />}
       {panel?.kind === "cmd" && <CommandMenu ctx={ctx} />}
     </div>
@@ -591,6 +592,27 @@ function TimelineTab({ ctx, a }: { ctx: Ctx; a: CrmArticle }) {
   return <div className="tl">{ev.map((e, i) => <div key={i} className="tl-item"><span className="dot"><I n={e.icon} /></span><span><b>{e.who}</b> {e.what}</span><span className="when">{ago(e.at)}</span></div>)}</div>
 }
 
+const ITEM_TYPE = { "comparison-seo": ["blue", "Comparison"], "editorial-originality": ["pink", "Editorial"], "needs-review": ["orange", "Needs review"] } as const
+/** Every topic of the plan in plan order: its article when one exists, otherwise a not-started row. */
+function PlanTopics({ ctx, p }: { ctx: Ctx; p: CrmPlan }) {
+  const { tr } = useI18n()
+  const items = p.plan.items ?? []
+  const byItem = new Map(p.articles.map(a => [a.a.contentPlanItemId, a]))
+  const pending = pendingItems(p)
+  const orphans = p.articles.filter(a => !items.some(i => i.id === a.a.contentPlanItemId))
+  const article = (a: CrmArticle) => <div key={a.id} className="list-row" onClick={() => go(`#/object/articles/${enc(a.id)}`)}><TypeTag t={a.type} /><span className="grow">{a.title}</span><GateBar a={a} /><StatusTag k={a.status} /></div>
+  return <div>
+    {pending.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, color: "var(--f3)" }}>
+      <I n="info-circle" /><span className="grow">{tr(`${pending.length} topic chưa chạy`, `${pending.length} topics not started`)} · Comparison {pending.filter(i => i.type === "comparison-seo").length} · Editorial {pending.filter(i => i.type !== "comparison-seo").length}</span>
+      {ctx.can("plans") && <button className="btn primary" onClick={() => ctx.setPanel({ kind: "run-items", id: p.id })}><I n="player-play" />{tr("Chạy topic chưa xử lý", "Run unprocessed topics")}</button>}
+    </div>}
+    {items.map(item => { const a = byItem.get(item.id); if (a) return article(a); const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]
+      return <div key={item.id} className="list-row" style={{ cursor: "default" }}><Tag c={c}>{l}</Tag><span className="grow" style={{ color: "var(--f2)" }}>{item.title}{item.keywords?.length ? <span className="muted" style={{ color: "var(--f3)" }}> · {item.keywords.slice(0, 3).join(", ")}</span> : null}</span><Tag c="gray">{item.status === "archived" ? "Archived" : tr("Chưa chạy", "Not started")}</Tag></div> })}
+    {orphans.map(article)}
+    {!items.length && !orphans.length && <div className="empty-state"><I n="file-text" /><h3>{tr("Plan chưa có topic", "This plan has no topics")}</h3></div>}
+  </div>
+}
+
 function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
   const { tr } = useI18n()
   const ago = useAgo()
@@ -616,13 +638,13 @@ function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
   </div></>
   return <ShowShell crumbs={<><a className="crumb" href="#/objects/plans">Content Plans</a><span className="crumb">/</span>{p.name}</>}
     actions={bs.length > 0 && <button className="btn" aria-label={paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")} onClick={() => void togglePause()}><I n={paused ? "player-play" : "player-pause"} /><span>{paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")}</span></button>}
-    left={left} tabs={[["batches", "stack-2", "Batches", bs.length], ["articles", "file-text", "Articles", st.n]]} tab={tab} setTab={setTab}>
+    left={left} tabs={[["batches", "stack-2", "Batches", bs.length], ["articles", "file-text", "Articles", Math.max(st.n, (p.plan.items ?? []).length)]]} tab={tab} setTab={setTab}>
     {tab === "batches" ? <>
       <p style={{ color: "var(--f3)", margin: "0 0 10px" }}><I n="info-circle" /> {tr("Mỗi batch chạy tối đa", "Each batch runs at most")} {ctx.settings.maxParallel} {tr("bài cùng lúc.", "articles at a time.")}</p>
       {bs.length ? <table className="tbl" style={{ border: "1px solid var(--b2)", borderRadius: 6 }}><thead><tr><th style={{ position: "static" }}>Batch</th><th style={{ position: "static" }}>Schedule</th><th style={{ position: "static" }}>Status</th><th style={{ position: "static" }}>AI Approved</th></tr></thead><tbody>
         {bs.map(b => <tr key={b.id} style={{ cursor: "pointer" }} onClick={() => go(`#/object/batches/${enc(b.id)}`)}><td><span className="rchip"><I n="stack-2" />Batch {b.idx}</span></td><td>{fmtTime(b.schedule)}</td><td>{b.paused ? <Tag c="orange">Paused</Tag> : <StatusTag k={b.status} />}</td><td>{b.done}/{b.articles.length}</td></tr>)}
       </tbody></table> : <div className="empty-state"><I n="stack-2" /><h3>{tr("Chưa có batch", "No batches yet")}</h3></div>}
-    </> : <div>{p.articles.map(a => <div key={a.id} className="list-row" onClick={() => go(`#/object/articles/${enc(a.id)}`)}><span className="grow">{a.title}</span><GateBar a={a} /><StatusTag k={a.status} /></div>)}</div>}
+    </> : <PlanTopics ctx={ctx} p={p} />}
   </ShowShell>
 }
 
@@ -661,6 +683,55 @@ function SidePanel({ ctx, title, icon, extra, children }: { ctx: Ctx; title: Rea
   </>
 }
 
+/** Split plan topics into batches by type and start them. needs-review topics run as editorial so none is dropped. */
+async function startPlanItems(ctx: Ctx, plan: ContentPlan, items: ContentPlanItem[], perBatch: number, structure: OutlineStructureSnapshot, onBatch: (n: number) => void) {
+  const byType: Array<["comparison-seo" | "editorial-originality", ContentPlanItem[]]> = [["comparison-seo", items.filter(i => i.type === "comparison-seo")], ["editorial-originality", items.filter(i => i.type !== "comparison-seo")]]
+  let made = 0
+  for (const [type, group] of byType)
+    for (let i = 0; i < group.length; i += perBatch) {
+      const chunk = group.slice(i, i + perBatch)
+      onBatch(++made)
+      await ctx.onCreate(type, plan, chunk, ([5, 10, 15, 20].find(n => n >= chunk.length) ?? 20) as 5 | 10 | 15 | 20, structure, { forceBatch: true, select: false })
+    }
+  return made
+}
+
+/** Start the topics of an existing plan that have no article yet. */
+function RunItemsPanel({ ctx, planId }: { ctx: Ctx; planId: string }) {
+  const { tr } = useI18n()
+  const p = ctx.plans.find(x => x.id === planId)
+  const [per, setPer] = useState(ctx.settings.perBatch)
+  const [structure, setStructure] = useState<OutlineStructureSnapshot | null>(null)
+  const [busy, setBusy] = useState("")
+  if (!p) return null
+  const pending = pendingItems(p)
+  const perBatch = Math.max(1, Math.min(20, per || 1))
+  const count = (t: ContentPlanItem["type"]) => pending.filter(i => i.type === t).length
+  const batches = Math.ceil(count("comparison-seo") / perBatch) + Math.ceil((pending.length - count("comparison-seo")) / perBatch)
+  const run = async (eventTimeStamp: number) => {
+    if (!structure) return toast(tr("Chọn cấu trúc outline trước khi chạy.", "Choose an outline structure first."))
+    setBusy(tr("Đang tạo batch…", "Creating batches…"))
+    try {
+      await trackHandoff(eventTimeStamp, () => startPlanItems(ctx, p.plan, pending, perBatch, structure, n => setBusy(`${tr("Đang tạo batch", "Creating batch")} ${n}…`)))
+      ctx.setPanel(null)
+      toast(tr(`Đã bắt đầu ${pending.length} topic`, `Started ${pending.length} topics`))
+    } catch (err) { toast(errText(err)) } finally { setBusy("") }
+  }
+  return <SidePanel ctx={ctx} title={tr("Chạy topic chưa xử lý", "Run unprocessed topics")} icon={<I n="player-play" />}>
+    <div className="sp-title">{p.name}</div>
+    <div className="fields" style={{ paddingTop: 0 }}>
+      <div className="frow"><div className="flabel"><I n="list" />Topics</div><div className="fval">{pending.length} · <Tag c="blue">Comparison {count("comparison-seo")}</Tag>&nbsp;<Tag c="pink">Editorial {count("editorial-originality")}</Tag>{count("needs-review") > 0 && <>&nbsp;<Tag c="orange">Needs review {count("needs-review")}</Tag></>}</div></div>
+      <div className="frow"><div className="flabel"><I n="layout-rows" />Per batch</div><div className="fval"><input aria-label="Per batch" type="number" min={1} max={20} value={per} onChange={e => setPer(+e.target.value)} /></div></div>
+      <div className="frow"><div className="flabel"><I n="stack-2" />Batches</div><div className="fval"><b>{batches} batch</b></div></div>
+    </div>
+    {count("needs-review") > 0 && <div style={{ color: "var(--f3)", margin: "4px 0 8px" }}>{tr("Topic \"Needs review\" chạy theo luồng Editorial để không bị bỏ sót.", "\"Needs review\" topics run as Editorial so none is dropped.")}</div>}
+    <div style={{ margin: "4px 0 12px" }}><StructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
+    <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy) || !pending.length} onClick={e => void run(e.timeStamp)}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>
+  </SidePanel>
+}
+
+const pendingItems = (p: CrmPlan) => { const used = new Set(p.articles.map(a => a.a.contentPlanItemId)); return (p.plan.items ?? []).filter(i => !used.has(i.id) && i.status !== "archived") }
+
 function AddPlanPanel({ ctx }: { ctx: Ctx }) {
   const { tr } = useI18n()
   const [name, setName] = useState("")
@@ -694,15 +765,7 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
       if (par !== ctx.settings.maxParallel) await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...ctx.settings, maxParallel: Math.max(1, Math.min(5, par)) } }, ctx.files, false)
       const items = plan.items ?? []
       if (!items.length) throw new Error(tr("Không tìm thấy topic nào trong Content Plan này.", "No topics were found in this Content Plan."))
-      // needs-review items run as editorial: the pipeline must not silently drop a topic.
-      const byType: Array<["comparison-seo" | "editorial-originality", ContentPlanItem[]]> = [["comparison-seo", items.filter(i => i.type === "comparison-seo")], ["editorial-originality", items.filter(i => i.type !== "comparison-seo")]]
-      let made = 0
-      for (const [type, group] of byType)
-        for (let i = 0; i < group.length; i += perBatch) {
-          const chunk = group.slice(i, i + perBatch)
-          setBusy(`${tr("Đang tạo batch", "Creating batch")} ${++made}…`)
-          await ctx.onCreate(type, plan, chunk, ([5, 10, 15, 20].find(s => s >= chunk.length) ?? 20) as 5 | 10 | 15 | 20, structure, { forceBatch: true, select: false })
-        }
+      await startPlanItems(ctx, plan, items, perBatch, structure, n => setBusy(`${tr("Đang tạo batch", "Creating batch")} ${n}…`))
       return plan.id
       })
       ctx.setPanel(null)

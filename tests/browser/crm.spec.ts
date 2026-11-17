@@ -196,3 +196,27 @@ test('CRM Add Plan imports a Content Plan file and Storage lists it as Source da
   expect(log.imported[0].multipart).toContain('Q3 plan');
   expect(log.created).toHaveLength(3);
 });
+
+test('CRM plan page lists every topic and starts the unprocessed ones', async ({ page }) => {
+  const items = [
+    { id: 'i1', title: 'Approved topic', keywords: [], type: 'comparison-seo', sourceLine: 'x' },
+    { id: 'i2', title: 'Failed topic', keywords: [], type: 'comparison-seo', sourceLine: 'x' },
+    { id: 'i3', title: 'EDITORIAL_SENTINEL topic', keywords: ['brand story'], type: 'editorial-originality', sourceLine: 'x' },
+  ];
+  (plan as any).items = items;
+  try {
+    const log = await mockApp(page);
+    await goHash(page, '/object/plans/plan-1');
+    await page.getByRole('tab', { name: /Articles/ }).click();
+    const row = page.locator('.list-row', { hasText: 'EDITORIAL_SENTINEL topic' });
+    await expect(row).toContainText(/Chưa chạy|Not started/);
+    await expect(row).toContainText('Editorial');
+    await expect(page.locator('.list-row', { hasText: 'Approved article' })).toBeVisible();
+    await page.getByRole('button', { name: /Chạy topic chưa xử lý|Run unprocessed topics/ }).click();
+    const panel = page.getByRole('dialog', { name: /Chạy topic chưa xử lý|Run unprocessed topics/ });
+    await panel.getByLabel(/Cấu trúc outline|Outline structure/).selectOption({ label: 'Comparison form' });
+    await panel.getByRole('button', { name: 'Generate' }).click();
+    await expect.poll(() => log.created.length).toBe(1);
+    expect(log.created[0]).toMatchObject({ activityType: 'editorial-originality', contentPlanItemId: 'i3', activityKind: 'batch' });
+  } finally { delete (plan as any).items; }
+});
