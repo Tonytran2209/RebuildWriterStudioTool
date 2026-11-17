@@ -9,8 +9,9 @@ const articles = [
     contentPlanId: 'plan-1', contentPlanItemId: 'i1', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-1', batchStatus: 'completed',
     selectedCoreIdeaId: 'x', coreIdeaSuggestions: [{ id: 'x', title: 'Idea X', angleLabel: 'Decision guide', rating: { overall: 9.2 } }, { id: 'y', title: 'Idea Y', angleLabel: 'Myth', rating: { overall: 7.5 } }],
     outlineStructure: { id: 'comparison', name: 'Comparison form', sourceId: 'outline-md', sourceHash: 'h' }, outline: [{ id: 's', heading: 'OUTLINE_SENTINEL heading', notes: 'Section notes', level: 'h2' }], draft: '# Approved article\n\nREADING_SENTINEL body text.',
-    batchStepRuns: [{ key: 'outline', label: 'Lập outline', startedAt: now, endedAt: now, status: 'completed' }],
-    aiUsageByStep: { 4: [{ id: 'u1', step: 4, provider: 'openai', model: 'MODEL_SENTINEL', inputTokens: 1200, outputTokens: 800, totalTokens: 2000, costUsd: 0.0123, cacheHit: false, calledAt: now, purpose: 'generation' }] },
+    batchStepRuns: [{ key: 'outline', label: 'Lập outline', startedAt: now, endedAt: now, status: 'completed' }, { key: 'draft', label: 'Viết draft', startedAt: now, endedAt: now, status: 'completed' }],
+    aiUsageByStep: { 4: [{ id: 'u1', step: 4, provider: 'openai', model: 'MODEL_SENTINEL', inputTokens: 1200, outputTokens: 800, totalTokens: 2000, costUsd: 0.0123, cacheHit: false, calledAt: now, purpose: 'generation', durationMs: 4000,
+      trace: { input: 'INPUT_SENTINEL prompt', output: 'OUTPUT_SENTINEL text', sources: ['Brand guide.md'], rules: ['draft (strict)'] } }] },
     qualityReport: { version: 11, status: 'pass', checkedAt: now, articleSpecFingerprint: '', checks: Array.from({ length: 10 }, (_, i) => pass('c' + i)) } },
   { id: 'a-failed', title: 'Failed article', currentStep: 2, status: 'in_progress', createdAt: now, updatedAt: now,
     contentPlanId: 'plan-1', contentPlanItemId: 'i2', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-1', batchStatus: 'failed', batchError: 'timeout' },
@@ -136,10 +137,15 @@ test('CRM manual mode uses the demo layout and re-runs gates through the pipelin
   await expect(page.getByText('Section notes')).toBeVisible();
   await expect(page.getByLabel(/Bản nháp|Draft/)).toHaveValue(/READING_SENTINEL/);
   await expect(page.getByLabel(/Cấu trúc outline|Outline structure/)).toHaveCount(0);
-  await page.getByText(/Checklist xử lý|Process checklist/).nth(1).click();
-  await expect(page.getByText(/^(Lập outline|Write the outline)/)).toBeVisible();
-  await page.getByText(/2,000 tokens/).click();
-  await expect(page.getByText('MODEL_SENTINEL')).toBeVisible();
+  const step3 = page.locator('details.plog').nth(2);
+  await expect(step3.locator('summary').first()).toContainText('1 AI · 2.0k tok · $0.012');
+  await step3.locator('summary').first().click();
+  await step3.getByText(/^(Viết draft|Write the draft)/).click();
+  await step3.getByText('MODEL_SENTINEL').click();
+  await expect(step3.getByText('INPUT_SENTINEL prompt')).toBeVisible();
+  await expect(step3.getByText('OUTPUT_SENTINEL text')).toBeVisible();
+  await expect(step3.getByText('Brand guide.md')).toBeVisible();
+  await expect(step3.getByText('draft (strict)')).toBeVisible();
   await page.getByRole('button', { name: /Chấm lại AI|Re-check AI/ }).click();
   await expect.poll(() => log.reruns.length).toBe(1);
   expect(log.reruns[0]).toEqual({ id: 'a-approved', gate: 4 });

@@ -56,6 +56,7 @@ The Main Job of every article, batch or step-by-step, is named `Writer article` 
 
 **Step-by-step (single) articles.** Articles that are not batch items and have a non-empty draft from the last 61 days are also sent in `jobRuns` (only there, never in `jobHistory`). Each is a `Writer article` run with workload `1 SEO article (từng bước) · <title>` or `1 editorial article (từng bước) · …`.
 - **Timing source.** The browser now records `startedAt`, `durationMs` and `purpose` on every AI usage record (`/api/generate`, plus `/api/seo/research`, which is now recorded as a step-2 call), stored in the article's `aiUsageByStep`.
+- **Process log trace.** Batch-runner usage records in `aiUsageByStep` also carry `durationMs` and `trace` `{ input, output, sources, rules }`: prompt and reply excerpts (≤700 chars each, whitespace collapsed), the KB/Rules document names sent to the model and the compiled workflow rules (`id (strict|guided)`). No full prompt is stored. The CRM manual-mode "Checklist xử lý" pairs these calls with `batchStepRuns` by time window.
 - **Sub-jobs.** Each is the last session of its step's calls; a gap over 10 minutes starts a new session. The step's time is the union of its calls' durations.
   - step 2 `seo-research` / web-search → Nghiên cứu từ khóa SEO
   - other step 2 → Article Spec & Core Idea

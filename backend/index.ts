@@ -710,6 +710,19 @@ function batchUsage(step: 1 | 2 | 3 | 4, provider: string, response: any) {
     purpose: response.callPurpose ?? "generation",
     contextCharsSent: Number(response.contextCharsSent ?? 0),
     calledAt: new Date().toISOString(),
+    ...(response.durationMs != null ? { durationMs: Number(response.durationMs) } : {}),
+    ...(response.trace ? { trace: response.trace } : {}),
+  }
+}
+
+/** Short, inspectable record of one AI call for the CRM process log (no full prompts stored). */
+function aiCallTrace(prompt: string, content: unknown, context: { summary: { kb: string[]; rules: string[] } } | null, rules: any[]) {
+  const cut = (value: unknown, max: number) => { const text = String(value ?? "").replace(/\s+/g, " ").trim(); return text.length > max ? `${text.slice(0, max)}…` : text }
+  return {
+    input: cut(prompt, 700),
+    output: cut(content, 700),
+    sources: context ? [...context.summary.kb, ...context.summary.rules].slice(0, 30) : [],
+    rules: (rules ?? []).map((rule: any) => `${rule.id} (${rule.enforcement})`),
   }
 }
 
@@ -1164,6 +1177,7 @@ async function runBatchModel(
     prompt: effectivePrompt,
     fingerprint: `${context.summary.sourceFingerprint}:${compiledRules.fingerprint}`,
   })
+  const traceContext = options.skipDocumentContext ? null : context
   const cached = await kvGet<any>(key)
   if (cached?.content)
     return {
@@ -1173,7 +1187,10 @@ async function runBatchModel(
       callPurpose: purpose,
       contextCharsSent: options.skipDocumentContext ? 0 : context.summary.totalChars,
       workflowRuleSnapshot: compiledRules.snapshot,
+      durationMs: 0,
+      trace: aiCallTrace(prompt, cached.content, traceContext, compiledRules.snapshot.rules),
     }
+  const callStartedAt = Date.now()
   if (purpose === "generation") await reserveAIBudget(article.id, step)
   const response = await generate({
     modelId: model.id,
@@ -1218,6 +1235,8 @@ async function runBatchModel(
     callPurpose: purpose,
     contextCharsSent: options.skipDocumentContext ? 0 : context.summary.totalChars,
     workflowRuleSnapshot: compiledRules.snapshot,
+    durationMs: Date.now() - callStartedAt,
+    trace: aiCallTrace(prompt, response.content, traceContext, compiledRules.snapshot.rules),
   }
 }
 
@@ -2199,12 +2218,16 @@ async function runBatchArticle(
           seoResearch = null
         if (!seoResearch) {
           await reserveAIBudget(article.id, 2)
+          const seoStartedAt = Date.now()
           seoResearch = await researchSeoKeywords(seeds, keywordCount)
           seoUsage = batchUsage(2, "openai", {
             model: "gpt-5.4-mini-web-search",
             usage: seoResearch.usage,
             costUsd: null,
             cacheHit: false,
+            callPurpose: "seo-research",
+            durationMs: Date.now() - seoStartedAt,
+            trace: aiCallTrace(`SEO keyword research (${keywordCount} keywords) for: ${seeds.join(", ")}`, (seoResearch.keywords ?? []).map((item: any) => item.keyword ?? item).join(", "), null, []),
           })
           await kvSet(seoKey, seoResearch)
           article = await saveStepCheckpoint(article, {

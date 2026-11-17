@@ -39,6 +39,8 @@ export interface AICallUsage {
   startedAt?: string
   durationMs?: number
   purpose?: string
+  /** Short excerpt of what the call received and returned, saved by the batch runner. */
+  trace?: { input: string; output: string; sources: string[]; rules: string[] }
 }
 
 export type FileCategory = "kb" | "rules"

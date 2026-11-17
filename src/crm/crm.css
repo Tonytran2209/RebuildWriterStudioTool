@@ -384,3 +384,27 @@
 .crm .crm-loading-bar{height:100%;width:40%;background:var(--accent);border-radius:2px;animation:crm-load 1.2s var(--ease) infinite}
 @keyframes crm-load{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
 @media (prefers-reduced-motion:reduce){.crm .crm-loading-bar{animation:none;width:60%}}
+/* Process log (manual mode): live spinner and step-by-step reveal */
+@keyframes crm-spin{to{transform:rotate(360deg)}}
+.crm .ti-loader-2{display:inline-block;animation:crm-spin .9s linear infinite}
+.crm .plog-in{animation:crm-fadeUp .36s var(--ease) both}
+.crm .plog-row > summary{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;list-style:none}
+.crm .plog-row > summary::-webkit-details-marker{display:none}
+.crm .plog-row{border-bottom:1px solid var(--b3)}
+.crm .plog-row:last-child{border-bottom:0}
+.crm .plog-row[open] > summary .plog-chev{transform:rotate(180deg)}
+.crm .plog-chev{transition:transform .15s;color:var(--f4)}
+.crm .plog-body{padding:4px 12px 12px 36px;display:flex;flex-direction:column;gap:8px}
+.crm .plog-tl{border-left:1px solid var(--b2);padding-left:12px;display:flex;flex-direction:column;gap:6px}
+.crm .plog-tl .t{color:var(--f4);font-variant-numeric:tabular-nums;min-width:62px;margin-right:6px;display:inline-block}
+.crm .plog-call{border:1px solid var(--b2);border-radius:6px;background:var(--bg1)}
+.crm .plog-call > summary{display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;list-style:none;color:var(--f2)}
+.crm .plog-call > summary::-webkit-details-marker{display:none}
+.crm .plog-kv{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;padding:8px 10px;border-top:1px solid var(--b3)}
+.crm .plog-kv dt{color:var(--f3)}
+.crm .plog-kv dd{margin:0;color:var(--f2);word-break:break-word;white-space:pre-wrap}
+.crm .plog-meta{color:var(--f3);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.crm .plog-live{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent-bg);color:var(--accent);border-bottom:1px solid var(--b3)}
+@media (prefers-reduced-motion:reduce){.crm .ti-loader-2,.crm .plog-in{animation:none}}
+@media (max-width:640px){.crm .plog-kv{grid-template-columns:1fr}.crm .plog-body{padding-left:12px}}
+@media (max-width:640px){.crm .plog-row > summary,.crm .plog-call > summary,.crm .plog > summary{flex-wrap:wrap}.crm .plog-call > summary .grow{min-width:60%!important}}
