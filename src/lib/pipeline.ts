@@ -67,3 +67,20 @@ export function firstPassApprovalRate(articles: Article[], settings: PipelineSet
   if (!scored.length) return null
   return Math.round((scored.filter(result => result.state === "approved").length / scored.length) * 100)
 }
+
+export type RerunGate = 1 | 2 | 3 | 4
+
+/**
+ * Fields to clear so the resumable batch runner regenerates from `gate` onwards.
+ * G1 Core Idea → G2 Outline → G3 Draft → 4 AI Review (re-check keeps the draft).
+ */
+export function rerunPatch(article: Pick<Article, "id" | "activityId" | "activityKind">, gate: RerunGate): Partial<Article> {
+  const clear: Partial<Article> =
+    gate === 1 ? { coreIdeaSuggestions: [], selectedCoreIdeaId: undefined, articleSpec: null, articleSpecFingerprint: null, outline: [], outlineNeedsRegeneration: true, draft: "", draftNeedsRegeneration: true, qualityReport: null, semanticReviewChecks: null, semanticReviewFingerprint: null }
+    : gate === 2 ? { outline: [], outlineNeedsRegeneration: true, draft: "", draftNeedsRegeneration: true, qualityReport: null, semanticReviewChecks: null, semanticReviewFingerprint: null }
+    : gate === 3 ? { draftNeedsRegeneration: true, qualityReport: null, semanticReviewChecks: null, semanticReviewFingerprint: null }
+    : { qualityReport: null, semanticReviewChecks: null, semanticReviewFingerprint: null }
+  // Older single articles join the pipeline as a one-article batch.
+  const batch: Partial<Article> = article.activityKind === "batch" && article.activityId ? {} : { activityKind: "batch", activityId: article.activityId || `activity-${article.id}` }
+  return { ...clear, ...batch, batchStatus: "queued", batchError: null, status: "review", completedAt: null, humanReview: null }
+}

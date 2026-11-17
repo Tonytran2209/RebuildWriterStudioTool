@@ -318,3 +318,24 @@ Giao diện CRM (`src/crm/`) là mặc định. Gồm: Bài viết (Table/Kanban
 - Role `reviewer` riêng: hiện mọi người dùng đã đăng nhập đều review được (DB đang `CHECK (role IN ('user','admin'))`).
 - Chia checklist SEO/GEO/E-E-A-T, meta title/description, 31 tiêu chí (P1, cần chốt mục 7).
 - Storage 5 nhóm và Shipper theo article type (P4).
+
+### Trạng thái từng phần (cập nhật 2026-11-18, sau khi gỡ giao diện cũ)
+
+Giao diện cũ (sidebar, launcher, 3 bước Core Idea/Outline/Draft dạng cũ, hộp thoại Cài đặt) đã bị gỡ. Mọi thao tác chạy qua CRM.
+
+| Phần | Trạng thái | Ghi chú |
+|---|---|---|
+| Add Plan → import, phân loại type, chia batch, chạy | **Chạy thật** | API content plan + batch runner |
+| G1 Research/Topic (nhiều Core Idea có điểm, tự chọn ý điểm cao nhất) | **Chạy thật** | Đúng tinh thần N option |
+| G2 Outline, G3 Final Article | **Chạy thật, 1 option** | Chưa có `runGate` nhiều option |
+| AI Approval (Universal QC, ngưỡng, chặn cứng dẫn chứng) | **Chạy thật** | Tiêu chí là Universal QC + checklist Step 4, chưa phải 31 tiêu chí |
+| Retry batch lỗi; Chế độ thủ công: chọn ý tưởng, chọn cấu trúc outline, sửa draft, Tạo lại G1/G2/Draft, Chấm lại AI | **Chạy thật** | `POST /api/articles/:id/rerun` xoá output từ gate đó rồi batch runner chạy lại |
+| Human review, Approved Article, Review Workspace, mẫu ngẫu nhiên | **Chạy thật** | Chưa có role Reviewer riêng |
+| Storage 5 nhóm, Used at, Shipper | **Chạy thật (quyền file theo gate)** | Nhóm suy ra từ tên file; type A/B/C/ED chưa lọc riêng |
+| Dashboard, Timeline, Generation History | **Chạy thật** | History chỉ có option của G1 |
+| Settings: Pipeline (threshold, maxParallel, mẫu review) | **Chạy thật** | |
+| Settings: số option G2/G3, vòng sửa, No-pass Logic, giữ bước ảnh, perBatch tự xếp lịch nhiều batch | **Để sẵn** | Chờ quyết định mục 8 |
+| Meta title/description, Key takeaways, FAQ, author bio | **Để sẵn** | Chờ chốt mâu thuẫn mục 7 |
+| Checklist Gate 1–2, Quy tắc chỉnh sửa, Vocabulary, Writing Patterns | **Chờ tài liệu** | Hiện "Missing" trong Storage; upload vào Knowledge & Rules với tên chứa "Gate 1", "chỉnh sửa", "Vocab", "Writing Pattern" là hệ thống nhận |
+| Gợi ý và chèn ảnh minh hoạ | **Tạm ngưng trên giao diện** | Chỉ có ở Step 4 cũ (client); batch chưa bao giờ tạo ảnh. Worker ảnh và Image Styles vẫn chạy; chờ quyết định 8 |
+| Lịch sử phiên bản, AI log, SEO brief của 3 bước cũ | **Đã gỡ cùng giao diện cũ** | Dữ liệu vẫn lưu trong bài |

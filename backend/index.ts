@@ -1,5 +1,6 @@
 import { imageWorkerApi, imageWorkerRunner } from "./imageWorkers.ts"
 import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
+import { rerunPatch, type RerunGate } from "../src/lib/pipeline.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
 import { convertStepRunsToTelemetryStages, sendArticleRunTelemetry } from "./telemetry.ts";
@@ -4863,6 +4864,32 @@ app.post("/api/batches/:activityId/retry/:articleId", async (req, res) => {
     res.status(202).json({ ok: true, article: queued })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// Manual mode in the CRM: regenerate one article from a gate through the batch runner,
+// so the run is logged as the existing batch article job and its sub-jobs.
+app.post("/api/articles/:id/rerun", async (req, res) => {
+  try {
+    const gate = Number(req.body?.gate)
+    if (![1, 2, 3, 4].includes(gate)) return res.status(400).json({ error: "gate must be 1, 2, 3 or 4." })
+    const article = await (async () => {
+      // saveArticleCheckpoint serializes the write per article.
+      const existing = await kvGet<any>(`${ARTICLE_PREFIX}${req.params.id}`)
+      if (!existing) throw Object.assign(new Error("Bài viết không tồn tại."), { status: 404 })
+      if (isArticleCompleted(existing)) throw Object.assign(new Error("Hãy mở lại bài viết trước khi chạy AI."), { status: 409, code: "ARTICLE_COMPLETED" })
+      if (["running", "queued"].includes(existing.batchStatus)) throw Object.assign(new Error("Pipeline đang chạy bài này."), { status: 409, code: "ARTICLE_RUNNING" })
+      if (gate <= 2 && !existing.outlineStructure) throw Object.assign(new Error("Chọn cấu trúc outline trước khi chạy lại."), { status: 409, code: "OUTLINE_STRUCTURE_REQUIRED" })
+      if (gate >= 3 && !existing.outline?.length) throw Object.assign(new Error("Bài chưa có outline. Chạy lại từ G2."), { status: 409, code: "WORKFLOW_PREREQUISITE_MISSING" })
+      if (gate === 4 && !String(existing.draft ?? "").trim()) throw Object.assign(new Error("Bài chưa có draft. Chạy lại từ G3."), { status: 409, code: "WORKFLOW_PREREQUISITE_MISSING" })
+      return saveArticleCheckpoint(existing, rerunPatch(existing, gate as RerunGate))
+    })()
+    const controller = batchControllers.get(article.activityId)
+    if (!controller?.running)
+      void runBatch(article.activityId).catch((error) => console.error(`[article-rerun] ${article.activityId}`, error))
+    res.status(202).json({ ok: true, article })
+  } catch (err: any) {
+    res.status(err?.status ?? 500).json({ code: err?.code, error: err?.message ?? String(err) })
   }
 })
 

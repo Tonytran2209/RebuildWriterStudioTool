@@ -27,9 +27,9 @@ export const labProfile = {
   mainJob: { job: ARTICLE_JOB, steps: Object.values(batchStepLabels) },
   // Kept from AI Agent Lab's earlier built-in target for batch articles.
   jobTargets: { [ARTICLE_JOB]: 10 },
-  // What the browser KPIs measure (ui-kpi-v2, src/components/workspace/Step3Outline.tsx).
+  // What the browser KPIs measure (ui-kpi-v2: src/crm/ui.tsx trackHandoff, src/components/config/ImageStylesSettings.tsx).
   kpiDescriptions: {
-    responseTime: "Bấm Tạo outline, Tạo ảnh hoặc Chèn ảnh, hoặc Lưu/Duyệt phong cách ảnh (tính từ sự kiện bấm) → khung hình thứ hai sau khi giao diện xác nhận máy chủ đã nhận việc tạo outline, đưa ảnh vào hàng đợi, lưu vị trí chèn ảnh hoặc lưu phiên bản style",
-    clickLatency: "Bấm Tạo outline, Tạo ảnh hoặc Chèn ảnh, hoặc Lưu/Duyệt phong cách ảnh (tính từ sự kiện bấm) → khung hình thứ hai sau khi trạng thái đang xử lý được hiển thị, tức khung đầu tiên đã có cơ hội vẽ",
+    responseTime: "Bấm Generate (Add Plan), Retry, Tạo lại G1/G2/Draft hoặc Chấm lại AI trong CRM, hoặc Lưu/Duyệt phong cách ảnh (tính từ sự kiện bấm) → khung hình thứ hai sau khi giao diện xác nhận máy chủ đã nhận việc (batch đã tạo và chạy, bài đã vào hàng đợi, phiên bản style đã lưu)",
+    clickLatency: "Bấm Generate (Add Plan), Retry, Tạo lại G1/G2/Draft hoặc Chấm lại AI trong CRM, hoặc Lưu/Duyệt phong cách ảnh (tính từ sự kiện bấm) → khung hình thứ hai sau khi trạng thái đang xử lý được hiển thị",
   },
 }

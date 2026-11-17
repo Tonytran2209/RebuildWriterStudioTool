@@ -92,7 +92,7 @@ test("AI instrumentation preserves results, errors and restart-safe aggregate to
       "Kiểm tra chất lượng", "Lưu phong cách ảnh", "Duyệt phong cách ảnh", "Đồng bộ thư viện ảnh", "Tạo ảnh minh họa", "Chèn ảnh vào bài",
     ] })
     assert.deepEqual(report.profile.jobTargets, { "Writer article": 10 })
-    assert.match(report.profile.kpiDescriptions.responseTime, /Tạo outline, Tạo ảnh hoặc Chèn ảnh/)
+    assert.match(report.profile.kpiDescriptions.responseTime, /Generate \(Add Plan\), Retry, Tạo lại G1\/G2\/Draft hoặc Chấm lại AI/)
     assert.match(report.profile.kpiDescriptions.clickLatency, /khung hình thứ hai/)
     assert.equal(report.ai.calls, 3)
     assert.equal(report.ai.failed, 1)

@@ -7,9 +7,10 @@ import * as db from "../lib/db"
 import { classifyContentPlan, importContentPlan } from "../lib/contentPlans"
 import { markdownToHtml, normalizeDraftOutput } from "../lib/draftExport"
 import { buildBatchZip } from "../lib/zipExport"
-import { pipelineSettings } from "../lib/pipeline"
+import { pipelineSettings, type RerunGate } from "../lib/pipeline"
+import ManualTab from "./ManualTab"
 import { step4ChecklistDocs } from "../lib/qualityPolicy"
-import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../components/workspace/Step4Draft"
+import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../lib/qcGroups"
 import OutlineStructureSelect from "../components/OutlineStructureSelect"
 import TabStepSetup from "../components/config/TabStepSetup"
 import TabModels from "../components/config/TabModels"
@@ -17,18 +18,10 @@ import TabKnowledgeBase from "../components/config/TabKnowledgeBase"
 import ImageWorkersSettings from "../components/config/ImageWorkersSettings"
 import ImageStylesSettings from "../components/config/ImageStylesSettings"
 import { GATES, STORAGE_GROUPS, batchesOf, planStats, plansOf, storageDocs, toCrmArticle, toggleShip, type CrmArticle, type CrmBatch, type CrmPlan, type HumanStatus, type StorageDoc } from "./model"
+import { Av, I, enc, errText, go, person, toast, trackHandoff } from "./ui"
 import "./crm.css"
 
 /* ─── helpers (same as the demo) ───────────────────────────────────────── */
-
-const I = ({ n, s }: { n: string; s?: CSSProperties }) => <i className={`ti ti-${n}`} style={s} aria-hidden="true" />
-const PALETTE = ["#4662d5", "#d45452", "#7948af", "#14806e", "#c25700", "#317299", "#b23887", "#307f52", "#997000"]
-const colorOf = (s: string) => PALETTE[[...String(s)].reduce((a, c) => a + c.charCodeAt(0), 0) % PALETTE.length]
-const Av = ({ name, round, xl }: { name?: string; round?: boolean; xl?: boolean }) =>
-  <span className={`av${round ? " round" : ""}${xl ? " xl" : ""}`} style={{ background: colorOf(name ?? "?") }}>{((name ?? "?").trim()[0] ?? "?").toUpperCase()}</span>
-const person = (email?: string) => email ? email.split("@")[0] : ""
-const go = (h: string) => { window.location.hash = h }
-const enc = encodeURIComponent
 
 const TYPES = { A: ["So sánh format", "Format vs format"], B: ["So sánh khái niệm", "Concept comparison"], C: ["Nhiều lựa chọn", "Multiple options"], ED: ["Editorial", "Editorial"] } as const
 const STATUS = { queued: ["Queued", "gray"], running: ["Running", "blue"], failed: ["Failed (No-pass)", "red"], completed: ["AI Approved", "green"], attention: ["Needs attention", "red"] } as const
@@ -71,8 +64,6 @@ export function CrmToastHost() {
   }, [])
   return <div className="crm" style={{ position: "fixed", height: 0, width: 0, overflow: "visible" }}>{items.slice(-1).map(t => <div key={t.id} role="status" className={`toast${t.out ? " out" : ""}`}><I n="info-circle" />{t.message}</div>)}</div>
 }
-const toast = (message: string) => window.dispatchEvent(new CustomEvent("writer:workspace-notice", { detail: { id: Date.now() + Math.random(), message, kind: "success" } }))
-const errText = (err: unknown) => err instanceof Error ? err.message : String(err)
 
 /* ─── props ────────────────────────────────────────────────────────────── */
 
@@ -82,19 +73,18 @@ export type CrmProps = {
   contentPlans: ContentPlan[]
   files: DocumentFile[]
   config: AppConfig
-  activeId: string | null
-  onSelectArticle: (id: string | null) => void
   onUpdateArticle: (id: string, updates: Partial<Article>) => Promise<boolean>
   onDeleteArticle: (article: Article, batch?: boolean) => void
   onRetry: (article: Article) => Promise<void>
   onCreate: (type: "comparison-seo" | "editorial-originality", plan: ContentPlan, items: ContentPlanItem[], batchSize?: 5 | 10 | 15 | 20, outlineStructure?: OutlineStructureSnapshot, options?: { forceBatch?: boolean; select?: boolean }) => Promise<void>
   onContentPlansChange: (plans: ContentPlan[]) => void
   onSaveConfig: (config: AppConfig, files: DocumentFile[], filesChanged: boolean) => Promise<void>
-  onSwitchClassic: () => void
   onSignOut: () => void
   themePreference: ThemePreference
   onThemeChange: (preference: ThemePreference) => void
-  renderManual: () => ReactNode
+  onRerun: (article: Article, gate: RerunGate) => Promise<void>
+  onToggleComplete: (article: Article) => void
+  onMigrateLegacy: (article: Article) => void
 }
 
 type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "step"; i: number } | { kind: "cmd" } | null
@@ -142,8 +132,6 @@ export default function CrmApp(props: CrmProps) {
   const [path, query = ""] = hash.replace(/^#\/?/, "").split("?")
   const route = (path || "objects/articles").split("/").map(decodeURIComponent)
   const [a, b, c] = route
-  // Manual mode in App acts on the active article, so the record route drives it.
-  useEffect(() => { if (a === "object" && b === "articles" && c && c !== props.activeId) props.onSelectArticle(c) }, [a, b, c, props.activeId])
 
   const settingsKey = JSON.stringify(settings)
   const list = useMemo(() => props.articles.map(x => toCrmArticle(x, settings)), [props.articles, settingsKey])
@@ -410,9 +398,9 @@ function RetryButton({ ctx, a, primary }: { ctx: Ctx; a: CrmArticle; primary?: b
   const g = GATES[(a.failGate ?? 1) - 1]
   const run = (e: ReactMouseEvent) => {
     e.stopPropagation()
-    // Batch failures re-run on the server; an AI Review failure is fixed and re-checked in Manual mode.
-    if (a.a.batchStatus === "failed" && a.batchId) void ctx.onRetry(a.a).then(() => toast(`Retry ${g.short}`)).catch(err => toast(errText(err)))
-    else go(`#/object/articles/${enc(a.id)}?tab=manual`)
+    // Batch failures resume on the server; an AI Review failure re-runs the review gate.
+    const job = () => a.a.batchStatus === "failed" && a.batchId ? ctx.onRetry(a.a) : ctx.onRerun(a.a, (a.failGate ?? 4) as RerunGate)
+    void trackHandoff(e.timeStamp, job).then(() => toast(`Retry ${g.short}`)).catch(err => toast(errText(err)))
   }
   return <button className={`btn${primary ? " primary" : ""}`} aria-label={`Retry ${g.short}`} onClick={run}><I n="refresh" /><span>Retry {g.short}</span></button>
 }
@@ -496,10 +484,7 @@ function ArticleShow({ ctx, id, initialTab }: { ctx: Ctx; id: string; initialTab
     {tab === "review" && <ReviewTab ctx={ctx} a={a} />}
     {tab === "history" && <HistoryTab ctx={ctx} a={a} />}
     {tab === "timeline" && <TimelineTab ctx={ctx} a={a} />}
-    {tab === "manual" && <>
-      <div style={{ background: "var(--accent-bg)", color: "var(--accent)", borderRadius: 6, padding: "8px 12px", marginBottom: 16 }}><I n="info-circle" /> {tr("Đề xuất, cần chốt: giữ 3 bước chỉnh tay hiện có để sửa bài bị Failed. Sửa ở đây không gửi bài lại cho pipeline.", "Proposal, pending decision: the 3 manual steps stay available to fix Failed articles. Edits here do not resubmit the article.")}</div>
-      <div className="embed">{ctx.activeId === a.id ? ctx.renderManual() : <div className="empty-state">…</div>}</div>
-    </>}
+    {tab === "manual" && <ManualTab article={a.a} settings={ctx.settings} files={ctx.files} config={ctx.config} onUpdateArticle={ctx.onUpdateArticle} onRerun={ctx.onRerun} onToggleComplete={ctx.onToggleComplete} onMigrateLegacy={ctx.onMigrateLegacy} />}
   </ShowShell>
 }
 
@@ -662,11 +647,12 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
   useEffect(() => nameRef.current?.focus(), [])
   const lines = topics.split("\n").map(t => t.trim()).filter(Boolean)
   const perBatch = Math.max(1, Math.min(20, per || 1))
-  const create = async () => {
+  const create = async (eventTimeStamp: number) => {
     if (!lines.length) return toast(tr("Cần ít nhất một topic", "At least one topic is required"))
     if (!structure) return toast(tr("Chọn cấu trúc outline trước khi chạy.", "Choose an outline structure first."))
+    setBusy(tr("Đang import plan…", "Importing plan…"))
     try {
-      setBusy(tr("Đang import plan…", "Importing plan…"))
+      const planId = await trackHandoff(eventTimeStamp, async () => {
       const railway = ctx.config.railwayUrl
       const imported = await importContentPlan({ name: name.trim() || `Content Plan ${new Date().toLocaleDateString()}`, sourceType: "paste", content: lines.join("\n") }, railway)
       ctx.onContentPlansChange([imported])
@@ -684,8 +670,10 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
           setBusy(`${tr("Đang tạo batch", "Creating batch")} ${++made}…`)
           await ctx.onCreate(type, plan, chunk, ([5, 10, 15, 20].find(s => s >= chunk.length) ?? 20) as 5 | 10 | 15 | 20, structure, { forceBatch: true, select: false })
         }
+      return plan.id
+      })
       ctx.setPanel(null)
-      go(`#/object/plans/${plan.id}`)
+      go(`#/object/plans/${planId}`)
       toast(tr("Đã tạo plan và bắt đầu chạy", "Plan created and running"))
     } catch (err) {
       toast(errText(err))
@@ -701,7 +689,7 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
     <div style={{ margin: "4px 0 12px" }}><OutlineStructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
     <div style={{ borderTop: "1px solid var(--b2)", margin: "8px 0 12px" }} />
     <textarea aria-label="Topics" value={topics} onChange={e => setTopics(e.target.value)} placeholder={tr("Mỗi dòng một topic (hướng chủ đề, chưa có title). Title được chọn ở G1; article type được phân loại tự động.", "One topic per line (a direction, not a title). The title is chosen at G1; article type is classified automatically.")} />
-    <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy)} onClick={() => void create()}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>
+    <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy)} onClick={e => void create(e.timeStamp)}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>
   </SidePanel>
 }
 
@@ -915,7 +903,6 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
     body = <>
       <Sec title="Appearance" desc="Choose how the app looks"><div className="theme-cards">{card("light", "Light", "#fff", "#ccc")}{card("dark", "Dark", "#1b1b1b", "#555")}{card("system", "System settings", "linear-gradient(90deg,#fff 50%,#1b1b1b 50%)", "#888")}</div></Sec>
       <Sec title="Language" desc="Select your preferred language"><select className="inp" style={{ maxWidth: 300 }} value={language} onChange={e => setLanguage(e.target.value as typeof language)}><option value="vi">Tiếng Việt</option><option value="en">English</option></select></Sec>
-      <Sec title={tr("Giao diện cũ", "Classic UI")} desc={tr("Tạm giữ trong thời gian chạy thử.", "Kept during the trial.")}><button className="btn" onClick={ctx.onSwitchClassic}><I n="arrow-back-up" />{tr("Chuyển về giao diện cũ", "Switch to classic UI")}</button></Sec>
     </>
   }
   if (p === "roles") body = <Sec title="All roles" desc={tr("Vai trò do Admin cấp trong hệ thống. Reviewer chưa tách riêng: mọi tài khoản đều review được.", "Roles are assigned by an admin. Reviewer is not separate yet: every account can review.")}><div className="box">{(Object.keys(ROLES) as Array<keyof typeof ROLES>).map(k => {
