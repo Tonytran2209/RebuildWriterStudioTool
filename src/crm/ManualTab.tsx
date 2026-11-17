@@ -5,6 +5,7 @@ import { useI18n } from "../lib/i18n"
 import { isArticleCompleted } from "../lib/workflowGuards"
 import { isLegacyArticle } from "../lib/legacyCompatibility"
 import StructureSelect from "./StructureSelect"
+import StepLog from "./StepLog"
 import { selectIdeaPatch } from "./model"
 import { I, errText, toast, trackHandoff } from "./ui"
 
@@ -68,6 +69,7 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
       <input type="radio" tabIndex={-1} readOnly checked={a.selectedCoreIdeaId === o.id} aria-hidden="true" /><span className="grow">{o.title}{o.angleLabel && <span className="muted" style={{ color: "var(--f3)" }}> · {o.angleLabel}</span>}</span>
       <span className={`tag t-${(o.rating?.overall ?? 0) * 10 >= settings.threshold ? "green" : "gray"}`}>{(o.rating?.overall ?? 0).toFixed(1)}</span>
     </div>) : <p className="muted" style={{ color: "var(--f3)" }}>{running ? tr("Đang tạo ý tưởng…", "Generating ideas…") : tr("Chưa có ý tưởng. Bấm Tạo lại G1.", "No ideas yet. Use Regenerate G1.")}</p>}
+    <StepLog article={a} step={2} />
 
     <div className="fsec"><I n="list-tree" />&nbsp;{tr("Bước 2 — Dàn bài nháp", "Step 2 — Draft outline")}{a.outlineStructure && <span className="tag t-gray" style={{ marginLeft: 8 }}>{a.outlineStructure.name}</span>}{btn(2, tr("Tạo lại G2", "Regenerate G2"), outline.length ? tr("Tạo lại G2 sẽ xoá outline và draft hiện tại. Tiếp tục?", "Regenerating G2 clears the outline and draft. Continue?") : undefined, !a.selectedCoreIdeaId || !a.outlineStructure)}</div>
     {(!a.outlineStructure || !outline.length) && !locked && <div style={{ marginBottom: 8 }}><StructureSelect files={files} allowedIds={config.stepConfigs[3]?.fileAccess?.rules ?? []} value={a.outlineStructure ?? null} onChange={value => void onUpdateArticle(a.id, { outlineStructure: value })} /></div>}
@@ -77,9 +79,11 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
       </div>
       {open === s.id && <div style={{ border: "1px solid var(--b2)", borderTop: 0, padding: "8px 12px 10px", paddingLeft: s.level === "h3" ? 60 : 36, color: "var(--f2)", lineHeight: 1.5 }}>{s.notes || <span className="empty" style={{ color: "var(--f4)" }}>Empty</span>}{s.keywords?.length ? <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>{s.keywords.map(k => <span key={k} className="tag t-blue">{k}</span>)}</div> : null}</div>}
     </div>) : <p className="muted" style={{ color: "var(--f3)" }}>{tr("Chưa có outline.", "No outline yet.")}</p>}
+    <StepLog article={a} step={3} />
 
     <div className="fsec"><I n="file-text" />&nbsp;{tr("Bước 3 — Bản nháp & Kiểm tra", "Step 3 — Draft & QC")}{btn(4, tr("Chấm lại AI", "Re-check AI"), undefined, !a.draft?.trim() || !outline.length)}{btn(3, tr("Tạo lại Draft", "Regenerate draft"), a.draft?.trim() ? tr("Tạo lại Draft sẽ thay bản nháp hiện tại. Tiếp tục?", "Regenerating replaces the current draft. Continue?") : undefined, !outline.length)}</div>
     <textarea className="inp" aria-label={tr("Bản nháp", "Draft")} style={{ height: 320, padding: 10, lineHeight: 1.6, fontFamily: "inherit" }} disabled={locked} value={draft} onChange={e => setDraft(e.target.value)} placeholder={tr("Bắt đầu viết thủ công…", "Start writing manually…")} />
     {draft !== (a.draft ?? "") && !locked && <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 8 }}><button className="btn" onClick={() => setDraft(a.draft ?? "")}>{tr("Huỷ", "Discard")}</button><button className="btn primary" onClick={() => void saveDraft()}><I n="device-floppy" />{tr("Lưu draft", "Save draft")}</button></div>}
+    <StepLog article={a} step={4} />
   </>
 }

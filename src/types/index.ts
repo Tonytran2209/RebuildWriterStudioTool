@@ -279,6 +279,9 @@ export interface KeywordAuditItem {
   kbReason: string
 }
 
+/** Sub-job timing saved by the batch runner (backend/batchSteps.ts). */
+export type BatchStepRun = { key: "plan" | "seo" | "spec" | "outline" | "draft" | "quality"; label: string; startedAt: string; endedAt: string | null; status: "running" | "completed" | "failed" }
+
 export interface AIProcessTraceEvent {
   id: string
   stage: string
@@ -420,6 +423,7 @@ export interface Article {
   approvedArticle?: { by: string; at: string } | null
   workflowRuleSnapshots?: Partial<Record<2 | 3 | 4, WorkflowRuleSnapshot>>
   aiUsageByStep?: Partial<Record<1 | 2 | 3 | 4, AICallUsage[]>>
+  batchStepRuns?: BatchStepRun[]
   // Activity workspace / per-run content plan
   activityType?: "comparison-seo" | "editorial-originality"
   activityKind?: "single" | "batch"
