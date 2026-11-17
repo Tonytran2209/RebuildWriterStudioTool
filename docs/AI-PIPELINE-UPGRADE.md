@@ -1,6 +1,6 @@
 # Chuyển đổi Writer Studio sang AI Content Pipeline (3 gate)
 
-> Trạng thái: **đề xuất, chưa triển khai**. Ngày tổng hợp: 2026-11-13.
+> Trạng thái: **đang chạy thử** (giao diện CRM và AI Approval, từ 2026-11-17; xem mục 10). Ngày tổng hợp: 2026-11-13.
 > Nguồn:
 > - BA doc "re-BA Comparision Content Articles" (2 bản: Business Objective, và Workflow Logic).
 > - Sơ đồ "Request → Batch → 3 Gate → AI approval → Human review → Google Docs".
@@ -279,3 +279,39 @@ Mỗi option và mỗi lượt sửa được tính là một `items`. Telemetry
 | **P4 Storage và Shipper** | 5 nhóm, "Used at", package theo type, retrieval có chọn lọc, Approved Articles | `stepContext.ts`, `TabStepSetup` |
 
 Mỗi giai đoạn khi xong cần đo First-pass Approval Rate và chi phí AI cho mỗi bài, để so với baseline.
+
+## 10. Bản chạy thử (2026-11-17)
+
+Người dùng đã duyệt: chuyển sang giao diện CRM của repo `twenty-demo-ui` (`pipeline-crm.html`) và chấp nhận chi phí AI cho các lượt chạy thử.
+
+### Giá trị tạm (đổi trong Cài đặt → Pipeline, lưu ở `writer:config.pipeline`)
+
+| Quyết định (mục 8) | Giá trị tạm | Đã có hiệu lực? |
+|---|---|---|
+| Threshold | 90%, dùng chung cho mọi gate | Có: AI Approval = điểm Universal QC ≥ ngưỡng |
+| Tiêu chí chặn cứng | `evidence-support` trượt, hoặc check có `blocking` | Có |
+| Cách tính điểm | pass = 1, warning = 0,5, fail = 0, chia cho số tiêu chí | Có |
+| Tỉ lệ review ngẫu nhiên | 20%, chọn tất định theo id bài | Có (bộ lọc trong Review Workspace) |
+| Số bài song song | 2 bài cùng lúc trong một batch (`maxParallel`) | Có (backend `runBatch`) |
+| Số bài mỗi batch | 5 | Chưa: vẫn chọn 5/10/15/20 khi tạo batch |
+| Số option mỗi gate | 3 | Chưa: G1 vẫn là nhiều Core Idea có điểm; G2, G3 tạo 1 bản |
+| Số vòng sửa | 1 | Chưa |
+| No-pass Logic | Lấy option tốt nhất, gắn cờ | Chưa |
+| "Needs Revision" | Chỉ ghi nhận xét; người sửa trong Chế độ thủ công | Có |
+| Hoàn thành bài | Người bấm "Hoàn thành"; AI Approval chỉ là gợi ý | Có (mâu thuẫn mục 7 chưa chốt) |
+
+### Ánh xạ dữ liệu hiện có sang 3 gate (`src/lib/pipeline.ts`)
+
+Queued (batch đang chờ) → G1 (chưa chọn Core Idea) → G2 (đã chọn, chưa có outline) → G3 (có outline, chưa có draft) → AI Approval (có draft) → Completed (đã hoàn thành). `batchStatus = failed` → Failed, Retry từ batch. Human review lưu ở `article.humanReview` (`approved` | `needs_revision`, nhận xét bắt buộc khi yêu cầu sửa), và vẫn ghi được sau khi bài đã hoàn thành.
+
+### Giao diện
+
+Giao diện CRM (`src/crm/`) là mặc định. Gồm: Bài viết (Table/Kanban theo gate), Content Plans, Batches, Review Workspace, Storage (Used at theo G1–G3, danh sách tài liệu còn thiếu), Quy trình 3 gate, Dashboard (First-pass Approval Rate, bài theo gate, human review, tiêu chí trượt nhiều nhất, chi phí AI), Cài đặt và ⌘K. Ba bước cũ nằm trong tab "Chế độ thủ công" của trang bài viết. Nút "Giao diện cũ" chuyển về sidebar cũ, lưu theo trình duyệt.
+
+### Chưa làm (các giai đoạn sau)
+
+- `runGate` nhiều option cho G2, G3; vòng sửa; No-pass Logic (P2).
+- Tự chia batch theo `perBatch` và lập lịch nhiều batch (P3).
+- Role `reviewer` riêng: hiện mọi người dùng đã đăng nhập đều review được (DB đang `CHECK (role IN ('user','admin'))`).
+- Chia checklist SEO/GEO/E-E-A-T, meta title/description, 31 tiêu chí (P1, cần chốt mục 7).
+- Storage 5 nhóm và Shipper theo article type (P4).

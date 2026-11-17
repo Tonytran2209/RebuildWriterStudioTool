@@ -28,6 +28,7 @@ import LoginScreen from "./components/LoginScreen"
 import { clampArticleStep, gateArticleStep, gateStepCompletion, isArticleCompleted } from "./lib/workflowGuards"
 import { isLegacyArticle } from "./lib/legacyCompatibility"
 import { useThemePreference } from "./lib/theme"
+import CrmApp from "./crm/CrmApp"
 
 function generateId() {
   return `art-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -101,6 +102,7 @@ export default function App() {
   }, [campaignScope])
   const [files, setFiles] = useState<DocumentFile[]>([])
   const [showConfig, setShowConfig] = useState(false)
+  const [uiMode, setUiMode] = useState<"crm" | "classic">(() => { try { return localStorage.getItem("writer:ui") === "classic" ? "classic" : "crm" } catch { return "crm" } })
   const [showBatchOverview, setShowBatchOverview] = useState(true)
   const [launcherHistoryOpen, setLauncherHistoryOpen] = useState(false)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("loading")
@@ -212,7 +214,7 @@ export default function App() {
     (id: string, updates: Partial<Article>, options: ArticleUpdateOptions = {}) => {
       const previous = articlesRef.current.find((article) => article.id === id)
       if (deletingOrDeletedIds.current.has(id)) return Promise.resolve(false)
-      if (previous && isArticleCompleted(previous) && Object.keys(updates).some(key => key !== "currentStep")) return Promise.resolve(false)
+      if (previous && isArticleCompleted(previous) && Object.keys(updates).some(key => key !== "currentStep" && key !== "humanReview")) return Promise.resolve(false)
       setArticles((prev) =>
         prev.map((a) =>
           a.id === id
@@ -715,100 +717,51 @@ export default function App() {
     )
   }
 
-  return (
-    <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} writer-app h-dvh flex flex-col md:flex-row overflow-hidden bg-[var(--ui-bg)]`}>
-      <Sidebar
-        articles={articles}
-        contentPlans={contentPlans}
-        activeArticleId={activeId}
-        onSelectArticle={(id) => {
-          setActiveId(id)
-          setShowBatchOverview(true)
-        }}
-        onNewArticle={() => {
-          setActiveId(null)
-          setShowBatchOverview(true)
-          setLauncherHistoryOpen(false)
-        }}
-        onOpenContentPlans={() => {
-          setActiveId(null)
-          setShowBatchOverview(true)
-          setLauncherHistoryOpen(true)
-          window.setTimeout(
-            () => window.dispatchEvent(new Event("writer:open-plan-history")),
-            0,
-          )
-        }}
-        onOpenConfig={() => { void db.fetchFiles().then(latest => { setFiles(latest); setShowConfig(true) }).catch(error => notifyWorkspace(error.message, "error")) }}
-        canManageSettings={authSession.user.role === "admin"}
-        currentUser={authSession.user}
-        themePreference={themePreference}
-        onThemeChange={setThemePreference}
-        onSignOut={() => { void db.logout().then(() => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }).catch(error => notifyWorkspace(error.message, "error")) }}
-        onSignOutAll={authSession.authProvider === "postgres" ? () => { void db.logout(true).then(() => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }).catch(error => notifyWorkspace(error.message, "error")) } : undefined}
-        onToggleComplete={handleToggleComplete}
-        completionSavingId={completionSavingId}
-        onDeleteArticle={handleDeleteArticle}
-        deletingArticleId={deletingArticleId}
-      />
+  const retryBatchArticle = async (activityId: string, id: string) => {
+    const previous = articlesRef.current.find((item) => item.id === id)
+    setArticles((current) =>
+      current.map((item) => item.id === id
+        ? {
+            ...item,
+            batchStatus: "queued",
+            batchError: null,
+            updatedAt: new Date().toISOString(),
+          }
+        : item),
+    )
+    try {
+      const queued = await db.retryBatchArticle(activityId, id)
+      setArticles((current) =>
+        current.map((item) => item.id === queued.id ? queued : item),
+      )
+    } catch (error) {
+      if (previous)
+        setArticles((current) =>
+          current.map((item) => item.id === id ? previous : item),
+        )
+      throw error
+    }
+  }
 
-      <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden">
-        <WorkspaceNotificationHost />
-        {article && isLegacyArticle(article) ? (
-          <LegacyArticleView
-            article={article}
-            migrating={migratingLegacyId === article.id}
-            onMigrate={() => void handleMigrateLegacy(article)}
-          />
-        ) : article?.activityKind === "batch" && showBatchOverview ? (
+  const renderBatch = (activityId: string, onOpen: (id: string) => void) => (
           <BatchActivity
             articles={articles.filter(
-              (item) => item.activityId === article.activityId,
+              (item) => item.activityId === activityId,
             )}
-            onDeleteBatch={() => void handleDeleteArticle(article, true)}
+            onDeleteBatch={() => { const first = articles.find(item => item.activityId === activityId); if (first) void handleDeleteArticle(first, true) }}
             deletingBatch={Boolean(deletingArticleId)}
-            onOpen={(id) => {
-              setActiveId(id)
-              setShowBatchOverview(false)
-            }}
+            onOpen={onOpen}
             onStart={() =>
-              article.activityId
-                ? db.startBatch(article.activityId)
-                : Promise.resolve()
+db.startBatch(activityId)
             }
             onPause={() =>
-              article.activityId
-                ? db.pauseBatch(article.activityId)
-                : Promise.resolve()
+db.pauseBatch(activityId)
             }
-            onRetry={async (id) => {
-              if (!article.activityId) return
-              const previous = articlesRef.current.find((item) => item.id === id)
-              setArticles((current) =>
-                current.map((item) => item.id === id
-                  ? {
-                      ...item,
-                      batchStatus: "queued",
-                      batchError: null,
-                      updatedAt: new Date().toISOString(),
-                    }
-                  : item),
-              )
-              try {
-                const queued = await db.retryBatchArticle(article.activityId, id)
-                setArticles((current) =>
-                  current.map((item) => item.id === queued.id ? queued : item),
-                )
-              } catch (error) {
-                if (previous)
-                  setArticles((current) =>
-                    current.map((item) => item.id === id ? previous : item),
-                  )
-                throw error
-              }
-            }}
+            onRetry={(id) => retryBatchArticle(activityId, id)}
           />
-        ) : article ? (
+  )
+
+  const renderWorkflow = (article: Article) => (
           <>
             <StepNav
               currentStep={visibleWorkflowStep}
@@ -879,8 +832,9 @@ export default function App() {
               </div>
             </main>
           </>
-        ) : (
-          // Article selected from sidebar but not found (shouldn't happen)
+  )
+
+  const renderLauncher = () => (
           <ActivityLauncher
             files={files}
             outlineRuleIds={config.stepConfigs[3]?.fileAccess?.rules ?? []}
@@ -897,18 +851,113 @@ export default function App() {
             onModelChange={handleComposerModelChange}
             onCreate={handleCreateActivity}
           />
+  )
+
+  const switchUi = (mode: "crm" | "classic") => {
+    try { localStorage.setItem("writer:ui", mode) } catch { /* per-viewer preference only */ }
+    setUiMode(mode)
+  }
+  const signOut = (all = false) => { void db.logout(all).then(() => { setAuthSession(null); setArticles([]); setFiles([]); setActiveId(null) }).catch(error => notifyWorkspace(error.message, "error")) }
+  const openAdvancedSettings = () => { void db.fetchFiles().then(latest => { setFiles(latest); setShowConfig(true) }).catch(error => notifyWorkspace(error.message, "error")) }
+  const configModal = showConfig && (
+    <ConfigModal
+      config={config}
+      files={files}
+      articles={articles}
+      onSave={handleSaveConfig}
+      onClose={() => { setShowConfig(false); void db.fetchFiles().then(setFiles).catch(error => notifyWorkspace(error.message, "error")) }}
+    />
+  )
+
+  if (uiMode === "crm") return (
+    <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} writer-app h-dvh overflow-hidden bg-[var(--ui-bg)]`}>
+      <WorkspaceNotificationHost />
+      <CrmApp
+        user={authSession.user}
+        articles={articles}
+        contentPlans={contentPlans}
+        files={files}
+        config={config}
+        activeId={activeId}
+        onSelectArticle={(id) => { setActiveId(id); setShowBatchOverview(false) }}
+        onUpdateArticle={(id, updates) => handleUpdateArticle(id, updates)}
+        onToggleComplete={handleToggleComplete}
+        completionSavingId={completionSavingId}
+        onDeleteArticle={(target, batch) => void handleDeleteArticle(target, batch)}
+        onRetry={(target) => retryBatchArticle(target.activityId ?? "", target.id)}
+        onSavePipeline={(pipeline) => handleSaveConfig({ ...config, pipeline }, files, false)}
+        onOpenAdvancedSettings={openAdvancedSettings}
+        onSwitchClassic={() => switchUi("classic")}
+        onSignOut={() => signOut()}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
+        renderManual={() => article ? (isLegacyArticle(article)
+          ? <LegacyArticleView article={article} migrating={migratingLegacyId === article.id} onMigrate={() => void handleMigrateLegacy(article)} />
+          : <div className="flex min-h-0 flex-1 flex-col">{renderWorkflow(article)}</div>) : null}
+        renderBatch={renderBatch}
+        renderLauncher={renderLauncher}
+      />
+      {configModal}
+    </div>
+  )
+
+  return (
+    <div className={`${theme === "dark" ? "codex-dark" : "writer-light"} writer-app h-dvh flex flex-col md:flex-row overflow-hidden bg-[var(--ui-bg)]`}>
+      <Sidebar
+        articles={articles}
+        contentPlans={contentPlans}
+        activeArticleId={activeId}
+        onSelectArticle={(id) => {
+          setActiveId(id)
+          setShowBatchOverview(true)
+        }}
+        onNewArticle={() => {
+          setActiveId(null)
+          setShowBatchOverview(true)
+          setLauncherHistoryOpen(false)
+        }}
+        onOpenContentPlans={() => {
+          setActiveId(null)
+          setShowBatchOverview(true)
+          setLauncherHistoryOpen(true)
+          window.setTimeout(
+            () => window.dispatchEvent(new Event("writer:open-plan-history")),
+            0,
+          )
+        }}
+        onOpenConfig={openAdvancedSettings}
+        onOpenCrm={() => switchUi("crm")}
+        canManageSettings={authSession.user.role === "admin"}
+        currentUser={authSession.user}
+        themePreference={themePreference}
+        onThemeChange={setThemePreference}
+        onSignOut={() => signOut()}
+        onSignOutAll={authSession.authProvider === "postgres" ? () => signOut(true) : undefined}
+        onToggleComplete={handleToggleComplete}
+        completionSavingId={completionSavingId}
+        onDeleteArticle={handleDeleteArticle}
+        deletingArticleId={deletingArticleId}
+      />
+
+      <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden">
+        <WorkspaceNotificationHost />
+        {article && isLegacyArticle(article) ? (
+          <LegacyArticleView
+            article={article}
+            migrating={migratingLegacyId === article.id}
+            onMigrate={() => void handleMigrateLegacy(article)}
+          />
+        ) : article?.activityKind === "batch" && showBatchOverview ? (
+          renderBatch(article.activityId ?? "", (id) => { setActiveId(id); setShowBatchOverview(false) })
+        ) : article ? (
+          renderWorkflow(article)
+        ) : (
+          // Article selected from sidebar but not found (shouldn't happen)
+          renderLauncher()
         )}
       </div>
 
-      {showConfig && (
-        <ConfigModal
-          config={config}
-          files={files}
-          articles={articles}
-          onSave={handleSaveConfig}
-          onClose={() => { setShowConfig(false); void db.fetchFiles().then(setFiles).catch(error => notifyWorkspace(error.message, "error")) }}
-        />
-      )}
+      {configModal}
     </div>
   )
 }

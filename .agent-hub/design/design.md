@@ -64,7 +64,7 @@ Neutral grays remain the default. Blue is the single accent: primary actions, fo
 
 ## Responsive rules
 
-- Desktop prioritizes sidebar + continuous workflow canvas.
+- Desktop prioritizes the CRM navigation drawer + record card (see CRM shell). The classic sidebar + continuous workflow canvas remains available and inside the article record's Manual mode tab.
 - On small screens, preserve readable content width and stack controls; never hide the status/error reason needed to continue.
 - Loading placeholders should preserve the final content region to minimize layout shift.
 
@@ -92,3 +92,14 @@ Use a neutral token-based SEO brief above the draft. Feature the primary keyword
 ## QC process clarity (2026-11-03)
 
 Distinguish content findings from incomplete/outdated review process. Explain whether the report is missing, uses old QC rules, or no longer matches reviewed inputs; show pending-review wording and a visible explicit Re-check action. Preserve draft content and completion blocking for stale/incomplete reviews. Semantic evaluation uses the article’s frozen MD structure, not a generic comparison template; the introduction contract stays independent of body structure and responsive pixel line count.
+
+## CRM shell (2026-11-17)
+
+User-authorized redesign: Writer Studio's default UI becomes the CRM layout from `twenty-demo-ui` (`pipeline-crm.html`) for the 3-gate AI Content Pipeline (`docs/AI-PIPELINE-UPGRADE.md`). Implementation: `src/crm/CrmApp.tsx`, `src/crm/crm.css` (scoped under `.crm`, colors mapped to the tokens above; no demo hex values for neutrals or accent).
+
+- Layout: 220px navigation drawer on the soft background, page header (breadcrumb + actions), one bordered 8px card per page. Record pages use a 340px field column and underline tabs.
+- Patterns: sticky-header tables with sortable columns and grouped rows; Kanban by pipeline stage; side panel (560px) for review; command menu on ⌘K/Ctrl+K; workflow canvas with dotted grid; dashboard widgets with horizontal bars.
+- Stage tags exception: pipeline stages may use the Twenty tag palette (gray, sky, purple, blue, orange, red, green) to tell gates apart. This is limited to stage, AI approval and review tags; blue stays the only action accent.
+- Mobile (≤768px): the drawer becomes an off-canvas panel with a scrim, nav items are 44px, record pages stack.
+- The classic UI stays reachable from the drawer ("Giao diện cũ") and the classic profile menu ("Giao diện CRM mới"); the choice is a per-browser preference.
+- Motion follows the demo (side panel slide, card hover lift) and is disabled under reduced motion.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LoaderCircle, LogOut, Mail, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
+import { Archive, ChevronDown, CircleCheck, Clock3, FileText, Globe2, LayoutGrid, LoaderCircle, LogOut, Mail, Menu, PenLine, PlusCircle, Search, Settings, Trash2 } from "lucide-react"
 import type { Article, ContentPlan } from "../types"
 import { useI18n } from "../lib/i18n"
 import BrandMark from "./BrandMark"
@@ -14,6 +14,7 @@ interface Props {
   onNewArticle: () => void
   onOpenContentPlans?: () => void
   onOpenConfig: () => void
+  onOpenCrm?: () => void
   canManageSettings: boolean
   currentUser: { email: string; role: "user" | "admin" }
   themePreference: ThemePreference
@@ -33,6 +34,7 @@ export default function Sidebar({
   onNewArticle,
   onOpenContentPlans,
   onOpenConfig,
+  onOpenCrm,
   canManageSettings,
   currentUser,
   themePreference,
@@ -261,6 +263,7 @@ export default function Sidebar({
               </label>)}
             </fieldset>
             {canManageSettings && <button onClick={() => { setProfileMenuOpen(false); onOpenConfig() }} className="sidebar-nav mt-1 w-full"><Settings className="app-icon" aria-hidden="true" />{tr("Cài đặt", "Settings")}</button>}
+            {onOpenCrm && <button onClick={() => { setProfileMenuOpen(false); onOpenCrm() }} className="sidebar-nav mt-1 w-full"><LayoutGrid className="app-icon" aria-hidden="true" />{tr("Giao diện CRM mới", "New CRM UI")}</button>}
             <button onClick={onSignOut} className="sidebar-nav mt-1 w-full text-red-300 hover:text-red-200"><LogOut className="app-icon" aria-hidden="true" />{tr("Đăng xuất", "Sign out")}</button>
             {onSignOutAll && <button onClick={onSignOutAll} className="sidebar-nav mt-1 w-full text-red-300 hover:text-red-200"><LogOut className="app-icon" aria-hidden="true" />{tr("Đăng xuất mọi thiết bị", "Sign out all devices")}</button>}
           </div>}

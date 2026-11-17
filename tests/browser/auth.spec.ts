@@ -78,7 +78,7 @@ test('App keeps the sign-in form hidden while a stored cookie session is refresh
   await expect(page.getByText(/Đang tải Writer Studio|Loading Writer Studio/)).toBeVisible();
   await expect(page.getByLabel('Email',{exact:true})).toHaveCount(0);
   release();
-  await expect(page.getByRole('button',{name:'Writer Studio',exact:true})).toBeVisible();
+  await expect(page.getByRole('navigation',{name:/Điều hướng chính|Main navigation/})).toBeVisible();
   await expect(page.getByLabel('Email',{exact:true})).toHaveCount(0);
  } finally { release(); }
 });

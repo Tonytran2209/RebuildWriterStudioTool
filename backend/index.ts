@@ -3098,7 +3098,9 @@ async function runBatch(activityId: string) {
           !["completed", "failed"].includes(article.batchStatus),
       )
       if (!articles.length) break
-      await runWithConcurrency(articles, 2, async (article) => {
+      const pipeline = (await kvGet<any>("writer:config"))?.pipeline
+      const parallel = Math.max(1, Math.min(5, Math.round(Number(pipeline?.maxParallel)) || 2))
+      await runWithConcurrency(articles, parallel, async (article) => {
         const start = performance.now()
         const job = BATCH_ARTICLE_JOB
         const workload = article.activityType === "editorial-originality" ? "1 editorial article" : "1 SEO article"
@@ -5116,7 +5118,8 @@ app.put("/api/articles/:id", async (req, res) => {
           const fields = Object.keys(updates)
           const reopening = updates.status === "review" && updates.completedAt === null &&
             fields.every(field => field === "status" || field === "completedAt")
-          if (!reopening && fields.some(field => field !== "currentStep" && field !== "aiUsageByStep"))
+          // Human review is a verdict on the finished text, so it may be recorded after completion.
+          if (!reopening && fields.some(field => field !== "currentStep" && field !== "aiUsageByStep" && field !== "humanReview"))
             throw new Error("ARTICLE_COMPLETED:Hãy mở lại bài viết trước khi chỉnh sửa.")
         }
         const next = {

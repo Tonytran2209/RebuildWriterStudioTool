@@ -171,6 +171,26 @@ export interface AppConfig {
   models: AIModel[]
   workflowRules?: WorkflowRuleSettings
   websiteInventory?: WebsiteContentRecord[]
+  pipeline?: Partial<PipelineSettings>
+}
+
+/** 3-gate pipeline settings. Values are provisional until the team closes docs/AI-PIPELINE-UPGRADE.md §8. */
+export interface PipelineSettings {
+  threshold: number
+  options: number
+  revisionRounds: number
+  perBatch: number
+  maxParallel: number
+  noPass: "best-flagged" | "fail"
+  reviewSample: number
+  keepImages: boolean
+}
+
+export interface HumanReview {
+  status: "approved" | "needs_revision"
+  comment?: string
+  reviewer?: string
+  reviewedAt: string
 }
 
 export type SearchIntent = "informational" | "commercial" | "transactional" | "navigational"
@@ -411,6 +431,7 @@ export interface Article {
   imageSuggestions?: ImageSuggestion[]
   qualityReport?: UniversalQualityReport | null
   editorialApproval?: EditorialApproval | null
+  humanReview?: HumanReview | null
   workflowRuleSnapshots?: Partial<Record<2 | 3 | 4, WorkflowRuleSnapshot>>
   aiUsageByStep?: Partial<Record<1 | 2 | 3 | 4, AICallUsage[]>>
   // Activity workspace / per-run content plan

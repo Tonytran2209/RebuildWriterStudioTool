@@ -1,0 +1,224 @@
+/* CRM shell (twenty-demo-ui pipeline-crm.html layout), colors from src/theme-tokens.css. Scoped to .crm. */
+.crm {
+  --bg1: var(--ui-bg); --bg2: var(--ui-sidebar); --bg3: var(--ui-soft); --bg4: var(--ui-selected);
+  --tl: var(--ui-hover); --tm: var(--ui-selected);
+  --f1: var(--ui-text); --f2: var(--ui-secondary); --f3: var(--ui-muted);
+  --b1: var(--ui-border-strong); --b2: var(--ui-border); --b3: var(--ui-border);
+  --accent: var(--ui-accent); --accent-bg: var(--ui-accent-soft); --accent-text: var(--ui-accent-text);
+  --shadow: 0 2px 4px rgba(0,0,0,.04), 0 0 4px rgba(0,0,0,.08);
+  --shadow-strong: 0 2px 4px rgba(0,0,0,.08), 0 8px 28px rgba(0,0,0,.16);
+  --overlay: rgba(0,0,0,.36);
+  --c-red:#ad3a38;--c-red-bg:#fbecec;--c-purple:#7948af;--c-purple-bg:#f6eefc;
+  --c-sky:#2b6688;--c-sky-bg:#e5f5fc;--c-turq:#11705f;--c-turq-bg:#e4f8f3;
+  --c-yellow:#7a5a00;--c-yellow-bg:#fefbbf;--c-green:#2a6f48;--c-green-bg:#e9f6ec;
+  --c-blue:#3a51b3;--c-blue-bg:#eef2fd;--c-orange:#a34900;--c-orange-bg:#fcefd9;
+  --c-gray:#555;--c-gray-bg:#f1f1f1;
+  display: flex; height: 100%; width: 100%; background: var(--bg3); color: var(--f1); font-size: 13px; overflow: hidden;
+}
+.codex-dark .crm {
+  --shadow: 0 2px 4px rgba(0,0,0,.3), 0 0 4px rgba(0,0,0,.4); --shadow-strong: 0 8px 28px rgba(0,0,0,.6); --overlay: rgba(0,0,0,.6);
+  --c-red:#ec6b67;--c-red-bg:#3b1a1a;--c-purple:#b48ae6;--c-purple-bg:#2d1d3d;--c-sky:#70b8e0;--c-sky-bg:#13293a;
+  --c-turq:#4fc2ad;--c-turq-bg:#12302a;--c-yellow:#e8c547;--c-yellow-bg:#332b0a;--c-green:#62c28a;--c-green-bg:#16301f;
+  --c-blue:#8aa0f5;--c-blue-bg:#1e2547;--c-orange:#f29a5a;--c-orange-bg:#3a2410;--c-gray:#b3b3b3;--c-gray-bg:#262626;
+}
+.crm button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+.crm :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.crm svg { flex-shrink: 0; }
+
+/* Navigation drawer */
+.crm .nav { width: 220px; flex-shrink: 0; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.crm .ws { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-weight: 500; margin-bottom: 6px; }
+.crm .nav-item { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: 4px; color: var(--f2); font-weight: 500; width: 100%; text-align: left; }
+.crm .nav-item:hover { background: var(--tl); color: var(--f1); }
+.crm .nav-item.on { background: var(--tm); color: var(--f1); }
+.crm .nav-item .kbd { margin-left: auto; color: var(--f3); font-size: 11px; }
+.crm .nav-item .n { margin-left: auto; color: var(--f3); font-size: 11px; }
+.crm .nav-sec { font-size: 11px; color: var(--f3); font-weight: 600; padding: 14px 8px 6px; }
+.crm .nav-foot { margin-top: auto; padding-top: 12px; display: flex; flex-direction: column; gap: 2px; }
+.crm .menu-btn.btn, .crm .nav-scrim { display: none; }
+
+/* Page */
+.crm .page { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 12px 12px 12px 0; }
+.crm .ph { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 4px 0 8px; }
+.crm .ph-title { display: flex; align-items: center; gap: 6px; font-weight: 500; min-width: 0; }
+.crm .ph-title .crumb { color: var(--f3); }
+.crm .ph-title .crumb:hover { color: var(--f1); }
+.crm .ph-title b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm .ph-actions { margin-left: auto; display: flex; gap: 6px; }
+.crm .card { flex: 1; min-height: 0; background: var(--bg1); border: 1px solid var(--b2); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+
+.crm .btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--b2); background: var(--bg1); color: var(--f2); font-weight: 500; white-space: nowrap; transition: background-color .15s, transform .12s; }
+.crm .btn:hover { background: var(--bg3); }
+.crm .btn:active { transform: scale(.97); }
+.crm .btn:disabled { opacity: .5; cursor: not-allowed; }
+.crm .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.crm .btn.primary:hover { filter: brightness(1.08); }
+.crm .btn.ghost { border-color: transparent; background: none; }
+.crm .btn.ghost:hover { background: var(--tl); }
+.crm .btn.danger { color: var(--c-red); }
+.crm .seg { display: inline-flex; border: 1px solid var(--b2); border-radius: 4px; overflow: hidden; }
+.crm .seg button { height: 26px; padding: 0 8px; color: var(--f2); display: inline-flex; align-items: center; gap: 4px; }
+.crm .seg button.on { background: var(--tm); color: var(--f1); }
+
+/* View bar */
+.crm .vbar { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 8px; border-bottom: 1px solid var(--b2); flex-shrink: 0; flex-wrap: wrap; }
+.crm .vbar .grow { flex: 1; }
+.crm .vbar .count { color: var(--f3); }
+.crm .vbar input, .crm .vbar select { border: 0; outline: 0; background: none; height: 28px; color: var(--f1); }
+.crm .vbar input { width: 200px; }
+.crm .vbar select { border: 1px solid var(--b2); border-radius: 4px; padding: 0 6px; background: var(--bg1); }
+
+/* Table */
+.crm .tbl-wrap { flex: 1; overflow: auto; }
+.crm table.tbl { border-collapse: separate; border-spacing: 0; min-width: 100%; white-space: nowrap; }
+.crm .tbl th, .crm .tbl td { height: 32px; border-bottom: 1px solid var(--b3); border-right: 1px solid var(--b3); padding: 0 8px; text-align: left; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.crm .tbl th { color: var(--f3); font-weight: 500; position: sticky; top: 0; background: var(--bg1); z-index: 2; user-select: none; }
+.crm .tbl th button { display: inline-flex; align-items: center; gap: 4px; color: inherit; }
+.crm .tbl th.first, .crm .tbl td.first { position: sticky; left: 0; background: var(--bg1); z-index: 1; }
+.crm .tbl th.first { z-index: 3; }
+.crm .tbl tbody tr { cursor: pointer; }
+.crm .tbl tbody tr:hover td { background: var(--bg2); }
+.crm .tbl tr.grp td { background: var(--bg2); font-weight: 500; color: var(--f2); height: 30px; cursor: default; }
+.crm .tbl td.num { text-align: right; color: var(--f2); font-variant-numeric: tabular-nums; }
+.crm .muted { color: var(--f3); }
+.crm .foot { min-height: 32px; display: flex; align-items: center; padding: 0 12px; color: var(--f3); border-top: 1px solid var(--b3); flex-shrink: 0; gap: 6px; }
+
+/* Tags */
+.crm .tag { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 4px; font-weight: 500; white-space: nowrap; }
+.crm .t-red{color:var(--c-red);background:var(--c-red-bg)}.crm .t-purple{color:var(--c-purple);background:var(--c-purple-bg)}
+.crm .t-sky{color:var(--c-sky);background:var(--c-sky-bg)}.crm .t-turq{color:var(--c-turq);background:var(--c-turq-bg)}
+.crm .t-yellow{color:var(--c-yellow);background:var(--c-yellow-bg)}.crm .t-green{color:var(--c-green);background:var(--c-green-bg)}
+.crm .t-blue{color:var(--c-blue);background:var(--c-blue-bg)}.crm .t-orange{color:var(--c-orange);background:var(--c-orange-bg)}
+.crm .t-gray{color:var(--c-gray);background:var(--c-gray-bg)}
+.crm .gbar { display: inline-flex; gap: 2px; vertical-align: middle; }
+.crm .gbar i { width: 14px; height: 6px; border-radius: 2px; background: var(--b2); }
+.crm .gbar i.done { background: var(--c-green); }
+.crm .gbar i.now { background: var(--accent); }
+.crm .gbar i.fail { background: var(--c-red); }
+
+/* Kanban */
+.crm .kb { flex: 1; display: flex; gap: 8px; padding: 8px; overflow: auto; }
+.crm .kcol { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; padding: 4px; }
+.crm .khead { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 4px; }
+.crm .khead .n { color: var(--f3); }
+.crm .kcard { background: var(--bg1); border: 1px solid var(--b2); border-radius: 6px; padding: 8px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 6px; text-align: left; transition: border-color .15s, transform .2s; }
+.crm .kcard:hover { border-color: var(--b1); transform: translateY(-1px); }
+.crm .kcard .kt { font-weight: 500; overflow-wrap: anywhere; }
+.crm .kf { display: flex; align-items: center; gap: 6px; color: var(--f2); min-height: 20px; flex-wrap: wrap; }
+
+/* Record page */
+.crm .show { flex: 1; display: flex; min-height: 0; }
+.crm .show-left { width: 340px; flex-shrink: 0; border-right: 1px solid var(--b2); overflow-y: auto; padding: 24px 20px; }
+.crm .show-right { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.crm .rec-head { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding-bottom: 20px; border-bottom: 1px solid var(--b2); }
+.crm .rec-head h1 { font-size: 16px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+.crm .rec-head .sub { color: var(--f3); font-size: 12px; }
+.crm .av-xl { width: 40px; height: 40px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-bg); color: var(--accent-text); }
+.crm .fields { padding: 12px 0; display: flex; flex-direction: column; gap: 2px; }
+.crm .fsec { font-weight: 500; color: var(--f3); padding: 16px 0 6px; font-size: 12px; }
+.crm .frow { display: flex; align-items: center; min-height: 32px; gap: 8px; }
+.crm .flabel { width: 116px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; color: var(--f3); }
+.crm .fval { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.crm .tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--b2); height: 40px; align-items: flex-end; flex-shrink: 0; overflow-x: auto; scrollbar-width: none; }
+.crm .tab { display: flex; align-items: center; gap: 6px; padding: 0 8px 10px; color: var(--f3); font-weight: 500; border-bottom: 1px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.crm .tab:hover { color: var(--f1); }
+.crm .tab.on { color: var(--f1); border-bottom-color: var(--f1); }
+.crm .tab .n { background: var(--bg3); border-radius: 4px; padding: 0 4px; font-size: 11px; }
+.crm .tab-body { flex: 1; overflow-y: auto; padding: 24px; }
+.crm .tab-body.flush { padding: 0; }
+.crm .reading { max-width: 760px; margin: 0 auto; }
+.crm .tl { position: relative; padding-left: 28px; display: flex; flex-direction: column; gap: 18px; }
+.crm .tl:before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 6px; width: 1px; background: var(--b2); }
+.crm .tl-item { position: relative; display: flex; gap: 8px; align-items: baseline; color: var(--f2); }
+.crm .tl-item .dot { position: absolute; left: -28px; top: -2px; width: 20px; height: 20px; border-radius: 50%; background: var(--bg1); border: 1px solid var(--b2); display: grid; place-items: center; color: var(--f3); }
+.crm .tl-item b { color: var(--f1); font-weight: 500; }
+.crm .tl-item .when { margin-left: auto; color: var(--f3); font-size: 12px; white-space: nowrap; }
+.crm .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 60px 20px; color: var(--f3); text-align: center; }
+.crm .empty-state h3 { margin: 0; color: var(--f1); font-weight: 600; font-size: 14px; }
+.crm .qc-row { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--b3); }
+.crm .qc-row .grow { flex: 1; min-width: 0; }
+.crm .qc-row p { margin: 2px 0 0; color: var(--f2); line-height: 1.5; }
+.crm .score { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Side panel */
+.crm-sp-overlay { position: fixed; inset: 0; z-index: 40; }
+.crm .sp { position: fixed; top: 12px; right: 12px; bottom: 12px; width: 560px; max-width: calc(100vw - 24px); background: var(--bg1); border: 1px solid var(--b2); border-radius: 8px; box-shadow: var(--shadow-strong); z-index: 41; display: flex; flex-direction: column; animation: crmSpIn .22s cubic-bezier(.2,.8,.2,1); }
+.crm .sp-head { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-bottom: 1px solid var(--b2); flex-shrink: 0; }
+.crm .sp-head .t { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm .sp-body { flex: 1; overflow-y: auto; padding: 16px; }
+.crm .sp-foot { border-top: 1px solid var(--b2); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.crm textarea.inp { min-height: 72px; padding: 8px; resize: vertical; height: auto; line-height: 1.5; }
+@keyframes crmSpIn { from { opacity: 0; transform: translateX(24px); } }
+
+/* Command menu */
+.crm .cmd-overlay { position: fixed; inset: 0; background: var(--overlay); z-index: 50; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
+.crm .cmd { width: 560px; max-width: calc(100vw - 32px); background: var(--bg1); border-radius: 8px; box-shadow: var(--shadow-strong); overflow: hidden; border: 1px solid var(--b2); }
+.crm .cmd input { width: 100%; height: 48px; border: 0; border-bottom: 1px solid var(--b2); outline: 0; padding: 0 16px; font-size: 14px; background: none; color: var(--f1); }
+.crm .cmd-list { max-height: 380px; overflow-y: auto; padding: 6px; }
+.crm .cmd-grp { font-size: 11px; color: var(--f3); font-weight: 600; padding: 8px 8px 4px; }
+.crm .cmd-item { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px; border-radius: 4px; width: 100%; text-align: left; }
+.crm .cmd-item:hover, .crm .cmd-item.on { background: var(--tl); }
+.crm .cmd-item .hint { margin-left: auto; color: var(--f3); font-size: 12px; }
+
+/* Workflow canvas */
+.crm .canvas { flex: 1; overflow: auto; background-image: radial-gradient(var(--b1) 1px, transparent 1px); background-size: 16px 16px; display: flex; flex-direction: column; align-items: center; padding: 40px 16px; }
+.crm .wnode { width: 300px; max-width: 100%; background: var(--bg1); border: 1px solid var(--b2); border-radius: 8px; padding: 10px 12px; box-shadow: var(--shadow); display: flex; gap: 10px; align-items: center; text-align: left; }
+.crm .wnode:hover, .crm .wnode.on { border-color: var(--accent); }
+.crm .wnode .wi { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; background: var(--accent-bg); color: var(--accent-text); }
+.crm .wnode .wk { font-size: 11px; color: var(--f3); text-transform: uppercase; letter-spacing: .04em; }
+.crm .wnode .wn { font-weight: 500; }
+.crm .wline { width: 1px; height: 24px; background: var(--b1); }
+
+/* Dashboard */
+.crm .dash { flex: 1; overflow-y: auto; padding: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-content: start; }
+.crm .widget { border: 1px solid var(--b2); border-radius: 8px; padding: 14px; background: var(--bg1); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.crm .widget.w2 { grid-column: span 2; } .crm .widget.w4 { grid-column: span 4; }
+.crm .widget h4 { margin: 0; font-weight: 500; color: var(--f2); }
+.crm .kpi { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.crm .kpi-sub { color: var(--f3); font-size: 12px; }
+.crm .hbar { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.crm .hbar .lbl { width: 130px; color: var(--f2); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crm .hbar .track { flex: 1; height: 14px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+.crm .hbar .fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width .3s; }
+.crm .hbar .v { width: 56px; text-align: right; color: var(--f2); font-variant-numeric: tabular-nums; }
+
+/* Settings */
+.crm .set { flex: 1; overflow-y: auto; padding: 32px 24px; }
+.crm .set-inner { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+.crm .set h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.crm .set .desc { color: var(--f3); margin: 4px 0 12px; line-height: 1.5; }
+.crm .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.crm label.fl { display: flex; flex-direction: column; gap: 6px; color: var(--f3); font-size: 12px; }
+.crm .inp { height: 32px; border: 1px solid var(--b1); border-radius: 4px; padding: 0 8px; outline: 0; background: var(--bg1); width: 100%; color: var(--f1); font: inherit; }
+.crm .inp:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+.crm .inp:disabled { color: var(--f3); background: var(--bg2); }
+.crm .box { border: 1px solid var(--b2); border-radius: 8px; overflow: hidden; }
+.crm .box-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--b3); width: 100%; text-align: left; }
+.crm .box-row:last-child { border-bottom: 0; }
+.crm button.box-row:hover { background: var(--bg2); }
+.crm .box-row .grow { flex: 1; min-width: 0; }
+.crm .box-row .s { color: var(--f3); font-size: 12px; }
+.crm .note { border: 1px solid var(--b2); border-radius: 8px; padding: 10px 12px; color: var(--f2); line-height: 1.5; background: var(--bg2); }
+
+/* Embedded legacy components (manual mode, launcher, batch) keep their own layout. */
+.crm .embed { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+
+@media (max-width: 768px) {
+  .crm .nav { position: fixed; left: 0; top: 0; bottom: 0; background: var(--bg3); z-index: 30; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--shadow-strong); }
+  .crm.nav-open .nav { transform: none; }
+  .crm .nav-scrim { position: fixed; inset: 0; background: var(--overlay); z-index: 29; }
+  .crm .page { padding: 8px; }
+  .crm .menu-btn.btn { display: inline-flex; }
+  .crm .nav-item { height: 44px; }
+  .crm .show { flex-direction: column; overflow-y: auto; }
+  .crm .show-left { width: auto; border-right: 0; border-bottom: 1px solid var(--b2); overflow: visible; }
+  .crm .show-right { min-height: 480px; }
+  .crm .dash { grid-template-columns: 1fr 1fr; }
+  .crm .widget.w2, .crm .widget.w4 { grid-column: span 2; }
+  .crm .grid2 { grid-template-columns: 1fr; }
+  .crm .ph-actions .btn span { display: none; }
+  .crm .vbar input { width: 140px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .crm *, .crm *::before, .crm *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
