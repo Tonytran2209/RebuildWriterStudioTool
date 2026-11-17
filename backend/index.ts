@@ -3109,11 +3109,12 @@ async function runBatch(activityId: string) {
           if (outcome) monitoring.recordJob(job, workload, start, outcome)
           // F.Learning Dashboard Telemetry
           const updated = (await loadArticles()).find((a) => a.id === article.id) || article
-          const stages = convertStepRunsToTelemetryStages(updated.batchStepRuns || [])
+          const stages = convertStepRunsToTelemetryStages(updated.batchStepRuns || [], updated.aiUsageByStep)
           void sendArticleRunTelemetry({
             runId: `run_${article.id}`,
             workload,
             stages,
+            aiUsageByStep: updated.aiUsageByStep,
             status: outcome === "valid" ? "SUCCESS" : "ERROR",
             durationMs: Math.max(1, Math.round(performance.now() - start)),
           })
@@ -3121,11 +3122,12 @@ async function runBatch(activityId: string) {
           monitoring.recordJob(job, workload, start, jobFailure(error))
           // F.Learning Dashboard Telemetry
           const updated = (await loadArticles()).find((a) => a.id === article.id) || article
-          const stages = convertStepRunsToTelemetryStages(updated.batchStepRuns || [])
+          const stages = convertStepRunsToTelemetryStages(updated.batchStepRuns || [], updated.aiUsageByStep)
           void sendArticleRunTelemetry({
             runId: `run_${article.id}`,
             workload,
             stages,
+            aiUsageByStep: updated.aiUsageByStep,
             status: "ERROR",
             errorMessage: error?.message ?? String(error),
             durationMs: Math.max(1, Math.round(performance.now() - start)),
