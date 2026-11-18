@@ -11,8 +11,21 @@ export const person = (email?: string) => email ? email.split("@")[0] : ""
 export const go = (h: string) => { window.location.hash = h }
 export const enc = encodeURIComponent
 
-export const toast = (message: string) => window.dispatchEvent(new CustomEvent("writer:workspace-notice", { detail: { id: Date.now() + Math.random(), message, kind: "success" } }))
+export const toast = (message: string, kind: "success" | "error" = "success") => window.dispatchEvent(new CustomEvent("writer:workspace-notice", { detail: { id: Date.now() + Math.random(), message, kind } }))
 export const errText = (err: unknown) => err instanceof Error ? err.message : String(err)
+/** Error notice: stays longer, red, announced as an alert. */
+export const toastErr = (err: unknown) => toast(errText(err), "error")
+
+// Unsaved edits (manual draft, settings, review comment): leaving asks first instead of silently dropping them.
+const unsaved = new Set<string>()
+export const markUnsaved = (key: string, dirty: boolean) => { if (dirty) unsaved.add(key); else unsaved.delete(key) }
+export const confirmDiscard = () => {
+  if (!unsaved.size) return true
+  if (!window.confirm("Có thay đổi chưa lưu sẽ bị mất. Tiếp tục?\nUnsaved changes will be lost. Continue?")) return false
+  unsaved.clear()
+  return true
+}
+if (typeof window !== "undefined") window.addEventListener("beforeunload", event => { if (unsaved.size) { event.preventDefault(); event.returnValue = "" } })
 
 /**
  * ui-kpi-v2 for a click that hands work to the server: call at the top of the handler, right

@@ -4783,6 +4783,22 @@ app.get("/api/batches/:activityId", async (req, res) => {
   }
 })
 
+// One poll for every active batch the CRM watches (instead of one full article load per batch).
+app.get("/api/batch-status", async (req, res) => {
+  try {
+    const ids = new Set(String(req.query.ids ?? "").split(",").map((id) => id.trim()).filter(Boolean))
+    const articles = (await loadArticles()).filter((article) => ids.has(article.activityId))
+    for (const activityId of ids) {
+      const batch = await kvGet<any>(`writer:batch:${activityId}`)
+      if (batch?.status === "running" && !batchControllers.get(activityId)?.running)
+        void runBatch(activityId).catch((error) => console.error(`[batch-resume] ${activityId}`, error))
+    }
+    res.json({ articles })
+  } catch (err: any) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.post("/api/batches/:activityId/start", async (req, res) => {
   try {
     const activityId = req.params.activityId
@@ -5342,20 +5358,34 @@ app.post("/api/config", async (req, res) => {
   try {
     const {
       actionSources: _removedLegacySources,
-      websiteInventory,
+      // Inventory is saved per record by the Website Inventory API; a config save must never rewrite it.
+      websiteInventory: _inventoryIsSavedPerRecord,
+      revision,
       ...config
     } = req.body ?? {}
-    // Inventory is an independent relational dataset. Keeping hundreds of
-    // records inside writer:config made every settings save rewrite the whole
-    // collection and allowed concurrent scans to overwrite one another.
-    await kvSet("writer:config", config)
-    if (!(await hasWebsiteInventoryTable()) && Array.isArray(websiteInventory))
-      await kvSet("writer:website-inventory:fallback", websiteInventory)
-    res.json({ ok: true })
+    // Optimistic concurrency: a save built on an older copy (another tab or admin saved since) is rejected.
+    const saved = await withConfigLock(async () => {
+      const current = (await kvGet<any>("writer:config")) ?? {}
+      const currentRevision = Number(current.revision ?? 0)
+      if (revision !== undefined && Number(revision) !== currentRevision)
+        throw Object.assign(new Error("Cấu hình đã được người khác lưu trước đó. Tải lại để xem bản mới nhất rồi sửa lại."), { status: 409, code: "CONFIG_CONFLICT" })
+      const next = { ...config, revision: currentRevision + 1 }
+      await kvSet("writer:config", next)
+      return next
+    })
+    res.json({ ok: true, revision: saved.revision })
   } catch (err: any) {
-    res.status(500).json({ error: err.message })
+    res.status(err?.status ?? 500).json({ code: err?.code, error: err.message })
   }
 })
+
+let configLock: Promise<unknown> = Promise.resolve()
+/** Serializes read-modify-write of writer:config and writer:files inside this process. */
+function withConfigLock<T>(job: () => Promise<T>): Promise<T> {
+  const run = configLock.then(job, job)
+  configLock = run.catch(() => undefined)
+  return run
+}
 
 // ─── Agent Hub MD Library ───────────────────────────────────────────────────
 
@@ -5950,6 +5980,47 @@ app.post("/api/files", async (req, res) => {
     res.json({ ok: true })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// Per-file edits so one admin's stale list never overwrites documents another admin added.
+app.patch("/api/files/:id", async (req, res) => {
+  try {
+    const metadata = req.body?.knowledgeMetadata
+    if (!metadata || typeof metadata !== "object") return res.status(400).json({ error: "knowledgeMetadata is required." })
+    const file = await withConfigLock(async () => {
+      const files = (await kvGet<any[]>("writer:files")) ?? []
+      const found = files.find((item) => item.id === req.params.id)
+      if (!found) throw Object.assign(new Error("Tài liệu không tồn tại."), { status: 404 })
+      const next = { ...found, knowledgeMetadata: metadata }
+      await kvSet("writer:files", files.map((item) => item.id === next.id ? next : item))
+      return next
+    })
+    if (file.category === "kb" && await tableAvailable("knowledge_items"))
+      await tableUpsert("knowledge_items", { id: file.id, source_name: file.name, knowledge_type: metadata.type ?? "reference", topics: metadata.topics ?? [], service: metadata.service ?? null, audience: metadata.audience ?? null, visibility: metadata.visibility ?? "internal", approved_for_external_use: Boolean(metadata.approvedForExternalUse), metadata, updated_at: new Date().toISOString() }, "id")
+    res.json({ ok: true, file })
+  } catch (err: any) {
+    res.status(err?.status ?? 500).json({ error: err.message })
+  }
+})
+
+app.delete("/api/files/:id", async (req, res) => {
+  try {
+    const result = await withConfigLock(async () => {
+      const files = (await kvGet<any[]>("writer:files")) ?? []
+      if (!files.some((item) => item.id === req.params.id)) throw Object.assign(new Error("Tài liệu không tồn tại."), { status: 404 })
+      const nextFiles = files.filter((item) => item.id !== req.params.id)
+      await kvSet("writer:files", nextFiles)
+      // The deleted file also leaves every gate's Shipper access.
+      const config = (await kvGet<any>("writer:config")) ?? {}
+      const stepConfigs = Object.fromEntries(Object.entries(config.stepConfigs ?? {}).map(([step, stepConfig]: [string, any]) => [step, stepConfig?.fileAccess ? { ...stepConfig, fileAccess: { kb: (stepConfig.fileAccess.kb ?? []).filter((id: string) => id !== req.params.id), rules: (stepConfig.fileAccess.rules ?? []).filter((id: string) => id !== req.params.id) } } : stepConfig]))
+      const nextConfig = { ...config, stepConfigs, revision: Number(config.revision ?? 0) + 1 }
+      await kvSet("writer:config", nextConfig)
+      return { files: nextFiles, config: nextConfig }
+    })
+    res.json({ ok: true, ...result })
+  } catch (err: any) {
+    res.status(err?.status ?? 500).json({ error: err.message })
   }
 })
 

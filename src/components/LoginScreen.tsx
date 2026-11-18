@@ -71,7 +71,7 @@ export default function LoginScreen({ onLogin, onSignUp, onForgotPassword, onRes
   }
 
   const title = mode === "verify" ? tr("Xác nhận email", "Verify email") : mode === "signup" ? tr("Tạo tài khoản", "Create account") : mode === "forgot" ? tr("Đặt lại mật khẩu", "Reset password") : mode === "reset" ? tr("Tạo mật khẩu mới", "Create a new password") : "Writer Studio"
-  const description = mode === "signup" ? tr("Tài khoản mới sẽ có quyền User.", "New accounts receive the User role.") : mode === "forgot" ? tr("Chúng tôi sẽ gửi link đặt lại qua email.", "We will email you a reset link.") : mode === "reset" ? tr("Nhập mật khẩu mới cho tài khoản của bạn.", "Enter a new password for your account.") : tr("Đăng nhập để tiếp tục", "Sign in to continue")
+  const description = mode === "signup" ? tr("Tài khoản mới có vai trò Content Operator.", "New accounts get the Content Operator role.") : mode === "forgot" ? tr("Chúng tôi sẽ gửi link đặt lại qua email.", "We will email you a reset link.") : mode === "reset" ? tr("Nhập mật khẩu mới cho tài khoản của bạn.", "Enter a new password for your account.") : tr("Đăng nhập để tiếp tục", "Sign in to continue")
   const icon = mode === "signup" ? "user-plus" : mode === "login" ? "login-2" : "key"
   return <CrmScreen theme={theme}><form onSubmit={submit} style={{ display: "contents" }}>
     <CrmBrand title={title} sub={description} />

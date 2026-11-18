@@ -293,6 +293,9 @@ export default function App() {
       setSyncStatus("idle")
     } catch (error: unknown) {
       if (saved.length) {
+        // The server copies are removed below; drop the local ones too so no ghost articles stay on screen.
+        const savedIds = new Set(saved.map((item) => item.id))
+        setArticles((current) => current.filter((item) => !savedIds.has(item.id)))
         const createdActivityId = saved[0]?.activityId
         if (createdActivityId && saved[0]?.activityKind === "batch")
           await db.deleteBatch(createdActivityId).catch(() => undefined)
@@ -376,10 +379,10 @@ export default function App() {
           : [target]
       const confirmed = window.confirm(
         deleteGroup
-          ? `Xoá vĩnh viễn batch gồm ${targets.length} bài khỏi Supabase? Thao tác này không thể hoàn tác.`
+          ? tr(`Xoá vĩnh viễn batch gồm ${targets.length} bài? Thao tác này không thể hoàn tác.`, `Permanently delete this batch of ${targets.length} articles? This cannot be undone.`)
           : isLegacyArticle(target)
-            ? `Xoá vĩnh viễn bài legacy “${target.title || target.topic}” khỏi cả kho lưu trữ cũ và Supabase? Thao tác này không thể hoàn tác.`
-            : `Xoá vĩnh viễn bài viết “${target.title}” khỏi Supabase? Thao tác này không thể hoàn tác.`,
+            ? tr(`Xoá vĩnh viễn bài legacy “${target.title || target.topic}” khỏi cả kho lưu trữ cũ? Thao tác này không thể hoàn tác.`, `Permanently delete the legacy article “${target.title || target.topic}”, including the old store? This cannot be undone.`)
+            : tr(`Xoá vĩnh viễn bài viết “${target.title}”? Thao tác này không thể hoàn tác.`, `Permanently delete “${target.title}”? This cannot be undone.`),
       )
       if (!confirmed) return
 
@@ -397,7 +400,10 @@ export default function App() {
           await db.deleteArticle(target.id)
         setArticles(current => current.filter(item => !targetIds.has(item.id)))
         setSyncStatus("idle")
-        notifyWorkspace(deleteGroup ? `Đã xóa batch gồm ${targets.length} bài.` : "Đã xóa bài viết.", "success")
+        notifyWorkspace(deleteGroup ? tr(`Đã xoá batch gồm ${targets.length} bài.`, `Deleted a batch of ${targets.length} articles.`) : tr("Đã xoá bài viết.", "Article deleted."), "success")
+        // Leave the record page of what was just deleted instead of showing "not found".
+        if ([...targetIds].some(id => window.location.hash.includes(encodeURIComponent(id))) || (deleteGroup && target.activityId && window.location.hash.includes(encodeURIComponent(target.activityId))))
+          window.location.hash = deleteGroup ? "#/objects/batches" : "#/objects/articles"
       } catch (error: unknown) {
         targetIds.forEach(id => deletingOrDeletedIds.current.delete(id))
         setArticleActionError(
@@ -418,22 +424,70 @@ export default function App() {
     newFiles: DocumentFile[],
     filesChanged: boolean,
   ) => {
+    const previousConfig = config
+    const previousFiles = files
     setConfig(newConfig)
     setFiles(newFiles)
     if (newConfig.railwayUrl)
       localStorage.setItem("writer:railwayUrl", newConfig.railwayUrl)
     setSyncStatus("saving")
     try {
-      await Promise.all([
-        db.saveConfig(newConfig),
-        filesChanged ? db.saveFiles(newFiles, newConfig.railwayUrl) : Promise.resolve(),
-      ])
+      if (filesChanged) await db.saveFiles(newFiles, newConfig.railwayUrl)
+      const revision = await db.saveConfig(newConfig)
+      setConfig((current) => current === newConfig ? { ...newConfig, revision } : current)
       setSyncStatus("idle")
     } catch (error) {
+      // Nothing was saved: show the last saved state again instead of a change that only exists here.
+      setConfig(previousConfig)
+      setFiles(previousFiles)
       setSyncStatus("error")
+      if ((error as { code?: string })?.code === "CONFIG_CONFLICT") {
+        const latest = await db.fetchConfig().catch(() => null)
+        if (latest) setConfig(mergeWithLatestModelCatalog(latest))
+      }
       throw error
     }
   }
+
+  /** Apply documents (and config) the server already saved, e.g. after upload, metadata edit or delete. */
+  const handleFilesSynced = (nextFiles: DocumentFile[], nextConfig?: AppConfig) => {
+    setFiles(nextFiles)
+    if (nextConfig) setConfig(mergeWithLatestModelCatalog(nextConfig))
+  }
+
+  /** Remote copies replace local ones only when no local edit of that article is still being saved. */
+  const mergeRemoteArticles = useCallback((remoteArticles: Article[], addNew: boolean) => {
+    setArticles((current) => {
+      const remoteById = new Map(remoteArticles.map((item) => [item.id, item]))
+      const currentIds = new Set(current.map((item) => item.id))
+      let changed = false
+      const merged = current.map((item) => {
+        const remote = remoteById.get(item.id)
+        if (!remote || remote.updatedAt === item.updatedAt || articleMutationQueues.current.has(item.id)) return item
+        changed = true
+        return isLegacyArticle(remote) ? { ...remote, legacyReadOnly: true } : remote
+      })
+      const added = addNew ? remoteArticles.filter((item) => !currentIds.has(item.id) && !deletingOrDeletedIds.current.has(item.id)) : []
+      if (added.length) changed = true
+      return changed ? [...added, ...merged] : current
+    })
+  }, [])
+
+  // Returning to the tab picks up work done elsewhere (other users, other tabs, finished batches).
+  useEffect(() => {
+    if (!authSession) return
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return
+      void Promise.all([db.fetchArticles(), db.fetchFiles(), db.fetchConfig(), fetchContentPlans(config.railwayUrl)]).then(([remoteArticles, remoteFiles, remoteConfig, plans]) => {
+        mergeRemoteArticles(remoteArticles ?? [], true)
+        setFiles(remoteFiles ?? [])
+        if (remoteConfig) setConfig((current) => Number(remoteConfig.revision ?? 0) > Number(current.revision ?? 0) ? mergeWithLatestModelCatalog(remoteConfig) : current)
+        receiveContentPlans(plans)
+      }).catch(() => { /* keep the current snapshot while offline */ })
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => document.removeEventListener("visibilitychange", onVisible)
+  }, [authSession, config.railwayUrl, mergeRemoteArticles, receiveContentPlans])
 
 
   const activeBatchIds = Array.from(new Set(
@@ -446,28 +500,17 @@ export default function App() {
     const activityIds = activeBatchIds.split(",").filter(Boolean)
     if (!activityIds.length) return
     let stopped = false
+    let inFlight = false
     const refresh = async () => {
+      // One request per tick for every watched batch; skip a tick while the previous one is still loading.
+      if (inFlight) return
+      inFlight = true
       try {
-        const results = await Promise.all(activityIds.map((activityId) => db.fetchBatch(activityId)))
-        if (stopped) return
-        setArticles((current) => {
-          const remoteArticles = results.flatMap((result) => result.articles)
-          const remoteById = new Map(remoteArticles.map((item) => [item.id, item]))
-          const currentIds = new Set(current.map((item) => item.id))
-          let changed = false
-          const merged = current.map((item) => {
-            const remote = remoteById.get(item.id)
-            if (!remote || remote.updatedAt === item.updatedAt) return item
-            changed = true
-            return remote
-          })
-          const added = remoteArticles.filter((item) => !currentIds.has(item.id) && !deletingOrDeletedIds.current.has(item.id))
-          if (added.length) changed = true
-          return changed ? [...added, ...merged] : current
-        })
+        const remoteArticles = await db.fetchBatchStatus(activityIds)
+        if (!stopped) mergeRemoteArticles(remoteArticles, true)
       } catch {
         /* retain the last durable snapshot while Railway reconnects */
-      }
+      } finally { inFlight = false }
     }
     refresh()
     const timer = window.setInterval(refresh, 2500)
@@ -558,8 +601,9 @@ export default function App() {
         onToggleComplete={(target) => void handleToggleComplete(target)}
         onMigrateLegacy={(target) => void handleMigrateLegacy(target)}
         onCreate={handleCreateActivity}
-        onContentPlansChange={(plans) => receiveContentPlans(plans)}
+        onContentPlansChange={(plans, removedId) => receiveContentPlans(plans, removedId)}
         onSaveConfig={handleSaveConfig}
+        onFilesSynced={handleFilesSynced}
         onSignOut={signOut}
         themePreference={themePreference}
         onThemeChange={setThemePreference}

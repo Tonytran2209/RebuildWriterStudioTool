@@ -10,7 +10,7 @@ import {
   updateWebsiteInventoryRecord,
 } from "../lib/db"
 import { useI18n } from "../lib/i18n"
-import { I } from "./ui"
+import { I, toastErr } from "./ui"
 
 /** Settings › Website inventory (port of the old WebsiteInventoryPanel, CRM markup). */
 export default function WebsiteInventory({
@@ -118,7 +118,7 @@ export default function WebsiteInventory({
       records.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     )
   const persistUpdate = (id: string, patch: Partial<WebsiteContentRecord>) =>
-    updateWebsiteInventoryRecord(id, patch, railwayUrl).catch(() => undefined)
+    updateWebsiteInventoryRecord(id, patch, railwayUrl).catch((error) => toastErr(error))
   const scan = async () => {
     const urls = [...new Set(input.split(/[\n,]+/).flatMap((value) => {
           try {
@@ -446,8 +446,12 @@ export default function WebsiteInventory({
                       type="button"
                       className="btn ghost"
                       style={{ color: "var(--danger)" }}
-                      onClick={() => void deleteWebsiteInventoryRecord(record.id, railwayUrl)
-                        .then(() => onChange(records.filter((item) => item.id !== record.id)))}
+                      onClick={() => {
+                        if (!window.confirm(tr(`Xoá ${record.url} khỏi Website Inventory? AI sẽ không đề xuất URL này làm internal link nữa.`, `Remove ${record.url} from Website Inventory? AI will stop suggesting it as an internal link.`))) return
+                        void deleteWebsiteInventoryRecord(record.id, railwayUrl)
+                          .then(() => onChange(records.filter((item) => item.id !== record.id)))
+                          .catch((error) => toastErr(error))
+                      }}
                       aria-label="Remove URL"
                       title="Remove URL"
                     >

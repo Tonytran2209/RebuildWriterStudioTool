@@ -22,6 +22,7 @@ const structureFile = { id: 'outline-md', name: 'Outline forms.md', category: 'r
 
 async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
   const user = { id: role, email: role + '@example.com', role };
+  let serverFiles: any[] = [structureFile];
   const log = { files: [] as any[][], imports: [] as any[], reruns: [] as any[], puts: [] as any[], configs: [] as any[], created: [] as any[], started: [] as string[], imported: [] as any[] };
   await page.addInitScript(user => localStorage.setItem('writer:auth-session', JSON.stringify({ authProvider: 'postgres', accessToken: '', expiresAt: null, user })), user);
   const config = { ...DEFAULT_CONFIG, stepConfigs: { ...DEFAULT_CONFIG.stepConfigs, 3: { ...DEFAULT_CONFIG.stepConfigs[3], fileAccess: { kb: [], rules: ['outline-md'] } } } };
@@ -44,12 +45,14 @@ async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
       { id: 'n3', title: 'Why E matters', keywords: [], type: 'needs-review', sourceLine: 'Why E matters' },
     ] } } });
     if (url.pathname === '/api/content-plans') return route.fulfill({ json: [plan] });
-    if (url.pathname === '/api/files' && method === 'POST') { log.files.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } }); }
-    if (url.pathname === '/api/files') return route.fulfill({ json: [structureFile] });
-    if (url.pathname === '/api/import/source') { const body = route.request().postDataJSON(); log.imports.push(body); return route.fulfill({ json: { target: 'writer:files', record: { ...body, id: 'imported-1', content: body.content, scanStatus: 'ready' } } }); }
+    const fileId = url.pathname.match(/^\/api\/files\/([^/]+)$/);
+    if (fileId && method === 'DELETE') { serverFiles = serverFiles.filter(f => f.id !== decodeURIComponent(fileId[1])); log.files.push(serverFiles.map(f => f.id)); const cfg = { ...config, stepConfigs: { ...config.stepConfigs, 3: { ...config.stepConfigs[3], fileAccess: { kb: [], rules: [] } } } }; log.configs.push(cfg); return route.fulfill({ json: { ok: true, files: serverFiles, config: cfg } }); }
+    if (fileId && method === 'PATCH') { const body = route.request().postDataJSON(); serverFiles = serverFiles.map(f => f.id === decodeURIComponent(fileId[1]) ? { ...f, ...body } : f); return route.fulfill({ json: { ok: true, file: serverFiles.find(f => f.id === decodeURIComponent(fileId[1])) } }); }
+    if (url.pathname === '/api/files') return route.fulfill({ json: serverFiles });
+    if (url.pathname === '/api/import/source') { const body = route.request().postDataJSON(); log.imports.push(body); const record = { ...body, id: 'imported-1', content: body.content, scanStatus: 'ready' }; serverFiles = [record, ...serverFiles]; log.files.push(serverFiles.map(f => f.id)); return route.fulfill({ json: { target: 'writer:files', record } }); }
     const start = url.pathname.match(/^\/api\/batches\/([^/]+)\/start$/);
     if (start) { log.started.push(decodeURIComponent(start[1])); return route.fulfill({ json: { ok: true } }); }
-    if (url.pathname.startsWith('/api/batches/')) return route.fulfill({ json: { articles: [] } });
+    if (url.pathname.startsWith('/api/batches/') || url.pathname === '/api/batch-status') return route.fulfill({ json: { articles: [] } });
     return route.fallback();
   });
   await page.goto('/?app-auth');
@@ -162,8 +165,8 @@ test('CRM Storage adds, governs and deletes documents without the old settings p
   await panel.getByRole('button', { name: /Nhập qua Railway|Import through Railway/ }).click();
   await expect.poll(() => log.files.length).toBe(1);
   expect(log.imports[0]).toMatchObject({ sourceType: 'paste', category: 'kb', name: 'Brand facts' });
-  expect(log.files[0].map((f: any) => f.id)).toEqual(['imported-1', 'outline-md']);
-  expect(log.files[0][0].category).toBe('kb');
+  expect(log.files[0]).toEqual(['imported-1', 'outline-md']);
+  await expect(page.getByText('Brand facts')).toBeVisible();
 
   await page.getByRole('button', { name: 'Close' }).click();
   await page.getByText('Outline forms.md').click();
@@ -171,7 +174,7 @@ test('CRM Storage adds, governs and deletes documents without the old settings p
   page.once('dialog', d => d.accept());
   await doc.getByRole('button', { name: /^(Xoá|Delete)$/ }).click();
   await expect.poll(() => log.files.length).toBe(2);
-  expect(log.files[1].map((f: any) => f.id)).toEqual(['imported-1']);
+  expect(log.files[1]).toEqual(['imported-1']);
   expect(log.configs.at(-1).stepConfigs[3].fileAccess.rules).toEqual([]);
 });
 
@@ -238,4 +241,28 @@ test('CRM Editorial article waits for outline approval, then drafts through the 
     expect(log.puts.at(-1).editorialApproval).toMatchObject({ status: 'approved' });
     expect(log.reruns[0]).toEqual({ id: 'a-editorial', gate: 3 });
   } finally { articles.pop(); }
+});
+
+test('CRM keeps unsaved edits: leaving asks first, and a conflicting settings save is rolled back', async ({ page }) => {
+  await mockApp(page);
+  await goHash(page, '/object/articles/a-approved?tab=manual');
+  await page.getByLabel(/^(Bản nháp|Draft)$/).fill('UNSAVED_SENTINEL');
+  let asked = 0;
+  page.on('dialog', d => { asked++; void d.dismiss(); });
+  await page.getByRole('tab', { name: /AI Review/ }).click();
+  expect(asked).toBe(1);
+  await expect(page.getByLabel(/^(Bản nháp|Draft)$/)).toHaveValue('UNSAVED_SENTINEL');
+  await goHash(page, '/objects/plans');
+  await expect.poll(() => asked).toBe(2);
+  await expect(page).toHaveURL(/a-approved\?tab=manual/);
+
+  page.removeAllListeners('dialog');
+  page.on('dialog', d => void d.accept());
+  await page.unroute('**/api/config');
+  await page.route('**/api/config', route => route.request().method() === 'POST' ? route.fulfill({ status: 409, json: { code: 'CONFIG_CONFLICT', error: 'CONFLICT_SENTINEL' } }) : route.fallback());
+  await goHash(page, '/settings/pipeline');
+  const threshold = page.getByLabel('Threshold (%)');
+  await threshold.fill('77');
+  await threshold.press('Enter');
+  await expect(page.getByRole('alert')).toContainText('CONFLICT_SENTINEL');
 });

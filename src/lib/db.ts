@@ -151,7 +151,7 @@ async function railwayRequest<T>(
 
     if (response.ok) return payload as T
     if (!transient || attempt === maxAttempts) {
-      throw new Error(payload.error || `Railway error ${response.status}`)
+      throw Object.assign(new Error(payload.error || `Railway error ${response.status}`), { status: response.status, code: payload.code })
     }
     lastError = new Error(payload.error || `Railway error ${response.status}`)
 
@@ -284,6 +284,10 @@ export async function retryBatchArticle(
   return result.article
 }
 
+export async function fetchBatchStatus(activityIds: string[]): Promise<Article[]> {
+  return (await railwayRequest<{ articles: Article[] }>(`/api/batch-status?ids=${activityIds.map(encodeURIComponent).join(",")}`)).articles
+}
+
 export async function fetchBatch(
   activityId: string,
 ): Promise<{ batch: Record<string, unknown> | null; articles: Article[] }> {
@@ -296,12 +300,16 @@ export async function fetchConfig(): Promise<AppConfig | null> {
   return railwayRequest<AppConfig | null>("/api/config")
 }
 
-export async function saveConfig(config: AppConfig): Promise<void> {
-  await railwayRequest(
+/** Saves settings; the server rejects a save built on an older revision (409 CONFIG_CONFLICT). Returns the new revision. */
+export async function saveConfig(config: AppConfig): Promise<number | undefined> {
+  // Website Inventory is saved per record; never send the snapshot held in config.
+  const { websiteInventory: _inventory, ...rest } = config
+  const result = await railwayRequest<{ revision?: number }>(
     "/api/config",
-    jsonRequest("POST", config),
+    jsonRequest("POST", rest),
     config.railwayUrl,
   )
+  return result?.revision
 }
 
 export async function scanWebsiteUrl(
@@ -411,6 +419,15 @@ export async function deleteWebsiteInventoryRecord(
 
 export async function fetchFiles(): Promise<DocumentFile[]> {
   return railwayRequest<DocumentFile[]>("/api/files")
+}
+
+export async function updateFileMetadata(id: string, knowledgeMetadata: NonNullable<DocumentFile["knowledgeMetadata"]>): Promise<DocumentFile> {
+  return (await railwayRequest<{ file: DocumentFile }>(`/api/files/${encodeURIComponent(id)}`, jsonRequest("PATCH", { knowledgeMetadata }))).file
+}
+
+/** Deletes one document; the server also removes it from every gate's Shipper access and returns both. */
+export async function deleteFile(id: string): Promise<{ files: DocumentFile[]; config: AppConfig }> {
+  return railwayRequest(`/api/files/${encodeURIComponent(id)}`, { method: "DELETE" })
 }
 
 export async function saveFiles(

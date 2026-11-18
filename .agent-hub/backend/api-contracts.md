@@ -18,6 +18,13 @@ All endpoints are served by Railway. Authenticated client calls use `src/lib/db.
 | Inventory | `/api/website-inventory/*` | Backend + database |
 | Agent Library | `/api/agent-library/status`, `/context`, `/sync` | Agent Hub foundation |
 
+## Shared settings and documents (2026-11-18)
+
+- `writer:config` carries a `revision` counter. `POST /api/config` with a `revision` that is not the stored one returns `409 { code: "CONFIG_CONFLICT" }`; the CRM reloads the latest config and shows the error. A successful save returns `{ ok, revision }`. `websiteInventory` in the body is ignored (inventory is saved per record).
+- `PATCH /api/files/:id { knowledgeMetadata }` and `DELETE /api/files/:id` (admin) edit one document. Delete also removes the id from every `stepConfigs[*].fileAccess` and returns `{ files, config }`. Upload and import already append to `writer:files`; the CRM reloads `GET /api/files` instead of re-posting the whole list.
+- `GET /api/batch-status?ids=a,b` returns the articles of the watched batches in one load (CRM polling every 2.5 s) and resumes a batch marked running after a server restart.
+- `/api/kv*` proxy routes were removed; `/api/upload/*` and `/api/import/*` are admin-only.
+
 ## Error contract
 
 - Return stable machine-readable `code` values for policy/prerequisite/provider failures.

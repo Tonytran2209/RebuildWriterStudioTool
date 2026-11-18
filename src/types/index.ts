@@ -168,6 +168,8 @@ export interface WorkflowRuleSetting {
 export type WorkflowRuleSettings = Partial<Record<WorkflowRuleId, WorkflowRuleSetting>>
 
 export interface AppConfig {
+  /** Server-side save counter; a save built on an older revision is rejected (409). */
+  revision?: number
   railwayUrl: string
   stepConfigs: Record<number, StepConfig>
   models: AIModel[]

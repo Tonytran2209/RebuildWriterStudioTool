@@ -408,3 +408,6 @@
 @media (prefers-reduced-motion:reduce){.crm .ti-loader-2,.crm .plog-in{animation:none}}
 @media (max-width:640px){.crm .plog-kv{grid-template-columns:1fr}.crm .plog-body{padding-left:12px}}
 @media (max-width:640px){.crm .plog-row > summary,.crm .plog-call > summary,.crm .plog > summary{flex-wrap:wrap}.crm .plog-call > summary .grow{min-width:60%!important}}
+.crm .toast.err{background:var(--danger);color:#fff;max-width:min(560px,calc(100vw - 32px))}
+.crm .tbl th .th-btn{all:unset;display:inline-flex;align-items:center;gap:6px;cursor:pointer;width:100%;color:inherit}
+.crm .tbl th .th-btn:focus-visible,.crm .tbl tr:focus-visible,.crm .list-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}

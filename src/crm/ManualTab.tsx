@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { AppConfig, Article, DocumentFile, PipelineSettings } from "../types"
 import type { RerunGate } from "../lib/pipeline"
 import { useI18n } from "../lib/i18n"
@@ -7,7 +7,7 @@ import { isLegacyArticle } from "../lib/legacyCompatibility"
 import StructureSelect from "./StructureSelect"
 import StepLog from "./StepLog"
 import { selectIdeaPatch } from "./model"
-import { I, errText, toast, trackHandoff } from "./ui"
+import { I, markUnsaved, toast, toastErr, trackHandoff } from "./ui"
 
 type Props = {
   article: Article
@@ -26,7 +26,14 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
   const [draft, setDraft] = useState(a.draft ?? "")
   const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState<RerunGate | null>(null)
-  useEffect(() => setDraft(a.draft ?? ""), [a.id, a.draft])
+  // Take a newer server draft only while there are no local edits (polling must not wipe typing).
+  const serverDraft = useRef(a.draft ?? "")
+  useEffect(() => {
+    setDraft(current => current === serverDraft.current ? a.draft ?? "" : current)
+    serverDraft.current = a.draft ?? ""
+  }, [a.id, a.draft])
+  const dirty = draft !== (a.draft ?? "")
+  useEffect(() => { markUnsaved(`draft:${a.id}`, dirty); return () => markUnsaved(`draft:${a.id}`, false) }, [a.id, dirty])
 
   if (isLegacyArticle(a)) return <div className="empty-state"><I n="archive" /><h3>{tr("Bài theo quy trình cũ", "Legacy article")}</h3><span>{a.legacyReason || tr("Bài này được tạo trước khi có pipeline 3 gate và chỉ đọc được.", "This article predates the 3-gate pipeline and is read-only.")}</span><button className="btn primary" onClick={() => onMigrateLegacy(a)}><I n="copy" />{tr("Tạo bản theo quy trình mới", "Copy into the new workflow")}</button></div>
 
@@ -39,7 +46,7 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
     if (confirmText && !window.confirm(confirmText)) return
     setBusy(gate)
     try { await trackHandoff(eventTimeStamp, () => onRerun(a, gate)); toast(tr(`Đã gửi pipeline chạy lại từ ${gate === 4 ? "AI Review" : "G" + gate}`, `Pipeline re-running from ${gate === 4 ? "AI Review" : "G" + gate}`)) }
-    catch (err) { toast(errText(err)) }
+    catch (err) { toastErr(err) }
     finally { setBusy(null) }
   }
   // Editorial is supervised: a person approves the outline, then G3 runs through the pipeline.
@@ -52,7 +59,7 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
         await onRerun(a, 3)
       })
       toast(tr("Đã duyệt outline. Pipeline đang viết draft.", "Outline approved. The pipeline is writing the draft."))
-    } catch (err) { toast(errText(err)) } finally { setBusy(null) }
+    } catch (err) { toastErr(err) } finally { setBusy(null) }
   }
   const pick = async (id: string) => {
     if (locked || id === a.selectedCoreIdeaId) return
