@@ -66,10 +66,10 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
     if ((outline.length || a.draft?.trim()) && !window.confirm(tr("Đổi ý tưởng sẽ xoá outline và draft hiện tại. Tiếp tục?", "Changing the idea clears the current outline and draft. Continue?"))) return
     if (await onUpdateArticle(a.id, selectIdeaPatch(a, id))) toast(tr("Đã chọn ý tưởng. Bấm Tạo lại G2 để viết outline mới.", "Idea selected. Use Regenerate G2 to write a new outline."))
   }
-  const saveDraft = async () => {
+  const saveDraft = async (eventTimeStamp: number) => {
     if (locked || draft === (a.draft ?? "")) return
     // Edited text needs a fresh AI review before it can be approved again.
-    if (await onUpdateArticle(a.id, { draft, qualityReport: null, semanticReviewChecks: null, semanticReviewFingerprint: null })) toast(tr("Đã lưu draft. Bấm Chấm lại AI để có điểm mới.", "Draft saved. Use Re-check AI for a new score."))
+    if (await trackHandoff(eventTimeStamp, () => onUpdateArticle(a.id, { draft, qualityReport: null, semanticReviewChecks: null, semanticReviewFingerprint: null }))) toast(tr("Đã lưu draft. Bấm Chấm lại AI để có điểm mới.", "Draft saved. Use Re-check AI for a new score."))
   }
   const btn = (gate: RerunGate, label: string, confirmText?: string, disabled = false) =>
     <button className="btn" style={{ marginLeft: gate === 4 || gate === 1 || gate === 2 ? "auto" : 6 }} disabled={locked || busy !== null || disabled} onClick={e => void rerun(gate, e.timeStamp, confirmText)}><I n={busy === gate ? "loader-2" : "refresh"} />{label}</button>
@@ -107,7 +107,7 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
     <div className="fsec"><I n="file-text" />&nbsp;{tr("Bước 3 — Bản nháp & Kiểm tra", "Step 3 — Draft & QC")}{btn(4, tr("Chấm lại AI", "Re-check AI"), undefined, !a.draft?.trim() || !outline.length)}{btn(3, tr("Tạo lại Draft", "Regenerate draft"), a.draft?.trim() ? tr("Tạo lại Draft sẽ thay bản nháp hiện tại. Tiếp tục?", "Regenerating replaces the current draft. Continue?") : undefined, !outline.length)}</div>
     {running && !a.draft?.trim() && outline.length > 0 && <p className="muted" style={{ color: "var(--accent)", margin: "0 0 6px" }}><I n="loader-2" /> {tr("AI đang viết draft…", "AI is writing the draft…")}</p>}
     <textarea key={a.draft?.trim() ? "draft" : "empty"} className="inp plog-in" aria-label={tr("Bản nháp", "Draft")} style={{ height: 320, padding: 10, lineHeight: 1.6, fontFamily: "inherit" }} disabled={locked} value={draft} onChange={e => setDraft(e.target.value)} placeholder={tr("Bắt đầu viết thủ công…", "Start writing manually…")} />
-    {draft !== (a.draft ?? "") && !locked && <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 8 }}><button className="btn" onClick={() => setDraft(a.draft ?? "")}>{tr("Huỷ", "Discard")}</button><button className="btn primary" onClick={() => void saveDraft()}><I n="device-floppy" />{tr("Lưu draft", "Save draft")}</button></div>}
+    {draft !== (a.draft ?? "") && !locked && <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 8 }}><button className="btn" onClick={() => setDraft(a.draft ?? "")}>{tr("Huỷ", "Discard")}</button><button className="btn primary" onClick={e => void saveDraft(e.timeStamp)}><I n="device-floppy" />{tr("Lưu draft", "Save draft")}</button></div>}
     <StepLog article={a} step={4} />
   </>
 }

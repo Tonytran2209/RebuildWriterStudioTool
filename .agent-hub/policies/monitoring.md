@@ -68,7 +68,7 @@ Không đưa vào log hay báo cáo: tên người, email, URL hồ sơ, nội d
 | Main Job `Writer article` và các sub-job theo thứ tự | `backend/batchSteps.ts` (`ARTICLE_JOB`, `batchStepLabels`, `labProfile.mainJob.steps`) |
 | Lịch sử lần chạy (`jobRuns`) | `backend/jobHistory.ts` |
 | Endpoint và dựng báo cáo | `backend/monitoring.ts`, `backend/monitoringData.ts`, route trong `backend/index.ts` |
-| Đo trình duyệt (ui-kpi-v2) và tín hiệu "đã nhận việc" | `shared/uiKpi.ts`, `shared/generateAck.ts`, `src/components/workspace/Step3Outline.tsx`, `src/lib/performanceTelemetry.ts` |
-| Test monitoring | `backend/monitoring.test.ts`, `backend/monitoringData.test.ts`, `backend/jobHistory.test.ts` |
+| Đo trình duyệt (ui-kpi-v2) và tín hiệu "đã nhận việc" | `shared/uiKpi.ts`, `src/lib/performanceTelemetry.ts`, `trackHandoff` trong `src/crm/ui.tsx` (mọi nút giao việc cho server) |
+| Test monitoring | `backend/monitoring.test.ts`, `backend/monitoringData.test.ts`, `backend/jobHistory.test.ts`, `backend/uiKpi.test.ts` |
 
 Sub-job mới của một bài viết được thêm vào `batchStepLabels` đúng thứ tự pipeline. Kiểm tra bằng `npm --prefix backend test` và `npm run check`.

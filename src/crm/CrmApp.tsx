@@ -644,15 +644,16 @@ function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
   const st = planStats(p.articles), bs = ctx.batches.filter(b => b.planId === p.id)
   const archived = p.plan.status === "archived"
   // Plans with articles can only be archived (history is kept); empty plans can be deleted.
-  const removePlan = async () => {
+  const removePlan = async (eventTimeStamp: number) => {
     try {
       if (p.articles.length) {
-        const next = await updateContentPlanStatus(p.id, archived ? "active" : "archived", ctx.config.railwayUrl)
+        const next = await trackHandoff(eventTimeStamp, () => updateContentPlanStatus(p.id, archived ? "active" : "archived", ctx.config.railwayUrl))
         ctx.onContentPlansChange([next])
         toast(archived ? tr("Đã bỏ lưu trữ plan", "Plan restored") : tr("Đã lưu trữ plan", "Plan archived"))
       } else {
         if (!window.confirm(tr(`Xoá vĩnh viễn Content Plan "${p.name}"? Thao tác này không thể hoàn tác.`, `Permanently delete the Content Plan "${p.name}"? This cannot be undone.`))) return
-        await deleteContentPlan(p.id, ctx.config.railwayUrl)
+        // Start after the confirm dialog so think time is not counted as click latency.
+        await trackHandoff(performance.now(), () => deleteContentPlan(p.id, ctx.config.railwayUrl))
         ctx.onContentPlansChange([], p.id)
         go("#/objects/plans")
         toast(tr("Đã xoá plan", "Plan deleted"))
@@ -660,9 +661,9 @@ function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
     } catch (err) { toastErr(err) }
   }
   const paused = bs.length > 0 && bs.some(b => b.paused) && !bs.some(b => b.status === "running" && !b.paused)
-  const togglePause = async () => {
+  const togglePause = async (eventTimeStamp: number) => {
     try {
-      for (const b of bs) if (b.status !== "completed") await (paused ? db.startBatch(b.id) : db.pauseBatch(b.id))
+      await trackHandoff(eventTimeStamp, async () => { for (const b of bs) if (b.status !== "completed") await (paused ? db.startBatch(b.id) : db.pauseBatch(b.id)) })
       toast(paused ? tr("Đã tiếp tục", "Resumed") : tr("Đã tạm dừng", "Paused"))
     } catch (err) { toastErr(err) }
   }
@@ -676,10 +677,10 @@ function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
     <Frow icon="arrows-split" label="Max parallel">{String(ctx.settings.maxParallel)}</Frow>
   </div></>
   return <ShowShell crumbs={<><a className="crumb" href="#/objects/plans">Content Plans</a><span className="crumb">/</span>{p.name}</>}
-    actions={<>{bs.length > 0 && <button className="btn" aria-label={paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")} onClick={() => void togglePause()}><I n={paused ? "player-play" : "player-pause"} /><span>{paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")}</span></button>}
+    actions={<>{bs.length > 0 && <button className="btn" aria-label={paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")} onClick={e => void togglePause(e.timeStamp)}><I n={paused ? "player-play" : "player-pause"} /><span>{paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")}</span></button>}
       {ctx.can("plans") && (p.articles.length
-        ? <button className="btn" aria-label={archived ? tr("Bỏ lưu trữ", "Restore") : tr("Lưu trữ", "Archive")} onClick={() => void removePlan()}><I n={archived ? "archive-off" : "archive"} /><span>{archived ? tr("Bỏ lưu trữ", "Restore") : tr("Lưu trữ", "Archive")}</span></button>
-        : <button className="icon-btn" aria-label={tr("Xoá plan", "Delete plan")} onClick={() => void removePlan()}><I n="trash" /></button>)}</>}
+        ? <button className="btn" aria-label={archived ? tr("Bỏ lưu trữ", "Restore") : tr("Lưu trữ", "Archive")} onClick={e => void removePlan(e.timeStamp)}><I n={archived ? "archive-off" : "archive"} /><span>{archived ? tr("Bỏ lưu trữ", "Restore") : tr("Lưu trữ", "Archive")}</span></button>
+        : <button className="icon-btn" aria-label={tr("Xoá plan", "Delete plan")} onClick={e => void removePlan(e.timeStamp)}><I n="trash" /></button>)}</>}
     left={left} tabs={[["batches", "stack-2", "Batches", bs.length], ["articles", "file-text", "Articles", Math.max(st.n, (p.plan.items ?? []).length)]]} tab={tab} setTab={setTab}>
     {tab === "batches" ? <>
       <p style={{ color: "var(--f3)", margin: "0 0 10px" }}><I n="info-circle" /> {tr("Mỗi batch chạy tối đa", "Each batch runs at most")} {ctx.settings.maxParallel} {tr("bài cùng lúc.", "articles at a time.")}</p>
@@ -696,7 +697,7 @@ function BatchShow({ ctx, id }: { ctx: Ctx; id: string }) {
   if (!b) return <NotFound t="Batch not found" />
   const p = ctx.plans.find(x => x.id === b.planId)
   const running = b.articles.some(a => a.a.batchStatus === "running")
-  const control = async () => { try { await (running ? db.pauseBatch(b.id) : db.startBatch(b.id)); toast(running ? "Paused" : "Running") } catch (err) { toastErr(err) } }
+  const control = async (eventTimeStamp: number) => { try { await trackHandoff(eventTimeStamp, () => running ? db.pauseBatch(b.id) : db.startBatch(b.id)); toast(running ? "Paused" : "Running") } catch (err) { toastErr(err) } }
   const zip = () => { const blob = buildBatchZip(b.articles.map(a => a.a)); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `batch-${b.idx}.zip`; link.click(); URL.revokeObjectURL(url) }
   const left = <><div className="rec-head"><span className="av xl" style={{ background: "#7948af" }}><I n="stack-2" /></span><h1>Batch {b.idx}</h1><div className="sub">{p?.name}</div></div><div className="fields">
     <Frow icon="progress-check" label="Status">{b.paused ? <Tag c="orange">Paused</Tag> : <StatusTag k={b.status} />}</Frow>
@@ -705,7 +706,7 @@ function BatchShow({ ctx, id }: { ctx: Ctx; id: string }) {
     <Frow icon="circle-check" label="AI Approved">{`${b.done}/${b.articles.length}`}</Frow>
   </div><p style={{ color: "var(--f3)", fontSize: 12 }}>{tr("Mỗi bài chạy độc lập; output được chọn ở gate trước là input duy nhất của gate sau. Retry chỉ chạy lại từ gate bị lỗi.", "Each article runs independently; a gate's selected output is the only input to the next. Retry re-runs only from the failed gate.")}</p></>
   return <ShowShell crumbs={<><a className="crumb" href="#/objects/batches">Batches</a><span className="crumb">/</span>{p?.name} · Batch {b.idx}</>}
-    actions={<>{b.status !== "completed" && <button className="btn" aria-label={running ? tr("Tạm dừng", "Pause") : tr("Chạy", "Run")} onClick={() => void control()}><I n={running ? "player-pause" : "player-play"} /><span>{running ? tr("Tạm dừng", "Pause") : tr("Chạy", "Run")}</span></button>}<button className="btn" aria-label="ZIP" onClick={zip}><I n="download" /><span>ZIP</span></button>{ctx.isAdmin && <button className="icon-btn" aria-label={tr("Xoá batch", "Delete batch")} onClick={() => ctx.onDeleteArticle(b.articles[0].a, true)}><I n="trash" /></button>}</>}
+    actions={<>{b.status !== "completed" && <button className="btn" aria-label={running ? tr("Tạm dừng", "Pause") : tr("Chạy", "Run")} onClick={e => void control(e.timeStamp)}><I n={running ? "player-pause" : "player-play"} /><span>{running ? tr("Tạm dừng", "Pause") : tr("Chạy", "Run")}</span></button>}<button className="btn" aria-label="ZIP" onClick={zip}><I n="download" /><span>ZIP</span></button>{ctx.isAdmin && <button className="icon-btn" aria-label={tr("Xoá batch", "Delete batch")} onClick={() => ctx.onDeleteArticle(b.articles[0].a, true)}><I n="trash" /></button>}</>}
     left={left} tabs={[["articles", "file-text", "Articles", b.articles.length]]} tab="articles" setTab={() => {}}>
     <div>{b.articles.map(a => <div key={a.id} className="list-row" role="link" tabIndex={0} onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) go(`#/object/articles/${enc(a.id)}`) }} onClick={() => go(`#/object/articles/${enc(a.id)}`)} style={{ height: "auto", minHeight: 48, padding: "8px 12px" }}>
       <span className="grow"><b style={{ fontWeight: 500 }}>{a.title}</b><br /><span style={{ color: "var(--f3)", fontSize: 12 }}>{a.keyword}</span></span><GateBar a={a} /><StatusTag k={a.status} /><RetryButton ctx={ctx} a={a} />
@@ -857,14 +858,14 @@ function ReviewPanel({ ctx, id }: { ctx: Ctx; id: string }) {
   const a = ctx.list.find(x => x.id === id)
   if (!a) return null
   const checks = a.a.qualityReport?.checks ?? [], failed = checks.filter(c => c.status === "fail")
-  const save = async (status: "approved" | "needs_revision") => {
+  const save = async (status: "approved" | "needs_revision", eventTimeStamp: number) => {
     if (status === "needs_revision" && !comment.trim()) { toast(tr("Cần nhập nhận xét cho Request Revision", "A comment is required for Request Revision")); ref.current?.focus(); return }
-    const ok = await ctx.onUpdateArticle(a.id, { humanReview: { status, comment: comment.trim() || (status === "approved" ? tr("Đạt.", "Approved.") : undefined), reviewer: ctx.user.email, reviewedAt: new Date().toISOString() } })
+    const ok = await trackHandoff(eventTimeStamp, () => ctx.onUpdateArticle(a.id, { humanReview: { status, comment: comment.trim() || (status === "approved" ? tr("Đạt.", "Approved.") : undefined), reviewer: ctx.user.email, reviewedAt: new Date().toISOString() } }))
     if (ok) { markUnsaved("review-comment", false); ctx.setPanel(null); toast(status === "approved" ? tr("Đã duyệt bài", "Approved") : tr("Đã yêu cầu sửa. Mở bài › Chế độ thủ công › Mở lại bài để sửa.", "Revision requested. Open the article › Manual mode › Reopen to edit.")) }
   }
-  const markApproved = async () => {
+  const markApproved = async (eventTimeStamp: number) => {
     const next = a.a.approvedArticle ? null : { by: ctx.user.email, at: new Date().toISOString() }
-    if (await ctx.onUpdateArticle(a.id, { approvedArticle: next })) toast(next ? tr("Đã thêm vào Approved Articles", "Added to Approved Articles") : tr("Đã bỏ khỏi Approved Articles", "Removed from Approved Articles"))
+    if (await trackHandoff(eventTimeStamp, () => ctx.onUpdateArticle(a.id, { approvedArticle: next }))) toast(next ? tr("Đã thêm vào Approved Articles", "Added to Approved Articles") : tr("Đã bỏ khỏi Approved Articles", "Removed from Approved Articles"))
   }
   return <SidePanel ctx={ctx} title="Review" icon={<I n="checklist" />} extra={<a className="icon-btn" href={`#/object/articles/${enc(a.id)}`} title="Open article"><I n="arrow-up-right" /></a>}>
     <div className="sp-title" style={{ paddingBottom: 4 }}>{a.title}</div><div style={{ color: "var(--f3)", marginBottom: 12 }}>{a.keyword}</div>
@@ -879,8 +880,8 @@ function ReviewPanel({ ctx, id }: { ctx: Ctx; id: string }) {
     <details style={{ marginTop: 12 }}><summary style={{ cursor: "pointer", color: "var(--f2)" }}>{tr("Xem bài", "Read article")}</summary><article className="crm-draft" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: markdownToHtml(readable(a.a.draft)) }} /></details>
     <div style={{ borderTop: "1px solid var(--b2)", margin: "16px 0 12px" }} />
     <textarea ref={ref} aria-label={tr("Nhận xét", "Comment")} style={{ minHeight: 110 }} value={comment} onChange={e => setComment(e.target.value)} placeholder={tr("Nhận xét (bắt buộc khi Request Revision)…", "Comment (required for Request Revision)…")} />
-    <div style={{ display: "flex", gap: 6, marginTop: 8 }}><button className="btn primary" onClick={() => void save("approved")}><I n="check" />Approve</button><button className="btn" onClick={() => void save("needs_revision")}><I n="message-2" />Request Revision</button></div>
-    {ctx.can("approveArticles") && <div className="box" style={{ marginTop: 12 }}><div className="box-row"><div className="grow">Approved Article<div className="s">{tr("Đánh dấu bài mẫu (chưa nạp vào G2/G3)", "Mark as an example (not yet fed to G2/G3)")}</div></div><button role="switch" aria-checked={Boolean(a.a.approvedArticle)} aria-label="Approved Article" className={`toggle${a.a.approvedArticle ? " on" : ""}`} onClick={() => void markApproved()} /></div></div>}
+    <div style={{ display: "flex", gap: 6, marginTop: 8 }}><button className="btn primary" onClick={e => void save("approved", e.timeStamp)}><I n="check" />Approve</button><button className="btn" onClick={e => void save("needs_revision", e.timeStamp)}><I n="message-2" />Request Revision</button></div>
+    {ctx.can("approveArticles") && <div className="box" style={{ marginTop: 12 }}><div className="box-row"><div className="grow">Approved Article<div className="s">{tr("Đánh dấu bài mẫu (chưa nạp vào G2/G3)", "Mark as an example (not yet fed to G2/G3)")}</div></div><button role="switch" aria-checked={Boolean(a.a.approvedArticle)} aria-label="Approved Article" className={`toggle${a.a.approvedArticle ? " on" : ""}`} onClick={e => void markApproved(e.timeStamp)} /></div></div>}
     <p style={{ color: "var(--f4)", fontSize: 12 }}>{tr("Request Revision chỉ ghi lại feedback, không gửi bài lại cho AI.", "Request Revision only records feedback; it does not send the article back to the AI.")}</p>
     {a.human.status === "revision" && ctx.can("manual") && <button className="btn" onClick={() => { if (confirmDiscard()) { ctx.setPanel(null); go(`#/object/articles/${enc(a.id)}?tab=manual`) } }}><I n="adjustments" />{tr("Sửa trong Chế độ thủ công (Mở lại bài)", "Fix in Manual mode (Reopen)")}</button>}
   </SidePanel>
@@ -891,18 +892,18 @@ function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
   const d = ctx.docs.find(x => x.id === id)
   if (!d) return null
   const [l, c] = docStatus(d)
-  const flip = async (g: number) => {
+  const flip = async (g: number, eventTimeStamp: number) => {
     if (!ctx.can("settings")) return toast(tr("Chỉ Admin sửa được Shipper", "Only Admin can edit the Shipper"))
     if (!d.file) return toast(tr("Tài liệu chưa có trong Storage", "This document is not in Storage yet"))
-    try { await ctx.onSaveConfig(toggleShip(ctx.config, d.file, g), ctx.files, false); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) }
+    try { const file = d.file; await trackHandoff(eventTimeStamp, () => ctx.onSaveConfig(toggleShip(ctx.config, file, g), ctx.files, false)); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) }
   }
   // Per-file server calls: a stale document list in this tab can never overwrite documents added elsewhere.
   const saveFile = async (file: DocumentFile) => {
-    const saved = await db.updateFileMetadata(file.id, file.knowledgeMetadata!)
+    const saved = await trackHandoff(performance.now(), () => db.updateFileMetadata(file.id, file.knowledgeMetadata!))
     ctx.onFilesSynced(ctx.files.map(f => f.id === saved.id ? saved : f))
   }
   const deleteFile = async () => {
-    const result = await db.deleteFile(id)
+    const result = await trackHandoff(performance.now(), () => db.deleteFile(id))
     ctx.onFilesSynced(result.files, result.config)
     ctx.setPanel(null)
     toast(tr("Đã xoá tài liệu", "Document deleted"))
@@ -915,7 +916,7 @@ function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
       <div className="frow"><div className="flabel"><I n="notes" />Note</div><div className="fval">{d.note || <span className="empty">Empty</span>}</div></div>
     </div>
     <div className="fsec"><I n="git-merge" />&nbsp;Used at (Shipper)</div>
-    <div className="box">{[1, 2, 3].map(g => <div key={g} className="box-row"><div className="grow">{GATES[g - 1].label}</div><button role="switch" aria-checked={d.used.includes(g)} aria-label={GATES[g - 1].label} className={`toggle${d.used.includes(g) ? " on" : ""}`} onClick={() => void flip(g)} /></div>)}</div>
+    <div className="box">{[1, 2, 3].map(g => <div key={g} className="box-row"><div className="grow">{GATES[g - 1].label}</div><button role="switch" aria-checked={d.used.includes(g)} aria-label={GATES[g - 1].label} className={`toggle${d.used.includes(g) ? " on" : ""}`} onClick={e => void flip(g, e.timeStamp)} /></div>)}</div>
     <div className="fsec"><I n="category" />&nbsp;Applies to types</div><div>{d.types.map(t => <span key={t}><TypeTag t={t} /> </span>)}</div>
     {d.file ? <DocDetails key={d.file.id} file={d.file} railwayUrl={ctx.config.railwayUrl} canEdit={ctx.isAdmin} onSave={saveFile} onDelete={deleteFile} />
       : d.st === "missing" && ctx.isAdmin && d.id !== "approved-articles" && <button className="btn primary" style={{ marginTop: 14 }} onClick={() => ctx.setPanel({ kind: "add-doc" })}><I n="upload" />{tr("Thêm tài liệu này", "Add this document")}</button>}
@@ -1071,7 +1072,7 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
   if (admin.includes(p) && !ctx.can("settings")) return <Forbidden />
   const titles: Record<string, string> = { experience: "Experience", roles: "Roles", pipeline: "Pipeline", shipper: "Shipper", "workflow-ai": "Workflow AI", models: "AI Models" }
   const st = ctx.settings
-  const savePipeline = async (patch: Partial<PipelineSettings>) => { try { await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...st, ...patch } }, ctx.files, false); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } }
+  const savePipeline = async (patch: Partial<PipelineSettings>) => { try { await trackHandoff(performance.now(), () => ctx.onSaveConfig({ ...ctx.config, pipeline: { ...st, ...patch } }, ctx.files, false)); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } }
   const numField = (k: keyof PipelineSettings, label: string, min: number, max: number) =>
     <label className="fl">{label}<input className="inp" type="number" min={min} max={max} defaultValue={Number(st[k])} onBlur={e => { const v = Math.max(min, Math.min(max, +e.target.value || min)); e.target.value = String(v); if (v !== st[k]) void savePipeline({ [k]: v }) }} onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur() }} /></label>
   let body: ReactNode
@@ -1093,7 +1094,7 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
     <Sec title="Capacity" desc={tr("Mục tiêu 30 bài/ngày.", "Target: 30 articles/day.")}><div className="box"><div className="box-row"><div className="grow">T = 24h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 24 * 60 / 30)} min / article</div><div className="box-row"><div className="grow">T = 8h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 8 * 60 / 30)} min / article</div></div></Sec>
   </>
   if (p === "shipper") body = <Sec title="Shipper mapping" desc={tr("Gate nào lấy tài liệu nào. Không bao giờ nạp cả thư viện.", "Which gate gets which documents. Never the whole library.")}><div className="box"><table className="tbl" style={{ width: "100%" }}><thead><tr><th style={{ position: "static" }}>Document</th>{["G1", "G2", "G3"].map(g => <th key={g} style={{ position: "static", textAlign: "center" }}>{g}</th>)}</tr></thead><tbody>
-    {ctx.docs.filter(d => d.file).map(d => <tr key={d.id}><td>{d.name} <span className="muted">· {d.g}</span></td>{[1, 2, 3].map(g => <td key={g} style={{ textAlign: "center" }}><button role="switch" aria-checked={d.used.includes(g)} aria-label={`${d.name} G${g}`} className={`toggle${d.used.includes(g) ? " on" : ""}`} style={{ display: "inline-block" }} onClick={() => void ctx.onSaveConfig(toggleShip(ctx.config, d.file!, g), ctx.files, false).then(() => toast(tr("Đã lưu", "Saved"))).catch(err => toastErr(err))} /></td>)}</tr>)}
+    {ctx.docs.filter(d => d.file).map(d => <tr key={d.id}><td>{d.name} <span className="muted">· {d.g}</span></td>{[1, 2, 3].map(g => <td key={g} style={{ textAlign: "center" }}><button role="switch" aria-checked={d.used.includes(g)} aria-label={`${d.name} G${g}`} className={`toggle${d.used.includes(g) ? " on" : ""}`} style={{ display: "inline-block" }} onClick={e => void trackHandoff(e.timeStamp, () => ctx.onSaveConfig(toggleShip(ctx.config, d.file!, g), ctx.files, false)).then(() => toast(tr("Đã lưu", "Saved"))).catch(err => toastErr(err))} /></td>)}</tr>)}
   </tbody></table></div></Sec>
   if (["workflow-ai", "models"].includes(p)) body = <EmbeddedSettings ctx={ctx} p={p} />
   if (!body) body = <div className="empty-state"><I n="ghost" /><h3>Page not found</h3></div>
@@ -1111,13 +1112,13 @@ function EmbeddedSettings({ ctx, p }: { ctx: Ctx; p: string }) {
   const [saving, setSaving] = useState(false)
   const dirty = config !== ctx.config
   useEffect(() => { markUnsaved("settings", dirty); return () => markUnsaved("settings", false) }, [dirty])
-  const save = async () => { setSaving(true); try { await ctx.onSaveConfig(config, files, false); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } finally { setSaving(false) } }
+  const save = async (eventTimeStamp: number) => { setSaving(true); try { await trackHandoff(eventTimeStamp, () => ctx.onSaveConfig(config, files, false)); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } finally { setSaving(false) } }
   return <>
     {p === "workflow-ai" && <WorkflowAiSettings config={config} files={files} articles={ctx.articles} onChange={setConfig} />}
     {p === "models" && <ModelsSettings config={config} onChange={setConfig} />}
     {p === "workflow-ai" && <WorkflowRules config={config} files={files} onChange={setConfig} />}
     {["workflow-ai", "models"].includes(p) && <div style={{ position: "sticky", bottom: 0, display: "flex", justifyContent: "flex-end", padding: "12px 0", background: "var(--bg1)" }}>
-      <button className="btn primary" disabled={!dirty || saving} onClick={() => void save()}><I n="device-floppy" />{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</button>
+      <button className="btn primary" disabled={!dirty || saving} onClick={e => void save(e.timeStamp)}><I n="device-floppy" />{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</button>
     </div>}
   </>
 }

@@ -10,7 +10,7 @@ import {
   updateWebsiteInventoryRecord,
 } from "../lib/db"
 import { useI18n } from "../lib/i18n"
-import { I, toastErr } from "./ui"
+import { I, toastErr, trackHandoff } from "./ui"
 
 /** Settings › Website inventory (port of the old WebsiteInventoryPanel, CRM markup). */
 export default function WebsiteInventory({
@@ -120,6 +120,7 @@ export default function WebsiteInventory({
   const persistUpdate = (id: string, patch: Partial<WebsiteContentRecord>) =>
     updateWebsiteInventoryRecord(id, patch, railwayUrl).catch((error) => toastErr(error))
   const scan = async () => {
+    const started = performance.now()
     const urls = [...new Set(input.split(/[\n,]+/).flatMap((value) => {
           try {
             const parsed = new URL(value.trim())
@@ -154,11 +155,11 @@ export default function WebsiteInventory({
     setScanning(true)
     setScanProgress({ done: 0, total: pending.length })
     try {
-      const job = await startWebsiteInventoryBatch(
+      const job = await trackHandoff(started, () => startWebsiteInventoryBatch(
         pending.map((item) => item.url),
         railwayUrl,
         includeAiSummary,
-      )
+      ))
       localStorage.setItem("writer:website-inventory-active-job", job.id)
       setActiveJobId(job.id)
       await monitorBatch(job.id, current)
@@ -185,6 +186,7 @@ export default function WebsiteInventory({
     }
   }
   const recheckAll = async () => {
+    const started = performance.now()
     if (scanning || !records.length) return
     setSummaryLimitReached(false)
     setScanning(true)
@@ -196,7 +198,7 @@ export default function WebsiteInventory({
     }))
     onChange(current)
     try {
-      const job = await startWebsiteInventoryBatch(records.map((item) => item.url), railwayUrl, true)
+      const job = await trackHandoff(started, () => startWebsiteInventoryBatch(records.map((item) => item.url), railwayUrl, true))
       localStorage.setItem("writer:website-inventory-active-job", job.id)
       setActiveJobId(job.id)
       await monitorBatch(job.id, current)
@@ -205,6 +207,7 @@ export default function WebsiteInventory({
     }
   }
   const summarizeMissing = async () => {
+    const started = performance.now()
     const pending = records.filter((record) => !record.summary && record.status !== "broken")
     if (scanning || !pending.length) return
     setSummaryLimitReached(false)
@@ -215,7 +218,7 @@ export default function WebsiteInventory({
       : item)
     onChange(current)
     try {
-      const job = await startWebsiteInventoryBatch(pending.map((item) => item.url), railwayUrl, true)
+      const job = await trackHandoff(started, () => startWebsiteInventoryBatch(pending.map((item) => item.url), railwayUrl, true))
       localStorage.setItem("writer:website-inventory-active-job", job.id)
       setActiveJobId(job.id)
       await monitorBatch(job.id, current)

@@ -5,7 +5,7 @@ import { importSourceThroughRailway } from "../lib/railwayImport"
 import { downloadDocumentFromRailway } from "../lib/railwayDownload"
 import { isDocumentReady } from "../lib/documentStatus"
 import { useI18n } from "../lib/i18n"
-import { I } from "./ui"
+import { I, trackHandoff } from "./ui"
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 const now = () => new Date().toISOString()
@@ -55,13 +55,14 @@ export function AddDocForm({ railwayUrl, onAdded }: { railwayUrl: string; onAdde
   }
   const upload = async (list: FileList | null) => {
     if (!list?.length || busy) return
+    const started = performance.now()
     setBusy(tr("Đang trích xuất và lưu…", "Extracting and saving…")); setError(""); setDone("")
     const docs: DocumentFile[] = [], failures: string[] = []
     for (const [i, f] of Array.from(list).entries()) {
       setBusy(`${i + 1}/${list.length}: ${f.name}`)
       try {
         if (f.size > 15 * 1024 * 1024) throw new Error(tr("File vượt quá 15 MB", "File exceeds 15 MB"))
-        const { record } = await uploadDocumentToRailway(f, category, railwayUrl)
+        const { record } = await trackHandoff(started, () => uploadDocumentToRailway(f, category, railwayUrl))
         docs.push(toDocument({ ...(record as ActionDataSource), sourceType: "file" }, category))
       } catch (err) { failures.push(`${f.name}: ${err instanceof Error ? err.message : String(err)}`) }
     }
@@ -81,9 +82,10 @@ export function AddDocForm({ railwayUrl, onAdded }: { railwayUrl: string; onAdde
   const importSource = async () => {
     const source = sourceFor()
     if (!source || busy) return
+    const started = performance.now()
     setBusy(tr("Đang nhập và lưu nội dung…", "Importing and saving content…")); setError(""); setDone("")
     try {
-      const { record } = await importSourceThroughRailway(source, category, railwayUrl)
+      const { record } = await trackHandoff(started, () => importSourceThroughRailway(source, category, railwayUrl))
       await finish([toDocument(record as ActionDataSource, category)])
       setName(""); setText(""); setUrl(""); setHeaders([]); setAir({ key: "", base: "", table: "" }); setRows([{ id: uid(), cells: columns.map(() => "") }])
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) }

@@ -10,7 +10,7 @@ projectId: writer-studio
 | Layer | Default allowed paths |
 | --- | --- |
 | Design UI/UX | `src/components/**`, `src/*.css`, `src/App.tsx`, `public/**`, `index.html`, `.agent-hub/design/**` |
-| Backend/workflow | `backend/**`, `src/lib/aiService.ts`, `src/lib/db.ts`, `src/lib/railway*.ts`, `.agent-hub/backend/**` |
+| Backend/workflow | `backend/**`, `src/lib/db.ts`, `src/lib/railway*.ts`, `.agent-hub/backend/**` |
 | Database/storage | `supabase/migrations/**`, `backend/supabase.ts`, `.agent-hub/database/**` |
 | Cross-layer | Explicit union of paths plus approved dependency order |
 

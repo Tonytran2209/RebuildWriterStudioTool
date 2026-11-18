@@ -9,167 +9,24 @@ body { color: var(--ui-text); font: 400 13px/1.5 var(--ui-font); -webkit-font-sm
 }
 /* Put Content Plan focus on its rounded container, not inside the text area.
    Keep specificity above the generic and legacy dark focus rules. */
-.composer-textarea:focus,
-.composer-textarea:focus-visible,
-.codex-dark .composer-textarea:focus,
-.codex-dark .composer-textarea:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-}
-.activity-launcher div:has(> .composer-textarea:focus) {
-  outline: 2px solid var(--ui-secondary) !important;
-  outline-offset: 2px !important;
-}
 :where(button, input, textarea, select):disabled { cursor: not-allowed; }
 .writer-app { min-width: 0; color: var(--ui-text); background: var(--ui-bg) !important; }
 .writer-app > :last-child { min-width: 0; }
-.writer-app .writer-sidebar { background: var(--ui-sidebar) !important; border-color: var(--ui-border) !important; color: var(--ui-secondary) !important; }
-.writer-app .sidebar-nav { min-height: 36px; color: var(--ui-secondary); }
-.writer-app .sidebar-nav:hover { background: var(--ui-hover); color: var(--ui-text); }
-.writer-app .sidebar-recent-card:hover { background: var(--ui-hover) !important; border-color: var(--ui-border) !important; }
-.writer-app .sidebar-recent-card:has([aria-current='page']) { background: var(--ui-selected) !important; border-color: var(--ui-border) !important; }
-.writer-app .sidebar-recent-card:has([aria-current='page']) button { color: var(--ui-text) !important; }
-.writer-app .writer-profile-popover { background: var(--ui-surface) !important; border-color: var(--ui-border) !important; color: var(--ui-text); box-shadow: var(--ui-shadow-popover); }
-.writer-app .writer-theme-options input { accent-color: var(--ui-focus); }
-.writer-app .continuous-workspace { background: var(--ui-bg); }
-.writer-app .minimal-step-nav { background: var(--ui-bg) !important; border-color: var(--ui-border) !important; }
-.writer-app .minimal-step-shell { border-color: var(--ui-border) !important; }
-.writer-app .minimal-settings .settings-content,
-.writer-app .minimal-settings .settings-main { min-width: 0; }
-.writer-app .minimal-settings { padding: 0 !important; background: var(--ui-bg) !important; }
-.writer-app .minimal-settings .settings-shell { max-width: none !important; height: 100dvh !important; border: 0 !important; border-radius: 0 !important; }
-.writer-app .activity-launcher,
-.writer-app .batch-workspace { background: var(--ui-bg) !important; color: var(--ui-text) !important; }
-.writer-app .batch-workspace article { border-color: var(--ui-border) !important; background: var(--ui-surface) !important; }
-.writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) { background: var(--ui-surface) !important; border-color: var(--ui-border) !important; color: var(--ui-text); }
-.writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(header, article, section) { border-color: var(--ui-border) !important; }
-:root[data-writer-theme='dark'] .writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(.bg-white, .bg-slate-50, .bg-slate-100) { background: var(--ui-soft) !important; }
-:root[data-writer-theme='dark'] .writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(.text-slate-800, .text-slate-700, .text-slate-900) { color: var(--ui-text) !important; }
-:root[data-writer-theme='dark'] .writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal) :where(.text-slate-400, .text-slate-500, .text-slate-600) { color: var(--ui-secondary) !important; }
 /* Portal AI logs follow root appearance without a legacy .codex-dark ancestor. */
-.writer-dialog-theme .ai-log-modal :is(.ai-log-timeline, .ai-log-event) {
-  background: var(--ui-surface) !important;
-  border-color: var(--ui-border) !important;
-}
-.writer-dialog-theme .ai-log-modal :is(.ai-log-fact, .ai-log-step, .ai-log-close, .ai-log-source) {
-  background: var(--ui-control) !important;
-  border-color: var(--ui-border) !important;
-  color: var(--ui-secondary) !important;
-}
-.writer-dialog-theme .ai-log-modal :is(.text-slate-800, .text-slate-700, .text-slate-900) { color: var(--ui-text) !important; }
-.writer-dialog-theme .ai-log-modal :is(.text-slate-400, .text-slate-500, .text-slate-600) { color: var(--ui-secondary) !important; }
-.writer-dialog-theme .ai-log-modal .border-slate-200 { border-color: var(--ui-border) !important; }
-.writer-dialog-theme .ai-log-modal .ai-log-source { color: var(--ui-link) !important; }
-.writer-dialog-theme .ai-log-modal :is(.ai-log-close, .ai-log-source):hover {
-  background: var(--ui-hover) !important;
-  color: var(--ui-text) !important;
-}
-.writer-dialog-theme .ai-log-modal .ai-log-step.is-completed { color: var(--ui-success-text) !important; background: var(--ui-success-bg) !important; border-color: var(--ui-success-border) !important; }
-.writer-dialog-theme .ai-log-modal .ai-log-step.is-warning { color: var(--ui-warning-text) !important; background: var(--ui-warning-bg) !important; border-color: var(--ui-warning-border) !important; }
-.writer-dialog-theme .ai-log-modal .ai-log-step.is-error { color: var(--ui-danger-text) !important; background: var(--ui-danger-bg) !important; border-color: var(--ui-danger-border) !important; }
-@media (max-width: 600px) {
-  .writer-dialog-theme .ai-log-modal .ai-log-close { min-width: 44px; min-height: 44px; }
-}
-.writer-app .batch-workspace button:disabled { opacity: .45; }
-.writer-login { background: var(--ui-bg) !important; color: var(--ui-text) !important; }
-.writer-login form { background: var(--ui-surface) !important; border-color: var(--ui-border) !important; box-shadow: none !important; }
-.writer-login label { color: var(--ui-secondary) !important; }
-.writer-login input { border-color: var(--ui-control-border) !important; background: var(--ui-control) !important; color: var(--ui-text) !important; }
-.writer-login button[type='submit'] { background: var(--ui-primary-bg) !important; color: var(--ui-primary-text) !important; }
-
-/* Launcher greeting only: responsive sizes shared by Light, Dark and System. */
-.writer-app .activity-launcher .activity-launcher-title {
-  font-size: 32px !important;
-  line-height: 1.25;
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
 
 /* The guide's reading width applies to prose; wide editors and data tables remain fluid. */
-.writer-app .draft-editor .prose-editor { font-size: 16px !important; line-height: 1.625 !important; }
 .writer-app :where(pre, table) { max-width: 100%; }
 .writer-app pre { overflow-x: auto; }
 .writer-app :where(button, a, input, textarea, select) { transition-duration: 120ms; }
 
 @media (max-width: 899px) {
-  .writer-app .activity-launcher .activity-launcher-title { font-size: 28px !important; }
   .writer-app { flex-direction: column !important; }
-  .writer-app .writer-sidebar { width: 100% !important; flex: 0 0 auto; border-right: 0 !important; border-bottom: 1px solid var(--ui-border) !important; }
-  .writer-app .writer-sidebar[data-open='false'] { height: 56px !important; }
-  .writer-app .writer-sidebar[data-open='true'] { height: min(65dvh, 580px) !important; }
-  .writer-app .writer-sidebar .sidebar-icon-button.md\:hidden { display: inline-flex !important; }
-  .writer-app .continuous-workspace { padding: 16px !important; }
-}
-@media (max-width: 600px) {
-  .writer-app .activity-launcher .activity-launcher-title { font-size: 24px !important; }
-  .writer-app .sidebar-nav,
-  .writer-app .settings-nav-item { min-height: 44px; }
-  .writer-app .sidebar-icon-button { min-width: 44px; min-height: 44px; }
-  .writer-app .sidebar-recent-card > button:first-child { min-height: 44px; }
-  .writer-app .sidebar-recent-card > button:last-child { min-width: 44px; min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 
 /* Heading rows share the outline surface; hover is lighter than selection. */
-.outline-heading-trigger[aria-expanded="true"] {
-  background: var(--ui-selected);
-}
-
-.outline-heading-action {
-  color: var(--ui-secondary);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .outline-heading-trigger[aria-expanded="false"]:hover,
-  .outline-heading-action:not(:disabled):hover {
-    background: var(--ui-hover);
-  }
-}
-
-.outline-heading-trigger:focus-visible,
-.outline-heading-action:focus-visible {
-  outline: 2px solid var(--ui-secondary);
-  outline-offset: -2px;
-}
-
-
-@media (hover: hover) and (pointer: fine) {
-  .campaign-article-row .campaign-article-open {
-    padding-inline-end: 44px;
-  }
-
-  .campaign-article-status,
-  .campaign-article-delete {
-    position: absolute;
-    inset-inline-end: 0;
-    top: 50%;
-    translate: 0 -50%;
-  }
-
-  .campaign-article-status {
-    inset-inline-end: 14px;
-  }
-
-  .campaign-article-delete {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .campaign-article-row:hover .campaign-article-delete:not(:disabled),
-  .campaign-article-delete:focus-visible {
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .campaign-article-row:hover:has(.campaign-article-delete:not(:disabled)) .campaign-article-status,
-  .campaign-article-row:has(.campaign-article-delete:focus-visible) .campaign-article-status {
-    opacity: 0;
-  }
-
-}
 
 /* ---------------------------------------------------------------------------
    Twenty component layer. Loaded last; restyles shared surfaces only and never
@@ -177,55 +34,16 @@ body { color: var(--ui-text); font: 400 13px/1.5 var(--ui-font); -webkit-font-sm
    resolved by source order (this file is imported after the legacy themes).
    --------------------------------------------------------------------------- */
 ::selection { background: var(--ui-accent-soft); color: inherit; }
-.writer-app, .writer-dialog-theme, .writer-login { font-family: var(--ui-font); font-size: 13px; letter-spacing: 0; }
-.writer-app :where(h1, h2), .writer-dialog-theme :where(h1, h2) { font-weight: 600; letter-spacing: -0.01em; }
-.writer-app :where(code, kbd, samp, .font-mono), .writer-dialog-theme :where(code, kbd, samp, .font-mono) { font-family: var(--ui-font-mono); }
+.writer-app { font-family: var(--ui-font); font-size: 13px; letter-spacing: 0; }
+.writer-app :where(h1, h2) { font-weight: 600; letter-spacing: -0.01em; }
 .writer-app a:not([class]) { color: var(--ui-link); }
 
 /* Scrollbars: thin, neutral (Twenty) */
-.writer-app *, .writer-dialog-theme * { scrollbar-width: thin; scrollbar-color: var(--ui-border-strong) transparent; }
-
-/* Primary action: Twenty accent blue */
-:root :is(.writer-app, .writer-dialog-theme, .writer-login, body) button.bg-slate-900,
-:root .writer-login button[type='submit'] {
-  background: var(--ui-primary-bg) !important;
-  border-color: var(--ui-primary-bg) !important;
-  color: var(--ui-primary-text) !important;
-  box-shadow: none !important;
-}
-:root :is(.writer-app, .writer-dialog-theme, .writer-login, body) button.bg-slate-900:hover:not(:disabled),
-:root .writer-login button[type='submit']:hover:not(:disabled) {
-  background: var(--ui-primary-hover) !important;
-  border-color: var(--ui-primary-hover) !important;
-}
-:root :is(.writer-app, .writer-dialog-theme, body) button.bg-slate-900 :is(span, svg) { color: inherit !important; }
-
-/* Text inputs: 4px radius, hairline border, blue focus border with soft accent ring */
-:is(.writer-app, .writer-dialog-theme, .writer-login) :where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']), textarea, select) {
-  border-radius: var(--ui-radius-sm);
-}
-:is(.writer-app, .writer-dialog-theme, .writer-login) :where(input, textarea)::placeholder { color: var(--ui-muted) !important; opacity: 1; }
-:root :is(.writer-app, .writer-dialog-theme, .writer-login) :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file']), textarea, select):focus-visible {
-  outline: none !important;
-  border-color: var(--ui-accent) !important;
-  box-shadow: 0 0 0 3px var(--ui-accent-soft) !important;
-}
-:is(.writer-app, .writer-dialog-theme) :where(input[type='checkbox'], input[type='radio']) { accent-color: var(--ui-accent); }
-
-/* Sidebar: Twenty navigation drawer */
-.writer-app .writer-sidebar { font-size: 13px; }
-.writer-app .writer-sidebar .sidebar-nav { min-height: 28px; border-radius: var(--ui-radius-sm); font-weight: 500; color: var(--ui-secondary); }
-.writer-app .writer-sidebar .sidebar-nav:hover { background: var(--ui-hover); color: var(--ui-text); }
-.writer-app .writer-sidebar .sidebar-recent-card { border-radius: var(--ui-radius-sm) !important; border-color: transparent !important; }
-.writer-app .writer-sidebar .sidebar-recent-card:hover { background: var(--ui-hover) !important; }
-.writer-app .writer-sidebar .sidebar-recent-card:has([aria-current='page']) { background: var(--ui-selected) !important; }
-.writer-app .writer-sidebar .sidebar-icon-button { border-radius: var(--ui-radius-sm); color: var(--ui-muted); }
-.writer-app .writer-sidebar .sidebar-icon-button:hover { background: var(--ui-hover); color: var(--ui-text); }
+.writer-app * { scrollbar-width: thin; scrollbar-color: var(--ui-border-strong) transparent; }
 
 /* Popovers, menus and dialogs: 8px radius, layered Twenty shadow */
-.writer-app .writer-profile-popover,
-.writer-dialog-theme :where(.ai-log-modal, .core-idea-detail-modal),
-.writer-app [role='menu'], .writer-app [role='listbox'], .writer-dialog-theme [role='dialog'] {
+.writer-app [role='menu'],
+.writer-app [role='listbox'] {
   border-radius: var(--ui-radius-md) !important;
   box-shadow: var(--ui-shadow-popover) !important;
   border-color: var(--ui-border) !important;
@@ -233,15 +51,3 @@ body { color: var(--ui-text); font: 400 13px/1.5 var(--ui-font); -webkit-font-sm
 .writer-app [role='menuitem'], .writer-app [role='option'] { border-radius: var(--ui-radius-sm); }
 
 /* Small status tags follow Twenty's 4px tags */
-.image-placement-suggestions .ips-status { border-radius: var(--ui-radius-sm); }
-
-@media (max-width: 600px) {
-  .writer-app .writer-sidebar .sidebar-nav { min-height: 44px; }
-}
-
-/* Draft inspector: Twenty underline tabs; rows hug content instead of stretching. */
-.writer-app .draft-insights, .draft-insights { align-content: start; }
-:root .draft-insight-tabs { display: flex; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--ui-border) !important; background: transparent !important; }
-:root .draft-insight-tab { position: relative; min-height: 40px; padding: 0 2px; border: 0; border-radius: 0; background: transparent !important; color: var(--ui-muted); font-size: 13px; font-weight: 500; box-shadow: inset 0 -1px 0 transparent; }
-:root .draft-insight-tab:hover { background: transparent !important; color: var(--ui-text); }
-:root .draft-insight-tab.is-active { background: transparent !important; color: var(--ui-text); box-shadow: inset 0 -1px 0 var(--ui-text); }

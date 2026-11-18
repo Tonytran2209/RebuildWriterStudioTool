@@ -10,7 +10,7 @@ All endpoints are served by Railway. Authenticated client calls use `src/lib/db.
 | Domain | Endpoint family | Contract owner |
 | --- | --- | --- |
 | Auth | `/api/auth/*` | Backend |
-| AI generation | `/api/generate`, `/api/seo/research` | Backend/workflow |
+| AI generation | Batch runner (`/api/batches/*`), `/api/seo/research` | Backend/workflow |
 | Articles | `/api/articles/*` | Backend + database |
 | Content plans | `/api/content-plans/*` | Backend + database |
 | Batches | `/api/batches/*` | Backend/workflow |
@@ -42,8 +42,6 @@ Universal QC v9 adds optional `qualityReport.inputFingerprint` and section `grou
 4. Verify auth, batch ownership and optimistic-update behavior.
 
 ## Agent Library retrieval
-
-- `POST /api/format/google-docs` returns `{markdown, html, formatter: "deterministic-v2", aiCalls: 0}`. Normalize em dashes to hyphens in the export copy only. HTML supports headings, emphasis, links, lists, horizontal rules and Markdown tables with aligned cells. No stored draft is mutated.
 
 - `POST /api/agent-library/sync` compiles the Git canonical `.agent-hub` documents into a commit/content-pinned Supabase index. It is admin-only.
 - `GET /api/agent-library/context?q=...&layers=design,backend&maxChars=...` returns only ranked, bounded chunks from the current indexed version.
@@ -100,3 +98,6 @@ AI cost uses configured model prices at call completion, is an estimate in USD, 
 
 The image worker, style library and image suggestion APIs were removed from the codebase. Tables created by the former migrations 003/004 (`writer_studio.image_*`) may still exist in PostgreSQL; nothing reads them.
 
+## Removed routes (2026-11-18)
+
+`POST /api/generate` (browser-side AI calls and its NDJSON ack), `POST /api/format/google-docs` and `GET /api/legacy/inventory` had no caller after the CRM moved every AI step to the server batch runner; they were removed. Copy to Docs formats in the browser.

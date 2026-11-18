@@ -19,6 +19,7 @@ import { isLegacyArticle } from "./lib/legacyCompatibility"
 import { useThemePreference } from "./lib/theme"
 import type { RerunGate } from "./lib/pipeline"
 import CrmApp, { CrmToastHost } from "./crm/CrmApp"
+import { trackHandoff } from "./crm/ui"
 
 function generateId() {
   return `art-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -166,7 +167,7 @@ export default function App() {
         }
         if (remoteConfig) {
           setConfig(mergeWithLatestModelCatalog(remoteConfig))
-          // Restore railwayUrl to localStorage for aiService
+          // db.ts reads the backend URL from localStorage
           if (remoteConfig.railwayUrl) {
             localStorage.setItem("writer:railwayUrl", remoteConfig.railwayUrl)
           }
@@ -394,10 +395,8 @@ export default function App() {
       try {
         // Finish any content save already queued before deleting the database record.
         await Promise.all(targets.map((item) => waitForArticleMutations(item.id)))
-        if (deleteGroup && target.activityId)
-          await db.deleteBatch(target.activityId)
-        else
-          await db.deleteArticle(target.id)
+        // Measured from after the confirm dialog: the user's think time is not click latency.
+        await trackHandoff(performance.now(), () => deleteGroup && target.activityId ? db.deleteBatch(target.activityId) : db.deleteArticle(target.id))
         setArticles(current => current.filter(item => !targetIds.has(item.id)))
         setSyncStatus("idle")
         notifyWorkspace(deleteGroup ? tr(`Đã xoá batch gồm ${targets.length} bài.`, `Deleted a batch of ${targets.length} articles.`) : tr("Đã xoá bài viết.", "Article deleted."), "success")

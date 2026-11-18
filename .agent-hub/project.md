@@ -41,7 +41,7 @@ Writer Studio creates evidence-aware articles through the Core Idea, Outline and
 | Article workflow UI | `src/components/workspace/Step2CoreIdea.tsx`, `Step3Outline.tsx`, `Step4Draft.tsx` | Design + workflow |
 | Batch UI | `src/components/BatchActivity.tsx` | Design + workflow |
 | Settings and knowledge UI | `src/components/config/**` | Design + workflow |
-| Browser client | `src/lib/db.ts`, `src/lib/aiService.ts`, `src/lib/railway*.ts` | Backend contract |
+| Browser client | `src/lib/db.ts`, `src/lib/railway*.ts` | Backend contract |
 | Railway service | `backend/index.ts`, `backend/providers.ts`, `backend/stepContext.ts` | Backend/workflow |
 | Persistence | `backend/supabase.ts`, `supabase/migrations/**` | Database/storage |
 
