@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import type { AIProvider, AppConfig, Article, DocumentFile } from "../types"
-import { pingRailway } from "../lib/db"
+import { pingRailway, type BackendStatus } from "../lib/db"
 import { isDocumentReady } from "../lib/documentStatus"
 import { PROVIDER_LABELS } from "../lib/defaultData"
 import { useI18n } from "../lib/i18n"
@@ -15,8 +15,9 @@ type WorkflowProps = { config: AppConfig; files: DocumentFile[]; articles: Artic
 /** Settings › Workflow AI in the demo layout ("Models per gate"). */
 export function WorkflowAiSettings({ config, files, articles, onChange }: WorkflowProps) {
   const { tr } = useI18n()
-  const [backendOk, setBackendOk] = useState<boolean | null>(null)
-  useEffect(() => { void pingRailway(config.railwayUrl || RAILWAY_URL).then(r => setBackendOk(r.ok)) }, [config.railwayUrl])
+  const [status, setStatus] = useState<BackendStatus | null>(null)
+  const check = () => { setStatus(null); void pingRailway(config.railwayUrl || RAILWAY_URL).then(setStatus) }
+  useEffect(check, [config.railwayUrl])
   const models = config.models.filter(m => m.enabled)
   const kb = files.filter(f => f.category === "kb" && isDocumentReady(f))
   const rules = files.filter(f => f.category === "rules" && isDocumentReady(f))
@@ -27,7 +28,7 @@ export function WorkflowAiSettings({ config, files, articles, onChange }: Workfl
   return <>
     <Sec title={tr("Hệ thống", "System")}>
       <div className="box">
-        <div className="box-row"><I n="server" /><div className="grow">AI Backend<div className="s">{config.railwayUrl || RAILWAY_URL}</div></div><span className={`tag t-${backendOk ? "green" : backendOk === false ? "red" : "gray"}`}>{backendOk ? "Online" : backendOk === false ? tr("Mất kết nối", "Offline") : tr("Đang kiểm tra", "Checking")}</span></div>
+        <BackendRows status={status} onRecheck={check} />
         <div className="box-row"><I n="books" /><div className="grow">Knowledge Base<div className="s">{kb.map(f => f.name).join(", ") || tr("Chưa có dữ liệu", "No data loaded")}</div></div>{kb.length}</div>
         <div className="box-row"><I n="file-description" /><div className="grow">Skills & Rules<div className="s">{rules.map(f => f.name).join(", ") || tr("Chưa có dữ liệu", "No data loaded")}</div></div>{rules.length}</div>
       </div>
@@ -48,6 +49,32 @@ export function WorkflowAiSettings({ config, files, articles, onChange }: Workfl
         </div>
       })}</div>
     </Sec>
+  </>
+}
+
+const Light = ({ ok, on, off, wait }: { ok: boolean | null | undefined; on: string; off: string; wait?: string }) =>
+  <span className={`tag t-${ok ? "green" : ok === false ? "red" : "gray"}`}>{ok ? on : ok === false ? off : wait ?? "—"}</span>
+
+/** Railway backend health: the server that runs every AI step, its database, sign-in store and AI provider keys. */
+function BackendRows({ status, onRecheck }: { status: BackendStatus | null; onRecheck: () => void }) {
+  const { tr } = useI18n()
+  const checking = tr("Đang kiểm tra", "Checking")
+  if (!status) return <div className="box-row"><I n="server" /><div className="grow">AI Backend<div className="s">{tr("Đang kiểm tra Railway…", "Checking Railway…")}</div></div><Light ok={null} on="" off="" wait={checking} /></div>
+  const d = status.dependencies
+  const keys = Object.entries(status.providers ?? {}).filter(([, on]) => on).map(([p]) => PROVIDER_LABELS[p as AIProvider]?.label ?? p)
+  const tables = d && d.relationalContentPlans !== undefined ? d.relationalContentPlans && d.threeStageSessions : undefined
+  return <>
+    <div className="box-row"><I n="server" /><div className="grow">AI Backend<div className="s">{status.ok
+      ? `${tr("Phản hồi", "Responded in")} ${status.latencyMs} ms · ${d ? (d.status === "ok" ? tr("mọi phụ thuộc ổn", "all dependencies healthy") : tr("một số phụ thuộc lỗi", "some dependencies degraded")) : tr("không đọc được chẩn đoán", "diagnostics unavailable")}`
+      : tr("Không kết nối được Railway. Pipeline và batch sẽ không chạy.", "Cannot reach Railway. Pipelines and batches will not run.")}</div></div>
+      <button className="icon-btn" aria-label={tr("Kiểm tra lại", "Check again")} title={tr("Kiểm tra lại", "Check again")} onClick={onRecheck}><I n="refresh" /></button>
+      <Light ok={status.ok ? (d ? d.status === "ok" : true) : false} on="Online" off={status.ok ? tr("Suy giảm", "Degraded") : tr("Mất kết nối", "Offline")} /></div>
+    {status.ok && <>
+      <div className="box-row"><I n="database" /><div className="grow">{tr("Cơ sở dữ liệu", "Database")}<div className="s">{status.databaseProvider ?? "—"} · {tr("lưu file", "files")}: {status.storageProvider ?? "—"}{tables === false ? ` · ${tr("thiếu bảng, cần chạy migration", "tables missing, run migrations")}` : ""}</div></div><Light ok={d ? Boolean(d.databaseConnected) && tables !== false : undefined} on={tr("Kết nối", "Connected")} off={tr("Lỗi", "Error")} /></div>
+      <div className="box-row"><I n="lock" /><div className="grow">{tr("Đăng nhập", "Sign-in")}<div className="s">{tr("Kho tài khoản người dùng", "User account store")}</div></div><Light ok={d ? d.authConnected ?? true : undefined} on={tr("Kết nối", "Connected")} off={tr("Lỗi", "Error")} /></div>
+      <div className="box-row"><I n="key" /><div className="grow">AI providers<div className="s">{keys.length ? keys.join(", ") : tr("Chưa đặt API key nào trên Railway", "No API key set on Railway")}</div></div><Light ok={keys.length > 0} on={`${keys.length} ${tr("đã cấu hình", "configured")}`} off={tr("Thiếu key", "No keys")} /></div>
+      <div className="box-row"><I n="world-search" /><div className="grow">SEO research<div className="s">{tr("Tra keyword bằng web search ở G1", "Keyword lookup via web search at G1")}</div></div>{/* Optional feature: off is neutral, not an error. */}<Light ok={status.seoResearch || undefined} on={tr("Bật", "On")} off="" wait={tr("Chưa cấu hình", "Not configured")} /></div>
+    </>}
   </>
 }
 

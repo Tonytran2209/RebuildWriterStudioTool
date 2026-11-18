@@ -447,24 +447,30 @@ function jsonRequest(method: string, body: unknown): RequestInit {
 
 // ── Railway health check ───────────────────────────────────────────────────────
 
-export async function pingRailway(
-  url: string,
-): Promise<{
+export interface BackendStatus {
   ok: boolean
+  latencyMs?: number
   providers?: Record<string, boolean>
   seoResearch?: boolean
-}> {
+  databaseProvider?: string
+  storageProvider?: string
+  /** From /health/dependencies; undefined when that check could not run. */
+  dependencies?: { status: string; databaseConnected?: boolean; authConnected?: boolean | null; relationalContentPlans?: boolean; threeStageSessions?: boolean }
+}
+
+/** Liveness (/health) plus dependency diagnostics (/health/dependencies) of the Railway backend. */
+export async function pingRailway(url: string): Promise<BackendStatus> {
+  const base = url.replace(/\/$/, "")
   try {
-    const res = await fetch(`${url.replace(/\/$/, "")}/health`, {
-      signal: AbortSignal.timeout(5000),
-    })
+    const started = performance.now()
+    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) })
+    const latencyMs = Math.round(performance.now() - started)
     if (!res.ok) return { ok: false }
     const data = await res.json()
-    return {
-      ok: true,
-      providers: data.providers,
-      seoResearch: Boolean(data.seoResearch),
-    }
+    // 503 still carries the JSON body describing what is degraded.
+    const dependencies = await fetch(`${base}/health/dependencies`, { signal: AbortSignal.timeout(8000) })
+      .then(r => r.json()).catch(() => undefined)
+    return { ok: true, latencyMs, providers: data.providers, seoResearch: Boolean(data.seoResearch), databaseProvider: data.databaseProvider, storageProvider: data.storageProvider, dependencies }
   } catch {
     return { ok: false }
   }

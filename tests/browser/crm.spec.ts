@@ -30,6 +30,8 @@ async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
     const url = new URL(route.request().url());
     if (url.hostname !== '127.0.0.1') return route.abort();
     const method = route.request().method();
+    if (url.pathname === '/health') return route.fulfill({ json: { status: 'ok', databaseProvider: 'postgres', storageProvider: 'postgres', providers: { openai: true, anthropic: false }, seoResearch: false } });
+    if (url.pathname === '/health/dependencies') return route.fulfill({ status: 503, json: { status: 'degraded', databaseConnected: true, authConnected: true, relationalContentPlans: true, threeStageSessions: false, supabaseUrl: 'SECRET_URL' } });
     if (url.pathname === '/api/auth/refresh') return route.fulfill({ json: { authProvider: 'postgres', accessToken: 'tok', expiresAt: null, user } });
     if (url.pathname === '/api/config' && method === 'POST') { log.configs.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } }); }
     if (url.pathname === '/api/config') return route.fulfill({ json: { ...config, railwayUrl: url.origin } });
@@ -97,6 +99,11 @@ test('CRM (demo UI): kanban, table, record, review and pipeline settings on real
 
   // Changing a gate model must keep the Shipper's document access.
   await goHash(page, '/settings/workflow-ai');
+  // Backend status comes from Railway's health checks, not a link.
+  await expect(page.getByText('Suy giảm')).toBeVisible();
+  await expect(page.getByText(/thiếu bảng, cần chạy migration/)).toBeVisible();
+  await expect(page.getByText('1 đã cấu hình')).toBeVisible();
+  await expect(page.getByText('SECRET_URL')).toHaveCount(0);
   await page.getByLabel(/Số từ tiếng Anh mục tiêu|Target English words/).fill('2000');
   // Save lives in the page header next to the breadcrumb, like every other CRM page action.
   await page.locator('.ph-actions').getByRole('button', { name: /Lưu thay đổi|Save changes/ }).click();
