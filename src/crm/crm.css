@@ -76,16 +76,12 @@
 .crm .tbl th{color:var(--f3);font-weight:500;position:sticky;top:0;background:var(--bg1);z-index:2;cursor:pointer;user-select:none}
 .crm .tbl th:hover{background:var(--bg2)}
 .crm .tbl th .ti{font-size:14px;vertical-align:-2px;margin-right:4px}
-.crm .tbl td.cb,.crm .tbl th.cb{width:32px;min-width:32px;padding:0 8px;border-right:0}
-.crm .tbl td.first,.crm .tbl th.first{position:sticky;left:32px;background:var(--bg1);z-index:1}
+.crm .tbl td.first,.crm .tbl th.first{position:sticky;left:0;background:var(--bg1);z-index:1}
 .crm .tbl th.first{z-index:3}
-.crm .tbl td.cb,.crm .tbl th.cb{position:sticky;left:0;background:var(--bg1);z-index:1}
-.crm .tbl th.cb{z-index:3}
 .crm .tbl tr:hover td{background:var(--bg2)}
 .crm .tbl tr.sel td{background:var(--accent-bg)}
 .crm .tbl td.num{text-align:right;color:var(--f2)}
 .crm .tbl .muted{color:var(--f3)}
-.crm .tbl th.add{width:40px;color:var(--f4)}
 .crm .tbl tr.grp td{background:var(--bg2);font-weight:500;color:var(--f2);height:30px}
 .crm .foot{height:32px;display:flex;align-items:center;padding:0 12px;color:var(--f4);border-top:1px solid var(--b3);flex-shrink:0;gap:6px}
 .crm .foot:hover{color:var(--f2);background:var(--bg2);cursor:pointer}

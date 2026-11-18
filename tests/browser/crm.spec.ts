@@ -266,3 +266,13 @@ test('CRM keeps unsaved edits: leaving asks first, and a conflicting settings sa
   await threshold.press('Enter');
   await expect(page.getByRole('alert')).toContainText('CONFLICT_SENTINEL');
 });
+
+test('CRM tables: the sticky first column never covers the next column', async ({ page }) => {
+  await mockApp(page);
+  await page.getByRole('button', { name: 'Table' }).waitFor();
+  await page.evaluate(() => { location.hash = '#/objects/reviews' });
+  const row = page.locator('table.tbl tbody tr[tabindex]').first();
+  const [first, second] = [await row.locator('td').nth(0).boundingBox(), await row.locator('td').nth(1).boundingBox()];
+  expect(first!.x + first!.width).toBeLessThanOrEqual(second!.x + 1);
+  await expect(row.locator('td').nth(1)).toHaveText('Chưa review');
+});
