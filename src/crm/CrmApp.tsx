@@ -227,6 +227,7 @@ function TypeTag({ t }: { t: CrmArticle["type"] }) { const { tr } = useI18n(); r
 function GateTag({ a }: { a: CrmArticle }) {
   if (a.status === "completed") return <Tag c="green"><I n="check" />&nbsp;Completed</Tag>
   if (a.status === "queued") return <Tag c="gray">Queued</Tag>
+  if (a.awaiting) return <Tag c="orange"><I n="user-check" />&nbsp;G2 · Chờ duyệt outline</Tag>
   const g = GATES[(a.status === "failed" ? a.failGate! : a.gate) - 1]
   return <Tag c={a.status === "failed" ? "red" : g.color}>{g.label}</Tag>
 }
@@ -443,6 +444,7 @@ function KanbanView({ ctx, rows }: { ctx: Ctx; rows: CrmArticle[] }) {
         {a.planId && <div className="kf"><I n="list-details" /><PlanChip ctx={ctx} id={a.planId} /></div>}
         {a.score != null && <div className="kf"><I n="gauge" /><ScoreTag s={a.score} t={ctx.settings.threshold} />{a.status === "completed" && <HumanTag h={a.human.status} />}</div>}
         {a.status === "failed" && <><div className="kf" style={{ color: "var(--danger)" }}><I n="alert-triangle" />{a.failReason}</div><RetryButton ctx={ctx} a={a} /></>}
+        {a.awaiting && <><div className="kf" style={{ color: "var(--c-orange)" }}><I n="user-check" />Editorial · chờ duyệt outline</div><button className="btn" onClick={e => { e.stopPropagation(); go(`#/object/articles/${enc(a.id)}?tab=manual`) }}><I n="list-check" /><span>Duyệt outline</span></button></>}
       </div>)}
       {col.key === "queued" && <button className="kadd" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="plus" /> Add Plan</button>}
     </section>
@@ -724,7 +726,7 @@ function RunItemsPanel({ ctx, planId }: { ctx: Ctx; planId: string }) {
       <div className="frow"><div className="flabel"><I n="layout-rows" />Per batch</div><div className="fval"><input aria-label="Per batch" type="number" min={1} max={20} value={per} onChange={e => setPer(+e.target.value)} /></div></div>
       <div className="frow"><div className="flabel"><I n="stack-2" />Batches</div><div className="fval"><b>{batches} batch</b></div></div>
     </div>
-    {count("needs-review") > 0 && <div style={{ color: "var(--f3)", margin: "4px 0 8px" }}>{tr("Topic \"Needs review\" chạy theo luồng Editorial để không bị bỏ sót.", "\"Needs review\" topics run as Editorial so none is dropped.")}</div>}
+    {pending.length > count("comparison-seo") && <div style={{ color: "var(--f3)", margin: "4px 0 8px" }}>{tr("Bài Editorial (kể cả \"Needs review\") chạy G1–G2 rồi dừng chờ người duyệt outline trong Chế độ thủ công, sau đó mới viết draft.", "Editorial articles (including \"Needs review\") run G1–G2, then wait for a person to approve the outline in Manual mode before drafting.")}</div>}
     <div style={{ margin: "4px 0 12px" }}><StructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
     <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy) || !pending.length} onClick={e => void run(e.timeStamp)}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>
   </SidePanel>
@@ -1034,7 +1036,7 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
   })}</div></Sec>
   if (p === "pipeline") body = <>
     <Sec title="Scoring" desc={tr("Score là tỉ lệ % tiêu chí đạt (warning tính nửa). Các giá trị dưới đây chưa chốt.", "Score is the % of criteria met (warnings count half). Values below are not final.")}><div className="row2">{numField("threshold", "Threshold (%)", 50, 100)}{numField("options", tr("Options per gate (chưa bật ở G2, G3)", "Options per gate (not active for G2, G3)"), 1, 5)}{numField("revisionRounds", tr("Max revision rounds (chưa bật)", "Max revision rounds (not active)"), 0, 3)}</div></Sec>
-    <Sec title="Batches" desc={tr("Áp dụng cho plan mới.", "Applies to new plans.")}><div className="row2">{numField("perBatch", "Articles per batch", 1, 20)}{numField("maxParallel", "Parallel articles / batch", 1, 5)}{numField("reviewSample", "Random review (%)", 0, 100)}</div></Sec>
+    <Sec title="Batches" desc={tr("Áp dụng cho plan mới.", "Applies to new plans.")}><div className="row2">{numField("perBatch", "Articles per batch", 1, 20)}{numField("maxParallel", tr("Bài chạy song song (toàn hệ thống)", "Parallel articles (all batches)"), 1, 5)}{numField("reviewSample", "Random review (%)", 0, 100)}</div></Sec>
     <Sec title="No-pass Logic" desc={tr("Khi không option nào đạt, kể cả sau vòng sửa. Chưa bật: hiện bài trượt AI Review được đánh dấu Failed.", "When no option passes, even after revision. Not active: articles failing AI Review are marked Failed.")}><select className="inp" style={{ maxWidth: 420 }} value={st.noPass} onChange={e => void savePipeline({ noPass: e.target.value as PipelineSettings["noPass"] })}><option value="fail">Stop at Failed and wait for a person</option><option value="best-flagged">Take the best option with a warning flag</option></select></Sec>
     <Sec title="Capacity" desc={tr("Mục tiêu 30 bài/ngày.", "Target: 30 articles/day.")}><div className="box"><div className="box-row"><div className="grow">T = 24h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 24 * 60 / 30)} min / article</div><div className="box-row"><div className="grow">T = 8h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 8 * 60 / 30)} min / article</div></div></Sec>
   </>

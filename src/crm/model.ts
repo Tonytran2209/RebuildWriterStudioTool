@@ -27,6 +27,8 @@ export type CrmArticle = {
   gate: number
   failGate?: number
   failReason?: string
+  /** Editorial article stopped after G2 until a person approves the outline. */
+  awaiting?: boolean
   score: number | null
   human: { status: HumanStatus; reviewer?: string; comment?: string; at?: string }
   planId?: string
@@ -55,13 +57,17 @@ export function toCrmArticle(a: Article, settings: PipelineSettings): CrmArticle
     createdAt: a.createdAt,
     startedAt: a.batchStartedAt ?? a.coreIdeaScannedAt ?? null,
   }
-  // New flow (spec §3): AI Approval ≥ threshold completes the article; a manual completion also counts.
-  if (isArticleCompleted(a) || approval.state === "approved") return { ...base, status: "completed", gate: 5 }
-  if (a.batchStatus === "failed") return { ...base, status: "failed", gate: Math.max(1, Math.min(4, reached)), failGate: Math.max(1, Math.min(4, reached)), failReason: a.batchError || "Batch error" }
+  if (isArticleCompleted(a)) return { ...base, status: "completed", gate: 5 }
+  // A queued/running article is judged by the run in progress, never by an older QC report.
   const busy = a.batchStatus === "running" || a.batchStatus === "queued"
-  if (approval.state === "rejected" && !busy)
+  if (busy) return reached <= 1 && !a.coreIdeaSuggestions?.length && a.batchStatus === "queued" ? { ...base, status: "queued", gate: 0 } : { ...base, status: "running", gate: Math.max(1, Math.min(4, reached)) }
+  if (a.batchStatus === "failed") return { ...base, status: "failed", gate: Math.max(1, Math.min(4, reached)), failGate: Math.max(1, Math.min(4, reached)), failReason: a.batchError || "Batch error" }
+  if (a.batchStatus === "awaiting_approval") return { ...base, status: "running", gate: 2, awaiting: true }
+  // Same rule as the batch runner (spec §3): AI Approval ≥ threshold completes the article.
+  if (approval.state === "approved") return { ...base, status: "completed", gate: 5 }
+  if (approval.state === "rejected")
     return { ...base, status: "failed", gate: 4, failGate: 4, failReason: approval.hardBlocked ? `AI Review: evidence not supported (${approval.score}%)` : `AI Review ${approval.score}% < ${settings.threshold}%` }
-  if ((a.batchStatus === "queued" || a.batchStatus === "paused") && reached <= 1 && !a.coreIdeaSuggestions?.length) return { ...base, status: "queued", gate: 0 }
+  if (a.batchStatus === "paused" && reached <= 1 && !a.coreIdeaSuggestions?.length) return { ...base, status: "queued", gate: 0 }
   return { ...base, status: "running", gate: Math.max(1, Math.min(4, reached)) }
 }
 
@@ -78,7 +84,7 @@ export function batchesOf(articles: CrmArticle[]): CrmBatch[] {
       done: st.filter(s => s === "completed").length,
       status: st.every(s => s === "completed") ? "completed" as const
         : items.some(a => a.a.batchStatus === "running") ? "running" as const
-        : st.some(s => s === "failed") && st.every(s => s === "completed" || s === "failed") ? "attention" as const : "queued" as const,
+        : (st.some(s => s === "failed") || items.some(a => a.awaiting)) && items.every(a => a.status === "completed" || a.status === "failed" || a.awaiting) ? "attention" as const : "queued" as const,
       schedule,
       paused: items.some(a => a.a.batchStatus === "paused") && !items.some(a => a.a.batchStatus === "running"),
     }
@@ -132,7 +138,7 @@ export function storageDocs(files: DocumentFile[], config: AppConfig, approvedAr
     types: ["A", "B", "C", "ED"], note: file.scanStatus === "error" ? "Không đọc được nội dung" : "", updatedAt: file.contentUpdatedAt || file.uploadedAt, file,
   }))
   const missing: StorageDoc[] = REQUIRED.filter(([, , test]) => !files.some(f => test.test(f.name))).map(([g, name, , used], i) => ({ id: `missing-${i}`, g, name, st: "missing", used, types: ["A", "B", "C", "ED"], note: "Chưa có trong Storage" }))
-  const approved: StorageDoc = { id: "approved-articles", g: "Playbooks", name: "Approved Articles", st: approvedArticles ? "ok" : "missing", used: [2, 3], types: ["A", "B", "C", "ED"], note: approvedArticles ? `${approvedArticles} human-confirmed` : "Chưa có bài nào được người xác nhận" }
+  const approved: StorageDoc = { id: "approved-articles", g: "Playbooks", name: "Approved Articles", st: approvedArticles ? "ok" : "missing", used: [2, 3], types: ["A", "B", "C", "ED"], note: `${approvedArticles ? `${approvedArticles} bài đã xác nhận` : "Chưa có bài nào được người xác nhận"} · chưa nạp làm ví dụ cho G2/G3` }
   // Imported Content Plans are the topic source for G1; they are added through Add Plan, not Storage.
   const plans: StorageDoc[] = contentPlans.map(plan => ({ id: `plan-${plan.id}`, planId: plan.id, g: "Source data", name: plan.name, st: "ok", used: [1], types: ["A", "B", "C", "ED"], note: `Content Plan · ${plan.totalArticles} topic${plan.status === "archived" ? " · archived" : ""}`, updatedAt: plan.updatedAt }))
   return [...real, ...plans, ...missing, approved]

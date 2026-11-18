@@ -42,6 +42,18 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
     catch (err) { toast(errText(err)) }
     finally { setBusy(null) }
   }
+  // Editorial is supervised: a person approves the outline, then G3 runs through the pipeline.
+  const approveOutline = async (eventTimeStamp: number) => {
+    setBusy(3)
+    try {
+      await trackHandoff(eventTimeStamp, async () => {
+        const ok = await onUpdateArticle(a.id, { editorialApproval: { status: "approved", approvedAt: new Date().toISOString(), outlineFingerprint: JSON.stringify(outline.map(section => section.heading)) } })
+        if (!ok) throw new Error(tr("Không lưu được phê duyệt.", "Could not save the approval."))
+        await onRerun(a, 3)
+      })
+      toast(tr("Đã duyệt outline. Pipeline đang viết draft.", "Outline approved. The pipeline is writing the draft."))
+    } catch (err) { toast(errText(err)) } finally { setBusy(null) }
+  }
   const pick = async (id: string) => {
     if (locked || id === a.selectedCoreIdeaId) return
     if ((outline.length || a.draft?.trim()) && !window.confirm(tr("Đổi ý tưởng sẽ xoá outline và draft hiện tại. Tiếp tục?", "Changing the idea clears the current outline and draft. Continue?"))) return
@@ -72,6 +84,10 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
     <StepLog article={a} step={2} />
 
     <div className="fsec"><I n="list-tree" />&nbsp;{tr("Bước 2 — Dàn bài nháp", "Step 2 — Draft outline")}{a.outlineStructure && <span className="tag t-gray" style={{ marginLeft: 8 }}>{a.outlineStructure.name}</span>}{btn(2, tr("Tạo lại G2", "Regenerate G2"), outline.length ? tr("Tạo lại G2 sẽ xoá outline và draft hiện tại. Tiếp tục?", "Regenerating G2 clears the outline and draft. Continue?") : undefined, !a.selectedCoreIdeaId || !a.outlineStructure)}</div>
+    {a.batchStatus === "awaiting_approval" && <div className="plog-in" role="status" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "var(--c-orange-bg)", color: "var(--c-orange)", borderRadius: 6, padding: "8px 12px", marginBottom: 8 }}>
+      <I n="user-check" /><span className="grow">{tr("Bài Editorial: kiểm tra outline bên dưới. Duyệt để pipeline viết draft, hoặc Tạo lại G2.", "Editorial article: check the outline below. Approve it to let the pipeline write the draft, or Regenerate G2.")}</span>
+      <button className="btn primary" disabled={busy !== null || !outline.length} onClick={e => void approveOutline(e.timeStamp)}><I n={busy === 3 ? "loader-2" : "check"} />{tr("Duyệt outline & viết draft", "Approve outline & write draft")}</button>
+    </div>}
     {(!a.outlineStructure || !outline.length) && !locked && <div style={{ marginBottom: 8 }}><StructureSelect files={files} allowedIds={config.stepConfigs[3]?.fileAccess?.rules ?? []} value={a.outlineStructure ?? null} onChange={value => void onUpdateArticle(a.id, { outlineStructure: value })} /></div>}
     {outline.length ? outline.map((s, i) => <div key={s.id} className="plog-in" style={{ animationDelay: `${Math.min(i, 12) * 60}ms` }}>
       <div className="list-row" style={{ paddingLeft: s.level === "h3" ? 36 : 12 }} onClick={() => setOpen(open === s.id ? null : s.id)} role="button" tabIndex={0} aria-expanded={open === s.id} onKeyDown={e => { if (e.key === "Enter") setOpen(open === s.id ? null : s.id) }}>

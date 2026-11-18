@@ -288,17 +288,18 @@ Người dùng đã duyệt: chuyển sang giao diện CRM của repo `twenty-de
 
 | Quyết định (mục 8) | Giá trị tạm | Đã có hiệu lực? |
 |---|---|---|
-| Threshold | 90%, dùng chung cho mọi gate | Có: AI Approval = điểm Universal QC ≥ ngưỡng |
+| Threshold | 90%, dùng chung cho mọi gate | Có: AI Approval = điểm Universal QC ≥ ngưỡng. Batch runner và CRM dùng cùng hàm `aiApproval` (2026-11-18) |
 | Tiêu chí chặn cứng | `evidence-support` trượt, hoặc check có `blocking` | Có |
 | Cách tính điểm | pass = 1, warning = 0,5, fail = 0, chia cho số tiêu chí | Có |
-| Tỉ lệ review ngẫu nhiên | 20%, chọn tất định theo id bài | Có (bộ lọc trong Review Workspace) |
-| Số bài song song | 2 bài cùng lúc trong một batch (`maxParallel`) | Có (backend `runBatch`) |
-| Số bài mỗi batch | 5 | Chưa: vẫn chọn 5/10/15/20 khi tạo batch |
+| Tỉ lệ review ngẫu nhiên | 20%, chọn tất định theo id bài | Có, chỉ ở giao diện (bộ lọc trong Review Workspace) |
+| Số bài song song | 2 bài cùng lúc trên toàn hệ thống (`maxParallel`), mọi batch chia chung số chỗ | Có (backend `withArticleSlot`). Spec §3.1 nói theo batch; bản chạy thử giới hạn theo bài |
+| Số bài mỗi batch | 5 | Có: mặc định khi Add Plan và "Chạy topic chưa xử lý" chia batch (chia theo type trước) |
 | Số option mỗi gate | 3 | Chưa: G1 vẫn là nhiều Core Idea có điểm; G2, G3 tạo 1 bản |
 | Số vòng sửa | 1 | Chưa |
 | No-pass Logic | Lấy option tốt nhất, gắn cờ | Chưa |
 | "Needs Revision" | Chỉ ghi nhận xét; người sửa trong Chế độ thủ công | Có |
-| Hoàn thành bài | Theo luồng mới: AI Approval ≥ ngưỡng thì bài hiện Completed (AI Approved); bài trượt AI Review hiện Failed (gate AI), sửa và chấm lại ở Chế độ thủ công | Có (hiển thị; khoá chỉnh sửa vẫn chỉ khi người bấm hoàn thành) |
+| Hoàn thành bài | AI Approval ≥ ngưỡng và không có check chặn cứng: batch runner tự đặt bài Completed (khoá chỉnh sửa, mở lại bằng "Mở lại bài"). Trượt: batch Failed ở gate AI, lý do ghi điểm và ngưỡng | Có |
+| Editorial / Needs review | Chạy G1–G2 rồi dừng ở trạng thái `awaiting_approval`; người duyệt outline trong Chế độ thủ công, pipeline mới viết draft | Có (2026-11-18) |
 
 ### Ánh xạ dữ liệu hiện có sang 3 gate (`src/lib/pipeline.ts`)
 
@@ -330,11 +331,11 @@ Giao diện cũ (sidebar, launcher, 3 bước Core Idea/Outline/Draft dạng cũ
 | G2 Outline, G3 Final Article | **Chạy thật, 1 option** | Chưa có `runGate` nhiều option |
 | AI Approval (Universal QC, ngưỡng, chặn cứng dẫn chứng) | **Chạy thật** | Tiêu chí là Universal QC + checklist Step 4, chưa phải 31 tiêu chí |
 | Retry batch lỗi; Chế độ thủ công: chọn ý tưởng, chọn cấu trúc outline, sửa draft, Tạo lại G1/G2/Draft, Chấm lại AI | **Chạy thật** | `POST /api/articles/:id/rerun` xoá output từ gate đó rồi batch runner chạy lại |
-| Human review, Approved Article, Review Workspace, mẫu ngẫu nhiên | **Chạy thật** | Chưa có role Reviewer riêng |
+| Human review, Approved Article, Review Workspace, mẫu ngẫu nhiên | **Chạy thật** | Chưa có role Reviewer riêng. Approved Article mới là cờ đánh dấu, chưa được nạp làm ví dụ cho G2/G3 |
 | Storage 5 nhóm, Used at, Shipper | **Chạy thật (quyền file theo gate)** | Nhóm suy ra từ tên file; type A/B/C/ED chưa lọc riêng |
 | Dashboard, Timeline, Generation History | **Chạy thật** | History chỉ có option của G1 |
-| Settings: Pipeline (threshold, maxParallel, mẫu review) | **Chạy thật** | |
-| Settings: số option G2/G3, vòng sửa, No-pass Logic, perBatch tự xếp lịch nhiều batch | **Để sẵn** | Chờ quyết định mục 8 |
+| Settings: Pipeline (threshold, maxParallel, mẫu review, perBatch) | **Chạy thật** | threshold và maxParallel dùng ở backend; mẫu review chỉ ở giao diện |
+| Settings: số option G2/G3, vòng sửa, No-pass Logic | **Để sẵn** | Chờ quyết định mục 8; backend chưa đọc các giá trị này |
 | Meta title/description, Key takeaways, FAQ, author bio | **Để sẵn** | Chờ chốt mâu thuẫn mục 7 |
 | Checklist Gate 1–2, Quy tắc chỉnh sửa, Vocabulary, Writing Patterns | **Chờ tài liệu** | Hiện "Missing" trong Storage; upload trong Storage › Thêm tài liệu với tên chứa "Gate 1", "chỉnh sửa", "Vocab", "Writing Pattern" là hệ thống nhận |
 | Gợi ý ảnh, worker tạo ảnh, thư viện style ảnh | **Đã gỡ khỏi mã nguồn (2026-11-18)** | Bảng `writer_studio.image_*` (nếu đã tạo) vẫn còn trong Postgres, không còn code đọc |

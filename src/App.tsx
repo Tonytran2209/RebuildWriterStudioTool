@@ -438,7 +438,7 @@ export default function App() {
 
   const activeBatchIds = Array.from(new Set(
     articles
-      .filter((item) => item.activityKind === "batch" && item.activityId && !["completed", "failed"].includes(item.batchStatus ?? "queued"))
+      .filter((item) => item.activityKind === "batch" && item.activityId && !["completed", "failed", "awaiting_approval"].includes(item.batchStatus ?? "queued"))
       .map((item) => item.activityId as string),
   )).sort().join(",")
 

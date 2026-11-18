@@ -434,7 +434,7 @@ export interface Article {
   contentPlanItemId?: string
   batchSize?: 5 | 10 | 15 | 20
   batchArticleIds?: string[]
-  batchStatus?: "queued" | "running" | "paused" | "completed" | "failed"
+  batchStatus?: "queued" | "running" | "paused" | "completed" | "failed" | "awaiting_approval"
   batchError?: string | null
   batchStartedAt?: string | null
   contentPlanId?: string

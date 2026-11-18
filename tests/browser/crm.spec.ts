@@ -220,3 +220,22 @@ test('CRM plan page lists every topic and starts the unprocessed ones', async ({
     expect(log.created[0]).toMatchObject({ activityType: 'editorial-originality', contentPlanItemId: 'i3', activityKind: 'batch' });
   } finally { delete (plan as any).items; }
 });
+
+test('CRM Editorial article waits for outline approval, then drafts through the pipeline', async ({ page }) => {
+  const editorial = { id: 'a-editorial', title: 'Editorial piece', topic: 'Editorial piece', currentStep: 3, status: 'review', createdAt: now, updatedAt: now,
+    contentPlanId: 'plan-1', contentPlanItemId: 'i9', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-ed', activityType: 'editorial-originality', batchStatus: 'awaiting_approval',
+    selectedCoreIdeaId: 'e', coreIdeaSuggestions: [{ id: 'e', title: 'Idea E', angleLabel: 'Essay', rating: { overall: 9 } }],
+    outlineStructure: { id: 'comparison', name: 'Comparison form', sourceId: 'outline-md', sourceHash: 'h' }, outline: [{ id: 's1', heading: 'EDITORIAL_OUTLINE heading', notes: '', level: 'h2' }], editorialApproval: { status: 'pending' } };
+  articles.push(editorial as any);
+  try {
+    const log = await mockApp(page);
+    const g2 = page.getByRole('region', { name: 'G2 Outline' });
+    await expect(g2.getByText('Editorial piece')).toBeVisible();
+    await g2.getByRole('button', { name: 'Duyệt outline' }).click();
+    await expect(page).toHaveURL(/a-editorial\?tab=manual/);
+    await page.getByRole('button', { name: /Duyệt outline & viết draft|Approve outline & write draft/ }).click();
+    await expect.poll(() => log.reruns.length).toBe(1);
+    expect(log.puts.at(-1).editorialApproval).toMatchObject({ status: 'approved' });
+    expect(log.reruns[0]).toEqual({ id: 'a-editorial', gate: 3 });
+  } finally { articles.pop(); }
+});

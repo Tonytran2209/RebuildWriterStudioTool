@@ -48,3 +48,32 @@ test('rerun clears the chosen gate and everything after it, and queues the artic
   assert.deepEqual([single.activityKind, single.activityId, single.draftNeedsRegeneration], ['batch', 'activity-a2', true])
   assert.deepEqual(rerunPatch({ id: 'a3' }, 1).coreIdeaSuggestions, [])
 })
+
+test('re-running G3 shows G3, not AI Approval, while the draft is regenerated', () => {
+  assert.equal(articleStage({ ...base, outline: [{ id: 's', heading: 'h', notes: '', level: 'h2' }], draft: '# D', draftNeedsRegeneration: true }), 'g3')
+})
+
+test('rerun patch restores the plan topic on G1 and drops approvals', () => {
+  const article = { ...base, activityKind: 'batch' as const, activityId: 'b', topic: 'Chosen idea title', selectedContentTypeSnapshot: { id: 'i', label: 'Plan topic', description: '', keywords: ['k1', 'k2'] } }
+  const g1 = rerunPatch(article, 1)
+  assert.equal(g1.topic, 'Plan topic')
+  assert.equal(g1.title, 'Plan topic')
+  assert.equal(g1.keywords, 'k1, k2')
+  assert.equal(g1.approvedArticle, null)
+  assert.equal(g1.editorialApproval, null)
+  const g3 = rerunPatch(article, 3)
+  assert.equal(g3.topic, undefined)
+  assert.equal(g3.approvedArticle, null)
+  assert.equal('editorialApproval' in g3, false)
+})
+
+test('CRM status: a running article ignores an old passing QC report; awaiting Editorial is shown at G2', async () => {
+  const { toCrmArticle } = await import('../src/crm/model.ts')
+  const passing = { version: 1, status: 'pass', checkedAt: '', articleSpecFingerprint: '', checks: Array.from({ length: 10 }, (_, i) => check('c' + i, 'pass')) } as any
+  const running = toCrmArticle({ ...base, activityKind: 'batch', batchStatus: 'queued', coreIdeaSuggestions: [{ id: 'x' } as any], qualityReport: passing }, DEFAULT_PIPELINE)
+  assert.equal(running.status, 'running')
+  const done = toCrmArticle({ ...base, activityKind: 'batch', batchStatus: 'failed', qualityReport: passing }, DEFAULT_PIPELINE)
+  assert.equal(done.status, 'failed')
+  const waiting = toCrmArticle({ ...base, activityKind: 'batch', activityType: 'editorial-originality', batchStatus: 'awaiting_approval', selectedCoreIdeaId: 'x', outline: [{ id: 's', heading: 'h', notes: '', level: 'h2' }] }, DEFAULT_PIPELINE)
+  assert.deepEqual([waiting.status, waiting.gate, waiting.awaiting], ['running', 2, true])
+})

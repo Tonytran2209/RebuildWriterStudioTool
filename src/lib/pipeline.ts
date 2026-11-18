@@ -23,7 +23,7 @@ export const PIPELINE_STAGES: PipelineStage[] = ["queued", "g1", "g2", "g3", "ai
 export function articleStage(article: Article): PipelineStage {
   if (isArticleCompleted(article)) return "completed"
   if (article.batchStatus === "failed") return "failed"
-  if (article.draft?.trim()) return "ai"
+  if (article.draft?.trim() && !article.draftNeedsRegeneration) return "ai"
   if (article.outline?.length) return "g3"
   if (article.selectedCoreIdeaId) return "g2"
   if (article.activityKind === "batch" && article.batchStatus === "queued" && !article.coreIdeaSuggestions?.length) return "queued"
@@ -73,7 +73,7 @@ export type RerunGate = 1 | 2 | 3 | 4
  * Fields to clear so the resumable batch runner regenerates from `gate` onwards.
  * G1 Core Idea → G2 Outline → G3 Draft → 4 AI Review (re-check keeps the draft).
  */
-export function rerunPatch(article: Pick<Article, "id" | "activityId" | "activityKind">, gate: RerunGate): Partial<Article> {
+export function rerunPatch(article: Pick<Article, "id" | "activityId" | "activityKind"> & Partial<Pick<Article, "selectedContentTypeSnapshot">>, gate: RerunGate): Partial<Article> {
   const clear: Partial<Article> =
     gate === 1 ? { coreIdeaSuggestions: [], selectedCoreIdeaId: undefined, articleSpec: null, articleSpecFingerprint: null, outline: [], outlineNeedsRegeneration: true, draft: "", draftNeedsRegeneration: true, qualityReport: null, semanticReviewChecks: null, semanticReviewFingerprint: null }
     : gate === 2 ? { outline: [], outlineNeedsRegeneration: true, draft: "", draftNeedsRegeneration: true, qualityReport: null, semanticReviewChecks: null, semanticReviewFingerprint: null }
@@ -81,5 +81,10 @@ export function rerunPatch(article: Pick<Article, "id" | "activityId" | "activit
     : { qualityReport: null, semanticReviewChecks: null, semanticReviewFingerprint: null }
   // Older single articles join the pipeline as a one-article batch.
   const batch: Partial<Article> = article.activityKind === "batch" && article.activityId ? {} : { activityKind: "batch", activityId: article.activityId || `activity-${article.id}` }
-  return { ...clear, ...batch, batchStatus: "queued", batchError: null, status: "review", completedAt: null, humanReview: null }
+  // G1 overwrites topic/title with the chosen idea; a G1 re-run starts again from the plan topic.
+  const plan = article.selectedContentTypeSnapshot
+  const origin: Partial<Article> = gate === 1 && plan?.label ? { topic: plan.label, title: plan.label, keywords: (plan.keywords ?? []).join(", ") } : {}
+  // A new outline needs a new Editorial approval; regenerated text is no longer the human-confirmed example.
+  const approvals: Partial<Article> = { approvedArticle: null, ...(gate <= 2 ? { editorialApproval: null } : {}) }
+  return { ...clear, ...origin, ...approvals, ...batch, batchStatus: "queued", batchError: null, status: "review", completedAt: null, humanReview: null }
 }

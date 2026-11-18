@@ -1,5 +1,5 @@
 import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
-import { rerunPatch, type RerunGate } from "../src/lib/pipeline.ts"
+import { aiApproval, pipelineSettings, rerunPatch, type RerunGate } from "../src/lib/pipeline.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
 import { convertStepRunsToTelemetryStages, sendArticleRunTelemetry } from "./telemetry.ts";
@@ -218,7 +218,8 @@ app.use("/api", async (req: AuthenticatedRequest, res, next) => {
     if (process.env.WRITER_MAINTENANCE_MODE === "true" && req.auth.role !== "admin") return res.status(503).json({ error: "Writer Studio đang bảo trì dữ liệu." })
     // Users need read access to workflow context, but only admins may mutate
     // shared configuration, documents, or website inventory.
-    const adminOnly = req.method !== "GET" && (req.path === "/config" || req.path.startsWith("/files") || req.path.startsWith("/website-inventory") || req.path.startsWith("/agent-library"))
+    // /import and /upload write KB/Rules documents that go into prompts (import can also query Supabase and fetch URLs).
+    const adminOnly = req.method !== "GET" && (req.path === "/config" || req.path.startsWith("/files") || req.path.startsWith("/website-inventory") || req.path.startsWith("/agent-library") || req.path.startsWith("/import/") || req.path.startsWith("/upload/"))
     if (adminOnly && req.auth.role !== "admin") return res.status(403).json({ error: "Chỉ admin mới được phép quản trị cấu hình và knowledge base." })
     next()
   } catch (error) {
@@ -396,7 +397,7 @@ function articleStepPrerequisite(article: any, step: number): string | null {
  */
 function activeBatchManualMutationError(article: any): string | null {
   if (article?.activityKind !== "batch") return null
-  if (["completed", "failed"].includes(String(article?.batchStatus ?? "")))
+  if (["completed", "failed", "awaiting_approval"].includes(String(article?.batchStatus ?? "")))
     return null
   const status = String(article?.batchStatus ?? "queued")
   return `Bài này vẫn thuộc batch đang ${status}. Hãy đợi batch hoàn tất hoặc xử lý Retry từ màn hình batch để tránh ghi đè dữ liệu.`
@@ -1097,7 +1098,9 @@ async function projectBatchState(article: any) {
         ? "completed"
         : siblings.some((item) => item.batchStatus === "failed")
           ? "failed"
-          : "queued"
+          : siblings.some((item) => item.batchStatus === "awaiting_approval") && !siblings.some((item) => item.batchStatus === "queued")
+            ? "awaiting_approval"
+            : "queued"
   const calls = siblings.flatMap(
     (item) => Object.values(item.aiUsageByStep ?? {}).flat() as any[],
   )
@@ -2601,6 +2604,16 @@ async function runBatchArticle(
     // Do not spend draft-generation credits on an outline whose Article Spec contract is
     // not visibly mapped. Persist the missing requirements onto the most
     // relevant approved section, then validate the generated prose separately.
+    // Editorial / Originality is supervised: stop after G2 until a person approves the outline in the CRM.
+    if (article.activityType === "editorial-originality" && article.editorialApproval?.status !== "approved") {
+      endStep("completed")
+      await saveStepCheckpoint(article, {
+        batchStatus: "awaiting_approval",
+        batchError: null,
+        editorialApproval: { status: "pending", outlineFingerprint: JSON.stringify((article.outline ?? []).map((section: any) => section.heading)) },
+      })
+      return "valid" as const
+    }
     beginStep("draft")
     const missingOutlineCoverage = batchMissingOutlineCoverage(article)
     if (missingOutlineCoverage.length) {
@@ -3030,7 +3043,9 @@ async function runBatchArticle(
           checks,
         }
       }
-      if (report.status === "fail" || report.checks.some(blocksPublication)) {
+      // One approval rule for server and CRM: score ≥ Settings › Pipeline threshold and no hard block (src/lib/pipeline.ts).
+      const approval = aiApproval({ ...article, qualityReport: report }, pipelineSettings(runtimeConfig))
+      if (approval.state !== "approved" || report.checks.some(blocksPublication)) {
         article = await saveStepCheckpoint(article, {
           draft: assembledDraft,
           draftEvidenceUsage: assembled.evidenceUsage,
@@ -3048,7 +3063,7 @@ async function runBatchArticle(
           },
         })
         throw new Error(
-          `${missingEvidence ? "Add relevant Knowledge Base evidence or qualify the unsupported claim. " : ""}Targeted batch recovery was saved, but Universal QC is still ${report.status}: ${checks.filter((item) => item.status !== "pass").map((item) => `${item.label}: ${item.reason}`).join("; ")}`,
+          `${missingEvidence ? "Add relevant Knowledge Base evidence or qualify the unsupported claim. " : ""}AI Review ${approval.score}% (threshold ${pipelineSettings(runtimeConfig).threshold}%${approval.hardBlocked || report.checks.some(blocksPublication) ? ", blocking check failed" : ""}): ${checks.filter((item) => item.status !== "pass").map((item) => `${item.label}: ${item.reason}`).join("; ")}`,
         )
       }
       article = await saveStepCheckpoint(article, {
@@ -3077,6 +3092,8 @@ async function runBatchArticle(
         },
       })
     } else if (article.batchStatus !== "completed") {
+      const approval = aiApproval(article, pipelineSettings(runtimeConfig))
+      if (approval.state !== "approved") throw new Error(`AI Review ${approval.score ?? 0}% (threshold ${pipelineSettings(runtimeConfig).threshold}%). Re-check AI or regenerate the draft.`)
       article = await saveStepCheckpoint(article, {
         status: "done",
         batchStatus: "completed",
@@ -3094,34 +3111,23 @@ async function runBatchArticle(
   }
 }
 
-async function runBatch(activityId: string) {
-  if (deletedBatchIds.has(activityId)) return
-  const controller = batchControllers.get(activityId) ?? {
-    paused: false,
-    running: false,
-  }
-  if (controller.running) return
-  controller.running = true
-  controller.paused = false
-  batchControllers.set(activityId, controller)
-  await kvSet(`writer:batch:${activityId}`, {
-    activityId,
-    status: "running",
-    updatedAt: new Date().toISOString(),
-  })
+// Max parallel (Settings › Pipeline) caps articles generating at once across ALL batches, not per batch.
+const runningArticleIds = new Set<string>()
+const articleSlots = { active: 0, waiters: [] as Array<() => void> }
+async function withArticleSlot<T>(limit: number, job: () => Promise<T>): Promise<T> {
+  while (articleSlots.active >= limit) await new Promise<void>((resolve) => articleSlots.waiters.push(resolve))
+  articleSlots.active++
+  try { return await job() } finally { articleSlots.active--; articleSlots.waiters.shift()?.() }
+}
+
+async function runOneBatchArticle(article: any, controller: { paused: boolean; running: boolean }, limit: number) {
+  if (runningArticleIds.has(article.id)) return
+  runningArticleIds.add(article.id)
   try {
-    while (!controller.paused) {
-      const articles = (await loadArticles()).filter(
-        (article) =>
-          article.activityId === activityId &&
-          article.activityKind === "batch" &&
-          !isArticleCompleted(article) &&
-          !["completed", "failed"].includes(article.batchStatus),
-      )
-      if (!articles.length) break
-      const pipeline = (await kvGet<any>("writer:config"))?.pipeline
-      const parallel = Math.max(1, Math.min(5, Math.round(Number(pipeline?.maxParallel)) || 2))
-      await runWithConcurrency(articles, parallel, async (article) => {
+    await withArticleSlot(limit, async () => {
+        // Waiting for a slot can take a while: start from the stored record, and skip it if it no longer needs a run.
+        article = (await kvGet<any>(`${ARTICLE_PREFIX}${article.id}`)) ?? article
+        if (isArticleCompleted(article) || ["completed", "failed", "awaiting_approval"].includes(article.batchStatus)) return
         const start = performance.now()
         const job = BATCH_ARTICLE_JOB
         const workload = article.activityType === "editorial-originality" ? "1 editorial article" : "1 SEO article"
@@ -3153,7 +3159,57 @@ async function runBatch(activityId: string) {
           })
           throw error
         }
-      })
+    })
+  } finally {
+    runningArticleIds.delete(article.id)
+  }
+}
+
+/** Retry/re-run of one article: a paused batch stays paused; otherwise the batch runner picks it up. */
+async function startArticleRun(activityId: string, articleId: string) {
+  const controller = batchControllers.get(activityId)
+  const batchState = await kvGet<any>(`writer:batch:${activityId}`)
+  if (controller?.paused || batchState?.status === "paused") return runPausedBatchArticle(articleId)
+  if (!controller?.running) return runBatch(activityId)
+}
+
+/** Re-run one article of a paused batch without resuming the rest of the batch. */
+async function runPausedBatchArticle(articleId: string) {
+  const article = (await loadArticles()).find((item) => item.id === articleId)
+  if (!article) return
+  const pipeline = (await kvGet<any>("writer:config"))?.pipeline
+  await runOneBatchArticle(article, { paused: false, running: true }, Math.max(1, Math.min(5, Math.round(Number(pipeline?.maxParallel)) || 2)))
+}
+
+async function runBatch(activityId: string) {
+  if (deletedBatchIds.has(activityId)) return
+  const controller = batchControllers.get(activityId) ?? {
+    paused: false,
+    running: false,
+  }
+  if (controller.running) return
+  controller.running = true
+  controller.paused = false
+  batchControllers.set(activityId, controller)
+  await kvSet(`writer:batch:${activityId}`, {
+    activityId,
+    status: "running",
+    updatedAt: new Date().toISOString(),
+  })
+  try {
+    while (!controller.paused) {
+      const articles = (await loadArticles()).filter(
+        (article) =>
+          article.activityId === activityId &&
+          article.activityKind === "batch" &&
+          !isArticleCompleted(article) &&
+          !["completed", "failed", "awaiting_approval"].includes(article.batchStatus) &&
+          !runningArticleIds.has(article.id),
+      )
+      if (!articles.length) break
+      const pipeline = (await kvGet<any>("writer:config"))?.pipeline
+      const parallel = Math.max(1, Math.min(5, Math.round(Number(pipeline?.maxParallel)) || 2))
+      await runWithConcurrency(articles, parallel, (article) => runOneBatchArticle(article, controller, parallel))
       const queuedDuringRun = (await loadArticles()).some(
         (article) =>
           article.activityId === activityId &&
@@ -3165,13 +3221,15 @@ async function runBatch(activityId: string) {
     const latest = (await loadArticles()).filter(
       (article) => article.activityId === activityId,
     )
-    const status = controller.paused
+    const status = controller.paused || latest.some((article) => article.batchStatus === "paused")
       ? "paused"
       : latest.every((article) => article.batchStatus === "completed")
         ? "completed"
         : latest.some((article) => article.batchStatus === "failed")
           ? "failed"
-          : "queued"
+          : latest.some((article) => article.batchStatus === "awaiting_approval")
+            ? "awaiting_approval"
+            : "queued"
     if (deletedBatchIds.has(activityId)) return
     const usage = latest.flatMap(
       (article) => Object.values(article.aiUsageByStep ?? {}).flat() as any[],
@@ -4295,35 +4353,6 @@ app.get("/api/providers", (_req, res) => {
   res.json(getAvailableProviders())
 })
 
-// ─── Supabase KV proxy (optional — if frontend can't reach Supabase directly) ─
-
-app.get("/api/kv/:key", async (req, res) => {
-  try {
-    const value = await kvGet(req.params.key)
-    res.json({ value })
-  } catch (err: any) {
-    res.status(500).json({ error: err.message })
-  }
-})
-
-app.post("/api/kv/:key", async (req, res) => {
-  try {
-    await kvSet(req.params.key, req.body.value)
-    res.json({ ok: true })
-  } catch (err: any) {
-    res.status(500).json({ error: err.message })
-  }
-})
-
-app.get("/api/kv-prefix/:prefix", async (req, res) => {
-  try {
-    const data = await kvGetByPrefix(req.params.prefix)
-    res.json(data)
-  } catch (err: any) {
-    res.status(500).json({ error: err.message })
-  }
-})
-
 // ─── Articles (via Supabase) ──────────────────────────────────────────────────
 
 app.get("/api/content-plans", async (_req, res) => {
@@ -4763,14 +4792,7 @@ app.post("/api/batches/:activityId/start", async (req, res) => {
     )
     if (!articles.length)
       return res.status(404).json({ error: "Batch activity không tồn tại." })
-    if (articles.some((article) => article.activityType !== "comparison-seo"))
-      return res
-        .status(409)
-        .json({
-          code: "EDITORIAL_REQUIRES_REVIEW",
-          error:
-            "Editorial / Originality is a supervised workflow. Generate one article at a time and approve its outline before drafting.",
-        })
+    // Editorial batches run G1–G2 and then wait in "awaiting_approval" for a person to approve the outline.
     const invalid = articles.filter((article) =>
       articleStepPrerequisite(article, 2),
     )
@@ -4875,12 +4897,14 @@ app.post("/api/batches/:activityId/retry/:articleId", async (req, res) => {
       batchStatus: "queued",
       batchError: null,
       status: "review",
+      // The resumable runner re-checks QC when the report is missing; an old report must not decide the new run.
+      qualityReport: null,
+      semanticReviewChecks: null,
+      semanticReviewFingerprint: null,
     })
-    const controller = batchControllers.get(req.params.activityId)
-    if (!controller?.running)
-      void runBatch(req.params.activityId).catch((error) =>
-        console.error(`[batch-retry] ${req.params.activityId}`, error),
-      )
+    void startArticleRun(req.params.activityId, queued.id).catch((error) =>
+      console.error(`[batch-retry] ${req.params.activityId}`, error),
+    )
     res.status(202).json({ ok: true, article: queued })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
@@ -4904,9 +4928,7 @@ app.post("/api/articles/:id/rerun", async (req, res) => {
       if (gate === 4 && !String(existing.draft ?? "").trim()) throw Object.assign(new Error("Bài chưa có draft. Chạy lại từ G3."), { status: 409, code: "WORKFLOW_PREREQUISITE_MISSING" })
       return saveArticleCheckpoint(existing, rerunPatch(existing, gate as RerunGate))
     })()
-    const controller = batchControllers.get(article.activityId)
-    if (!controller?.running)
-      void runBatch(article.activityId).catch((error) => console.error(`[article-rerun] ${article.activityId}`, error))
+    void startArticleRun(article.activityId, article.id).catch((error) => console.error(`[article-rerun] ${article.activityId}`, error))
     res.status(202).json({ ok: true, article })
   } catch (err: any) {
     res.status(err?.status ?? 500).json({ code: err?.code, error: err?.message ?? String(err) })
