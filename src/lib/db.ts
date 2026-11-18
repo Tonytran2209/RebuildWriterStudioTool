@@ -261,10 +261,21 @@ export async function migrateLegacyArticle(id: string): Promise<Article> {
   return result.article
 }
 
+const flTelemetry = () => (typeof window !== "undefined" ? (window as any).FLTelemetry : undefined)
+const trackedBatchIds = new Set<string>()
+
 export async function startBatch(activityId: string): Promise<void> {
-  await railwayRequest(`/api/batches/${encodeURIComponent(activityId)}/start`, {
-    method: "POST",
-  })
+  trackedBatchIds.add(activityId)
+  flTelemetry()?.taskSubmit?.("Writer article", "batch_generation")
+  try {
+    await railwayRequest(`/api/batches/${encodeURIComponent(activityId)}/start`, {
+      method: "POST",
+    })
+  } catch (err: any) {
+    trackedBatchIds.delete(activityId)
+    flTelemetry()?.taskError?.("Writer article", err?.message)
+    throw err
+  }
 }
 
 export async function pauseBatch(activityId: string): Promise<void> {
@@ -277,17 +288,38 @@ export async function retryBatchArticle(
   activityId: string,
   articleId: string,
 ): Promise<Article> {
-  const result = await railwayRequest<{ article: Article }>(
-    `/api/batches/${encodeURIComponent(activityId)}/retry/${encodeURIComponent(articleId)}`,
-    { method: "POST" },
-  )
-  return result.article
+  trackedBatchIds.add(activityId)
+  flTelemetry()?.taskSubmit?.("Writer article", "retry_article")
+  try {
+    const result = await railwayRequest<{ article: Article }>(
+      `/api/batches/${encodeURIComponent(activityId)}/retry/${encodeURIComponent(articleId)}`,
+      { method: "POST" },
+    )
+    return result.article
+  } catch (err: any) {
+    trackedBatchIds.delete(activityId)
+    flTelemetry()?.taskError?.("Writer article", err?.message)
+    throw err
+  }
 }
 
 export async function fetchBatch(
   activityId: string,
 ): Promise<{ batch: Record<string, unknown> | null; articles: Article[] }> {
-  return railwayRequest(`/api/batches/${encodeURIComponent(activityId)}`)
+  const res = await railwayRequest<{ batch: Record<string, unknown> | null; articles: Article[] }>(
+    `/api/batches/${encodeURIComponent(activityId)}`,
+  )
+  if (trackedBatchIds.has(activityId)) {
+    const batchStatus = String(res.batch?.status || "")
+    if (batchStatus === "completed") {
+      trackedBatchIds.delete(activityId)
+      flTelemetry()?.taskComplete?.("Writer article")
+    } else if (batchStatus === "failed") {
+      trackedBatchIds.delete(activityId)
+      flTelemetry()?.taskError?.("Writer article", String(res.batch?.error || "Batch failed"))
+    }
+  }
+  return res
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -467,9 +499,23 @@ export async function getArticleStages(id: string): Promise<ArticleStageVersion[
 
 /** Regenerate an article from a gate (1 Core Idea, 2 Outline, 3 Draft, 4 AI review) through the batch runner. */
 export async function rerunArticle(id: string, gate: 1 | 2 | 3 | 4): Promise<Article> {
-  const result = await railwayRequest<{ article: Article }>(
-    `/api/articles/${encodeURIComponent(id)}/rerun`,
-    jsonRequest("POST", { gate }),
-  )
-  return result.article
+  flTelemetry()?.taskSubmit?.("Writer article", `rerun_gate_${gate}`)
+  try {
+    const result = await railwayRequest<{ article: Article }>(
+      `/api/articles/${encodeURIComponent(id)}/rerun`,
+      jsonRequest("POST", { gate }),
+    )
+    const st = String(result.article?.batchStatus || "")
+    if (st === "failed") {
+      flTelemetry()?.taskError?.("Writer article", "Rerun failed")
+    } else if (st !== "running" && st !== "queued") {
+      flTelemetry()?.taskComplete?.("Writer article")
+    } else if (result.article?.activityId) {
+      trackedBatchIds.add(result.article.activityId)
+    }
+    return result.article
+  } catch (err: any) {
+    flTelemetry()?.taskError?.("Writer article", err?.message)
+    throw err
+  }
 }
