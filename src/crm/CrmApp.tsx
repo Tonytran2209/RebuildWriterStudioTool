@@ -1096,29 +1096,36 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
   if (p === "shipper") body = <Sec title="Shipper mapping" desc={tr("Gate nào lấy tài liệu nào. Không bao giờ nạp cả thư viện.", "Which gate gets which documents. Never the whole library.")}><div className="box"><table className="tbl" style={{ width: "100%" }}><thead><tr><th style={{ position: "static" }}>Document</th>{["G1", "G2", "G3"].map(g => <th key={g} style={{ position: "static", textAlign: "center" }}>{g}</th>)}</tr></thead><tbody>
     {ctx.docs.filter(d => d.file).map(d => <tr key={d.id}><td>{d.name} <span className="muted">· {d.g}</span></td>{[1, 2, 3].map(g => <td key={g} style={{ textAlign: "center" }}><button role="switch" aria-checked={d.used.includes(g)} aria-label={`${d.name} G${g}`} className={`toggle${d.used.includes(g) ? " on" : ""}`} style={{ display: "inline-block" }} onClick={e => void trackHandoff(e.timeStamp, () => ctx.onSaveConfig(toggleShip(ctx.config, d.file!, g), ctx.files, false)).then(() => toast(tr("Đã lưu", "Saved"))).catch(err => toastErr(err))} /></td>)}</tr>)}
   </tbody></table></div></Sec>
-  if (["workflow-ai", "models"].includes(p)) body = <EmbeddedSettings ctx={ctx} p={p} />
+  // These editors keep a draft and need a Save button in the header, so they render their own page.
+  if (["workflow-ai", "models"].includes(p)) return <EmbeddedSettings ctx={ctx} p={p} title={titles[p]} />
   if (!body) body = <div className="empty-state"><I n="ghost" /><h3>Page not found</h3></div>
+  return <SettingsShell title={titles[p] ?? ""}>{body}</SettingsShell>
+}
+
+function SettingsShell({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return <>
-    <Header title={<><I n="settings" /><span className="crumb">Settings</span><span className="crumb">/</span>{titles[p] ?? ""}</>} />
-    <div className="card"><div className="set"><div className="set-inner"><h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{titles[p] ?? ""}</h1>{body}</div></div></div>
+    <Header title={<><I n="settings" /><span className="crumb">Settings</span><span className="crumb">/</span>{title}</>} actions={actions} />
+    <div className="card"><div className="set"><div className="set-inner"><h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{title}</h1>{children}</div></div></div>
   </>
 }
 
 /** The existing configuration editors, saved through the same handler as the classic settings dialog. */
-function EmbeddedSettings({ ctx, p }: { ctx: Ctx; p: string }) {
+function EmbeddedSettings({ ctx, p, title }: { ctx: Ctx; p: string; title: string }) {
   const { tr } = useI18n()
   const [config, setConfig] = useState(ctx.config)
   const files = ctx.files
   const [saving, setSaving] = useState(false)
   const dirty = config !== ctx.config
   useEffect(() => { markUnsaved("settings", dirty); return () => markUnsaved("settings", false) }, [dirty])
-  const save = async (eventTimeStamp: number) => { setSaving(true); try { await trackHandoff(eventTimeStamp, () => ctx.onSaveConfig(config, files, false)); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } finally { setSaving(false) } }
-  return <>
+  // After a successful save adopt the shared config: it carries the new revision, so the page is clean again.
+  // A failed save keeps the local edits.
+  const adopt = useRef(false)
+  useEffect(() => { if (adopt.current && !saving) { adopt.current = false; setConfig(ctx.config) } }, [ctx.config, saving])
+  const save = async (eventTimeStamp: number) => { setSaving(true); try { await trackHandoff(eventTimeStamp, () => ctx.onSaveConfig(config, files, false)); adopt.current = true; toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } finally { setSaving(false) } }
+  const actions = <button className="btn primary" aria-label={tr("Lưu thay đổi", "Save changes")} disabled={!dirty || saving} onClick={e => void save(e.timeStamp)}><I n="device-floppy" /><span>{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</span></button>
+  return <SettingsShell title={title} actions={actions}>
     {p === "workflow-ai" && <WorkflowAiSettings config={config} files={files} articles={ctx.articles} onChange={setConfig} />}
     {p === "models" && <ModelsSettings config={config} onChange={setConfig} />}
     {p === "workflow-ai" && <WorkflowRules config={config} files={files} onChange={setConfig} />}
-    {["workflow-ai", "models"].includes(p) && <div style={{ position: "sticky", bottom: 0, display: "flex", justifyContent: "flex-end", padding: "12px 0", background: "var(--bg1)" }}>
-      <button className="btn primary" disabled={!dirty || saving} onClick={e => void save(e.timeStamp)}><I n="device-floppy" />{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</button>
-    </div>}
-  </>
+  </SettingsShell>
 }

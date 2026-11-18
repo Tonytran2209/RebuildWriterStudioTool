@@ -98,7 +98,8 @@ test('CRM (demo UI): kanban, table, record, review and pipeline settings on real
   // Changing a gate model must keep the Shipper's document access.
   await goHash(page, '/settings/workflow-ai');
   await page.getByLabel(/Số từ tiếng Anh mục tiêu|Target English words/).fill('2000');
-  await page.getByRole('button', { name: /Lưu thay đổi|Save changes/ }).click();
+  // Save lives in the page header next to the breadcrumb, like every other CRM page action.
+  await page.locator('.ph-actions').getByRole('button', { name: /Lưu thay đổi|Save changes/ }).click();
   await expect.poll(() => log.configs.length).toBe(2);
   expect(log.configs[1].stepConfigs[4].maxDraftWords).toBe(2000);
   expect(log.configs[1].stepConfigs[3].fileAccess).toEqual({ kb: [], rules: ['outline-md'] });
