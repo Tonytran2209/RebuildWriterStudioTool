@@ -765,11 +765,15 @@ function RunItemsPanel({ ctx, planId }: { ctx: Ctx; planId: string }) {
   const [per, setPer] = useState(ctx.settings.perBatch)
   const [structure, setStructure] = useState<OutlineStructureSnapshot | null>(null)
   const [busy, setBusy] = useState("")
+  // Topics the person picked for this run; null = all unprocessed topics (the default).
+  const [picked, setPicked] = useState<Set<string> | null>(null)
   if (!p) return null
-  const pending = pendingItems(p)
+  const all = pendingItems(p)
+  const pending = picked ? all.filter(i => picked.has(i.id)) : all
   const perBatch = Math.max(1, Math.min(20, per || 1))
   const count = (t: ContentPlanItem["type"]) => pending.filter(i => i.type === t).length
   const batches = Math.ceil(count("comparison-seo") / perBatch) + Math.ceil((pending.length - count("comparison-seo")) / perBatch)
+  const toggle = (id: string) => setPicked(prev => { const next = new Set(prev ?? all.map(i => i.id)); if (!next.delete(id)) next.add(id); return next })
   const run = async (eventTimeStamp: number) => {
     if (!structure) return toast(tr("Chọn cấu trúc outline trước khi chạy.", "Choose an outline structure first."))
     setBusy(tr("Đang tạo batch…", "Creating batches…"))
@@ -782,10 +786,15 @@ function RunItemsPanel({ ctx, planId }: { ctx: Ctx; planId: string }) {
   return <SidePanel ctx={ctx} title={tr("Chạy topic chưa xử lý", "Run unprocessed topics")} icon={<I n="player-play" />}>
     <div className="sp-title">{p.name}</div>
     <div className="fields" style={{ paddingTop: 0 }}>
-      <div className="frow"><div className="flabel"><I n="list" />Topics</div><div className="fval">{pending.length} · <Tag c="blue">Comparison {count("comparison-seo")}</Tag>&nbsp;<Tag c="pink">Editorial {count("editorial-originality")}</Tag>{count("needs-review") > 0 && <>&nbsp;<Tag c="orange">Needs review {count("needs-review")}</Tag></>}</div></div>
+      <div className="frow"><div className="flabel"><I n="list" />Topics</div><div className="fval">{pending.length}/{all.length} · <Tag c="blue">Comparison {count("comparison-seo")}</Tag>&nbsp;<Tag c="pink">Editorial {count("editorial-originality")}</Tag>{count("needs-review") > 0 && <>&nbsp;<Tag c="orange">Needs review {count("needs-review")}</Tag></>}</div></div>
       <div className="frow"><div className="flabel"><I n="layout-rows" />Per batch</div><div className="fval"><input aria-label="Per batch" type="number" min={1} max={20} value={per} onChange={e => setPer(+e.target.value)} /></div></div>
       <div className="frow"><div className="flabel"><I n="stack-2" />Batches</div><div className="fval"><b>{batches} batch</b></div></div>
     </div>
+    <div className="fsec" style={{ display: "flex", alignItems: "center", gap: 8 }}><I n="checklist" />&nbsp;{tr("Chọn topic cho batch", "Pick topics for the batch")}<span className="grow" />
+      <button className="btn ghost" disabled={Boolean(busy)} onClick={() => setPicked(pending.length === all.length ? new Set() : null)}>{pending.length === all.length ? tr("Bỏ chọn tất cả", "Select none") : tr("Chọn tất cả", "Select all")}</button></div>
+    <div style={{ color: "var(--f3)", margin: "0 0 6px" }}>{tr("Batch gồm đúng các topic được chọn (tối đa \"Per batch\" bài mỗi batch). Comparison và Editorial luôn chạy ở batch riêng.", "A batch holds exactly the topics you pick (up to \"Per batch\" each). Comparison and Editorial always run in separate batches.")}</div>
+    <div className="box" role="group" aria-label={tr("Topic chưa chạy", "Unprocessed topics")} style={{ maxHeight: 280, overflow: "auto", marginBottom: 10 }}>{all.map(item => { const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]
+      return <label key={item.id} className="box-row" style={{ cursor: "pointer" }}><input type="checkbox" checked={!picked || picked.has(item.id)} disabled={Boolean(busy)} onChange={() => toggle(item.id)} /><span className="grow" style={{ minWidth: 0 }}>{item.title}</span><Tag c={c}>{l}</Tag></label> })}</div>
     {pending.length > count("comparison-seo") && <div style={{ color: "var(--f3)", margin: "4px 0 8px" }}>{tr("Bài Editorial (kể cả \"Needs review\") chạy G1–G2 rồi dừng chờ người duyệt outline trong Chế độ thủ công, sau đó mới viết draft.", "Editorial articles (including \"Needs review\") run G1–G2, then wait for a person to approve the outline in Manual mode before drafting.")}</div>}
     <div style={{ margin: "4px 0 12px" }}><StructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
     <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy) || !pending.length} onClick={e => void run(e.timeStamp)}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>
@@ -805,6 +814,8 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
   const [url, setUrl] = useState("")
   const [structure, setStructure] = useState<OutlineStructureSnapshot | null>(null)
   const [busy, setBusy] = useState("")
+  // Pick topics per batch: import and classify only, then choose topics on the plan page.
+  const [pickLater, setPickLater] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
   const importedRef = useRef<ContentPlan | null>(null)
   useEffect(() => nameRef.current?.focus(), [])
@@ -814,7 +825,7 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
     if (source === "paste" && !lines.length) return toast(tr("Cần ít nhất một topic", "At least one topic is required"))
     if (source === "file" && !file) return toast(tr("Chọn file Content Plan", "Choose a Content Plan file"))
     if (source.startsWith("google_") && !url.trim()) return toast(tr("Dán link Google", "Paste the Google link"))
-    if (!structure) return toast(tr("Chọn cấu trúc outline trước khi chạy.", "Choose an outline structure first."))
+    if (!structure && !pickLater) return toast(tr("Chọn cấu trúc outline trước khi chạy.", "Choose an outline structure first."))
     setBusy(tr("Đang import plan…", "Importing plan…"))
     try {
       const planId = await trackHandoff(eventTimeStamp, async () => {
@@ -828,12 +839,15 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
       if (ctx.isAdmin && par !== ctx.settings.maxParallel) await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...ctx.settings, maxParallel: Math.max(1, Math.min(5, par)) } }, ctx.files, false)
       const items = plan.items ?? []
       if (!items.length) throw new Error(tr("Không tìm thấy topic nào trong Content Plan này.", "No topics were found in this Content Plan."))
-      await startPlanItems(ctx, plan, items, perBatch, structure, n => setBusy(`${tr("Đang tạo batch", "Creating batch")} ${n}…`))
+      if (!pickLater) await startPlanItems(ctx, plan, items, perBatch, structure!, n => setBusy(`${tr("Đang tạo batch", "Creating batch")} ${n}…`))
       return plan.id
       })
-      ctx.setPanel(null)
-      go(`#/object/plans/${planId}`)
-      toast(tr("Đã tạo plan và bắt đầu chạy", "Plan created and running"))
+      importedRef.current = null
+      // Navigation closes panels on hashchange; reopen the topic picker after that handler has run.
+      if (pickLater) window.addEventListener("hashchange", () => ctx.setPanel({ kind: "run-items", id: planId }), { once: true })
+      go(`#/object/plans/${enc(planId)}`)
+      if (pickLater) { toast(tr("Đã import plan. Chọn topic cho từng batch.", "Plan imported. Pick the topics for each batch.")) }
+      else { ctx.setPanel(null); toast(tr("Đã tạo plan và bắt đầu chạy", "Plan created and running")) }
     } catch (err) {
       // The plan was already saved: don't let a second Generate import a duplicate. Finish it from the plan page.
       if (importedRef.current) {
@@ -852,7 +866,8 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
       {ctx.isAdmin && <div className="frow"><div className="flabel"><I n="arrows-split" />Max parallel</div><div className="fval"><input aria-label="Max parallel" type="number" min={1} max={5} value={par} onChange={e => setPar(+e.target.value)} /></div></div>}
       <div className="frow"><div className="flabel"><I n="stack-2" />Batches</div><div className="fval">{source !== "paste" ? <span className="empty">{tr("tính sau khi đọc và phân loại plan", "counted after the plan is read and classified")}</span> : lines.length ? <>{lines.length} topic → <b>&nbsp;≈ {Math.ceil(lines.length / perBatch)} batch</b>&nbsp;<span className="empty">{tr("(chia theo type sau khi phân loại)", "(split by type after classification)")}</span></> : <span className="empty">—</span>}</div></div>
     </div>
-    <div style={{ margin: "4px 0 12px" }}><StructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
+    <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 10px", cursor: "pointer" }}><input type="checkbox" checked={pickLater} disabled={Boolean(busy)} onChange={e => setPickLater(e.target.checked)} />{tr("Tự chọn topic cho từng batch (chỉ import và phân loại, chưa chạy)", "Pick topics for each batch myself (import and classify only, don't run yet)")}</label>
+    {!pickLater && <div style={{ margin: "4px 0 12px" }}><StructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>}
     <div style={{ borderTop: "1px solid var(--b2)", margin: "8px 0 12px" }} />
     <div role="tablist" aria-label={tr("Nguồn Content Plan", "Content Plan source")} style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
       {([["paste", "clipboard-text", tr("Dán topic", "Paste topics")], ["file", "upload", "File"], ["google_doc", "file-text", "Google Doc"], ["google_sheet", "table", "Google Sheet"]] as const).map(([id, icon, label]) => <button key={id} role="tab" aria-selected={source === id} className={`btn${source === id ? " primary" : ""}`} disabled={Boolean(busy)} onClick={() => setSource(id)}><I n={icon} />{label}</button>)}
@@ -864,7 +879,7 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
     </label>}
     {source.startsWith("google_") && <div style={{ marginBottom: 12 }}><input className="inp" aria-label={tr("Link Google", "Google link")} value={url} onChange={e => setUrl(e.target.value)} placeholder={source === "google_doc" ? "https://docs.google.com/document/d/..." : "https://docs.google.com/spreadsheets/d/..."} /><div style={{ color: "var(--f3)", fontSize: 12, marginTop: 4 }}>{tr("Bật quyền \"Anyone with the link can view\".", "Turn on \"Anyone with the link can view\".")}</div></div>}
     {source === "paste" && <textarea aria-label="Topics" value={topics} onChange={e => setTopics(e.target.value)} placeholder={tr("Mỗi dòng một topic (hướng chủ đề, chưa có title). Title được chọn ở G1; article type được phân loại tự động.", "One topic per line (a direction, not a title). The title is chosen at G1; article type is classified automatically.")} />}
-    <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy)} onClick={e => void create(e.timeStamp)}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>
+    <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy)} onClick={e => void create(e.timeStamp)}><I n={busy ? "loader-2" : pickLater ? "download" : "player-play"} />{busy || (pickLater ? "Import" : "Generate")}</button>
   </SidePanel>
 }
 
