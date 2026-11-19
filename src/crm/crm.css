@@ -77,6 +77,10 @@
 .crm .tbl th:hover{background:var(--bg2)}
 .crm .tbl th .ti{font-size:14px;vertical-align:-2px;margin-right:4px}
 .crm .tbl td.first,.crm .tbl th.first{position:sticky;left:0;background:var(--bg1);z-index:1}
+.crm .tbl td.cb,.crm .tbl th.cb{width:32px;min-width:32px;padding:0 8px;border-right:0;position:sticky;left:0;background:var(--bg1);z-index:1}
+.crm .tbl th.cb{z-index:3}
+/* Demo always has the checkbox column (first column sticks at 32px); here it only shows where bulk actions exist. */
+.crm .tbl td.cb+td.first,.crm .tbl th.cb+th.first{left:32px}
 .crm .tbl th.first{z-index:3}
 .crm .tbl tr:hover td{background:var(--bg2)}
 .crm .tbl tr.sel td{background:var(--accent-bg)}
@@ -409,7 +413,7 @@
 .crm .tbl th .th-btn:focus-visible,.crm .tbl tr:focus-visible,.crm .list-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
 /* Bulk selection (Articles / Batches tables) */
-.crm .tbl .row-cb{margin:0 8px 0 0;vertical-align:-2px;accent-color:var(--accent);cursor:pointer}
-.crm .tbl th .th-btn{width:auto}
 .crm .bulk-bar{display:flex;align-items:center;gap:8px;padding:6px 10px;margin:8px;border-radius:6px;background:var(--accent-bg);color:var(--f1);flex-wrap:wrap}
 .crm .bulk-bar b{font-weight:600}
+/* <html> can carry codex-dark while the app is light; native checkboxes follow the app theme instead. */
+.writer-light .crm input[type=checkbox]{color-scheme:light}

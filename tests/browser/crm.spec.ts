@@ -345,3 +345,18 @@ test('CRM Workflow AI lists every AI task and saves models, numbers and team ins
   expect(saved.workflowRules['core-idea'].stageOverrides['market-research'].parameters.keywordCount).toBe(12);
   expect(saved.workflowRules.outline.customInstruction).toBe('Use short H2 headings.');
 });
+
+test('CRM tables keep long titles readable next to the checkbox column', async ({ page }) => {
+  const long = 'How to Choose Between Whiteboard Animation and Motion Graphics for Corporate Training Programs';
+  (articles as any).push({ ...articles[0], id: 'a-long', title: long, activityId: 'batch-1' });
+  try {
+    await mockApp(page);
+    await page.getByRole('button', { name: 'Table' }).click();
+    const row = page.locator('table.tbl tbody tr', { hasText: long });
+    // The checkbox has its own sticky column (demo: td.cb); the title chip starts in the Title cell and is painted.
+    const [cb, title, chip] = [await row.locator('td.cb').boundingBox(), await row.locator('td.first').boundingBox(), await row.locator('td.first .rchip').boundingBox()];
+    expect(cb!.x + cb!.width).toBeLessThanOrEqual(title!.x + 1);
+    expect(chip!.x).toBeGreaterThanOrEqual(title!.x);
+    expect(chip!.width).toBeGreaterThan(120);
+  } finally { (articles as any).pop(); }
+});

@@ -416,7 +416,7 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
     try { await (o === "batches" ? ctx.onDeleteMany([], chosen.map(r => r.id)) : ctx.onDeleteMany(chosen.map(r => r.a), [])) }
     finally { setDeleting(false); setPicked(new Set()) }
   }
-  const box = (r: any) => <input type="checkbox" className="row-cb" checked={picked.has(r.id)} aria-label={`${tr("Chọn", "Select")} ${nameOf(o, r)}`} onClick={e => e.stopPropagation()} onChange={() => toggle(r.id)} />
+  const box = (r: any) => <input type="checkbox" checked={picked.has(r.id)} aria-label={`${tr("Chọn", "Select")} ${nameOf(o, r)}`} onClick={e => e.stopPropagation()} onChange={() => toggle(r.id)} />
   if (!rows.length) return <div className="empty-state"><I n={m.icon} /><h3>{tr("Không có dữ liệu", "Nothing here")}</h3><span>{tr("Thử bộ lọc khác.", "Try another filter.")}</span></div>
   const groups: Array<{ label?: ReactNode; rows: any[] }> = o === "reviews" ? (Object.keys(HUMAN) as HumanStatus[]).map(k => ({ label: <HumanTag h={k} />, rows: rows.filter(r => r.human.status === k) }))
     : o === "storage" ? STORAGE_GROUPS.map(([g, c]) => ({ label: <Tag c={c}>{g}</Tag>, rows: rows.filter(r => r.g === g) }))
@@ -437,18 +437,19 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
       <button className="btn danger" disabled={deleting} onClick={() => void removeChosen()}><I n={deleting ? "loader-2" : "trash"} />{o === "batches" ? tr(`Xoá ${chosen.length} batch`, `Delete ${chosen.length} batch${chosen.length > 1 ? "es" : ""}`) : tr(`Xoá ${chosen.length} bài`, `Delete ${chosen.length} article${chosen.length > 1 ? "s" : ""}`)}</button>
     </div>}
     <div className="tbl-wrap"><table className="tbl">
-      <thead><tr>{fields.map((f, i) => <th key={f.key} className={i === 0 ? "first" : ""} aria-sort={sort?.key === f.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}>{i === 0 && selectable && <input type="checkbox" className="row-cb" checked={all} ref={el => { if (el) el.indeterminate = chosen.length > 0 && !all }} aria-label={tr("Chọn tất cả", "Select all")} onChange={() => setPicked(all ? new Set() : new Set(rows.map(r => r.id)))} />}<button className="th-btn" onClick={() => sortBy(f.key)}><I n={f.icon} />{f.label}{sort?.key === f.key && <> <I n={sort.dir === "asc" ? "arrow-up" : "arrow-down"} /></>}</button></th>)}</tr></thead>
-      <tbody>{groups.map((g, gi) => <GroupRows key={gi} label={g.label} count={g.rows.length} span={fields.length}>
+      <thead><tr>{selectable && <th className="cb"><input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = chosen.length > 0 && !all }} aria-label={tr("Chọn tất cả", "Select all")} onChange={() => setPicked(all ? new Set() : new Set(rows.map(r => r.id)))} /></th>}{fields.map((f, i) => <th key={f.key} className={i === 0 ? "first" : ""} aria-sort={sort?.key === f.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}><button className="th-btn" onClick={() => sortBy(f.key)}><I n={f.icon} />{f.label}{sort?.key === f.key && <> <I n={sort.dir === "asc" ? "arrow-up" : "arrow-down"} /></>}</button></th>)}</tr></thead>
+      <tbody>{groups.map((g, gi) => <GroupRows key={gi} label={g.label} count={g.rows.length} span={fields.length} cb={selectable}>
         {g.rows.map(r => <tr key={r.id} tabIndex={0} className={picked.has(r.id) ? "sel" : undefined} style={{ cursor: "pointer", animationDelay: `${Math.min(n++, 14) * 16}ms` }} onClick={() => click(r)} onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) click(r) }}>
-          {fields.map((f, i) => <td key={f.key} className={`${i === 0 ? "first" : ""}${f.num ? " num" : ""}`}>{i === 0 && selectable && box(r)}{f.key === "name" ? name(r) : f.render ? f.render(r) : f.text ? f.text(r) : r[f.key]}</td>)}
+          {selectable && <td className="cb">{box(r)}</td>}
+          {fields.map((f, i) => <td key={f.key} className={`${i === 0 ? "first" : ""}${f.num ? " num" : ""}`}>{f.key === "name" ? name(r) : f.render ? f.render(r) : f.text ? f.text(r) : r[f.key]}</td>)}
         </tr>)}
       </GroupRows>)}</tbody>
     </table></div>
     {(o !== "storage" || ctx.isAdmin) && o !== "batches" && <button type="button" className="foot" style={{ width: "100%", textAlign: "left", border: 0, background: "none", font: "inherit" }} onClick={onFoot}><I n={o === "reviews" ? "dice-5" : "plus"} /> {o === "storage" ? tr("Thêm tài liệu", "Add document") : o === "reviews" ? tr("Chọn ngẫu nhiên 1 bài", "Pick a random article") : "Add Plan"}</button>}
   </>
 }
-function GroupRows({ label, count, span, children }: { label?: ReactNode; count: number; span: number; children: ReactNode }) {
-  return <>{label && <tr className="grp"><td className="first" colSpan={span}>{label} <span className="muted">{count}</span></td></tr>}{children}</>
+function GroupRows({ label, count, span, cb, children }: { label?: ReactNode; count: number; span: number; cb?: boolean; children: ReactNode }) {
+  return <>{label && <tr className="grp">{cb && <td className="cb" />}<td className="first" colSpan={span}>{label} <span className="muted">{count}</span></td></tr>}{children}</>
 }
 
 const COLS = [
@@ -702,10 +703,10 @@ function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
         : <button className="icon-btn" aria-label={tr("Xoá plan", "Delete plan")} onClick={e => void removePlan(e.timeStamp)}><I n="trash" /></button>)}</>}
     left={left} tabs={[["batches", "stack-2", "Batches", bs.length], ["articles", "file-text", "Articles", Math.max(st.n, (p.plan.items ?? []).length)]]} tab={tab} setTab={setTab}>
     {tab === "batches" ? <>
-      <p style={{ color: "var(--f3)", margin: "0 0 10px" }}><I n="info-circle" /> {tr("Mỗi batch chạy tối đa", "Each batch runs at most")} {ctx.settings.maxParallel} {tr("bài cùng lúc.", "articles at a time.")}</p>
       {bs.length ? <table className="tbl" style={{ border: "1px solid var(--b2)", borderRadius: 6 }}><thead><tr><th style={{ position: "static" }}>Batch</th><th style={{ position: "static" }}>Schedule</th><th style={{ position: "static" }}>Status</th><th style={{ position: "static" }}>AI Approved</th></tr></thead><tbody>
         {bs.map(b => <tr key={b.id} tabIndex={0} style={{ cursor: "pointer" }} onClick={() => go(`#/object/batches/${enc(b.id)}`)} onKeyDown={e => { if (e.key === "Enter") go(`#/object/batches/${enc(b.id)}`) }}><td><span className="rchip"><I n="stack-2" />Batch {b.idx}</span></td><td>{fmtTime(b.schedule)}</td><td>{b.paused ? <Tag c="orange">Paused</Tag> : <StatusTag k={b.status} />}</td><td>{b.done}/{b.articles.length}</td></tr>)}
       </tbody></table> : <div className="empty-state"><I n="stack-2" /><h3>{tr("Chưa có batch", "No batches yet")}</h3></div>}
+      <p style={{ color: "var(--f3)", marginTop: 10 }}><I n="info-circle" /> {tr(`Toàn hệ thống chạy tối đa ${ctx.settings.maxParallel} bài cùng lúc; bài kế tiếp bắt đầu khi có chỗ trống.`, `Up to ${ctx.settings.maxParallel} articles run at a time across all batches; the next starts when a slot frees up.`)}</p>
     </> : <PlanTopics ctx={ctx} p={p} />}
   </ShowShell>
 }

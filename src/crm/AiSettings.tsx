@@ -108,21 +108,27 @@ export function ModelsSettings({ config, onChange }: { config: AppConfig; onChan
   }
   const providers = [...new Set(config.models.map(m => m.provider))]
   const speed = { fast: tr("Nhanh", "Fast"), medium: tr("Trung bình", "Medium"), slow: tr("Chậm", "Slow") }
+  // Prices are edited on demand, keeping each model one row like the demo.
+  const [editing, setEditing] = useState<string | null>(null)
   return <>{providers.map(provider => {
     const models = config.models.filter(m => m.provider === provider)
     const active = models.some(m => m.enabled)
     return <Sec key={provider} title={<span style={{ display: "flex", alignItems: "center", gap: 8 }}>{PROVIDER_LABELS[provider]?.label || provider}<span className={`tag t-${active ? "green" : "gray"}`}>{active ? "Active" : "Inactive"}</span></span>}
       desc={<>API key: <code>{API_KEY_NAMES[provider as AIProvider]}</code> {tr("(đặt trong biến môi trường Railway)", "(set in Railway environment variables)")}</>}>
-      <div className="box">{models.map(m => <div key={m.id} className="box-row" style={{ alignItems: "flex-start" }}>
-        <div className="grow" style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>{m.name}<span className="tag t-gray">{m.contextWindow}</span><span className="tag t-gray">{speed[m.speed]}</span></div>
-          <div className="s">{language === "vi" ? m.description : `${m.name} for step-based content workflows.`}</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>{([["inputUsdPerMillion", "Input $/1M", "N/A"], ["cachedInputUsdPerMillion", "Cache $/1M", "= input"], ["outputUsdPerMillion", "Output $/1M", "N/A"]] as const).map(([field, label, ph]) =>
-            <label key={field} style={{ display: "flex", flexDirection: "column", gap: 4, color: "var(--f3)", fontSize: 12, width: 110 }}>{label}<input className="inp" type="number" min="0" step="0.01" placeholder={ph} value={m.pricing?.[field] ?? ""} onChange={e => price(m.id, field, e.target.value)} /></label>)}
-          </div>
+      <div className="box">{models.map(m => {
+        const p = m.pricing, usd = (v?: number) => v == null ? "–" : `$${v}`
+        return <div key={m.id} className="box-row" style={{ flexWrap: "wrap" }}>
+          <I n="cpu" />
+          <div className="grow" style={{ minWidth: 0 }}>{m.name}<div className="s">{m.contextWindow} · {speed[m.speed]} · input / output per 1M tokens: {usd(p?.inputUsdPerMillion)} / {usd(p?.outputUsdPerMillion)}{p?.cachedInputUsdPerMillion != null && <> · cache {usd(p.cachedInputUsdPerMillion)}</>}</div></div>
+          <button className="icon-btn" aria-label={`${tr("Sửa giá", "Edit prices")} ${m.name}`} aria-expanded={editing === m.id} title={tr("Sửa giá", "Edit prices")} onClick={() => setEditing(editing === m.id ? null : m.id)}><I n="pencil" /></button>
+          <button role="switch" aria-checked={m.enabled} aria-label={m.name} className={`toggle${m.enabled ? " on" : ""}`} onClick={() => toggle(m.id)} />
+          {editing === m.id && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%", paddingLeft: 24 }}>
+            <span className="s" style={{ width: "100%" }}>{language === "vi" ? m.description : `${m.name} for step-based content workflows.`}</span>
+            {([["inputUsdPerMillion", "Input $/1M", "N/A"], ["cachedInputUsdPerMillion", "Cache $/1M", "= input"], ["outputUsdPerMillion", "Output $/1M", "N/A"]] as const).map(([field, label, ph]) =>
+              <label key={field} style={{ display: "flex", flexDirection: "column", gap: 4, color: "var(--f3)", fontSize: 12, width: 110 }}>{label}<input className="inp" type="number" min="0" step="0.01" placeholder={ph} value={m.pricing?.[field] ?? ""} onChange={e => price(m.id, field, e.target.value)} /></label>)}
+          </div>}
         </div>
-        <button role="switch" aria-checked={m.enabled} aria-label={m.name} className={`toggle${m.enabled ? " on" : ""}`} style={{ marginTop: 2 }} onClick={() => toggle(m.id)} />
-      </div>)}</div>
+      })}</div>
     </Sec>
   })}</>
 }
