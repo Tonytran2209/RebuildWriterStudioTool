@@ -95,7 +95,7 @@ export type CrmProps = {
   onMigrateLegacy: (article: Article) => void
 }
 
-type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "run-items"; id: string } | { kind: "step"; i: number } | { kind: "cmd" } | null
+type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "run-items"; id: string; ids?: string[] } | { kind: "step"; i: number } | { kind: "cmd" } | null
 type Ctx = CrmProps & {
   settings: PipelineSettings
   list: CrmArticle[]
@@ -180,7 +180,7 @@ export default function CrmApp(props: CrmProps) {
       {panel?.kind === "review" && <ReviewPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "doc" && <DocPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "add-doc" && <AddDocPanel ctx={ctx} />}
-      {panel?.kind === "run-items" && <RunItemsPanel ctx={ctx} planId={panel.id} />}
+      {panel?.kind === "run-items" && <RunItemsPanel ctx={ctx} planId={panel.id} ids={panel.ids} />}
       {panel?.kind === "step" && <StepPanel ctx={ctx} i={panel.i} />}
       {panel?.kind === "cmd" && <CommandMenu ctx={ctx} />}
     </div>
@@ -640,15 +640,24 @@ function PlanTopics({ ctx, p }: { ctx: Ctx; p: CrmPlan }) {
   const items = p.plan.items ?? []
   const byItem = new Map(p.articles.map(a => [a.a.contentPlanItemId, a]))
   const pending = pendingItems(p)
+  // Topics picked for one batch run; only not-started topics can be picked.
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const chosen = pending.filter(i => picked.has(i.id))
+  const canPick = ctx.can("plans")
   const orphans = p.articles.filter(a => !items.some(i => i.id === a.a.contentPlanItemId))
   const article = (a: CrmArticle) => <div key={a.id} className="list-row" role="link" tabIndex={0} onClick={() => go(`#/object/articles/${enc(a.id)}`)} onKeyDown={e => { if (e.key === "Enter") go(`#/object/articles/${enc(a.id)}`) }}><TypeTag t={a.type} /><span className="grow">{a.title}</span><GateBar a={a} /><StatusTag k={a.status} /></div>
   return <div>
     {pending.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, color: "var(--f3)" }}>
       <I n="info-circle" /><span className="grow">{tr(`${pending.length} topic chưa chạy`, `${pending.length} topics not started`)} · Comparison {pending.filter(i => i.type === "comparison-seo").length} · Editorial {pending.filter(i => i.type !== "comparison-seo").length}</span>
-      {ctx.can("plans") && <button className="btn primary" onClick={() => ctx.setPanel({ kind: "run-items", id: p.id })}><I n="player-play" />{tr("Chạy topic chưa xử lý", "Run unprocessed topics")}</button>}
+      {canPick && <button className="btn primary" onClick={() => ctx.setPanel({ kind: "run-items", id: p.id })}><I n="player-play" />{tr("Chạy topic chưa xử lý", "Run unprocessed topics")}</button>}
+    </div>}
+    {chosen.length > 0 && <div className="bulk-bar" role="region" aria-label={tr("Thao tác hàng loạt", "Bulk actions")}>
+      <b>{chosen.length}</b> {tr("đã chọn", "selected")}
+      <button className="btn" onClick={() => setPicked(new Set())}>{tr("Bỏ chọn", "Clear")}</button>
+      <button className="btn primary" onClick={() => ctx.setPanel({ kind: "run-items", id: p.id, ids: chosen.map(i => i.id) })}><I n="stack-2" />{tr(`Tạo batch từ ${chosen.length} bài`, `Create batch from ${chosen.length} topic${chosen.length > 1 ? "s" : ""}`)}</button>
     </div>}
     {items.map(item => { const a = byItem.get(item.id); if (a) return article(a); const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]
-      return <div key={item.id} className="list-row" style={{ cursor: "default" }}><Tag c={c}>{l}</Tag><span className="grow" style={{ color: "var(--f2)" }}>{item.title}{item.keywords?.length ? <span className="muted" style={{ color: "var(--f3)" }}> · {item.keywords.slice(0, 3).join(", ")}</span> : null}</span><Tag c="gray">{item.status === "archived" ? "Archived" : tr("Chưa chạy", "Not started")}</Tag></div> })}
+      return <div key={item.id} className={`list-row${picked.has(item.id) ? " sel" : ""}`} style={{ cursor: "default" }}>{canPick && item.status !== "archived" && <input type="checkbox" aria-label={`${tr("Chọn", "Select")} ${item.title}`} checked={picked.has(item.id)} onChange={() => setPicked(prev => { const next = new Set(prev); if (!next.delete(item.id)) next.add(item.id); return next })} />}<Tag c={c}>{l}</Tag><span className="grow" style={{ color: "var(--f2)" }}>{item.title}{item.keywords?.length ? <span className="muted" style={{ color: "var(--f3)" }}> · {item.keywords.slice(0, 3).join(", ")}</span> : null}</span><Tag c="gray">{item.status === "archived" ? "Archived" : tr("Chưa chạy", "Not started")}</Tag></div> })}
     {orphans.map(article)}
     {!items.length && !orphans.length && <div className="empty-state"><I n="file-text" /><h3>{tr("Plan chưa có topic", "This plan has no topics")}</h3></div>}
   </div>
@@ -760,14 +769,15 @@ async function startPlanItems(ctx: Ctx, plan: ContentPlan, items: ContentPlanIte
 }
 
 /** Start the topics of an existing plan that have no article yet. */
-function RunItemsPanel({ ctx, planId }: { ctx: Ctx; planId: string }) {
+function RunItemsPanel({ ctx, planId, ids }: { ctx: Ctx; planId: string; ids?: string[] }) {
   const { tr } = useI18n()
   const p = ctx.plans.find(x => x.id === planId)
   const [per, setPer] = useState(ctx.settings.perBatch)
   const [structure, setStructure] = useState<OutlineStructureSnapshot | null>(null)
   const [busy, setBusy] = useState("")
   if (!p) return null
-  const pending = pendingItems(p)
+  // Picked topics from the plan's Articles tab, else every not-started topic.
+  const pending = pendingItems(p).filter(i => !ids || ids.includes(i.id))
   const perBatch = Math.max(1, Math.min(20, per || 1))
   const count = (t: ContentPlanItem["type"]) => pending.filter(i => i.type === t).length
   const batches = Math.ceil(count("comparison-seo") / perBatch) + Math.ceil((pending.length - count("comparison-seo")) / perBatch)
@@ -780,7 +790,7 @@ function RunItemsPanel({ ctx, planId }: { ctx: Ctx; planId: string }) {
       toast(tr(`Đã bắt đầu ${pending.length} topic`, `Started ${pending.length} topics`))
     } catch (err) { toastErr(err) } finally { setBusy("") }
   }
-  return <SidePanel ctx={ctx} title={tr("Chạy topic chưa xử lý", "Run unprocessed topics")} icon={<I n="player-play" />}>
+  return <SidePanel ctx={ctx} title={ids ? tr("Tạo batch từ topic đã chọn", "Create batch from picked topics") : tr("Chạy topic chưa xử lý", "Run unprocessed topics")} icon={<I n="player-play" />}>
     <div className="sp-title">{p.name}</div>
     <div className="fields" style={{ paddingTop: 0 }}>
       <div className="frow"><div className="flabel"><I n="list" />Topics</div><div className="fval">{pending.length} · <Tag c="blue">Comparison {count("comparison-seo")}</Tag>&nbsp;<Tag c="pink">Editorial {count("editorial-originality")}</Tag>{count("needs-review") > 0 && <>&nbsp;<Tag c="orange">Needs review {count("needs-review")}</Tag></>}</div></div>

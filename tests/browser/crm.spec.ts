@@ -233,6 +233,29 @@ test('CRM plan page lists every topic and starts the unprocessed ones', async ({
   } finally { delete (plan as any).items; }
 });
 
+test('CRM plan page batches only the topics picked on the Articles tab', async ({ page }) => {
+  (plan as any).items = [
+    { id: 'i1', title: 'Approved topic', keywords: [], type: 'comparison-seo', sourceLine: 'x' },
+    { id: 'p1', title: 'PICK_ME topic', keywords: [], type: 'comparison-seo', sourceLine: 'x' },
+    { id: 'p2', title: 'SKIP_ME topic', keywords: [], type: 'comparison-seo', sourceLine: 'x' },
+  ];
+  try {
+    const log = await mockApp(page);
+    await goHash(page, '/object/plans/plan-1');
+    await page.getByRole('tab', { name: /Articles/ }).click();
+    // Topics that already have an article cannot be picked.
+    await expect(page.locator('.list-row', { hasText: 'Approved article' }).getByRole('checkbox')).toHaveCount(0);
+    await page.getByRole('checkbox', { name: /PICK_ME topic/ }).check();
+    const bar = page.getByRole('region', { name: /Thao tác hàng loạt|Bulk actions/ });
+    await bar.getByRole('button', { name: /Tạo batch từ 1 bài|Create batch from 1 topic/ }).click();
+    const panel = page.getByRole('dialog', { name: /Tạo batch từ topic đã chọn|Create batch from picked topics/ });
+    await panel.getByLabel(/Cấu trúc outline|Outline structure/).selectOption({ label: 'Comparison form' });
+    await panel.getByRole('button', { name: 'Generate' }).click();
+    await expect.poll(() => log.created.length).toBe(1);
+    expect(log.created[0]).toMatchObject({ contentPlanItemId: 'p1', activityKind: 'batch' });
+  } finally { delete (plan as any).items; }
+});
+
 test('CRM Editorial article waits for outline approval, then drafts through the pipeline', async ({ page }) => {
   const editorial = { id: 'a-editorial', title: 'Editorial piece', topic: 'Editorial piece', currentStep: 3, status: 'review', createdAt: now, updatedAt: now,
     contentPlanId: 'plan-1', contentPlanItemId: 'i9', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-ed', activityType: 'editorial-originality', batchStatus: 'awaiting_approval',

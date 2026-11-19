@@ -162,6 +162,7 @@
 .crm .list-row:only-child{border-radius:6px}
 .crm .list-row:hover{background:var(--bg2)}
 .crm .list-row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crm .list-row.sel{background:var(--accent-bg)}
 .crm .list-row.done .grow{text-decoration:line-through;color:var(--f3)}
 .crm .note-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .crm .note-card{border:1px solid var(--b2);border-radius:6px;padding:12px;height:150px;display:flex;flex-direction:column;gap:6px;cursor:pointer;background:var(--bg1)}
