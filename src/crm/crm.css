@@ -407,3 +407,9 @@
 .crm .toast.err{background:var(--danger);color:#fff;max-width:min(560px,calc(100vw - 32px))}
 .crm .tbl th .th-btn{all:unset;display:inline-flex;align-items:center;gap:6px;cursor:pointer;width:100%;color:inherit}
 .crm .tbl th .th-btn:focus-visible,.crm .tbl tr:focus-visible,.crm .list-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* Bulk selection (Articles / Batches tables) */
+.crm .tbl .row-cb{margin:0 8px 0 0;vertical-align:-2px;accent-color:var(--accent);cursor:pointer}
+.crm .tbl th .th-btn{width:auto}
+.crm .bulk-bar{display:flex;align-items:center;gap:8px;padding:6px 10px;margin:0 8px 8px;border-radius:6px;background:var(--accent-bg);color:var(--f1);flex-wrap:wrap}
+.crm .bulk-bar b{font-weight:600}

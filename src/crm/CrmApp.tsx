@@ -81,6 +81,7 @@ export type CrmProps = {
   config: AppConfig
   onUpdateArticle: (id: string, updates: Partial<Article>) => Promise<boolean>
   onDeleteArticle: (article: Article, batch?: boolean) => void
+  onDeleteMany: (articles: Article[], batchIds: string[]) => Promise<void>
   onRetry: (article: Article) => Promise<void>
   onCreate: (type: "comparison-seo" | "editorial-originality", plan: ContentPlan, items: ContentPlanItem[], batchSize?: 5 | 10 | 15 | 20, outlineStructure?: OutlineStructureSnapshot, options?: { forceBatch?: boolean; select?: boolean }) => Promise<void>
   onContentPlansChange: (plans: ContentPlan[], removedId?: string) => void
@@ -379,7 +380,7 @@ function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
         <b style={{ fontWeight: 600 }}><I n="alert-triangle" /> Open gaps · {gaps.length}</b>
         <div style={{ color: "var(--f2)", marginTop: 4 }}>{gaps.map(d => <span key={d.id} className="rchip" style={{ margin: "2px 4px 2px 0", background: "var(--bg1)" }}>{d.name}</span>)}</div>
       </div>}
-      {isKanban ? <KanbanView ctx={ctx} rows={rows} /> : <TableView ctx={ctx} o={o} rows={rows} fields={fields} sort={sort} sortBy={sortBy} onFoot={o === "storage" ? addDoc : o === "reviews" ? randomReview : () => ctx.setPanel({ kind: "plan" })} />}
+      {isKanban ? <KanbanView ctx={ctx} rows={rows} /> : <TableView key={o} ctx={ctx} o={o} rows={rows} fields={fields} sort={sort} sortBy={sortBy} onFoot={o === "storage" ? addDoc : o === "reviews" ? randomReview : () => ctx.setPanel({ kind: "plan" })} />}
     </div>
   </>
 }
@@ -403,6 +404,19 @@ function StorageSubPage({ ctx, p }: { ctx: Ctx; p: "website" | "legacy" }) {
 function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o: Obj; rows: any[]; fields: Field[]; sort: { key: string; dir: string } | null; sortBy: (k: string) => void; onFoot: () => void }) {
   const { tr } = useI18n()
   const m = OBJ_META[o]
+  // Bulk delete: admins, on the Articles and Batches tables. Selection only counts rows still visible.
+  const selectable = ctx.isAdmin && (o === "articles" || o === "batches")
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
+  const chosen = selectable ? rows.filter(r => picked.has(r.id)) : []
+  const all = chosen.length === rows.length && rows.length > 0
+  const toggle = (id: string) => setPicked(prev => { const next = new Set(prev); if (!next.delete(id)) next.add(id); return next })
+  const removeChosen = async () => {
+    setDeleting(true)
+    try { await (o === "batches" ? ctx.onDeleteMany([], chosen.map(r => r.id)) : ctx.onDeleteMany(chosen.map(r => r.a), [])) }
+    finally { setDeleting(false); setPicked(new Set()) }
+  }
+  const box = (r: any) => <input type="checkbox" className="row-cb" checked={picked.has(r.id)} aria-label={`${tr("Chọn", "Select")} ${nameOf(o, r)}`} onClick={e => e.stopPropagation()} onChange={() => toggle(r.id)} />
   if (!rows.length) return <div className="empty-state"><I n={m.icon} /><h3>{tr("Không có dữ liệu", "Nothing here")}</h3><span>{tr("Thử bộ lọc khác.", "Try another filter.")}</span></div>
   const groups: Array<{ label?: ReactNode; rows: any[] }> = o === "reviews" ? (Object.keys(HUMAN) as HumanStatus[]).map(k => ({ label: <HumanTag h={k} />, rows: rows.filter(r => r.human.status === k) }))
     : o === "storage" ? STORAGE_GROUPS.map(([g, c]) => ({ label: <Tag c={c}>{g}</Tag>, rows: rows.filter(r => r.g === g) }))
@@ -417,11 +431,16 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
   }
   let n = 0
   return <>
+    {chosen.length > 0 && <div className="bulk-bar" role="region" aria-label={tr("Thao tác hàng loạt", "Bulk actions")}>
+      <b>{chosen.length}</b> {tr("đã chọn", "selected")}
+      <button className="btn" onClick={() => setPicked(new Set())}>{tr("Bỏ chọn", "Clear")}</button>
+      <button className="btn danger" disabled={deleting} onClick={() => void removeChosen()}><I n={deleting ? "loader-2" : "trash"} />{o === "batches" ? tr(`Xoá ${chosen.length} batch`, `Delete ${chosen.length} batch${chosen.length > 1 ? "es" : ""}`) : tr(`Xoá ${chosen.length} bài`, `Delete ${chosen.length} article${chosen.length > 1 ? "s" : ""}`)}</button>
+    </div>}
     <div className="tbl-wrap"><table className="tbl">
-      <thead><tr>{fields.map((f, i) => <th key={f.key} className={i === 0 ? "first" : ""} aria-sort={sort?.key === f.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}><button className="th-btn" onClick={() => sortBy(f.key)}><I n={f.icon} />{f.label}{sort?.key === f.key && <> <I n={sort.dir === "asc" ? "arrow-up" : "arrow-down"} /></>}</button></th>)}</tr></thead>
+      <thead><tr>{fields.map((f, i) => <th key={f.key} className={i === 0 ? "first" : ""} aria-sort={sort?.key === f.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}>{i === 0 && selectable && <input type="checkbox" className="row-cb" checked={all} ref={el => { if (el) el.indeterminate = chosen.length > 0 && !all }} aria-label={tr("Chọn tất cả", "Select all")} onChange={() => setPicked(all ? new Set() : new Set(rows.map(r => r.id)))} />}<button className="th-btn" onClick={() => sortBy(f.key)}><I n={f.icon} />{f.label}{sort?.key === f.key && <> <I n={sort.dir === "asc" ? "arrow-up" : "arrow-down"} /></>}</button></th>)}</tr></thead>
       <tbody>{groups.map((g, gi) => <GroupRows key={gi} label={g.label} count={g.rows.length} span={fields.length}>
-        {g.rows.map(r => <tr key={r.id} tabIndex={0} style={{ cursor: "pointer", animationDelay: `${Math.min(n++, 14) * 16}ms` }} onClick={() => click(r)} onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) click(r) }}>
-          {fields.map((f, i) => <td key={f.key} className={`${i === 0 ? "first" : ""}${f.num ? " num" : ""}`}>{f.key === "name" ? name(r) : f.render ? f.render(r) : f.text ? f.text(r) : r[f.key]}</td>)}
+        {g.rows.map(r => <tr key={r.id} tabIndex={0} className={picked.has(r.id) ? "sel" : undefined} style={{ cursor: "pointer", animationDelay: `${Math.min(n++, 14) * 16}ms` }} onClick={() => click(r)} onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) click(r) }}>
+          {fields.map((f, i) => <td key={f.key} className={`${i === 0 ? "first" : ""}${f.num ? " num" : ""}`}>{i === 0 && selectable && box(r)}{f.key === "name" ? name(r) : f.render ? f.render(r) : f.text ? f.text(r) : r[f.key]}</td>)}
         </tr>)}
       </GroupRows>)}</tbody>
     </table></div>

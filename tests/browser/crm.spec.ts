@@ -23,7 +23,7 @@ const structureFile = { id: 'outline-md', name: 'Outline forms.md', category: 'r
 async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
   const user = { id: role, email: role + '@example.com', role };
   let serverFiles: any[] = [structureFile];
-  const log = { files: [] as any[][], imports: [] as any[], reruns: [] as any[], puts: [] as any[], configs: [] as any[], created: [] as any[], started: [] as string[], imported: [] as any[] };
+  const log = { files: [] as any[][], imports: [] as any[], reruns: [] as any[], puts: [] as any[], configs: [] as any[], created: [] as any[], started: [] as string[], imported: [] as any[], deleted: [] as string[] };
   await page.addInitScript(user => localStorage.setItem('writer:auth-session', JSON.stringify({ authProvider: 'postgres', accessToken: '', expiresAt: null, user })), user);
   const config = { ...DEFAULT_CONFIG, stepConfigs: { ...DEFAULT_CONFIG.stepConfigs, 3: { ...DEFAULT_CONFIG.stepConfigs[3], fileAccess: { kb: [], rules: ['outline-md'] } } } };
   await page.route('**/*', async route => {
@@ -39,6 +39,7 @@ async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
     if (url.pathname === '/api/articles' && method === 'POST') { const body = route.request().postDataJSON(); log.created.push(body); return route.fulfill({ json: { ok: true, article: body } }); }
     const rerun = url.pathname.match(/^\/api\/articles\/([^/]+)\/rerun$/);
     if (rerun) { const body = route.request().postDataJSON(); log.reruns.push({ id: rerun[1], ...body }); return route.fulfill({ status: 202, json: { ok: true, article: { ...articles[0], qualityReport: null, batchStatus: 'queued' } } }); }
+    if (method === 'DELETE' && /^\/api\/(articles|batches)\//.test(url.pathname)) { log.deleted.push(decodeURIComponent(url.pathname)); return route.fulfill({ json: { ok: true } }); }
     if (url.pathname.startsWith('/api/articles/') && method === 'PUT') { const patch = route.request().postDataJSON(); log.puts.push(patch); return route.fulfill({ json: { ok: true, article: { ...articles[0], ...patch } } }); }
     if (url.pathname === '/api/content-plans/import') { const ct = route.request().headers()['content-type'] ?? ''; log.imported.push(ct.includes('multipart') ? { multipart: route.request().postDataBuffer()?.toString() } : route.request().postDataJSON()); return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3 } } }); }
     if (url.pathname === '/api/content-plans/plan-new/classify') return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3, items: [
@@ -283,4 +284,36 @@ test('CRM tables: the sticky first column never covers the next column', async (
   const [first, second] = [await row.locator('td').nth(0).boundingBox(), await row.locator('td').nth(1).boundingBox()];
   expect(first!.x + first!.width).toBeLessThanOrEqual(second!.x + 1);
   await expect(row.locator('td').nth(1)).toHaveText('Chưa review');
+});
+
+test('CRM bulk delete: admins select several articles or batches and delete them in one go', async ({ page }) => {
+  const log = await mockApp(page);
+  await page.getByRole('button', { name: 'Table' }).click();
+  await page.getByRole('checkbox', { name: /Chọn tất cả|Select all/ }).check();
+  const bar = page.getByRole('region', { name: /Thao tác hàng loạt|Bulk actions/ });
+  await expect(bar).toContainText('2');
+  page.once('dialog', d => { expect(d.message()).toContain('2'); void d.accept(); });
+  await bar.getByRole('button', { name: /Xoá 2 bài|Delete 2 articles/ }).click();
+  await expect.poll(() => log.deleted.sort()).toEqual(['/api/articles/a-approved', '/api/articles/a-failed']);
+  await expect(page.getByText('Approved article')).toHaveCount(0);
+
+  await goHash(page, '/objects/batches');
+  await expect(page.getByText(/Không có dữ liệu|Nothing here/)).toBeVisible();
+});
+
+test('CRM bulk delete removes whole batches through the batch endpoint', async ({ page }) => {
+  const log = await mockApp(page);
+  await goHash(page, '/objects/batches');
+  await page.getByRole('checkbox', { name: /Chọn Batch|Select Batch/ }).first().check();
+  page.once('dialog', d => void d.accept());
+  await page.getByRole('region', { name: /Thao tác hàng loạt|Bulk actions/ }).getByRole('button', { name: /Xoá 1 batch|Delete 1 batch/ }).click();
+  await expect.poll(() => log.deleted).toEqual(['/api/batches/batch-1']);
+  await expect(page.getByText(/Không có dữ liệu|Nothing here/)).toBeVisible();
+});
+
+test('CRM bulk delete is admin-only', async ({ page }) => {
+  await mockApp(page, 'user');
+  await page.getByRole('button', { name: 'Table' }).click();
+  await expect(page.locator('table.tbl')).toBeVisible();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
 });

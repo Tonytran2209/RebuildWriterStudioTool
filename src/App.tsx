@@ -371,51 +371,65 @@ export default function App() {
   }, [migratingLegacyId, tr])
 
 
-  const handleDeleteArticle = useCallback(
-    async (target: Article, deleteGroup = false) => {
-      if (deletingArticleId || deletingOrDeletedIds.current.has(target.id)) return
-      const targets =
-        deleteGroup && target.activityId
-          ? articles.filter((item) => item.activityId === target.activityId)
-          : [target]
+  /** Deletes whole batches (by activityId) and single articles; one confirm, then one server call per unit. */
+  const handleDeleteRecords = useCallback(
+    async (items: Article[], batchIds: string[] = []) => {
+      const batchSet = new Set(batchIds)
+      const singles = items.filter(item => !(item.activityId && batchSet.has(item.activityId)))
+      const targets = [...articles.filter(item => item.activityId && batchSet.has(item.activityId)), ...singles]
+      if (deletingArticleId || !targets.length || targets.some(item => deletingOrDeletedIds.current.has(item.id))) return
+      const only = singles[0]
       const confirmed = window.confirm(
-        deleteGroup
+        batchIds.length === 1 && !singles.length
           ? tr(`Xoá vĩnh viễn batch gồm ${targets.length} bài? Thao tác này không thể hoàn tác.`, `Permanently delete this batch of ${targets.length} articles? This cannot be undone.`)
-          : isLegacyArticle(target)
-            ? tr(`Xoá vĩnh viễn bài legacy “${target.title || target.topic}” khỏi cả kho lưu trữ cũ? Thao tác này không thể hoàn tác.`, `Permanently delete the legacy article “${target.title || target.topic}”, including the old store? This cannot be undone.`)
-            : tr(`Xoá vĩnh viễn bài viết “${target.title}”? Thao tác này không thể hoàn tác.`, `Permanently delete “${target.title}”? This cannot be undone.`),
+          : !batchIds.length && singles.length === 1
+            ? isLegacyArticle(only)
+              ? tr(`Xoá vĩnh viễn bài legacy “${only.title || only.topic}” khỏi cả kho lưu trữ cũ? Thao tác này không thể hoàn tác.`, `Permanently delete the legacy article “${only.title || only.topic}”, including the old store? This cannot be undone.`)
+              : tr(`Xoá vĩnh viễn bài viết “${only.title}”? Thao tác này không thể hoàn tác.`, `Permanently delete “${only.title}”? This cannot be undone.`)
+            : tr(`Xoá vĩnh viễn ${targets.length} bài${batchIds.length ? ` (gồm ${batchIds.length} batch)` : ""}? Thao tác này không thể hoàn tác.`, `Permanently delete ${targets.length} articles${batchIds.length ? ` (${batchIds.length} batches)` : ""}? This cannot be undone.`),
       )
       if (!confirmed) return
 
       setArticleActionError(null)
-      setDeletingArticleId(target.id)
+      setDeletingArticleId(targets[0].id)
       setSyncStatus("saving")
-      const targetIds = new Set(targets.map(item => item.id))
-      targetIds.forEach(id => deletingOrDeletedIds.current.add(id))
-      try {
-        // Finish any content save already queued before deleting the database record.
-        await Promise.all(targets.map((item) => waitForArticleMutations(item.id)))
-        // Measured from after the confirm dialog: the user's think time is not click latency.
-        await trackHandoff(performance.now(), () => deleteGroup && target.activityId ? db.deleteBatch(target.activityId) : db.deleteArticle(target.id))
-        setArticles(current => current.filter(item => !targetIds.has(item.id)))
-        setSyncStatus("idle")
-        notifyWorkspace(deleteGroup ? tr(`Đã xoá batch gồm ${targets.length} bài.`, `Deleted a batch of ${targets.length} articles.`) : tr("Đã xoá bài viết.", "Article deleted."), "success")
-        // Leave the record page of what was just deleted instead of showing "not found".
-        if ([...targetIds].some(id => window.location.hash.includes(encodeURIComponent(id))) || (deleteGroup && target.activityId && window.location.hash.includes(encodeURIComponent(target.activityId))))
-          window.location.hash = deleteGroup ? "#/objects/batches" : "#/objects/articles"
-      } catch (error: unknown) {
-        targetIds.forEach(id => deletingOrDeletedIds.current.delete(id))
-        setArticleActionError(
-          `Không xoá được bài viết khỏi Supabase: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        )
+      targets.forEach(item => deletingOrDeletedIds.current.add(item.id))
+      const deleted = new Set<string>()
+      const units: Array<{ ids: string[]; run: () => Promise<unknown> }> = [
+        ...batchIds.map(id => ({ ids: targets.filter(item => item.activityId === id).map(item => item.id), run: () => db.deleteBatch(id) })),
+        ...singles.map(item => ({ ids: [item.id], run: () => db.deleteArticle(item.id) })),
+      ]
+      let failure: unknown = null
+      // Measured from after the confirm dialog: the user's think time is not click latency.
+      await trackHandoff(performance.now(), async () => {
+        // Sequential: one failure stops the rest, and what was already deleted is still removed from the list.
+        for (const unit of units) {
+          try {
+            // Finish any content save already queued before deleting the database record.
+            await Promise.all(unit.ids.map(id => waitForArticleMutations(id)))
+            await unit.run()
+            unit.ids.forEach(id => deleted.add(id))
+          } catch (error) { failure = error; break }
+        }
+      })
+      targets.forEach(item => { if (!deleted.has(item.id)) deletingOrDeletedIds.current.delete(item.id) })
+      setArticles(current => current.filter(item => !deleted.has(item.id)))
+      if (failure) {
+        setArticleActionError(`${tr(`Đã xoá ${deleted.size}/${targets.length} bài; phần còn lại lỗi`, `Deleted ${deleted.size}/${targets.length} articles; the rest failed`)}: ${failure instanceof Error ? failure.message : String(failure)}`)
         setSyncStatus("error")
-      } finally {
-        setDeletingArticleId(null)
+      } else {
+        setSyncStatus("idle")
+        notifyWorkspace(batchIds.length === 1 && !singles.length ? tr(`Đã xoá batch gồm ${targets.length} bài.`, `Deleted a batch of ${targets.length} articles.`) : targets.length === 1 ? tr("Đã xoá bài viết.", "Article deleted.") : tr(`Đã xoá ${targets.length} bài.`, `Deleted ${targets.length} articles.`), "success")
       }
+      // Leave the record page of what was just deleted instead of showing "not found".
+      const hash = window.location.hash
+      if ([...deleted].some(id => hash.includes(encodeURIComponent(id))))
+        window.location.hash = "#/objects/articles"
+      else if (batchIds.some(id => hash.includes(encodeURIComponent(id))))
+        window.location.hash = "#/objects/batches"
+      setDeletingArticleId(null)
     },
-    [articles, deletingArticleId, waitForArticleMutations],
+    [articles, deletingArticleId, waitForArticleMutations, tr],
   )
 
   const handleSaveConfig = async (
@@ -594,7 +608,8 @@ export default function App() {
         files={files}
         config={config}
         onUpdateArticle={(id, updates) => handleUpdateArticle(id, updates)}
-        onDeleteArticle={(target, batch) => void handleDeleteArticle(target, batch)}
+        onDeleteArticle={(target, batch) => void handleDeleteRecords(batch && target.activityId ? [] : [target], batch && target.activityId ? [target.activityId] : [])}
+        onDeleteMany={(items, batchIds) => handleDeleteRecords(items, batchIds)}
         onRetry={(target) => retryBatchArticle(target.activityId ?? "", target.id)}
         onRerun={handleRerun}
         onToggleComplete={(target) => void handleToggleComplete(target)}
