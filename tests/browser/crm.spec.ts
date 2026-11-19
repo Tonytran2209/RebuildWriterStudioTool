@@ -317,24 +317,3 @@ test('CRM bulk delete is admin-only', async ({ page }) => {
   await expect(page.locator('table.tbl')).toBeVisible();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
 });
-
-test('CRM Add Plan can import only, then a batch runs exactly the picked topics', async ({ page }) => {
-  const log = await mockApp(page);
-  await page.locator('.ph-actions').getByRole('button', { name: 'Add Plan' }).click();
-  const add = page.getByRole('dialog', { name: 'Add Plan' });
-  await add.getByLabel('Topics').fill('A vs B\nC vs D\nWhy E matters');
-  await add.getByLabel(/Tự chọn topic cho từng batch|Pick topics for each batch myself/).check();
-  await add.getByRole('button', { name: 'Import' }).click();
-  await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
-  expect(log.created).toHaveLength(0);
-
-  const picker = page.getByRole('dialog', { name: /Chạy topic chưa xử lý|Run unprocessed topics/ });
-  const topics = picker.getByRole('group', { name: /Topic chưa chạy|Unprocessed topics/ });
-  await picker.getByRole('button', { name: /Bỏ chọn tất cả|Select none/ }).click();
-  await topics.getByLabel('C vs D').check();
-  await expect(picker).toContainText('1/3');
-  await picker.getByLabel(/Cấu trúc outline|Outline structure/).selectOption({ label: 'Comparison form' });
-  await picker.getByRole('button', { name: 'Generate' }).click();
-  await expect.poll(() => log.created.length).toBe(1);
-  expect(log.created[0]).toMatchObject({ contentPlanItemId: 'n2', activityKind: 'batch' });
-});

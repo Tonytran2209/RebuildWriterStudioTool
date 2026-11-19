@@ -413,5 +413,3 @@
 .crm .tbl th .th-btn{width:auto}
 .crm .bulk-bar{display:flex;align-items:center;gap:8px;padding:6px 10px;margin:8px;border-radius:6px;background:var(--accent-bg);color:var(--f1);flex-wrap:wrap}
 .crm .bulk-bar b{font-weight:600}
-/* <html> can carry codex-dark while the app is light; native checkboxes follow the app theme instead. */
-.writer-light .crm input[type=checkbox]{color-scheme:light}
