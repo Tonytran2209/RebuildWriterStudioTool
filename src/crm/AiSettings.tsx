@@ -11,8 +11,10 @@ const RAILWAY_URL = "https://rebuildwriterstudiotool-production.up.railway.app"
 const Sec = ({ title, desc, children }: { title: ReactNode; desc?: ReactNode; children: ReactNode }) => <section><h2>{title}</h2>{desc ? <p className="desc">{desc}</p> : <div style={{ height: 12 }} />}{children}</section>
 
 type WorkflowProps = { config: AppConfig; files: DocumentFile[]; articles: Article[]; onChange: (config: AppConfig) => void }
+type TaskKey = "review" | "seo" | "inventory"
+type Task = { key: string; tag: string; color: string; label: string; desc: string; step?: number; task?: TaskKey; required?: boolean; openaiOnly?: boolean; fallback?: string }
 
-/** Settings › Workflow AI in the demo layout ("Models per gate"). */
+/** Settings › Workflow AI in the demo layout: one row per AI task that has a model to choose. */
 export function WorkflowAiSettings({ config, files, articles, onChange }: WorkflowProps) {
   const { tr } = useI18n()
   const [status, setStatus] = useState<BackendStatus | null>(null)
@@ -21,10 +23,26 @@ export function WorkflowAiSettings({ config, files, articles, onChange }: Workfl
   const models = config.models.filter(m => m.enabled)
   const kb = files.filter(f => f.category === "kb" && isDocumentReady(f))
   const rules = files.filter(f => f.category === "rules" && isDocumentReady(f))
-  // Model only: document access per gate is the Shipper's job and must not be reset here.
-  const setModel = (step: number, modelId: string) => onChange({ ...config, stepConfigs: { ...config.stepConfigs, [step]: { ...config.stepConfigs[step], modelId } } })
-  const setWords = (value: number) => onChange({ ...config, stepConfigs: { ...config.stepConfigs, 4: { ...config.stepConfigs[4], maxDraftWords: Math.min(10000, Math.max(800, value || 1500)) } } })
-  const rows = [{ step: 2, gates: [GATES[0]] }, { step: 3, gates: [GATES[1]] }, { step: 4, gates: [GATES[2], GATES[3]] }]
+  // Every AI call the tool makes, in pipeline order. Steps keep their document access (Shipper); only the model changes here.
+  const tasks: Task[] = [
+    { key: "classify", tag: "Plan", color: "gray", step: 1, required: true, label: tr("Phân loại Content Plan", "Content Plan classification"), desc: tr("Chạy khi Add Plan: xếp từng topic vào Comparison hoặc Editorial.", "Runs on Add Plan: sorts each topic into Comparison or Editorial.") },
+    { key: "g1", tag: GATES[0].short, color: GATES[0].color, step: 2, required: true, label: tr("Ý tưởng & Article Spec", "Ideas & Article Spec"), desc: tr("Tạo ý tưởng, chọn title và lập Article Spec cho từng bài.", "Generates ideas, picks the title and writes each article's spec.") },
+    { key: "seo", tag: GATES[0].short, color: GATES[0].color, task: "seo", openaiOnly: true, fallback: "gpt-5.4-mini", label: "SEO keyword research", desc: tr("Tra keyword trên web trước khi lập Article Spec. Chỉ model OpenAI dùng được (cần công cụ web search).", "Looks up keywords on the web before the spec. OpenAI models only (needs the web search tool).") },
+    { key: "g2", tag: GATES[1].short, color: GATES[1].color, step: 3, required: true, label: tr("Outline", "Outline"), desc: tr("Lập outline theo cấu trúc đã chọn khi tạo batch.", "Builds the outline from the structure chosen for the batch.") },
+    { key: "g3", tag: GATES[2].short, color: GATES[2].color, step: 4, required: true, label: tr("Viết draft", "Draft"), desc: tr("Viết bài hoàn chỉnh theo outline.", "Writes the full article from the outline.") },
+    { key: "review", tag: GATES[3].short, color: GATES[3].color, task: "review", label: "AI Review", desc: tr("Chấm bài theo checklist và sửa phần chưa đạt. Để trống thì dùng model của G3.", "Scores the draft against the checklist and repairs failures. Empty = the G3 model.") },
+    { key: "inventory", tag: "Storage", color: "gray", task: "inventory", fallback: "gpt-5.4-mini", label: tr("Tóm tắt Website Inventory", "Website Inventory summaries"), desc: tr("Tóm tắt từng URL để AI gợi ý internal link.", "Summarizes each URL so AI can suggest internal links.") },
+  ]
+  const valueOf = (t: Task) => t.step ? config.stepConfigs[t.step]?.modelId ?? "" : config.taskModels?.[t.task!] ?? ""
+  const setValue = (t: Task, modelId: string) => onChange(t.step
+    ? { ...config, stepConfigs: { ...config.stepConfigs, [t.step]: { ...config.stepConfigs[t.step], modelId } } }
+    : { ...config, taskModels: { ...config.taskModels, [t.task!]: modelId } })
+  const usage = (step?: number) => {
+    if (!step || step === 1) return null
+    const calls = articles.flatMap(a => a.aiUsageByStep?.[step as 2 | 3 | 4] ?? [])
+    return `${calls.reduce((n, c) => n + Number(c.totalTokens ?? 0), 0).toLocaleString()} tokens · ${calls.length} AI calls`
+  }
+  const missing = tasks.filter(t => t.required && !models.some(m => m.id === valueOf(t)))
   return <>
     <Sec title={tr("Hệ thống", "System")}>
       <div className="box">
@@ -33,18 +51,17 @@ export function WorkflowAiSettings({ config, files, articles, onChange }: Workfl
         <div className="box-row"><I n="file-description" /><div className="grow">Skills & Rules<div className="s">{rules.map(f => f.name).join(", ") || tr("Chưa có dữ liệu", "No data loaded")}</div></div>{rules.length}</div>
       </div>
     </Sec>
-    <Sec title="Models per gate" desc={tr("Model cho từng gate. Tài liệu mỗi gate được nạp do Shipper quyết định.", "The model for each gate. Which documents each gate gets is set in Shipper.")}>
-      <div className="box">{rows.map(({ step, gates }) => {
-        const calls = articles.flatMap(a => a.aiUsageByStep?.[step as 2 | 3 | 4] ?? [])
-        const tokens = calls.reduce((n, c) => n + Number(c.totalTokens ?? 0), 0)
-        const label = gates.map(g => g.label).join(" + ")
-        return <div key={step} className="box-row" style={{ flexWrap: "wrap" }}>
-          {gates.map(g => <span key={g.id} className={`tag t-${g.color}`}>{g.short}</span>)}
-          <div className="grow" style={{ minWidth: 160 }}>{label}<div className="s">{tokens.toLocaleString()} tokens · {calls.length} AI calls</div></div>
-          {step === 4 && <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--f3)" }}><input className="inp" style={{ width: 90 }} aria-label={tr("Số từ tiếng Anh mục tiêu", "Target English words")} title={tr("Mục tiêu độ dài; QC chấp nhận khoảng ±15%", "Length target; QC accepts a ±15% range")} type="number" min={800} max={10000} step={100} value={Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500)} onChange={e => setWords(Number(e.target.value))} />words</label>}
-          <select className="inp" style={{ width: 200 }} aria-label={`${label} model`} value={config.stepConfigs[step]?.modelId ?? ""} onChange={e => setModel(step, e.target.value)}>
-            <option value="">— {tr("Chọn model", "Select model")} —</option>
-            {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+    <Sec title={tr("Model cho từng tác vụ AI", "Model per AI task")} desc={tr("Mọi bước có gọi AI trong tool, theo thứ tự pipeline. Tài liệu mỗi gate được nạp do Shipper quyết định; model chỉ hiện khi đã bật ở AI Models.", "Every AI call the tool makes, in pipeline order. Shipper decides which documents each gate gets; a model appears here once enabled in AI Models.")}>
+      {missing.length > 0 && <div className="box" style={{ marginBottom: 12, borderColor: "var(--c-orange-bg)", background: "var(--c-orange-bg)" }}><div className="box-row" style={{ color: "var(--c-orange)" }}><I n="alert-triangle" /><div className="grow">{tr("Chưa chọn model", "No model selected")}: {missing.map(t => t.label).join(", ")}<div className="s">{tr("Batch sẽ dừng ở bước này cho đến khi có model.", "Batches stop at this step until a model is set.")}</div></div></div></div>}
+      <div className="box">{tasks.map(t => {
+        const choices = t.openaiOnly ? models.filter(m => m.provider === "openai") : models
+        const stat = usage(t.step)
+        return <div key={t.key} className="box-row" style={{ flexWrap: "wrap" }}>
+          <span className={`tag t-${t.color}`}>{t.tag}</span>
+          <div className="grow" style={{ minWidth: 200 }}>{t.label}<div className="s">{t.desc}{stat && <> · {stat}</>}</div></div>
+          <select className="inp" style={{ width: 200 }} aria-label={`${t.label} model`} value={valueOf(t)} onChange={e => setValue(t, e.target.value)}>
+            <option value="">{t.required ? `— ${tr("Chọn model", "Select model")} —` : t.task === "review" ? tr("Giống model G3", "Same as G3") : `${tr("Mặc định", "Default")} (${t.fallback})`}</option>
+            {choices.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
       })}</div>

@@ -34,7 +34,7 @@ function validUrl(value: unknown): string | null {
   }
 }
 
-export async function researchSeoKeywords(seeds: string[], keywordCount = 10): Promise<{
+export async function researchSeoKeywords(seeds: string[], keywordCount = 10, modelId = 'gpt-5.4-mini'): Promise<{
   keywords: SeoKeywordMetric[];
   seedKeywords: string[];
   location: string;
@@ -52,7 +52,7 @@ export async function researchSeoKeywords(seeds: string[], keywordCount = 10): P
   const { default: OpenAI } = await import('openai');
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const response = await client.responses.create({
-    model: 'gpt-5.4-mini',
+    model: modelId,
     tools: [{ type: 'web_search' }],
     input: [
       'Research the current United States Google search landscape for the seed keywords below.',

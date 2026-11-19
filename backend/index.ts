@@ -1127,12 +1127,14 @@ async function runBatchModel(
   maxTokens: number,
   jsonSchema?: Record<string, unknown>,
   purpose: "generation" | "recovery" = "generation",
-  options: { skipDocumentContext?: boolean } = {},
+  options: { skipDocumentContext?: boolean; modelTask?: "review" } = {},
 ) {
   const config = await kvGet<any>("writer:config")
   const stepConfig = config?.stepConfigs?.[step]
+  // AI Review can run on its own model (Settings › Workflow AI); empty means "same as G3".
+  const modelId = (options.modelTask && config?.taskModels?.[options.modelTask]) || stepConfig?.modelId
   const model = config?.models?.find(
-    (item: any) => item.id === stepConfig?.modelId && item.enabled,
+    (item: any) => item.id === modelId && item.enabled,
   )
   if (!model)
     throw new Error(`Step ${step}: no enabled AI model is configured.`)
@@ -2200,9 +2202,9 @@ async function runBatchArticle(
         if (!seoResearch) {
           await reserveAIBudget(article.id, 2)
           const seoStartedAt = Date.now()
-          seoResearch = await researchSeoKeywords(seeds, keywordCount)
+          seoResearch = await researchSeoKeywords(seeds, keywordCount, seoModelId(runtimeConfig))
           seoUsage = batchUsage(2, "openai", {
-            model: "gpt-5.4-mini-web-search",
+            model: `${seoModelId(runtimeConfig)}-web-search`,
             usage: seoResearch.usage,
             costUsd: null,
             cacheHit: false,
@@ -2895,7 +2897,7 @@ async function runBatchArticle(
           1600,
           semanticQualityJsonSchema,
           "recovery",
-          { skipDocumentContext: true },
+          { skipDocumentContext: true, modelTask: "review" },
         )
         draftResponses.push(review)
         return review
@@ -2971,7 +2973,7 @@ async function runBatchArticle(
           Math.min(12000, Math.max(3000, Math.ceil(effectiveDraftWords * 1.9))),
           structuredDraftJsonSchema,
           "recovery",
-          { skipDocumentContext: true },
+          { skipDocumentContext: true, modelTask: "review" },
         )
         draftResponses.push(semanticRepair)
         assembled = assembleBatchDraft(semanticRepair.content, article)
@@ -3727,7 +3729,7 @@ app.post("/api/seo/research", async (req, res) => {
       return res.json({ ...cached, cacheHit: true })
     }
     const budget = await reserveAIBudget(articleId, 2)
-    const result = await researchSeoKeywords(seeds, keywordCount)
+    const result = await researchSeoKeywords(seeds, keywordCount, seoModelId(await kvGet<any>("writer:config")))
     await kvSet(cacheKey, result)
     res.json({ ...result, cacheHit: false, budget })
   } catch (error) {
@@ -4935,11 +4937,25 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, message:
   }
 }
 
+/** SEO research needs OpenAI's web search tool, so only an enabled OpenAI model can be chosen. */
+function seoModelId(config: any): string {
+  const chosen = config?.models?.find((m: any) => m.id === config?.taskModels?.seo && m.enabled && m.provider === "openai")
+  return chosen?.id ?? "gpt-5.4-mini"
+}
+
+/** Website Inventory summaries: the model chosen in Workflow AI, else the env override, else a small OpenAI model. */
+function websiteSummaryModel(config: any): { provider: string; id: string } {
+  const chosen = config?.models?.find((m: any) => m.id === config?.taskModels?.inventory && m.enabled)
+  if (chosen) return { provider: chosen.provider, id: chosen.id }
+  return { provider: "openai", id: process.env.WEBSITE_SUMMARY_MODEL || process.env.WEBSITE_CLASSIFIER_MODEL || "gpt-5.4-mini" }
+}
+
 async function processWebsiteInventoryUrl(url: string, summarize = true) {
     let record: any = await scanWebsiteUrlWithRetry(url)
     const extractedContent = String(record.extractedContent ?? "")
     delete record.extractedContent
-    if (record.status !== "broken" && summarize && getAvailableProviders().openai) {
+    const summaryModel = websiteSummaryModel(await kvGet<any>("writer:config"))
+    if (record.status !== "broken" && summarize && getAvailableProviders()[summaryModel.provider]) {
       try {
         const cacheKey = `writer:website-summary:${WEBSITE_SUMMARY_VERSION}:${record.contentFingerprint}`
         const cached = await kvGet<any>(cacheKey)
@@ -4952,8 +4968,8 @@ async function processWebsiteInventoryUrl(url: string, summarize = true) {
           if (budget.allowed) {
             const result = await withTimeout(
               generate({
-                provider: "openai",
-                modelId: process.env.WEBSITE_SUMMARY_MODEL || process.env.WEBSITE_CLASSIFIER_MODEL || "gpt-4o-mini",
+                provider: summaryModel.provider,
+                modelId: summaryModel.id,
                 maxTokens: 650,
                 temperature: 0,
                 jsonMode: true,

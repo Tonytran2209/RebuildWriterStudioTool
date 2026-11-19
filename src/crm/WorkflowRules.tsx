@@ -1,95 +1,99 @@
-import { useMemo, useState } from 'react';
-import type { AppConfig, DocumentFile, WorkflowRuleEnforcement, WorkflowRuleId } from '../types';
-import { compileWorkflowRules, getStageEffective, getWorkflowRuleSetting, WORKFLOW_RULE_DEFINITIONS } from '../lib/workflowRules';
-import { isDocumentReady } from '../lib/documentStatus';
+import type { ReactNode } from 'react';
+import type { AppConfig, DocumentFile, WorkflowRuleId } from '../types';
+import { compileWorkflowRules, getWorkflowRuleSetting } from '../lib/workflowRules';
 import { useI18n } from '../lib/i18n';
+import { GATES } from './model';
 import { I } from './ui';
 
 interface Props { config: AppConfig; files: DocumentFile[]; onChange: (config: AppConfig) => void }
 
-type PhaseId = 'article-spec' | 'quality-gate' | 'knowledge' | 'orchestration';
+const Sec = ({ title, desc, children }: { title: string; desc: string; children: ReactNode }) => <section><h2>{title}</h2><p className="desc">{desc}</p>{children}</section>;
 
-const PHASES: Array<{ id: PhaseId; number: number; titleVi: string; titleEn: string; descriptionVi: string; descriptionEn: string; rules: WorkflowRuleId[] }> = [
-  { id: 'article-spec', number: 1, titleVi: 'Article Spec foundation', titleEn: 'Article Spec foundation', descriptionVi: 'Khóa intent, reader outcome, keyword, thesis và phạm vi nội dung trước khi viết.', descriptionEn: 'Lock intent, reader outcome, keywords, thesis, and coverage before writing.', rules: ['core-idea'] },
-  { id: 'quality-gate', number: 2, titleVi: 'Universal Quality Gate', titleEn: 'Universal Quality Gate', descriptionVi: 'Kiểm tra deterministic và semantic trước khi draft được chấp nhận.', descriptionEn: 'Run deterministic and semantic checks before a draft is accepted.', rules: ['quality-persistence'] },
-  { id: 'knowledge', number: 3, titleVi: 'Knowledge governance', titleEn: 'Knowledge governance', descriptionVi: 'Quy định cách Content Plan, KB, nguồn nội bộ và website inventory được đọc.', descriptionEn: 'Control how Content Plans, KB, internal sources, and website inventory are read.', rules: ['source-grounding'] },
-  { id: 'orchestration', number: 4, titleVi: 'Workflow orchestration', titleEn: 'Workflow orchestration', descriptionVi: 'Standard có thể chạy batch; Editorial cần duyệt outline trước khi tạo draft.', descriptionEn: 'Standard may run in batch; Editorial requires outline approval before drafting.', rules: ['outline', 'draft'] },
+/** Numbers the pipeline reads (backend clamps to the same ranges). Stored as workflow-rule stage parameters. */
+const PARAMS: Array<{ gate: number; rule: WorkflowRuleId; stage: string; param: string; min: number; max: number; def: number; vi: string; en: string; hintVi: string; hintEn: string }> = [
+  { gate: 0, rule: 'core-idea', stage: 'market-research', param: 'keywordCount', min: 5, max: 20, def: 10, vi: 'Số keyword nghiên cứu', en: 'Keywords to research', hintVi: 'Số keyword SEO tra trên web cho mỗi bài.', hintEn: 'SEO keywords looked up on the web per article.' },
+  { gate: 0, rule: 'core-idea', stage: 'idea-generation', param: 'ideaCount', min: 2, max: 6, def: 3, vi: 'Số ý tưởng', en: 'Ideas', hintVi: 'Số ý tưởng AI tạo ra để chọn một ý viết bài.', hintEn: 'Ideas generated before one is chosen.' },
+  { gate: 1, rule: 'outline', stage: 'outline-mapping', param: 'minimumSections', min: 4, max: 12, def: 4, vi: 'Số section tối thiểu', en: 'Minimum sections', hintVi: 'Outline không được ít hơn số section này.', hintEn: 'The outline never has fewer sections.' },
+  { gate: 2, rule: 'draft', stage: 'word-allocation', param: 'conclusionPercent', min: 5, max: 12, def: 7, vi: 'Độ dài kết luận (%)', en: 'Conclusion length (%)', hintVi: 'Phần trăm số từ dành cho kết luận.', hintEn: 'Share of the word budget for the conclusion.' },
+  { gate: 2, rule: 'draft', stage: 'structured-assembly', param: 'maxSentencesPerParagraph', min: 2, max: 7, def: 5, vi: 'Số câu tối đa mỗi đoạn', en: 'Max sentences per paragraph', hintVi: 'Giữ đoạn văn ngắn, dễ đọc.', hintEn: 'Keeps paragraphs short and readable.' },
 ];
 
-const STEP_LABELS: Record<number, string> = { 2: 'Step 1 · Article Spec', 3: 'Step 2 · Outline', 4: 'Step 3 · Draft' };
+/** Team instructions per gate, appended to that gate's prompt. */
+const NOTES: Array<{ gate: number; rule: WorkflowRuleId; step: number }> = [{ gate: 0, rule: 'core-idea', step: 2 }, { gate: 1, rule: 'outline', step: 3 }, { gate: 2, rule: 'draft', step: 4 }];
 
-export default function WorkflowRules({ config, files, onChange }: Props) {
-  const { language, tr } = useI18n();
-  const [phaseId, setPhaseId] = useState<PhaseId>('article-spec');
-  const [editingStage, setEditingStage] = useState<string | null>(null);
-  const phase = PHASES.find(item => item.id === phaseId) ?? PHASES[0];
-  const definitions = useMemo(() => phase.rules.flatMap(id => WORKFLOW_RULE_DEFINITIONS.filter(rule => rule.id === id)), [phase]);
-  const readyKb = files.filter(file => file.category === 'kb' && isDocumentReady(file)).length;
-  const readyGuides = files.filter(file => file.category === 'rules' && isDocumentReady(file)).length;
-
-  const replaceSetting = (id: WorkflowRuleId, patch: Partial<ReturnType<typeof getWorkflowRuleSetting>>) => {
-    const current = getWorkflowRuleSetting(config, id);
+export default function WorkflowRules({ config, onChange }: Props) {
+  const { tr } = useI18n();
+  const rule = (id: WorkflowRuleId) => getWorkflowRuleSetting(config, id);
+  const save = (id: WorkflowRuleId, patch: Partial<ReturnType<typeof getWorkflowRuleSetting>>) => {
+    const current = rule(id);
     onChange({ ...config, workflowRules: { ...config.workflowRules, [id]: { ...current, ...patch, version: current.version + 1 } } });
   };
-  const updateStage = (id: WorkflowRuleId, stageId: string, patch: { instruction?: string; parameters?: Record<string, number | string | boolean> }) => {
-    const setting = getWorkflowRuleSetting(config, id);
-    replaceSetting(id, { stageOverrides: { ...setting.stageOverrides, [stageId]: { ...setting.stageOverrides[stageId], ...patch } } });
+  const paramValue = (p: typeof PARAMS[number]) => Number(rule(p.rule).stageOverrides[p.stage]?.parameters?.[p.param] ?? p.def);
+  const setParam = (p: typeof PARAMS[number], raw: number) => {
+    const value = Math.min(p.max, Math.max(p.min, Math.round(raw) || p.def));
+    const stages = rule(p.rule).stageOverrides;
+    save(p.rule, { stageOverrides: { ...stages, [p.stage]: { ...stages[p.stage], parameters: { ...stages[p.stage]?.parameters, [p.param]: value } } } });
   };
-  const resetStage = (id: WorkflowRuleId, stageId: string) => {
-    const setting = getWorkflowRuleSetting(config, id); const next = { ...setting.stageOverrides }; delete next[stageId];
-    replaceSetting(id, { stageOverrides: next }); setEditingStage(null);
-  };
-  const resetRule = (id: WorkflowRuleId) => onChange({ ...config, workflowRules: { ...config.workflowRules, [id]: undefined } });
-  const muted = { color: 'var(--f3)', fontSize: 12 } as const;
-  const sub = { padding: '8px 12px', color: 'var(--f3)', fontSize: 12, fontWeight: 500, background: 'var(--bg2)', borderBottom: '1px solid var(--b3)' } as const;
+  const words = Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500);
+  const setWords = (value: number) => onChange({ ...config, stepConfigs: { ...config.stepConfigs, 4: { ...config.stepConfigs[4], maxDraftWords: Math.min(10000, Math.max(800, value || 1500)) } } });
+
+  // Settings from the old rule editor that still change prompts but have no control here any more.
+  const legacy = (['source-grounding', 'core-idea', 'outline', 'draft', 'quality-persistence'] as WorkflowRuleId[]).filter(id => {
+    const saved = config.workflowRules?.[id];
+    if (!saved) return false;
+    const hasStageText = Object.values(saved.stageOverrides ?? {}).some(stage => Boolean(stage?.instruction?.trim()));
+    const ungatedNote = !NOTES.some(n => n.rule === id) && Boolean(saved.customInstruction?.trim());
+    return saved.enforcement === 'guided' || saved.appliesTo?.batch === false || hasStageText || ungatedNote;
+  });
+  const resetLegacy = () => onChange({ ...config, workflowRules: Object.fromEntries(Object.entries(config.workflowRules ?? {}).map(([id, saved]) => {
+    if (!saved) return [id, saved];
+    const stageOverrides = Object.fromEntries(Object.entries(saved.stageOverrides ?? {}).map(([stage, o]) => [stage, { parameters: o?.parameters }]));
+    const keepNote = NOTES.some(n => n.rule === id);
+    return [id, { ...saved, enforcement: 'strict', appliesTo: { manual: true, batch: true }, stageOverrides, customInstruction: keepNote ? saved.customInstruction : '', version: saved.version + 1 }];
+  })) });
+
+  const fixed = [
+    { icon: 'shield-check', vi: 'Đối chứng nguồn', en: 'Source grounding', dVi: 'AI chỉ dùng Content Plan, Knowledge Base và tài liệu Shipper cấp cho gate; không bịa số liệu hay trích dẫn.', dEn: 'AI uses only the Content Plan, Knowledge Base and documents Shipper gives the gate; no invented facts or quotes.' },
+    { icon: 'list-check', vi: 'Quality Gate', en: 'Quality Gate', dVi: 'Kiểm tra cấu trúc, số từ, độ bao phủ, bảo mật và link, rồi AI Review chấm điểm. Bài đạt ngưỡng ở Settings › Pipeline mới thành AI Approved.', dEn: 'Checks structure, word count, coverage, confidentiality and links, then AI Review scores it. Only drafts at the Settings › Pipeline threshold become AI Approved.' },
+    { icon: 'user-check', vi: 'Duyệt outline Editorial', en: 'Editorial outline approval', dVi: 'Bài Editorial dừng sau G2 cho đến khi có người duyệt outline.', dEn: 'Editorial articles stop after G2 until a person approves the outline.' },
+    { icon: 'language', vi: 'Bài viết bằng tiếng Anh', en: 'Articles in English', dVi: 'Nội dung bài luôn tạo bằng tiếng Anh; giao diện mới dịch sang tiếng Việt.', dEn: 'Article content is always generated in English; only the UI is translated.' },
+  ];
 
   return <>
-    <section className="workflow-rules-panel">
-      <h2>{tr('Pipeline behavior', 'Pipeline behavior')}</h2>
-      <p className="desc">{tr('Bốn giai đoạn này là logic thực tế được compiler đưa vào prompt của bài đơn và batch.', 'These four phases are the actual behavior compiled into manual and batch prompts.')}</p>
-      <div className="box workflow-phase-switcher" role="tablist">
-        {PHASES.map(item => <button key={item.id} type="button" role="tab" aria-selected={phaseId === item.id} onClick={() => { setPhaseId(item.id); setEditingStage(null); }} className={`box-row click workflow-phase-button${phaseId === item.id ? ' is-active' : ''}`} style={{ width: '100%', textAlign: 'left', background: phaseId === item.id ? 'var(--bg3)' : undefined }}><span className="tag t-gray workflow-phase-index">{item.number}</span><span className="grow">{language === 'vi' ? item.titleVi : item.titleEn}</span>{phaseId === item.id && <I n="check" />}</button>)}
+    <Sec title={tr('Thông số pipeline', 'Pipeline numbers')} desc={tr('Các con số pipeline dùng khi chạy từng gate. Áp dụng cho lượt chạy tiếp theo.', 'Numbers the pipeline uses at each gate. Apply to the next run.')}>
+      <div className="box">
+        {PARAMS.slice(0, 3).map(p => <div key={p.param} className="box-row" style={{ flexWrap: 'wrap' }}>
+          <span className={`tag t-${GATES[p.gate].color}`}>{GATES[p.gate].short}</span>
+          <div className="grow" style={{ minWidth: 200 }}>{tr(p.vi, p.en)}<div className="s">{tr(p.hintVi, p.hintEn)} ({p.min}–{p.max})</div></div>
+          <input className="inp" style={{ width: 90 }} type="number" min={p.min} max={p.max} aria-label={tr(p.vi, p.en)} value={paramValue(p)} onChange={e => setParam(p, Number(e.target.value))} />
+        </div>)}
+        <div className="box-row" style={{ flexWrap: 'wrap' }}>
+          <span className={`tag t-${GATES[2].color}`}>{GATES[2].short}</span>
+          <div className="grow" style={{ minWidth: 200 }}>{tr('Số từ mục tiêu', 'Target words')}<div className="s">{tr('Độ dài bài tiếng Anh; QC chấp nhận khoảng ±15%.', 'English article length; QC accepts about ±15%.')} (800–10000)</div></div>
+          <input className="inp" style={{ width: 90 }} type="number" min={800} max={10000} step={100} aria-label={tr('Số từ tiếng Anh mục tiêu', 'Target English words')} value={words} onChange={e => setWords(Number(e.target.value))} />
+        </div>
+        {PARAMS.slice(3).map(p => <div key={p.param} className="box-row" style={{ flexWrap: 'wrap' }}>
+          <span className={`tag t-${GATES[p.gate].color}`}>{GATES[p.gate].short}</span>
+          <div className="grow" style={{ minWidth: 200 }}>{tr(p.vi, p.en)}<div className="s">{tr(p.hintVi, p.hintEn)} ({p.min}–{p.max})</div></div>
+          <input className="inp" style={{ width: 90 }} type="number" min={p.min} max={p.max} aria-label={tr(p.vi, p.en)} value={paramValue(p)} onChange={e => setParam(p, Number(e.target.value))} />
+        </div>)}
       </div>
-    </section>
+    </Sec>
 
-    <section>
-      <h2>{language === 'vi' ? phase.titleVi : phase.titleEn}</h2>
-      <p className="desc">{language === 'vi' ? phase.descriptionVi : phase.descriptionEn}</p>
+    <Sec title={tr('Hướng dẫn riêng của team', 'Team instructions')} desc={tr('Thêm yêu cầu riêng cho từng gate, ví dụ giọng văn hay điều cần tránh. Không cần chép lại quy tắc mặc định.', 'Add your own requirements per gate, such as tone or things to avoid. No need to repeat the default rules.')}>
+      <div className="box">{NOTES.map(n => {
+        const prompt = compileWorkflowRules(config, n.step, 'batch');
+        return <div key={n.rule} className="box-row" style={{ display: 'block' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span className={`tag t-${GATES[n.gate].color}`}>{GATES[n.gate].short}</span>{GATES[n.gate].label}</div>
+          <textarea className="inp" rows={2} style={{ height: 'auto', padding: 8, resize: 'vertical' }} aria-label={`${tr('Hướng dẫn cho', 'Instructions for')} ${GATES[n.gate].label}`} placeholder={tr('Không có hướng dẫn thêm', 'No extra instructions')} value={rule(n.rule).customInstruction} onChange={e => save(n.rule, { customInstruction: e.target.value })} />
+          <details style={{ marginTop: 6 }}><summary style={{ cursor: 'pointer', color: 'var(--f3)', fontSize: 12 }}>{tr('Xem quy tắc AI nhận ở gate này', 'See the rules AI receives at this gate')}</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: 'var(--f2)', background: 'var(--bg2)', borderRadius: 6, padding: 8, marginTop: 6, maxHeight: 260, overflow: 'auto' }}>{[prompt.systemPrompt, prompt.taskGuidance].filter(Boolean).join('\n\n')}</pre></details>
+        </div>;
+      })}</div>
+    </Sec>
 
-      {phase.id === 'knowledge' && <div className="box knowledge-source-summary" style={{ marginBottom: 12 }}><div className="box-row"><I n="books" /><div className="grow">Knowledge Base<div className="s">{readyKb} {tr('nguồn sẵn sàng', 'ready sources')}</div></div></div><div className="box-row"><I n="file-description" /><div className="grow">Reference guides<div className="s">{readyGuides} {tr('nguồn sẵn sàng', 'ready sources')}</div></div></div></div>}
-
-      {phase.id === 'orchestration' && <div className="box settings-preference-group" style={{ marginBottom: 12 }}><div className="box-row"><div className="grow">Standard / Scalable<div className="s">{tr('Cho phép bài đơn và batch tự động tiếp tục sau khi outline hợp lệ.', 'Manual and batch runs may continue automatically after a valid outline.')}</div></div><span className="tag t-gray">Manual + Batch</span></div><div className="box-row"><div className="grow">Editorial / Originality<div className="s">{tr('Chỉ chạy bài đơn và luôn dừng để user duyệt outline trước draft.', 'Manual only and always pauses for outline approval before drafting.')}</div></div><span className="tag t-gray">Manual + Approval</span></div></div>}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {definitions.map(rule => {
-          const setting = getWorkflowRuleSetting(config, rule.id);
-          const hardContract = rule.id === 'quality-persistence';
-          const customized = setting.enforcement !== 'strict' || !setting.appliesTo.manual || !setting.appliesTo.batch || Boolean(setting.customInstruction.trim()) || Object.keys(setting.stageOverrides).length > 0;
-          const preview = compileWorkflowRules(config, rule.steps[0], 'manual');
-          const promptGroups = [
-            { id: 'system', label: tr('System prompt · Bắt buộc', 'System prompt · Required'), content: preview.systemPrompt },
-            { id: 'guidance', label: tr('Task guidance · Hướng dẫn', 'Task guidance · Guided'), content: preview.taskGuidance },
-          ].filter(group => Boolean(group.content));
-          return <div key={rule.id} className="box workflow-rule-group">
-            <div className="box-row" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}><div className="grow" style={{ minWidth: 220 }}><b style={{ fontWeight: 600 }}>{language === 'vi' ? rule.titleVi : rule.title}</b><div className="s">{language === 'vi' ? rule.summaryVi : rule.summary}</div></div><div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{rule.steps.map(step => <span key={step} className="tag t-blue">{STEP_LABELS[step]}</span>)}</div></div>
-
-            <div className="box-row workflow-setting-row" style={{ flexWrap: 'wrap' }}><div className="grow" style={{ minWidth: 220 }}>{tr('Mức áp dụng', 'Enforcement')}<div className="s">{hardContract ? tr('Quality Gate là safeguard bắt buộc và luôn chạy ở mức Strict.', 'Quality Gate is a required safeguard and always runs as Strict.') : tr('Strict đặt rule trong system prompt; Guided đặt rule trong task guidance.', 'Strict uses the system prompt; Guided uses task guidance.')}</div></div><select className="inp" style={{ width: 144 }} aria-label={tr('Mức áp dụng', 'Enforcement')} disabled={hardContract} value={setting.enforcement} onChange={event => replaceSetting(rule.id, { enforcement: event.target.value as WorkflowRuleEnforcement })}><option value="strict">Strict</option><option value="guided">Guided</option></select></div>
-            <div className="box-row workflow-setting-row" style={{ flexWrap: 'wrap' }}><div className="grow" style={{ minWidth: 220 }}>{tr('Chế độ thực thi', 'Execution modes')}<div className="s">{hardContract ? tr('Safeguard này luôn bảo vệ cả bài đơn và batch.', 'This safeguard always protects manual and batch runs.') : phase.id === 'orchestration' ? tr('Batch chỉ dùng cho Standard/Scalable; Editorial luôn chạy bài đơn và cần approval.', 'Batch is Standard/Scalable only; Editorial stays manual and requires approval.') : tr('Chọn nơi rule này được compiler áp dụng.', 'Choose where this rule is compiled.')}</div></div><div style={{ display: 'flex', gap: 16 }}>{(['manual', 'batch'] as const).map(mode => <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--f2)' }}><input type="checkbox" disabled={hardContract} checked={setting.appliesTo[mode]} onChange={event => replaceSetting(rule.id, { appliesTo: { ...setting.appliesTo, [mode]: event.target.checked } })} />{mode === 'manual' ? tr('Bài đơn', 'Manual') : 'Batch'}</label>)}</div></div>
-            <label className="box-row" style={{ display: 'block' }}><span>{tr('Instruction bổ sung', 'Additional instruction')}</span><span className="s" style={{ display: 'block' }}>{tr('Chỉ thêm yêu cầu riêng của team; không cần chép lại rule mặc định.', 'Add only team-specific guidance; do not repeat the default rules.')}</span><textarea rows={3} className="inp" style={{ height: 'auto', padding: 8, marginTop: 8, resize: 'vertical' }} value={setting.customInstruction} onChange={event => replaceSetting(rule.id, { customInstruction: event.target.value })} placeholder={tr('Không có instruction bổ sung', 'No additional instruction')} /></label>
-
-            <div style={sub}>{tr('Quy tắc theo stage', 'Stage rules')}</div>
-            {rule.stages.map(stage => {
-              const effective = getStageEffective(rule, setting, stage); const override = setting.stageOverrides[stage.id]; const editKey = `${rule.id}:${stage.id}`; const editing = editingStage === editKey;
-              return <div key={stage.id} className="box-row workflow-stage-row" style={{ display: 'block' }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}><div className="grow" style={{ flex: 1, minWidth: 0 }}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{language === 'vi' ? stage.titleVi : stage.title}{stage.locked && <span className="tag t-gray">{tr('Bắt buộc', 'Required')}</span>}</div><div className="s">{override?.instruction?.trim() || (language === 'vi' ? stage.detailVi : stage.detail)}</div></div>{!stage.locked && <button type="button" className="btn" aria-expanded={editing} onClick={() => setEditingStage(editing ? null : editKey)}>{editing ? tr('Đóng', 'Close') : override ? tr('Chỉnh sửa', 'Edit') : tr('Tuỳ chỉnh', 'Customize')}</button>}</div>
-                {stage.parameters?.length ? <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8 }}>{stage.parameters.map(parameter => <label key={parameter.id} style={{ display: 'flex', alignItems: 'center', gap: 8, ...muted }}><span>{language === 'vi' ? parameter.labelVi : parameter.label}</span><input type="number" className="inp" style={{ width: 80 }} min={parameter.min} max={parameter.max} step={parameter.step} value={Number(effective.parameters[parameter.id])} onChange={event => updateStage(rule.id, stage.id, { parameters: { ...override?.parameters, [parameter.id]: Number(event.target.value) } })} /></label>)}</div> : null}
-                {!stage.locked && editing && <div style={{ marginTop: 8 }}><textarea rows={3} className="inp" style={{ height: 'auto', padding: 8, resize: 'vertical' }} aria-label={language === 'vi' ? stage.titleVi : stage.title} value={override?.instruction ?? ''} onChange={event => updateStage(rule.id, stage.id, { instruction: event.target.value })} placeholder={language === 'vi' ? stage.detailVi : stage.detail} />{override && <button type="button" className="btn ghost" style={{ marginTop: 6 }} onClick={() => resetStage(rule.id, stage.id)}><I n="restore" />{tr('Khôi phục mặc định', 'Restore default')}</button>}</div>}
-              </div>;
-            })}
-
-            <div className="box-row" style={{ display: 'block', background: 'var(--bg2)' }}><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><span style={{ flex: 1, ...muted, fontWeight: 500 }}>{tr('Prompt đang áp dụng', 'Effective prompt')}</span>{customized && <button type="button" className="btn ghost" onClick={() => resetRule(rule.id)}><I n="restore" />{tr('Reset toàn bộ rule', 'Reset rule')}</button>}</div><details className="effective-prompt" style={{ marginTop: 6, minWidth: 0 }}><summary style={{ cursor: 'pointer', ...muted }}>{tr('Xem nội dung prompt', 'View prompt content')}</summary><div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>{promptGroups.length ? promptGroups.map(group => <div key={group.id} className="box prompt-group"><div style={sub}>{group.label}</div><pre style={{ margin: 0, maxHeight: 256, overflow: 'auto', whiteSpace: 'pre-wrap', padding: 12, fontFamily: 'ui-monospace, monospace', fontSize: 12, lineHeight: 1.6, color: 'var(--f2)' }}>{group.content}</pre></div>) : <div className="box" style={{ padding: 12, ...muted }}>{tr('Rule không áp dụng cho chế độ này.', 'Rule is not active in this mode.')}</div>}</div></details></div>
-          </div>;
-        })}
-      </div>
-    </section>
+    <Sec title={tr('Luôn bật', 'Always on')} desc={tr('Các bảo vệ chất lượng này luôn chạy ở mọi bài, không cần cài đặt.', 'These quality safeguards always run on every article; nothing to set.')}>
+      <div className="box">{fixed.map(f => <div key={f.en} className="box-row"><I n={f.icon} /><div className="grow">{tr(f.vi, f.en)}<div className="s">{tr(f.dVi, f.dEn)}</div></div><span className="tag t-green">{tr('Luôn bật', 'On')}</span></div>)}</div>
+      {legacy.length > 0 && <div className="box" style={{ marginTop: 12 }}><div className="box-row" style={{ flexWrap: 'wrap' }}><I n="history" /><div className="grow" style={{ minWidth: 220 }}>{tr('Có tuỳ chỉnh nâng cao từ phiên bản cũ', 'Advanced customizations from the old editor')}<div className="s">{tr('Chế độ Guided, tắt quy tắc cho batch hoặc câu lệnh sửa riêng từng bước vẫn đang áp dụng. Đặt lại để dùng quy tắc mặc định (giữ thông số và hướng dẫn của team).', 'Guided mode, rules turned off for batch, or rewritten stage text still apply. Reset to the default rules (numbers and team instructions are kept).')}</div></div><button className="btn" onClick={resetLegacy}><I n="restore" />{tr('Đặt lại mặc định', 'Reset to defaults')}</button></div></div>}
+    </Sec>
   </>;
 }

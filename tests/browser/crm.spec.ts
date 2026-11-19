@@ -317,3 +317,31 @@ test('CRM bulk delete is admin-only', async ({ page }) => {
   await expect(page.locator('table.tbl')).toBeVisible();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
 });
+
+test('CRM Workflow AI lists every AI task and saves models, numbers and team instructions', async ({ page }) => {
+  const log = await mockApp(page);
+  await goHash(page, '/settings/models');
+  await page.getByRole('switch', { name: 'GPT-6.2 Sol' }).click();
+  await page.locator('.ph-actions').getByRole('button', { name: /Lưu thay đổi|Save changes/ }).click();
+  await expect.poll(() => log.configs.length).toBe(1);
+
+  await goHash(page, '/settings/workflow-ai');
+  for (const task of ['Phân loại Content Plan', 'Ý tưởng & Article Spec', 'SEO keyword research', 'Outline', 'Viết draft', 'AI Review', 'Tóm tắt Website Inventory'])
+    await expect(page.getByLabel(`${task} model`)).toBeVisible();
+  await expect(page.getByText(/Chưa chọn model/)).toBeVisible();
+  await expect(page.getByText('Pipeline behavior')).toHaveCount(0);
+  await expect(page.locator('.ph-actions').getByRole('button', { name: /Lưu thay đổi|Save changes/ })).toBeDisabled();
+
+  await page.getByLabel('AI Review model').selectOption({ label: 'GPT-6.2 Sol' });
+  await page.getByLabel('SEO keyword research model').selectOption({ label: 'GPT-6.2 Sol' });
+  await page.getByLabel('Phân loại Content Plan model').selectOption({ label: 'GPT-6.2 Sol' });
+  await page.getByLabel('Số keyword nghiên cứu').fill('12');
+  await page.getByLabel(/Hướng dẫn cho G2/).fill('Use short H2 headings.');
+  await page.locator('.ph-actions').getByRole('button', { name: /Lưu thay đổi|Save changes/ }).click();
+  await expect.poll(() => log.configs.length).toBe(2);
+  const saved = log.configs[1];
+  expect(saved.taskModels).toMatchObject({ review: 'gpt-6.2-sol', seo: 'gpt-6.2-sol' });
+  expect(saved.stepConfigs[1].modelId).toBe('gpt-6.2-sol');
+  expect(saved.workflowRules['core-idea'].stageOverrides['market-research'].parameters.keywordCount).toBe(12);
+  expect(saved.workflowRules.outline.customInstruction).toBe('Use short H2 headings.');
+});

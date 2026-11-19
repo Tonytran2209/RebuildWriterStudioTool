@@ -101,3 +101,17 @@ The image worker, style library and image suggestion APIs were removed from the 
 ## Removed routes (2026-11-18)
 
 `POST /api/generate` (browser-side AI calls and its NDJSON ack), `POST /api/format/google-docs` and `GET /api/legacy/inventory` had no caller after the CRM moved every AI step to the server batch runner; they were removed. Copy to Docs formats in the browser.
+
+## AI task models (2026-11-19)
+
+`AppConfig.taskModels` picks models for AI calls that are not a pipeline step; an empty value keeps the default.
+
+| Task | Config | Default | Backend |
+| --- | --- | --- | --- |
+| Content Plan classification | `stepConfigs[1].modelId` | required | `POST /api/content-plans/:id/classify` |
+| G1 / G2 / G3 | `stepConfigs[2..4].modelId` | required | batch runner |
+| AI Review (semantic review + repair) | `taskModels.review` | G3 model | `runBatchModel(..., { modelTask: "review" })` |
+| SEO keyword research | `taskModels.seo` (enabled OpenAI model only; needs web search) | `gpt-5.4-mini` | `researchSeoKeywords(seeds, count, model)` |
+| Website Inventory summary | `taskModels.inventory` (any enabled model) | `WEBSITE_SUMMARY_MODEL` env, else `gpt-5.4-mini` | `processWebsiteInventoryUrl` |
+
+Settings › Workflow AI edits these plus the pipeline numbers stored as workflow-rule stage parameters (`keywordCount`, `ideaCount`, `minimumSections`, `conclusionPercent`, `maxSentencesPerParagraph`) and one team instruction per gate (`workflowRules[core-idea|outline|draft].customInstruction`). Enforcement, execution modes and per-stage text are no longer editable; old values still compile until "Reset to defaults".

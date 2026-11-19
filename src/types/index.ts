@@ -173,6 +173,8 @@ export interface AppConfig {
   railwayUrl: string
   stepConfigs: Record<number, StepConfig>
   models: AIModel[]
+  /** Models for AI tasks that are not a pipeline step: empty = default (review → G3 model, SEO → gpt-5.4-mini, inventory → env/gpt-5.4-mini). */
+  taskModels?: { review?: string; seo?: string; inventory?: string }
   /** Catalog version the saved model list and prices were merged from (src/lib/defaultData.ts). */
   modelCatalogVersion?: string
   workflowRules?: WorkflowRuleSettings

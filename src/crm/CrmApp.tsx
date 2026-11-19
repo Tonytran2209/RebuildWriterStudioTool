@@ -1134,13 +1134,14 @@ function EmbeddedSettings({ ctx, p, title }: { ctx: Ctx; p: string; title: strin
   const [config, setConfig] = useState(ctx.config)
   const files = ctx.files
   const [saving, setSaving] = useState(false)
-  const dirty = config !== ctx.config
+  // Compare content, not identity: the saved copy comes back with a new revision a render later.
+  const same = (a: AppConfig, b: AppConfig) => JSON.stringify({ ...a, revision: 0 }) === JSON.stringify({ ...b, revision: 0 })
+  const dirty = !same(config, ctx.config)
   useEffect(() => { markUnsaved("settings", dirty); return () => markUnsaved("settings", false) }, [dirty])
-  // After a successful save adopt the shared config: it carries the new revision, so the page is clean again.
-  // A failed save keeps the local edits.
-  const adopt = useRef(false)
-  useEffect(() => { if (adopt.current && !saving) { adopt.current = false; setConfig(ctx.config) } }, [ctx.config, saving])
-  const save = async (eventTimeStamp: number) => { setSaving(true); try { await trackHandoff(eventTimeStamp, () => ctx.onSaveConfig(config, files, false)); adopt.current = true; toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } finally { setSaving(false) } }
+  // Take the shared config whenever it matches what is on screen, so the next save carries the newest revision.
+  // A failed save rolls ctx.config back and keeps the local edits (they no longer match).
+  useEffect(() => { setConfig(local => same(local, ctx.config) ? ctx.config : local) }, [ctx.config])
+  const save = async (eventTimeStamp: number) => { setSaving(true); try { await trackHandoff(eventTimeStamp, () => ctx.onSaveConfig(config, files, false)); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } finally { setSaving(false) } }
   const actions = <button className="btn primary" aria-label={tr("Lưu thay đổi", "Save changes")} disabled={!dirty || saving} onClick={e => void save(e.timeStamp)}><I n="device-floppy" /><span>{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</span></button>
   return <SettingsShell title={title} actions={actions}>
     {p === "workflow-ai" && <WorkflowAiSettings config={config} files={files} articles={ctx.articles} onChange={setConfig} />}

@@ -74,10 +74,12 @@ export function mergeWithLatestModelCatalog(config: AppConfig): AppConfig {
     ]),
   );
 
+  const taskModels = Object.fromEntries(Object.entries(config.taskModels ?? {}).map(([task, id]) => [task, id && modelIds.has(resolve(id)) ? resolve(id) : '']));
   return {
     ...config,
     modelCatalogVersion: MODEL_CATALOG_VERSION,
     stepConfigs,
+    taskModels,
     models: DEFAULT_MODELS.map(model => {
       const saved = savedModels.get(`${model.provider}:${model.id}`);
       return {
