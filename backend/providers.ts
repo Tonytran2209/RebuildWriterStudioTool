@@ -34,25 +34,19 @@ async function callAnthropic(req: GenerateRequest): Promise<GenerateResponse> {
     systemParts.push('\n\n=== TÀI LIỆU THAM KHẢO ===\n' + req.contextDocs.join('\n\n---\n\n'));
   }
 
-  const msg = await client.messages.create({
+  // Claude 5.x thinks on every request and thinking counts toward max_tokens, so leave room above the answer budget.
+  // Forced tool_choice is rejected (400) on Opus 5.5 / Sonnet 5.5 / Fable 5.2, so JSON comes from structured outputs.
+  // shortcut: output_config is sent untyped because the pinned SDK (0.39) predates it; upgrade the SDK to drop the cast.
+  const params = {
     model: req.modelId,
-    max_tokens: req.maxTokens ?? 4096,
+    max_tokens: Math.max(req.maxTokens ?? 4096, 16000),
     system: systemParts.join('\n') || undefined,
-    messages: [{ role: 'user', content: req.prompt }],
-    ...(req.jsonSchema ? {
-      tools: [{
-        name: 'emit_structured_response',
-        description: 'Return the final response using the required JSON schema.',
-        input_schema: req.jsonSchema as { type: 'object'; properties?: Record<string, unknown>; required?: string[] },
-      }],
-      tool_choice: { type: 'tool' as const, name: 'emit_structured_response' },
-    } : {}),
-  });
-
-  const toolResult = msg.content.find(block => block.type === 'tool_use');
-  const content = toolResult?.type === 'tool_use'
-    ? JSON.stringify(toolResult.input)
-    : msg.content.find(block => block.type === 'text')?.text ?? '';
+    messages: [{ role: 'user' as const, content: req.prompt }],
+    ...(req.jsonSchema ? { output_config: { format: { type: 'json_schema', schema: req.jsonSchema } } } : {}),
+  };
+  const msg = await client.messages.create(params as Parameters<typeof client.messages.create>[0]) as import('@anthropic-ai/sdk').default.Message;
+  if ((msg.stop_reason as string) === 'refusal') throw new Error('Anthropic declined the request (refusal).');
+  const content = msg.content.filter(block => block.type === 'text').map(block => block.type === 'text' ? block.text : '').join('');
   return {
     content,
     model: msg.model,
@@ -76,7 +70,8 @@ async function callOpenAI(req: GenerateRequest): Promise<GenerateResponse> {
   }
   messages.push({ role: 'user', content: req.prompt });
 
-  if (req.modelId.startsWith('gpt-5.')) {
+  // GPT-5 and later families use the Responses API (no temperature on reasoning models).
+  if (/^gpt-([5-9]|\d{2})/.test(req.modelId)) {
     const input = messages.map(message => ({
       role: message.role,
       content: message.content,
@@ -284,6 +279,7 @@ async function callGroq(req: GenerateRequest): Promise<GenerateResponse> {
 
   const groqModelMap: Record<string, string> = {
     'groq-gpt-oss-120b': 'openai/gpt-oss-120b',
+    'groq-gpt-oss-20b': 'openai/gpt-oss-20b',
     'llama-3-70b-groq': 'llama3-70b-8192',
     'llama-3-8b-groq': 'llama3-8b-8192',
     'mixtral-8x7b-groq': 'mixtral-8x7b-32768',

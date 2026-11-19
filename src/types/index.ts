@@ -173,6 +173,8 @@ export interface AppConfig {
   railwayUrl: string
   stepConfigs: Record<number, StepConfig>
   models: AIModel[]
+  /** Catalog version the saved model list and prices were merged from (src/lib/defaultData.ts). */
+  modelCatalogVersion?: string
   workflowRules?: WorkflowRuleSettings
   websiteInventory?: WebsiteContentRecord[]
   pipeline?: Partial<PipelineSettings>
