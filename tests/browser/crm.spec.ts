@@ -256,6 +256,35 @@ test('CRM plan page batches only the topics picked on the Articles tab', async (
   } finally { delete (plan as any).items; }
 });
 
+test('CRM plan saved without topics can be classified from its page and Storage shows real topic counts', async ({ page }) => {
+  await mockApp(page);
+  const unclassified = { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 0, items: [] };
+  await page.route('**/api/content-plans', r => r.fulfill({ json: [plan, unclassified] }));
+  await page.reload();
+  await goHash(page, '/objects/storage');
+  await expect(page.locator('tr', { hasText: 'New plan' })).toContainText(/chưa phân loại topic/);
+  await expect(page.locator('tr', { hasText: 'New plan' })).toContainText('Draft');
+  await goHash(page, '/object/plans/plan-new');
+  await page.getByRole('button', { name: /Phân loại topic|Classify topics/ }).click();
+  await expect(page.locator('.list-row', { hasText: 'C vs D' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Chạy topic chưa xử lý|Run unprocessed topics/ })).toBeVisible();
+});
+
+test('CRM Storage plan-like document becomes a Content Plan with classified topics', async ({ page }) => {
+  const log = await mockApp(page);
+  const doc = { id: 'kb-plan', name: 'Topic Map.docx', category: 'kb', fileType: 'docx', size: '13 KB', uploadedAt: now, scanStatus: 'ready', content: 'A vs B\nC vs D\nWhy E matters' };
+  await page.route('**/api/files', r => r.fulfill({ json: [doc, structureFile] }));
+  await page.reload();
+  await goHash(page, '/objects/storage');
+  const row = page.locator('tr', { hasText: 'Topic Map.docx' });
+  await expect(row).toContainText(/chưa tạo Content Plan/);
+  await row.click();
+  await page.getByRole('button', { name: /Tạo Content Plan & phân loại topic|Create Content Plan & classify topics/ }).click();
+  await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
+  expect(log.imported[0]).toMatchObject({ name: 'Topic Map', sourceType: 'paste', content: 'A vs B\nC vs D\nWhy E matters' });
+  await expect(page.locator('.list-row', { hasText: 'C vs D' })).toBeVisible();
+});
+
 test('CRM Editorial article waits for outline approval, then drafts through the pipeline', async ({ page }) => {
   const editorial = { id: 'a-editorial', title: 'Editorial piece', topic: 'Editorial piece', currentStep: 3, status: 'review', createdAt: now, updatedAt: now,
     contentPlanId: 'plan-1', contentPlanItemId: 'i9', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-ed', activityType: 'editorial-originality', batchStatus: 'awaiting_approval',

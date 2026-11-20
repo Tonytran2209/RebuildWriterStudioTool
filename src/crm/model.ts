@@ -134,13 +134,16 @@ const REQUIRED: Array<[string, string, RegExp, number[]]> = [
 ]
 export function storageDocs(files: DocumentFile[], config: AppConfig, approvedArticles: number, contentPlans: ContentPlan[] = []): StorageDoc[] {
   const real: StorageDoc[] = files.filter(f => f.category === "kb" || f.category === "rules").map(file => ({
-    id: file.id, g: groupOf(file), name: file.name, st: file.scanStatus === "error" ? "partial" : "ok", used: usedAt(file, config),
-    types: ["A", "B", "C", "ED"], note: file.scanStatus === "error" ? "Không đọc được nội dung" : "", updatedAt: file.contentUpdatedAt || file.uploadedAt, file,
+    id: file.id, g: groupOf(file), name: file.name, st: file.scanStatus === "error" ? "partial" : groupOf(file) === "Source data" ? "draft" : "ok", used: usedAt(file, config),
+    // A plan-like reference file is not a Content Plan until it is imported through Add Plan.
+    types: ["A", "B", "C", "ED"], note: file.scanStatus === "error" ? "Không đọc được nội dung" : groupOf(file) === "Source data" ? "Tài liệu tham khảo · chưa tạo Content Plan" : "", updatedAt: file.contentUpdatedAt || file.uploadedAt, file,
   }))
   const missing: StorageDoc[] = REQUIRED.filter(([, , test]) => !files.some(f => test.test(f.name))).map(([g, name, , used], i) => ({ id: `missing-${i}`, g, name, st: "missing", used, types: ["A", "B", "C", "ED"], note: "Chưa có trong Storage" }))
   const approved: StorageDoc = { id: "approved-articles", g: "Playbooks", name: "Approved Articles", st: approvedArticles ? "ok" : "missing", used: [2, 3], types: ["A", "B", "C", "ED"], note: `${approvedArticles ? `${approvedArticles} bài đã xác nhận` : "Chưa có bài nào được người xác nhận"} · chưa nạp làm ví dụ cho G2/G3` }
   // Imported Content Plans are the topic source for G1; they are added through Add Plan, not Storage.
-  const plans: StorageDoc[] = contentPlans.map(plan => ({ id: `plan-${plan.id}`, planId: plan.id, g: "Source data", name: plan.name, st: "ok", used: [1], types: ["A", "B", "C", "ED"], note: `Content Plan · ${plan.totalArticles} topic${plan.status === "archived" ? " · archived" : ""}`, updatedAt: plan.updatedAt }))
+  // totalArticles counts created articles, so the topic count comes from the plan's classified items.
+  const plans: StorageDoc[] = contentPlans.map(plan => { const topics = (plan.items ?? []).filter(i => i.status !== "archived").length
+    return { id: `plan-${plan.id}`, planId: plan.id, g: "Source data", name: plan.name, st: topics ? "ok" : "draft", used: [1], types: ["A", "B", "C", "ED"], note: `Content Plan · ${topics ? `${topics} topic` : "chưa phân loại topic"}${plan.status === "archived" ? " · archived" : ""}`, updatedAt: plan.updatedAt } })
   return [...real, ...plans, ...missing, approved]
 }
 

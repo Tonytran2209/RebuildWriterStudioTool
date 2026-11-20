@@ -644,6 +644,11 @@ function PlanTopics({ ctx, p }: { ctx: Ctx; p: CrmPlan }) {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const chosen = pending.filter(i => picked.has(i.id))
   const canPick = ctx.can("plans")
+  const [classifying, setClassifying] = useState(false)
+  const classify = async (eventTimeStamp: number) => {
+    setClassifying(true)
+    try { ctx.onContentPlansChange([await trackHandoff(eventTimeStamp, () => classifyContentPlan(p.id, ctx.config.railwayUrl))]) } catch (err) { toastErr(err) } finally { setClassifying(false) }
+  }
   const orphans = p.articles.filter(a => !items.some(i => i.id === a.a.contentPlanItemId))
   const article = (a: CrmArticle) => <div key={a.id} className="list-row" role="link" tabIndex={0} onClick={() => go(`#/object/articles/${enc(a.id)}`)} onKeyDown={e => { if (e.key === "Enter") go(`#/object/articles/${enc(a.id)}`) }}><TypeTag t={a.type} /><span className="grow">{a.title}</span><GateBar a={a} /><StatusTag k={a.status} /></div>
   return <div>
@@ -659,7 +664,8 @@ function PlanTopics({ ctx, p }: { ctx: Ctx; p: CrmPlan }) {
     {items.map(item => { const a = byItem.get(item.id); if (a) return article(a); const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]
       return <div key={item.id} className={`list-row${picked.has(item.id) ? " sel" : ""}`} style={{ cursor: "default" }}>{canPick && item.status !== "archived" && <input type="checkbox" aria-label={`${tr("Chọn", "Select")} ${item.title}`} checked={picked.has(item.id)} onChange={() => setPicked(prev => { const next = new Set(prev); if (!next.delete(item.id)) next.add(item.id); return next })} />}<Tag c={c}>{l}</Tag><span className="grow" style={{ color: "var(--f2)" }}>{item.title}{item.keywords?.length ? <span className="muted" style={{ color: "var(--f3)" }}> · {item.keywords.slice(0, 3).join(", ")}</span> : null}</span><Tag c="gray">{item.status === "archived" ? "Archived" : tr("Chưa chạy", "Not started")}</Tag></div> })}
     {orphans.map(article)}
-    {!items.length && !orphans.length && <div className="empty-state"><I n="file-text" /><h3>{tr("Plan chưa có topic", "This plan has no topics")}</h3></div>}
+    {!items.length && !orphans.length && <div className="empty-state"><I n="file-text" /><h3>{tr("Plan chưa có topic", "This plan has no topics")}</h3>
+      {canPick && <><p>{tr("Plan đã được lưu nhưng chưa phân loại topic.", "The plan is saved but its topics are not classified yet.")}</p><button className="btn primary" disabled={classifying} onClick={e => void classify(e.timeStamp)}><I n={classifying ? "loader-2" : "sparkles"} />{tr("Phân loại topic", "Classify topics")}</button></>}</div>}
   </div>
 }
 
@@ -852,7 +858,7 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
         importedRef.current = null
         ctx.setPanel(null)
         go(`#/object/plans/${enc(planId)}`)
-        toast(`${errText(err)} — ${tr("Plan đã được lưu; dùng \"Chạy topic chưa xử lý\" để chạy tiếp.", "The plan was saved; use \"Run unprocessed topics\" to continue.")}`, "error")
+        toast(`${errText(err)} — ${tr("Plan đã được lưu; tiếp tục trên trang plan (Phân loại topic hoặc Chạy topic chưa xử lý).", "The plan was saved; continue on the plan page (Classify topics or Run unprocessed topics).")}`, "error")
       } else toastErr(err)
     } finally { setBusy("") }
   }
@@ -948,9 +954,41 @@ function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
     <div className="fsec"><I n="git-merge" />&nbsp;Used at (Shipper)</div>
     <div className="box">{[1, 2, 3].map(g => <div key={g} className="box-row"><div className="grow">{GATES[g - 1].label}</div><button role="switch" aria-checked={d.used.includes(g)} aria-label={GATES[g - 1].label} className={`toggle${d.used.includes(g) ? " on" : ""}`} onClick={e => void flip(g, e.timeStamp)} /></div>)}</div>
     <div className="fsec"><I n="category" />&nbsp;Applies to types</div><div>{d.types.map(t => <span key={t}><TypeTag t={t} /> </span>)}</div>
+    {d.file && d.g === "Source data" && ctx.can("plans") && <PlanFromDoc ctx={ctx} file={d.file} />}
     {d.file ? <DocDetails key={d.file.id} file={d.file} railwayUrl={ctx.config.railwayUrl} canEdit={ctx.isAdmin} onSave={saveFile} onDelete={deleteFile} />
       : d.st === "missing" && ctx.isAdmin && d.id !== "approved-articles" && <button className="btn primary" style={{ marginTop: 14 }} onClick={() => ctx.setPanel({ kind: "add-doc" })}><I n="upload" />{tr("Thêm tài liệu này", "Add this document")}</button>}
   </SidePanel>
+}
+
+/** A plan-like Storage document becomes a real Content Plan: import its text, classify topics, open the plan. */
+function PlanFromDoc({ ctx, file }: { ctx: Ctx; file: DocumentFile }) {
+  const { tr } = useI18n()
+  const [busy, setBusy] = useState(false)
+  const name = file.name.replace(/\.[^.]+$/, "")
+  const existing = ctx.plans.find(p => p.name === name)
+  const create = async (eventTimeStamp: number) => {
+    if (!file.content?.trim()) return toast(tr("Tài liệu chưa có nội dung đọc được.", "This document has no readable text."), "error")
+    setBusy(true)
+    let planId = ""
+    try {
+      await trackHandoff(eventTimeStamp, async () => {
+        const imported = await importContentPlan({ name, sourceType: "paste", content: file.content! }, ctx.config.railwayUrl)
+        planId = imported.id
+        ctx.onContentPlansChange([imported])
+        ctx.onContentPlansChange([await classifyContentPlan(imported.id, ctx.config.railwayUrl)])
+      })
+      toast(tr("Đã tạo Content Plan và phân loại topic", "Content Plan created and topics classified"))
+    } catch (err) { toastErr(err) } finally { setBusy(false) }
+    // Even when classification fails the plan exists; its page offers Classify topics.
+    if (planId) { ctx.setPanel(null); go(`#/object/plans/${enc(planId)}`) }
+  }
+  return <div className="box" style={{ padding: 12, margin: "12px 0", background: "var(--bg2)" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}><I n="info-circle" /><div className="grow">{tr("Tài liệu này được lưu như tài liệu tham khảo nên chưa được tách topic hay tạo batch.", "This file is stored as a reference document, so its topics are not extracted and it cannot run batches.")}</div></div>
+    <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+      {existing && <button className="btn" onClick={() => { ctx.setPanel(null); go(`#/object/plans/${enc(existing.id)}`) }}><I n="list-details" />{tr("Mở Content Plan cùng tên", "Open the Content Plan with this name")}</button>}
+      <button className="btn primary" disabled={busy} onClick={e => void create(e.timeStamp)}><I n={busy ? "loader-2" : "sparkles"} />{tr("Tạo Content Plan & phân loại topic", "Create Content Plan & classify topics")}</button>
+    </div>
+  </div>
 }
 
 function AddDocPanel({ ctx }: { ctx: Ctx }) {
