@@ -101,11 +101,11 @@ const upload = multer({
 })
 
 type AuthenticatedRequest = express.Request & {
-  auth?: { userId: string; email: string; role: "user" | "admin" }
+  auth?: { userId: string; email: string; role: "user" | "reviewer" | "admin" }
 }
 
-function userRole(user: any): "user" | "admin" {
-  if (authProvider() === "postgres") return user?.app_metadata?.role === "admin" ? "admin" : "user"
+function userRole(user: any): "user" | "reviewer" | "admin" {
+  if (authProvider() === "postgres") { const role = user?.app_metadata?.role; return role === "admin" || role === "reviewer" ? role : "user" }
   const configuredAdmins = (process.env.ADMIN_EMAILS ?? "")
     .split(",").map((email) => email.trim().toLocaleLowerCase()).filter(Boolean)
   return user?.app_metadata?.role === "admin" || configuredAdmins.includes(String(user?.email ?? "").toLocaleLowerCase())
@@ -215,6 +215,10 @@ app.use("/api", async (req: AuthenticatedRequest, res, next) => {
     // /import and /upload write KB/Rules documents that go into prompts (import can also query Supabase and fetch URLs).
     const adminOnly = req.method !== "GET" && (req.path === "/config" || req.path.startsWith("/files") || req.path.startsWith("/website-inventory") || req.path.startsWith("/agent-library") || req.path.startsWith("/import/") || req.path.startsWith("/upload/"))
     if (adminOnly && req.auth.role !== "admin") return res.status(403).json({ error: "Chỉ admin mới được phép quản trị cấu hình và knowledge base." })
+    // Reviewers read everything but only write human review results on an article.
+    const reviewWrite = req.method === "PUT" && /^\/articles\/[^/]+$/.test(req.path) && Object.keys(req.body ?? {}).every(field => field === "humanReview" || field === "approvedArticle")
+    if (req.auth.role === "reviewer" && req.method !== "GET" && !reviewWrite && req.path !== "/monitoring/ui-sample")
+      return res.status(403).json({ error: "Reviewer chỉ được duyệt bài." })
     next()
   } catch (error) {
     if (authService && !(error instanceof AuthError)) {

@@ -2,7 +2,8 @@ import type { Article, AppConfig, DocumentFile, WebsiteContentRecord } from "../
 
 const AUTH_STORAGE_KEY = "writer:auth-session"
 
-export type UserRole = "user" | "admin"
+// "user" is the Content Operator role.
+export type UserRole = "user" | "reviewer" | "admin"
 export interface AuthSession {
   authProvider?: "supabase" | "postgres"
   accessToken: string

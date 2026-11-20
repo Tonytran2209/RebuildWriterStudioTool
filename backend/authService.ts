@@ -16,6 +16,13 @@ export function normalizeEmail(value: string) {
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AuthError('Email không hợp lệ.', 400);
   return email;
 }
+export function normalizeUsername(value: string) {
+  const username = value.trim().toLowerCase();
+  if (!/^[a-z0-9._-]{2,40}$/.test(username)) throw new AuthError('Tên đăng nhập không hợp lệ.', 400);
+  return username;
+}
+export type AuthRole = 'user' | 'reviewer' | 'admin';
+export const AUTH_ROLES: AuthRole[] = ['user', 'reviewer', 'admin'];
 export function checkPassword(password: string) {
   if (password.length < 12 || Buffer.byteLength(password) > 1024) throw new AuthError('Mật khẩu cần ít nhất 12 ký tự, tối đa 1024 bytes.', 400);
 }
@@ -50,7 +57,9 @@ export async function verifyPassword(password: string, hash: string | null) {
   await derive(password, '00000000000000000000000000000000');
   return false;
 }
-export type AuthUser = { id: string; email: string; role: 'user' | 'admin'; status: string; email_verified: boolean; password_hash?: string };
+export type AuthUser = { id: string; email: string | null; username?: string | null; role: AuthRole; status: string; email_verified: boolean; password_hash?: string };
+// The session's `email` field is the person's display identity: username when set, else email.
+const identity = (user: Pick<AuthUser, 'email' | 'username'>) => user.username ?? user.email ?? '';
 export class AuthService {
   constructor(public pool: Pool = database()) {}
   async transaction<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
@@ -80,12 +89,14 @@ export class AuthService {
       [user.id, family, tokenHash(access), tokenHash(refresh), expires ?? null]);
     return { accessToken: access, refreshToken: refresh, expiresAt: Number(result.rows[0].access_exp),
       refreshExpiresAt: Number(result.rows[0].refresh_exp), authProvider: 'postgres' as const,
-      user: { id: user.id, email: user.email, role: user.role } };
+      user: { id: user.id, email: identity(user), role: user.role } };
   }
-  async login(emailInput: string, password: string) {
-    const email = normalizeEmail(emailInput);
-    await this.throttle('login:' + email, 12);
-    const { rows } = await this.pool.query('SELECT * FROM writer_studio.auth_users WHERE email=$1', [email]);
+  async login(identifier: string, password: string) {
+    // Sign in with an email address or a username.
+    const byEmail = identifier.includes('@');
+    const key = byEmail ? normalizeEmail(identifier) : normalizeUsername(identifier);
+    await this.throttle('login:' + key, 12);
+    const { rows } = await this.pool.query(`SELECT * FROM writer_studio.auth_users WHERE ${byEmail ? 'email' : 'username'}=$1`, [key]);
     const user = rows[0] as AuthUser | undefined;
     const valid = await verifyPassword(password, user?.password_hash ?? null);
     if (!valid || !user || user.status !== 'active' || !user.email_verified) {
@@ -125,8 +136,9 @@ export class AuthService {
     return result;
   }
   async authenticate(access: string) {
+    // to_jsonb keeps sessions working on a database that has not applied migration 008 (username) yet.
     if (!/^[A-Za-z0-9_-]{43}$/.test(access)) throw new AuthError('Phiên đăng nhập không hợp lệ.');
-    const result = await this.pool.query(`SELECT u.id,u.email,u.role FROM writer_studio.auth_users u
+    const result = await this.pool.query(`SELECT u.id,COALESCE(to_jsonb(u)->>'username',u.email) AS email,u.role FROM writer_studio.auth_users u
       JOIN writer_studio.auth_sessions s ON s.user_id=u.id WHERE s.access_hash=$1
       AND s.revoked_at IS NULL AND s.access_expires_at>now() AND s.expires_at>now()
       AND u.status='active' AND u.email_verified`, [tokenHash(access)]);

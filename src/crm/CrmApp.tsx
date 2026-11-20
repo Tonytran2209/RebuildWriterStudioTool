@@ -74,7 +74,7 @@ export function CrmToastHost() {
 /* ─── props ────────────────────────────────────────────────────────────── */
 
 export type CrmProps = {
-  user: { email: string; role: "user" | "admin" }
+  user: { email: string; role: "user" | "reviewer" | "admin" }
   articles: Article[]
   contentPlans: ContentPlan[]
   files: DocumentFile[]
@@ -109,6 +109,8 @@ type Ctx = CrmProps & {
   route: string[]
 }
 
+const roleKey = (role: string) => role === "admin" ? "admin" : role === "reviewer" ? "reviewer" : "operator"
+const roleName = (role: string) => ROLES[roleKey(role)].name
 const ROLES = {
   operator: { name: "Content Operator", desc: "Add Plan, run pipeline, view articles, Retry, Copy" },
   reviewer: { name: "Reviewer", desc: "Review Workspace, Approve / Request Revision, Approved Articles" },
@@ -145,7 +147,7 @@ export default function CrmApp(props: CrmProps) {
     return () => document.removeEventListener("keydown", on)
   }, [])
   const [path, query = ""] = hash.replace(/^#\/?/, "").split("?")
-  const route = (path || "objects/articles").split("/").map(decodeURIComponent)
+  const route = (path || (props.user.role === "reviewer" ? "objects/reviews" : "objects/articles")).split("/").map(decodeURIComponent)
   const [a, b, c] = route
 
   const settingsKey = JSON.stringify(settings)
@@ -154,9 +156,8 @@ export default function CrmApp(props: CrmProps) {
   const batches = useMemo(() => batchesOf(list), [list])
   const docs = useMemo(() => storageDocs(props.files, props.config, props.articles.filter(x => x.approvedArticle).length, props.contentPlans), [props.files, props.config, props.articles, props.contentPlans])
   const isAdmin = props.user.role === "admin"
-  // No reviewer role in the database yet: every signed-in user may review.
-  // Approved Articles feed the Storage examples and deletes are permanent: admin only until a Reviewer role exists.
-  const can = (what: string) => isAdmin || ["plans", "retry", "copy", "manual", "review"].includes(what)
+  // Operator runs the pipeline; Reviewer reviews and picks Approved Articles; Admin does everything.
+  const can = (what: string) => isAdmin || (props.user.role === "reviewer" ? ["review", "approveArticles", "copy"] : ["plans", "retry", "copy", "manual"]).includes(what)
   const ctx: Ctx = { ...props, settings, list, plans, batches, docs, can, isAdmin, panel, setPanel, route }
 
   let page: ReactNode
@@ -176,7 +177,7 @@ export default function CrmApp(props: CrmProps) {
       <div className="page" role="main" key={path}>
         <NavToggle.Provider value={() => setNavOpen(v => !v)}>{page}</NavToggle.Provider>
       </div>
-      {panel?.kind === "plan" && <AddPlanPanel ctx={ctx} />}
+      {panel?.kind === "plan" && can("plans") && <AddPlanPanel ctx={ctx} />}
       {panel?.kind === "review" && <ReviewPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "doc" && <DocPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "add-doc" && <AddDocPanel ctx={ctx} />}
@@ -200,7 +201,7 @@ function NavDrawer({ ctx }: { ctx: Ctx }) {
     <div className="ws"><span className="ws-logo" style={{ background: "#ff8f2b", color: "#fff" }}>F</span>Writer Studio</div>
     <button className="nav-item" onClick={() => ctx.setPanel({ kind: "cmd" })}><I n="search" /><span>{tr("Tìm kiếm", "Search")}</span><span className="kbd">⌘K</span></button>
     <a className="nav-item" href={ctx.can("settings") ? "#/settings/pipeline" : "#/settings/experience"}><I n="settings" /><span>{tr("Cài đặt", "Settings")}</span></a>
-    <button className="nav-item" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="circle-plus" /><span>Add Plan</span></button>
+    {ctx.can("plans") && <button className="nav-item" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="circle-plus" /><span>Add Plan</span></button>}
     <div className="nav-sec">Pipeline</div>
     {nav.filter(([, need]) => ctx.can(need)).map(([o]) => item("#/objects/" + o, objIco(o), OBJ_META[o].label, ((a === "objects" || a === "object") && b === o) || (a === "storage" && o === "storage"), o === "reviews" && pending ? <span className="kbd">{pending}</span> : undefined))}
     {item("#/workflows", <span className="nav-ico" style={{ background: "#307f52" }}><I n="settings-automation" s={{ fontSize: 11 }} /></span>, tr("Quy trình 3 gate", "3-gate pipeline"), a === "workflows")}
@@ -209,7 +210,7 @@ function NavDrawer({ ctx }: { ctx: Ctx }) {
     {campaigns.map(p => { const s = planStats(p.articles); return item("#/object/plans/" + p.id, <Av name={p.name} />, p.name, a === "object" && b === "plans" && c === p.id, <span className="kbd">{s.c}/{s.n}</span>) })}
     <div className="nav-foot">
       <button className="nav-item" onClick={toggleLanguage}><I n="world" /><span>{language === "vi" ? "Tiếng Việt" : "English"}</span></button>
-      <a className="nav-item" href="#/settings/roles"><Av name={person(ctx.user.email)} round /><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{person(ctx.user.email)}</span><span className="kbd">{ctx.isAdmin ? "Admin" : "Content Operator"}</span></a>
+      <a className="nav-item" href="#/settings/roles"><Av name={person(ctx.user.email)} round /><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{person(ctx.user.email)}</span><span className="kbd">{roleName(ctx.user.role)}</span></a>
     </div>
   </nav>
 }
@@ -226,9 +227,9 @@ function Header({ title, actions }: { title: ReactNode; actions?: ReactNode }) {
 function NotFound({ t = "Not found" }: { t?: string }) {
   return <><Header title={t} /><div className="card"><div className="empty-state"><I n="ghost" /><h3>{t}</h3><a className="btn" href="#/objects/articles">Articles</a></div></div></>
 }
-function Forbidden() {
+function Forbidden({ role }: { role: string }) {
   const { tr } = useI18n()
-  return <><Header title={tr("Không có quyền", "No access")} /><div className="card"><div className="empty-state"><I n="lock" /><h3>Content Operator</h3><span>{tr("Vai trò này không mở được mục này.", "This role cannot open this area.")}</span><a className="btn" href="#/settings/roles"><I n="lock" />Roles</a></div></div></>
+  return <><Header title={tr("Không có quyền", "No access")} /><div className="card"><div className="empty-state"><I n="lock" /><h3>{roleName(role)}</h3><span>{tr("Vai trò này không mở được mục này.", "This role cannot open this area.")}</span><a className="btn" href="#/settings/roles"><I n="lock" />Roles</a></div></div></>
 }
 
 /* ─── chips & tags ─────────────────────────────────────────────────────── */
@@ -337,7 +338,7 @@ function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null)
   const [kanban, setKanban] = useState(() => { try { return localStorage.getItem(VIEW_KEY) !== "table" } catch { return true } })
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, kanban ? "kanban" : "table") } catch { /* per-viewer convenience */ } }, [kanban])
-  if (!ctx.can(need)) return <Forbidden />
+  if (!ctx.can(need)) return <Forbidden role={ctx.user.role} />
   const m = OBJ_META[o], fields = fieldsFor(ctx, o, ago, tr)
   const data: any[] = o === "plans" ? ctx.plans : o === "batches" ? ctx.batches : o === "articles" ? ctx.list : o === "reviews" ? ctx.list.filter(x => x.status === "completed") : ctx.docs
   const q = filter.toLowerCase()
@@ -389,7 +390,7 @@ function StorageSubPage({ ctx, p }: { ctx: Ctx; p: "website" | "legacy" }) {
   const { tr } = useI18n()
   // The server owns inventory records (saved per record); keep the live list on this page only.
   const [records, setRecords] = useState(ctx.config.websiteInventory ?? [])
-  if (p === "website" && !ctx.isAdmin) return <Forbidden />
+  if (p === "website" && !ctx.isAdmin) return <Forbidden role={ctx.user.role} />
   const title = p === "website" ? "Website Inventory" : "Legacy Action Plans"
   return <>
     <Header title={<><a className="crumb" href="#/objects/storage">Storage</a><span className="crumb">/</span>{title}</>} />
@@ -1137,7 +1138,7 @@ const Sec = ({ title, desc, children }: { title: string; desc?: string; children
 function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
   const { tr, language, setLanguage } = useI18n()
   const admin = ["pipeline", "shipper", "workflow-ai", "models"]
-  if (admin.includes(p) && !ctx.can("settings")) return <Forbidden />
+  if (admin.includes(p) && !ctx.can("settings")) return <Forbidden role={ctx.user.role} />
   const titles: Record<string, string> = { experience: "Experience", roles: "Roles", pipeline: "Pipeline", shipper: "Shipper", "workflow-ai": "Workflow AI", models: "AI Models" }
   const st = ctx.settings
   const savePipeline = async (patch: Partial<PipelineSettings>) => { try { await trackHandoff(performance.now(), () => ctx.onSaveConfig({ ...ctx.config, pipeline: { ...st, ...patch } }, ctx.files, false)); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } }
@@ -1151,9 +1152,9 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
       <Sec title={tr("Ngôn ngữ", "Language")} desc={tr("Chọn ngôn ngữ hiển thị", "Select your preferred language")}><select className="inp" style={{ maxWidth: 300 }} value={language} onChange={e => setLanguage(e.target.value as typeof language)}><option value="vi">Tiếng Việt</option><option value="en">English</option></select></Sec>
     </>
   }
-  if (p === "roles") body = <Sec title="All roles" desc={tr("Vai trò do Admin cấp trong hệ thống. Reviewer chưa tách riêng: mọi tài khoản đều review được.", "Roles are assigned by an admin. Reviewer is not separate yet: every account can review.")}><div className="box">{(Object.keys(ROLES) as Array<keyof typeof ROLES>).map(k => {
-    const r = ROLES[k], current = (ctx.isAdmin ? "admin" : "operator") === k
-    return <div key={k} className="box-row"><I n={k === "admin" ? "lock-open" : k === "reviewer" ? "checklist" : "user"} /><div className="grow">{r.name}<div className="s">{r.desc}</div></div>{current ? <Tag c="blue">Current</Tag> : k === "reviewer" ? <Tag c="orange">{tr("chưa có", "not yet")}</Tag> : null}</div>
+  if (p === "roles") body = <Sec title="All roles" desc={tr("Vai trò do Admin cấp trong hệ thống.", "Roles are assigned by an admin.")}><div className="box">{(Object.keys(ROLES) as Array<keyof typeof ROLES>).map(k => {
+    const r = ROLES[k], current = roleKey(ctx.user.role) === k
+    return <div key={k} className="box-row"><I n={k === "admin" ? "lock-open" : k === "reviewer" ? "checklist" : "user"} /><div className="grow">{r.name}<div className="s">{r.desc}</div></div>{current && <Tag c="blue">Current</Tag>}</div>
   })}</div></Sec>
   if (p === "pipeline") body = <>
     <Sec title="Scoring" desc={tr("Score là tỉ lệ % tiêu chí đạt (warning tính nửa). Các giá trị dưới đây chưa chốt.", "Score is the % of criteria met (warnings count half). Values below are not final.")}><div className="row2">{numField("threshold", "Threshold (%)", 50, 100)}{numField("options", tr("Options per gate (chưa bật ở G2, G3)", "Options per gate (not active for G2, G3)"), 1, 5)}{numField("revisionRounds", tr("Max revision rounds (chưa bật)", "Max revision rounds (not active)"), 0, 3)}</div></Sec>

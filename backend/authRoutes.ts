@@ -1,6 +1,6 @@
 import express from 'express';
 import nodemailer from 'nodemailer';
-import { AuthError, AuthService, authProvider, hashPassword, normalizeEmail, tokenHash } from './authService.ts';
+import { AUTH_ROLES, AuthError, AuthService, authProvider, hashPassword, normalizeEmail, tokenHash } from './authService.ts';
 export const REFRESH_COOKIE = 'writer_refresh';
 export function appOrigin() {
   const url = new URL(process.env.AUTH_APP_ORIGIN ?? '');
@@ -119,7 +119,7 @@ export function postgresAuthRouter(service = new AuthService()) {
     if (actor.role !== 'admin') throw new AuthError('Chỉ admin được quản lý tài khoản.', 403);
     const id = String(req.body?.id ?? '');
     const role = req.body?.role, status = req.body?.status;
-    if (!/^[0-9a-f-]{36}$/i.test(id) || !['user','admin'].includes(role) || !['active','disabled'].includes(status)) throw new AuthError('Thông tin tài khoản không hợp lệ.', 400);
+    if (!/^[0-9a-f-]{36}$/i.test(id) || !AUTH_ROLES.includes(role) || !['active','disabled'].includes(status)) throw new AuthError('Thông tin tài khoản không hợp lệ.', 400);
     await service.transaction(async c => {
       await c.query("SELECT pg_advisory_xact_lock(hashtext('writer-auth-admin'))");
       const currentActor = (await c.query('SELECT role,status FROM writer_studio.auth_users WHERE id=$1 FOR UPDATE', [actor.id])).rows[0];

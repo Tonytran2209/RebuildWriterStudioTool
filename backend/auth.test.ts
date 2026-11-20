@@ -13,7 +13,7 @@ import express from 'express';
 
 function poolFor(db: PGlite) {
   const query = async (sql: string, values?: any[]) => {
-    if (sql.startsWith('CREATE TABLE writer_studio.auth_users')) { await db.exec(sql); return { rows: [], rowCount: 0 }; }
+    if (sql.startsWith('CREATE TABLE writer_studio.auth_users') || sql.startsWith('ALTER TABLE writer_studio.auth_users')) { await db.exec(sql); return { rows: [], rowCount: 0 }; }
     const r = await db.query(sql, values); return { ...r, rowCount: r.rows.length || r.affectedRows };
   };
   return { query, connect: async () => ({ query, release() {} }), end: async () => {} } as any;
@@ -139,4 +139,32 @@ test('Auth migration/import: dry-run, preserve ID/hash, no overwrite, ban and MF
     if (targetEnv === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = targetEnv;
     await source.close(); await target.close(); await rm(folder, { recursive: true, force: true });
   }
+});
+
+test('Username accounts: provisioning renames the old admin, creates operator and reviewer, login by username', async () => {
+  const { provisionAccounts } = await import('./authAccounts.ts');
+  const db = new PGlite();
+  const pool = poolFor(db), service = new AuthService(pool);
+  const log = console.log; console.log = () => {};
+  try {
+    await migrateAuth(pool);
+    await db.query("INSERT INTO writer_studio.auth_users(email,password_hash,email_verified,role) VALUES ('tony@example.com',$1,true,'admin')", [await hashPassword('old-password-123')]);
+    const args = ['--account=admin:admin:tony', '--account=liu:user', '--account=mochi:reviewer'];
+    await assert.rejects(() => provisionAccounts(args, 'short', pool), /12/);
+    await provisionAccounts(args, 'shared-password-1', pool);
+    assert.equal((await db.query('SELECT * FROM writer_studio.auth_users')).rows.length, 1, 'dry run saves nothing');
+    await provisionAccounts([...args, '--apply'], 'shared-password-1', pool);
+    const rows = (await db.query<any>('SELECT username,email,role FROM writer_studio.auth_users ORDER BY username')).rows;
+    assert.deepEqual(rows.map(r => [r.username, r.role]), [['admin', 'admin'], ['liu', 'user'], ['mochi', 'reviewer']]);
+    assert.equal(rows[0].email, 'tony@example.com');
+    const admin = await service.login('Admin', 'shared-password-1');
+    assert.equal(admin.user.email, 'admin'); assert.equal(admin.user.role, 'admin');
+    assert.equal((await service.login('tony@example.com', 'shared-password-1')).user.email, 'admin');
+    const mochi = await service.login('mochi', 'shared-password-1');
+    assert.equal(mochi.user.role, 'reviewer');
+    assert.equal((await service.authenticate(mochi.accessToken)).app_metadata.role, 'reviewer');
+    await assert.rejects(() => service.login('liu', 'old-password-123'), /không hợp lệ/);
+    await assert.rejects(() => provisionAccounts(['--account=admin:user', '--apply'], 'shared-password-1', pool), /admin must remain/);
+    await assert.rejects(() => provisionAccounts(['--account=x:owner'], 'shared-password-1', pool), /Role/);
+  } finally { console.log = log; await db.close(); }
 });

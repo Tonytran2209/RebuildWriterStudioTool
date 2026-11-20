@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { createPool } from './postgres.ts';
+// Applied in order; an applied file must never change (checksum guard).
+const AUTH_MIGRATIONS: Array<[number, string]> = [[1, '002_auth.sql'], [2, '008_auth_roles_usernames.sql']];
 export async function migrateAuth(pool = createPool(process.env.DATABASE_URL)) {
   let client;
   try {
@@ -12,13 +14,15 @@ export async function migrateAuth(pool = createPool(process.env.DATABASE_URL)) {
     await client.query("SELECT pg_advisory_xact_lock(hashtext('writer-studio-schema'))");
     await client.query('CREATE SCHEMA IF NOT EXISTS writer_studio');
     await client.query('CREATE TABLE IF NOT EXISTS writer_studio.auth_schema_migrations(version integer PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())');
-    const sql = await readFile(new URL('./migrations/002_auth.sql', import.meta.url), 'utf8');
-    const checksum = createHash('sha256').update(sql).digest('hex');
     const result = await client.query('SELECT version,checksum FROM writer_studio.auth_schema_migrations');
-    if (result.rows.some(r => r.version !== 1 || r.checksum !== checksum)) throw new Error('Auth migration checksum/version mismatch');
-    if (!result.rows.length) {
+    const applied = new Map(result.rows.map(r => [r.version, r.checksum]));
+    if (result.rows.some(r => !AUTH_MIGRATIONS.some(([version]) => version === r.version))) throw new Error('Auth migration checksum/version mismatch');
+    for (const [version, file] of AUTH_MIGRATIONS) {
+      const sql = await readFile(new URL('./migrations/' + file, import.meta.url), 'utf8');
+      const checksum = createHash('sha256').update(sql).digest('hex');
+      if (applied.has(version)) { if (applied.get(version) !== checksum) throw new Error('Auth migration checksum/version mismatch'); continue; }
       await client.query(sql);
-      await client.query('INSERT INTO writer_studio.auth_schema_migrations(version,checksum) VALUES (1,$1)', [checksum]);
+      await client.query('INSERT INTO writer_studio.auth_schema_migrations(version,checksum) VALUES ($1,$2)', [version, checksum]);
     }
     await client.query('COMMIT');
     console.log('Auth schema verified. Provider unchanged.');

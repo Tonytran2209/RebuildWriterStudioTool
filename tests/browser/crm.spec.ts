@@ -20,7 +20,7 @@ const plan = { id: 'plan-1', name: 'Plan One', status: 'active', version: 1, sou
 const structureFile = { id: 'outline-md', name: 'Outline forms.md', category: 'rules', fileType: 'md', size: '1 KB', uploadedAt: now, scanStatus: 'ready',
   content: '```outline-structures\n' + JSON.stringify({ version: 1, structures: [{ id: 'comparison', name: 'Comparison form', description: 'Compare two formats', useWhen: 'Two options', outlineInstructions: 'o', draftInstructions: 'd' }] }) + '\n```' };
 
-async function mockApp(page: Page, role: 'admin' | 'user' = 'admin') {
+async function mockApp(page: Page, role: 'admin' | 'user' | 'reviewer' = 'admin') {
   const user = { id: role, email: role + '@example.com', role };
   let serverFiles: any[] = [structureFile];
   const log = { files: [] as any[][], imports: [] as any[], reruns: [] as any[], puts: [] as any[], configs: [] as any[], created: [] as any[], started: [] as string[], imported: [] as any[], deleted: [] as string[] };
@@ -368,6 +368,25 @@ test('CRM bulk delete is admin-only', async ({ page }) => {
   await page.getByRole('button', { name: 'Table' }).click();
   await expect(page.locator('table.tbl')).toBeVisible();
   await expect(page.getByRole('checkbox')).toHaveCount(0);
+});
+
+test('CRM roles: Reviewer lands on the Review Workspace and cannot open operator areas; Operator cannot review', async ({ page }) => {
+  await mockApp(page, 'reviewer');
+  await expect(page.getByRole('navigation', { name: /Điều hướng chính|Main navigation/ })).toContainText('Reviewer');
+  await expect(page).toHaveURL(/#?\/?$|reviews/);
+  await expect(page.getByText(/Chưa review|Not reviewed/).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add Plan' })).toHaveCount(0);
+  await goHash(page, '/objects/plans');
+  await expect(page.getByText(/Vai trò này không mở được mục này|This role cannot open this area/)).toBeVisible();
+  await goHash(page, '/settings/roles');
+  await expect(page.locator('.box-row', { hasText: 'Reviewer' })).toContainText('Current');
+});
+
+test('CRM roles: Content Operator has no Review Workspace', async ({ page }) => {
+  await mockApp(page, 'user');
+  await expect(page.getByRole('navigation', { name: /Điều hướng chính|Main navigation/ })).toContainText('Content Operator');
+  await goHash(page, '/objects/reviews');
+  await expect(page.getByText(/Vai trò này không mở được mục này|This role cannot open this area/)).toBeVisible();
 });
 
 test('CRM Workflow AI lists every AI task and saves models, numbers and team instructions', async ({ page }) => {

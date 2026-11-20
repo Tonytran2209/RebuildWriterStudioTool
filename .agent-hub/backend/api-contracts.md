@@ -115,3 +115,10 @@ The image worker, style library and image suggestion APIs were removed from the 
 | Website Inventory summary | `taskModels.inventory` (any enabled model) | `WEBSITE_SUMMARY_MODEL` env, else `gpt-5.4-mini` | `processWebsiteInventoryUrl` |
 
 Settings › Workflow AI edits these plus the pipeline numbers stored as workflow-rule stage parameters (`keywordCount`, `ideaCount`, `minimumSections`, `conclusionPercent`, `maxSentencesPerParagraph`) and one team instruction per gate (`workflowRules[core-idea|outline|draft].customInstruction`). Enforcement, execution modes and per-stage text are no longer editable; old values still compile until "Reset to defaults".
+
+## Roles and accounts (PostgreSQL auth)
+
+- Roles: `admin`, `user` (Content Operator), `reviewer`. Reviewers may read everything but write only `humanReview` / `approvedArticle` through `PUT /api/articles/:id`; other writes return 403. Admin-only routes are unchanged.
+- `POST /api/auth/login` accepts `email` as an email address or a username. The session `user.email` field carries the display identity: username when set, else email.
+- Migration `backend/migrations/008_auth_roles_usernames.sql` (auth migration version 2, `npm run auth:migrate`) adds `username`, the `reviewer` role and allows username-only accounts.
+- `ACCOUNT_PASSWORD=... npm run auth:accounts -- --account=<username>:<user|reviewer|admin>[:<existing username, email or email name>] [--apply]` creates or updates accounts; dry-run by default, keeps at least one active admin, signs updated accounts out. Never commit the password.

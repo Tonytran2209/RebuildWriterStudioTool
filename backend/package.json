@@ -8,6 +8,7 @@
     "auth:migrate": "tsx authMigrate.ts",
     "auth:scope": "tsx authScope.ts",
     "auth:cleanup": "tsx authCleanup.ts",
+    "auth:accounts": "tsx authAccounts.ts",
     "auth:import": "tsx authImport.ts",
     "db:migrate": "tsx dbMigrate.ts",
     "db:scope": "tsx dbScope.ts",

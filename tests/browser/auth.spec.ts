@@ -18,7 +18,7 @@ test('PostgreSQL auth restores cookie session after reload without persisting to
     return route.fallback();
   });
   await page.goto('/?auth');
-  await page.getByLabel('Email',{exact:true}).fill('user@example.com');
+  await page.getByLabel(/^(Tên đăng nhập hoặc email|Username or email)$/).fill('user@example.com');
   await page.getByLabel(/^(Mật khẩu|Password)$/).fill('long-enough-password');
   await page.getByRole('button',{name:/^(Đăng nhập|Sign in)$/}).click();
   await expect(page.getByText('user@example.com',{exact:true})).toBeVisible();
@@ -31,7 +31,7 @@ test('PostgreSQL auth restores cookie session after reload without persisting to
   await expect(page.getByText('user@example.com',{exact:true})).toBeVisible();
   expect(refreshes).toBe(1);
   await page.getByRole('button',{name:'Logout fixture'}).click();
-  await expect(page.getByLabel('Email',{exact:true})).toBeVisible();
+  await expect(page.getByLabel(/^(Tên đăng nhập hoặc email|Username or email)$/)).toBeVisible();
   expect(logouts).toBe(1);
   expect(await page.evaluate(()=>localStorage.getItem('writer:auth-session'))).toBeNull();
 });
