@@ -105,3 +105,7 @@ User decision (2026-11-17): the CRM UI copies `twenty-demo-ui/pipeline-crm.html`
 ### Empty states (2026-11-20)
 
 Only the leading direct-child empty-state icon is enlarged and muted. Icons inside action buttons retain the normal button size and inherit its text color. Empty plan tabs explain the next action; batch concurrency information appears only once batches exist.
+
+### Content Plan file picker (2026-11-20)
+
+Use a neutral dashed drop zone with a keyboard-operable browse button, supported formats and size limit. Keep the native file input hidden. Show the selected file name, size, readiness and replace/remove actions in a compact CRM row. Selecting or dropping a file does not start analysis; the explicit Analyze action does.

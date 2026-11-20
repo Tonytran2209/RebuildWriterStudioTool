@@ -420,3 +420,18 @@
 .crm .bulk-bar b{font-weight:600}
 /* <html> can carry codex-dark while the app is light; native checkboxes follow the app theme instead. */
 .writer-light .crm input[type=checkbox]{color-scheme:light}
+
+/* Content Plan intake follows the CRM panel's neutral, compact controls. */
+.crm .plan-upload-help{margin:0;color:var(--f3);font-size:12px;line-height:1.5}
+.crm .plan-upload-zone{display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 16px;border:1px dashed var(--b2);border-radius:8px;background:var(--bg2);color:var(--f2);text-align:center;cursor:pointer;transition:background .12s,border-color .12s}
+.crm .plan-upload-zone:hover,.crm .plan-upload-zone.dragging{background:var(--bg3);border-color:var(--f3)}
+.crm .plan-upload-zone:disabled{cursor:wait;opacity:.6}
+.crm .plan-upload-zone>.ti{font-size:24px;color:var(--f3);margin-bottom:4px}
+.crm .plan-upload-zone strong{font-weight:500;font-size:13px}
+.crm .plan-upload-zone span,.crm .plan-upload-zone small{font-size:12px;color:var(--f3)}
+.crm .plan-upload-zone small:first-of-type{margin-top:6px}
+.crm .plan-upload-file{display:flex;align-items:center;gap:8px;padding:10px 12px;min-width:0}
+.crm .plan-upload-file>.ti{font-size:20px;color:var(--f3)}
+.crm .plan-upload-file .grow{min-width:0}
+.crm .plan-upload-file strong{display:block;overflow-wrap:anywhere;font-size:13px;font-weight:500}
+.crm .plan-upload-file span{display:block;font-size:12px;color:var(--f3);margin-top:2px}

@@ -32,6 +32,8 @@ const MODES: Array<[ActionSourceType, string, string]> = [
 export function AddDocForm({ railwayUrl, onAdded, onPlanFile }: { railwayUrl: string; onAdded: (docs: DocumentFile[]) => Promise<void>; onPlanFile?: (file: File, started: number) => Promise<void> }) {
   const { tr } = useI18n()
   const [purpose, setPurpose] = useState("reference")
+  const planFileRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
   const [planFile, setPlanFile] = useState<File | null>(null)
   const [category, setCategory] = useState<FileCategory>("kb")
   const [mode, setMode] = useState<ActionSourceType>("file")
@@ -93,14 +95,37 @@ export function AddDocForm({ railwayUrl, onAdded, onPlanFile }: { railwayUrl: st
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
     finally { setBusy("") }
   }
+  const choosePlanFile = (files: FileList | null) => {
+    if (busy || !files?.length) return
+    setError("")
+    if (files.length !== 1) { setError(tr("Chọn một file Content Plan mỗi lần.", "Choose one Content Plan file at a time.")); return }
+    const file = files[0]
+    if (!/\.(docx|pdf|txt|md|csv|xlsx|json|xml|tsv)$/i.test(file.name)) { setError(tr("Định dạng file không được hỗ trợ.", "This file format is not supported.")); return }
+    if (file.size > 15 * 1024 * 1024) { setError(tr("File vượt quá 15 MB", "File exceeds 15 MB")); return }
+    setPlanFile(file)
+  }
   const ready = mode !== "file" && Boolean(sourceFor())
   const lbl = (label: string, el: ReactNode) => <label style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--f3)", fontSize: 12 }}>{label}{el}</label>
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
     {onPlanFile && <label>{tr("Mục đích tài liệu", "Document purpose")}<select className="inp" aria-label={tr("Mục đích tài liệu", "Document purpose")} disabled={Boolean(busy)} value={purpose} onChange={e => { setPurpose(e.target.value); setError(""); setDone("") }}><option value="reference">{tr("Tài liệu Knowledge Base / Skills & Rules", "Knowledge Base / Skills & Rules document")}</option><option value="plan">{tr("Content Plan nguồn — phân tích topic", "Raw Content Plan — analyze topics")}</option></select></label>}
     {purpose === "plan" ? <>
-      <p className="desc">{tr("Chọn file kế hoạch nguồn để trích xuất và phân loại topic. Content Plan được lưu trong Source data; không cấp như tài liệu KB/Rules cho các gate và chưa chạy batch.", "Choose a raw plan to extract and classify topics. The Content Plan is saved in Source data, without KB/Rules gate settings or starting batches.")}</p>
-      <input type="file" aria-label={tr("File Content Plan nguồn", "Raw Content Plan file")} disabled={Boolean(busy)} accept=".docx,.pdf,.txt,.md,.csv,.xlsx,.json,.xml,.tsv" onChange={e => setPlanFile(e.target.files?.[0] ?? null)} />
+      <p className="plan-upload-help">{tr("Tải kế hoạch nguồn để AI trích xuất và phân loại topic. Bạn có thể kiểm tra danh sách trước khi tạo batch.", "Upload your source plan for AI to extract and classify topics. Review the list before creating batches.")}</p>
+      <input ref={planFileRef} type="file" hidden aria-label={tr("File Content Plan nguồn", "Raw Content Plan file")} disabled={Boolean(busy)} accept=".docx,.pdf,.txt,.md,.csv,.xlsx,.json,.xml,.tsv" onChange={e => { choosePlanFile(e.target.files); e.target.value = "" }} />
+      <button type="button" className={`plan-upload-zone${dragging ? " dragging" : ""}`} disabled={Boolean(busy)} onClick={() => planFileRef.current?.click()}
+        onDragOver={e => { e.preventDefault(); if (!busy) setDragging(true) }} onDragLeave={() => setDragging(false)}
+        onDrop={e => { e.preventDefault(); setDragging(false); choosePlanFile(e.dataTransfer.files) }}>
+        <I n="cloud-upload" />
+        <strong>{tr("Kéo thả file Content Plan vào đây", "Drop your Content Plan here")}</strong>
+        <span>{tr("hoặc bấm để chọn file", "or click to browse files")}</span>
+        <small>DOCX · PDF · TXT · MD · CSV · XLSX · JSON · XML · TSV</small>
+        <small>{tr("1 file · tối đa 15 MB", "1 file · up to 15 MB")}</small>
+      </button>
+      {planFile && <div className="box plan-upload-file">
+        <I n="file-description" /><div className="grow"><strong>{planFile.name}</strong><span>{(planFile.size / 1024).toFixed(1)} KB · {tr("Sẵn sàng phân tích", "Ready to analyze")}</span></div>
+        <button className="icon-btn" disabled={Boolean(busy)} aria-label={tr("Đổi file", "Replace file")} onClick={() => planFileRef.current?.click()}><I n="replace" /></button>
+        <button className="icon-btn" disabled={Boolean(busy)} aria-label={tr("Bỏ file", "Remove file")} onClick={() => { setPlanFile(null); setError("") }}><I n="x" /></button>
+      </div>}
       <button className="btn primary" disabled={!planFile || Boolean(busy)} onClick={async e => {
         const started = e.timeStamp
         if (!planFile || !onPlanFile) return

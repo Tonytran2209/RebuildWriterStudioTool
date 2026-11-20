@@ -440,6 +440,10 @@ test('Storage imports raw plans through the plan pipeline without creating KB do
   await panel.getByLabel(/Mục đích tài liệu|Document purpose/).selectOption('plan');
   await expect(panel.getByLabel(/^(Thư viện|Library)$/)).toHaveCount(0);
   await panel.getByLabel(/File Content Plan nguồn|Raw Content Plan file/).setInputFiles({ name: 'Raw strategy.docx', mimeType: 'application/octet-stream', buffer: Buffer.from('A vs B') });
+  await expect(panel.getByText('Raw strategy.docx', { exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: /Bỏ file|Remove file/ }).click();
+  await expect(panel.getByRole('button', { name: /Phân tích & tạo Content Plan|Analyze & create Content Plan/ })).toBeDisabled();
+  await panel.getByLabel(/File Content Plan nguồn|Raw Content Plan file/).setInputFiles({ name: 'Raw strategy.docx', mimeType: 'application/octet-stream', buffer: Buffer.from('A vs B') });
   expect(log.imported).toHaveLength(0);
   await panel.getByRole('button', { name: /Phân tích & tạo Content Plan|Analyze & create Content Plan/ }).click();
   await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
