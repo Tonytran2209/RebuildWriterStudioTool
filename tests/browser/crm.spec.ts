@@ -431,3 +431,20 @@ test('CRM tables keep long titles readable next to the checkbox column', async (
     expect(chip!.width).toBeGreaterThan(120);
   } finally { (articles as any).pop(); }
 });
+
+test('Storage imports raw plans through the plan pipeline without creating KB documents or batches', async ({ page }) => {
+  const log = await mockApp(page);
+  await goHash(page, '/objects/storage');
+  await page.locator('.ph-actions').getByRole('button', { name: /Thêm tài liệu|Add document/ }).click();
+  const panel = page.getByRole('dialog', { name: /Thêm tài liệu|Add document/ });
+  await panel.getByLabel(/Mục đích tài liệu|Document purpose/).selectOption('plan');
+  await expect(panel.getByLabel(/^(Thư viện|Library)$/)).toHaveCount(0);
+  await panel.getByLabel(/File Content Plan nguồn|Raw Content Plan file/).setInputFiles({ name: 'Raw strategy.docx', mimeType: 'application/octet-stream', buffer: Buffer.from('A vs B') });
+  expect(log.imported).toHaveLength(0);
+  await panel.getByRole('button', { name: /Phân tích & tạo Content Plan|Analyze & create Content Plan/ }).click();
+  await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
+  expect(log.imported[0].multipart).toContain('Raw strategy.docx');
+  await expect(page.getByText('A vs B', { exact: true }).first()).toBeVisible();
+  expect(log.files).toHaveLength(0);
+  expect(log.created).toHaveLength(0);
+});

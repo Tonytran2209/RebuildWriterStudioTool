@@ -952,11 +952,13 @@ function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
       <div className="frow"><div className="flabel"><I n="progress-check" />Status</div><div className="fval"><Tag c={c}>{l}</Tag></div></div>
       <div className="frow"><div className="flabel"><I n="notes" />Note</div><div className="fval">{d.note || <span className="empty">Empty</span>}</div></div>
     </div>
+    {d.g !== "Source data" && <>
     <div className="fsec"><I n="git-merge" />&nbsp;Used at (Shipper)</div>
     <div className="box">{[1, 2, 3].map(g => <div key={g} className="box-row"><div className="grow">{GATES[g - 1].label}</div><button role="switch" aria-checked={d.used.includes(g)} aria-label={GATES[g - 1].label} className={`toggle${d.used.includes(g) ? " on" : ""}`} onClick={e => void flip(g, e.timeStamp)} /></div>)}</div>
     <div className="fsec"><I n="category" />&nbsp;Applies to types</div><div>{d.types.map(t => <span key={t}><TypeTag t={t} /> </span>)}</div>
+    </>}
     {d.file && d.g === "Source data" && ctx.can("plans") && <PlanFromDoc ctx={ctx} file={d.file} />}
-    {d.file ? <DocDetails key={d.file.id} file={d.file} railwayUrl={ctx.config.railwayUrl} canEdit={ctx.isAdmin} onSave={saveFile} onDelete={deleteFile} />
+    {d.file ? <DocDetails key={d.file.id} sourceData={d.g === "Source data"} file={d.file} railwayUrl={ctx.config.railwayUrl} canEdit={ctx.isAdmin} onSave={saveFile} onDelete={deleteFile} />
       : d.st === "missing" && ctx.isAdmin && d.id !== "approved-articles" && <button className="btn primary" style={{ marginTop: 14 }} onClick={() => ctx.setPanel({ kind: "add-doc" })}><I n="upload" />{tr("Thêm tài liệu này", "Add this document")}</button>}
   </SidePanel>
 }
@@ -997,7 +999,19 @@ function AddDocPanel({ ctx }: { ctx: Ctx }) {
   if (!ctx.isAdmin) return null
   // Upload/import already stored each record on the server's list; reload that list instead of re-posting ours.
   const onAdded = async (_docs: DocumentFile[]) => ctx.onFilesSynced(await db.fetchFiles())
-  return <SidePanel ctx={ctx} title={tr("Thêm tài liệu", "Add document")} icon={<I n="upload" />}><AddDocForm railwayUrl={ctx.config.railwayUrl} onAdded={onAdded} /></SidePanel>
+  const onPlanFile = async (file: File, started: number) => {
+    const imported = await trackHandoff(started, () => importContentPlan({ name: file.name.replace(/\.[^.]+$/, ""), sourceType: "file", file }, ctx.config.railwayUrl))
+    ctx.onContentPlansChange([imported])
+    try {
+      const classified = await trackHandoff(performance.now(), () => classifyContentPlan(imported.id, ctx.config.railwayUrl))
+      ctx.onContentPlansChange([classified])
+      toast(tr("Đã tạo Content Plan và phân loại topic", "Content Plan created and topics classified"))
+    } catch (err) { toastErr(err) }
+    // Import is durable even if classification fails; the plan offers a retry.
+    ctx.setPanel(null)
+    go(`#/object/plans/${enc(imported.id)}`)
+  }
+  return <SidePanel ctx={ctx} title={tr("Thêm tài liệu", "Add document")} icon={<I n="upload" />}><AddDocForm railwayUrl={ctx.config.railwayUrl} onAdded={onAdded} onPlanFile={onPlanFile} /></SidePanel>
 }
 
 /* ─── command menu ─────────────────────────────────────────────────────── */
