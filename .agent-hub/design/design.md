@@ -101,3 +101,7 @@ User decision (2026-11-17): the CRM UI copies `twenty-demo-ui/pipeline-crm.html`
 - Additions at the end of `crm.css` only undo app-wide `!important` rules (dark `main`/`input`, heading sizes) and style the embedded draft; keep them minimal.
 - Default theme is Light, like the demo. Manual mode is native CRM markup (`src/crm/ManualTab.tsx`); only the Settings editors and the outline picker are embedded components with their own styles.
 - 2026-11-18: the classic UI was removed; the CRM is the only interface. The rules above this section are historical until the contract is rewritten.
+
+### Empty states (2026-11-20)
+
+Only the leading direct-child empty-state icon is enlarged and muted. Icons inside action buttons retain the normal button size and inherit its text color. Empty plan tabs explain the next action; batch concurrency information appears only once batches exist.

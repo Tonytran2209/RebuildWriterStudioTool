@@ -154,7 +154,9 @@
 .crm .tl-item .when{margin-left:auto;color:var(--f4);font-size:12px;white-space:nowrap}
 .crm .tl-month{font-weight:500;color:var(--f1);margin:4px 0 -6px -28px}
 .crm .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:60px 20px;color:var(--f3);text-align:center}
-.crm .empty-state .ti{font-size:40px;color:var(--f5)}
+.crm .empty-state > .ti{font-size:40px;color:var(--f5)}
+.crm .empty-state p{max-width:440px;margin:0;line-height:1.5}
+.crm .empty-state .btn{margin-top:6px}
 .crm .empty-state h3{margin:0;color:var(--f1);font-weight:600;font-size:13px}
 .crm .list-row{display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border:1px solid var(--b2);border-top:0;cursor:pointer}
 .crm .list-row:first-child{border-top:1px solid var(--b2);border-radius:6px 6px 0 0}
