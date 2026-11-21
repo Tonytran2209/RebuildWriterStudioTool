@@ -19,6 +19,7 @@ import { access } from "node:fs/promises"
 import { constants as fsConstants } from "node:fs"
 import { fileURLToPath } from "url"
 import { generate, getAvailableProviders } from "./providers.ts"
+import { assertStructuredDraftFields, isCompleteStructuredDraft, structuredDraftTokenBudget } from "./draftContract.ts"
 import {
   kvGet,
   kvSet,
@@ -1163,11 +1164,14 @@ async function runBatchModel(
     step,
     model: model.id,
     prompt: effectivePrompt,
+    maxTokens,
+    jsonSchema,
+    skipDocumentContext: Boolean(options.skipDocumentContext),
     fingerprint: `${context.summary.sourceFingerprint}:${compiledRules.fingerprint}`,
   })
   const traceContext = options.skipDocumentContext ? null : context
   const cached = await kvGet<any>(key)
-  if (cached?.content)
+  if (cached?.content && (jsonSchema !== structuredDraftJsonSchema || isCompleteStructuredDraft(cached.content)))
     return {
       ...cached,
       provider: model.provider,
@@ -1210,11 +1214,13 @@ async function runBatchModel(
         output * Number(pricing.outputUsdPerMillion ?? 0)) /
       1_000_000
     : null
-  await kvSet(key, {
-    ...response,
-    costUsd,
-    generatedAt: new Date().toISOString(),
-  })
+  if (jsonSchema !== structuredDraftJsonSchema || isCompleteStructuredDraft(response.content)) {
+    await kvSet(key, {
+      ...response,
+      costUsd,
+      generatedAt: new Date().toISOString(),
+    })
+  }
   return {
     ...response,
     provider: model.provider,
@@ -1984,16 +1990,7 @@ function sanitizeBatchStructuredField(value: unknown, expectedHeading?: string) 
 
 function assembleBatchDraft(raw: string, article: any) {
   const parsed = parseJsonObject(raw)
-  if (
-    !String(parsed.title ?? "").trim() ||
-    !String(parsed.introduction ?? "").trim() ||
-    !String(parsed.conclusion ?? "").trim() ||
-    !Array.isArray(parsed.sections)
-  ) {
-    throw new Error(
-      "Structured draft is missing title, introduction, sections, or conclusion.",
-    )
-  }
+  assertStructuredDraftFields(parsed)
   const expected = article.outline ?? []
   const byId = new Map(
     parsed.sections.map((section: any) => [section.id, section]),
@@ -2661,7 +2658,7 @@ async function runBatchArticle(
             'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Include exactly one non-empty entry for every outline section ID in order. Each usedEvidenceRefs array may contain only IDs approved for that section. section.content is prose only: never include #, ##, ###, its outline heading, or a Conclusion heading.',
           ].join("\n"),
           true,
-          Math.min(12000, Math.max(1800, Math.ceil(effectiveDraftWords * 1.9))),
+          structuredDraftTokenBudget(effectiveDraftWords),
           structuredDraftJsonSchema,
         )
         initialDraftResponses.push(response)
@@ -2682,7 +2679,7 @@ async function runBatchArticle(
               'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Return every outline section exactly once in order. section.content must be prose only and must not repeat a Markdown heading.',
             ].join("\n\n"),
             true,
-            Math.min(12000, Math.max(1800, Math.ceil(effectiveDraftWords * 1.9))),
+            structuredDraftTokenBudget(effectiveDraftWords, true),
             structuredDraftJsonSchema,
             "recovery",
             { skipDocumentContext: true },
@@ -2826,7 +2823,7 @@ async function runBatchArticle(
               ].join("\n\n"),
           true,
           needsStructuredRecovery
-            ? Math.min(16000, Math.max(3000, Math.ceil(effectiveDraftWords * 1.9)))
+            ? structuredDraftTokenBudget(effectiveDraftWords, true)
             : 2000,
           needsStructuredRecovery
             ? structuredDraftJsonSchema
@@ -2975,7 +2972,7 @@ async function runBatchArticle(
             'Return only JSON: {"title":string,"introduction":string,"sections":[{"id":string,"content":string,"usedEvidenceRefs":string[]}],"conclusion":string}. Declare only evidence IDs approved for each section.',
           ].join("\n\n"),
           true,
-          Math.min(12000, Math.max(3000, Math.ceil(effectiveDraftWords * 1.9))),
+          structuredDraftTokenBudget(effectiveDraftWords, true),
           structuredDraftJsonSchema,
           "recovery",
           { skipDocumentContext: true, modelTask: "review" },
