@@ -395,9 +395,14 @@ export function createMonitoring(
       ).toISOString()
       const source = await (options.readData ?? readMonitoringData)(since)
       const articleHistory = "jobRuns" in source ? source.jobRuns : null
-      const historyRuns = [...(articleHistory?.runs ?? [])]
+      const classificationRuns = "classificationRuns" in source ? source.classificationRuns ?? [] : []
+      const historyRuns = [...(articleHistory?.runs ?? []), ...classificationRuns.flatMap(run => [
+        run,
+        { runId: run.parentRunId, job: run.parent, workload: run.workload, status: run.status,
+          startedAt: run.startedAt, endedAt: run.endedAt },
+      ])]
         .sort((a, b) => Date.parse(b.endedAt ?? b.startedAt ?? "") - Date.parse(a.endedAt ?? a.startedAt ?? ""))
-      const jobRunsTruncated = historyRuns.length > 2500 || articleHistory?.complete === false
+      const jobRunsTruncated = historyRuns.length > 2500 || articleHistory?.complete === false || ("classificationRunsComplete" in source && source.classificationRunsComplete === false)
       const jobHistorySince = articleHistory?.since ?? new Date(Date.now() - 61 * 86400000).toISOString()
       const byKey = new Map<string, Bucket>(
         (source.buckets || []).map((b: any) => [b.key, b.value]),

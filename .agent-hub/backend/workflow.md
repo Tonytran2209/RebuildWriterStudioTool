@@ -55,3 +55,9 @@ Manual and batch outline/draft checkpoints assign a generation ID before persist
 Storage → Add document offers a document-purpose choice. Raw Content Plan files use the existing `/api/content-plans/import` and `/classify` endpoints, then open the saved plan for topic review without starting batches or creating a KB/Rules copy. Import persists before classification; classification failure retains the plan and offers retry on its page. Existing Source data documents retain the conversion action, preview, download and delete, but hide Shipper, article-type applicability and KB usage metadata.
 
 Monitoring reuses the existing Content Plan import/classification jobs and browser `trackHandoff`; there is no new processing stage or migration.
+
+### Content Plan classifier settings
+
+The CRM import and classify endpoints share saved `writer:config.planClassification` settings. Defaults keep whole-source classification and explicit `[comparison-seo]:` / `[editorial-originality]:` row handling. Wave mode recognizes the classic publishing headings and sends consecutive source partitions separately. Unscoped text is retained for classification. The cache identity includes source hash, model, provider, classifier version and normalized settings.
+
+Instructions and thresholds are configurable. Source quote validation, persisted output fields and the three allowed groups are application contracts. Classification runs are saved in KV and exposed in the PostgreSQL monitoring report as **Phân loại Content Plan**, before **Nhận bài từ Content Plan**. No migration is required.

@@ -29,9 +29,9 @@ const MODES: Array<[ActionSourceType, string, string]> = [
 ]
 
 /** Body of the Storage "Add document" panel: upload or import, saved on the server before it reaches the list. */
-export function AddDocForm({ railwayUrl, onAdded, onPlanFile }: { railwayUrl: string; onAdded: (docs: DocumentFile[]) => Promise<void>; onPlanFile?: (file: File, started: number) => Promise<void> }) {
+export function AddDocForm({ railwayUrl, onAdded, onPlanFile, planOnly = false }: { railwayUrl: string; onAdded: (docs: DocumentFile[]) => Promise<void>; onPlanFile?: (file: File, started: number) => Promise<void>; planOnly?: boolean }) {
   const { tr } = useI18n()
-  const [purpose, setPurpose] = useState("reference")
+  const [purpose, setPurpose] = useState(planOnly ? "plan" : "reference")
   const planFileRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [planFile, setPlanFile] = useState<File | null>(null)
@@ -108,7 +108,7 @@ export function AddDocForm({ railwayUrl, onAdded, onPlanFile }: { railwayUrl: st
   const lbl = (label: string, el: ReactNode) => <label style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--f3)", fontSize: 12 }}>{label}{el}</label>
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-    {onPlanFile && <label>{tr("Mục đích tài liệu", "Document purpose")}<select className="inp" aria-label={tr("Mục đích tài liệu", "Document purpose")} disabled={Boolean(busy)} value={purpose} onChange={e => { setPurpose(e.target.value); setError(""); setDone("") }}><option value="reference">{tr("Tài liệu Knowledge Base / Skills & Rules", "Knowledge Base / Skills & Rules document")}</option><option value="plan">{tr("Content Plan nguồn — phân tích topic", "Raw Content Plan — analyze topics")}</option></select></label>}
+    {onPlanFile && !planOnly && <label>{tr("Mục đích tài liệu", "Document purpose")}<select className="inp" aria-label={tr("Mục đích tài liệu", "Document purpose")} disabled={Boolean(busy)} value={purpose} onChange={e => { setPurpose(e.target.value); setError(""); setDone("") }}><option value="reference">{tr("Tài liệu Knowledge Base / Skills & Rules", "Knowledge Base / Skills & Rules document")}</option><option value="plan">{tr("Content Plan nguồn — phân tích topic", "Raw Content Plan — analyze topics")}</option></select></label>}
     {purpose === "plan" ? <>
       <p className="plan-upload-help">{tr("Tải kế hoạch nguồn để AI trích xuất và phân loại topic. Bạn có thể kiểm tra danh sách trước khi tạo batch.", "Upload your source plan for AI to extract and classify topics. Review the list before creating batches.")}</p>
       <input ref={planFileRef} type="file" hidden aria-label={tr("File Content Plan nguồn", "Raw Content Plan file")} disabled={Boolean(busy)} accept=".docx,.pdf,.txt,.md,.csv,.xlsx,.json,.xml,.tsv" onChange={e => { choosePlanFile(e.target.files); e.target.value = "" }} />

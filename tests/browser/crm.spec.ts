@@ -131,12 +131,13 @@ test('CRM Add Plan imports, classifies, splits into batches and starts them', as
   await panel.getByRole('button', { name: 'Generate' }).click();
   await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
   expect(log.imported[0]).toMatchObject({ name: 'New plan', sourceType: 'paste', content: 'A vs B\nC vs D\nWhy E matters' });
-  expect(log.created).toHaveLength(3);
-  expect(log.created.map(a => a.activityKind)).toEqual(['batch', 'batch', 'batch']);
-  expect(new Set(log.created.map(a => a.activityId)).size).toBe(3);
-  expect(log.created[2].activityType).toBe('editorial-originality');
+  expect(log.created).toHaveLength(2);
+  await page.getByRole('tab', { name: /Articles/ }).click();
+  await expect(page.getByRole('combobox', { name: /Why E matters/ })).toHaveValue('needs-review');
+  expect(log.created.map(a => a.activityKind)).toEqual(['batch', 'batch']);
+  expect(new Set(log.created.map(a => a.activityId)).size).toBe(2);
   expect(log.created[0].outlineStructure?.id).toBe('comparison');
-  expect(log.started).toHaveLength(3);
+  expect(log.started).toHaveLength(2);
 });
 
 test('CRM manual mode uses the demo layout and re-runs gates through the pipeline', async ({ page }) => {
@@ -206,7 +207,9 @@ test('CRM Add Plan imports a Content Plan file and Storage lists it as Source da
   await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
   expect(log.imported[0].multipart).toContain('Q3 plan.docx');
   expect(log.imported[0].multipart).toContain('Q3 plan');
-  expect(log.created).toHaveLength(3);
+  expect(log.created).toHaveLength(2);
+  await page.getByRole('tab', { name: /Articles/ }).click();
+  await expect(page.getByRole('combobox', { name: /Why E matters/ })).toHaveValue('needs-review');
 });
 
 test('CRM plan page lists every topic and starts the unprocessed ones', async ({ page }) => {
@@ -406,6 +409,8 @@ test('CRM Workflow AI lists every AI task and saves models, numbers and team ins
   await page.getByLabel('AI Review model').selectOption({ label: 'GPT-6.2 Sol' });
   await page.getByLabel('SEO keyword research model').selectOption({ label: 'GPT-6.2 Sol' });
   await page.getByLabel('Phân loại Content Plan model').selectOption({ label: 'GPT-6.2 Sol' });
+  await page.getByRole('checkbox', { name: /splitByWave/ }).check();
+  await page.getByRole('textbox', { name: 'comparison-seo', exact: true }).fill('Use this group for explicit product comparisons.');
   await page.getByLabel('Số keyword nghiên cứu').fill('12');
   await page.getByLabel(/Hướng dẫn cho G2/).fill('Use short H2 headings.');
   await page.locator('.ph-actions').getByRole('button', { name: /Lưu thay đổi|Save changes/ }).click();
@@ -413,6 +418,12 @@ test('CRM Workflow AI lists every AI task and saves models, numbers and team ins
   const saved = log.configs[1];
   expect(saved.taskModels).toMatchObject({ review: 'gpt-6.2-sol', seo: 'gpt-6.2-sol' });
   expect(saved.stepConfigs[1].modelId).toBe('gpt-6.2-sol');
+  expect(saved.planClassification).toMatchObject({
+    splitByWave: true,
+    recognizeLabels: true,
+    confidenceThreshold: 0.65,
+    comparisonRule: 'Use this group for explicit product comparisons.',
+  });
   expect(saved.workflowRules['core-idea'].stageOverrides['market-research'].parameters.keywordCount).toBe(12);
   expect(saved.workflowRules.outline.customInstruction).toBe('Use short H2 headings.');
 });
@@ -448,7 +459,7 @@ test('Storage imports raw plans through the plan pipeline without creating KB do
   await panel.getByRole('button', { name: /Phân tích & tạo Content Plan|Analyze & create Content Plan/ }).click();
   await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
   expect(log.imported[0].multipart).toContain('Raw strategy.docx');
-  await expect(page.getByText('A vs B', { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('combobox', { name: /A vs B/ })).toHaveValue('comparison-seo');
   expect(log.files).toHaveLength(0);
   expect(log.created).toHaveLength(0);
 });

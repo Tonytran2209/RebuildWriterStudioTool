@@ -1,10 +1,11 @@
+import { PlanClassificationSettingsEditor } from "./PlanClassificationSettings"
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
 import type { AppConfig, Article, ContentPlan, ContentPlanItem, DocumentFile, PipelineSettings } from "../types"
 import type { OutlineStructureSnapshot } from "../../shared/outlineStructures"
 import type { ThemePreference } from "../lib/theme"
 import { useI18n } from "../lib/i18n"
 import * as db from "../lib/db"
-import { classifyContentPlan, deleteContentPlan, importContentPlan, updateContentPlanStatus } from "../lib/contentPlans"
+import { classifyContentPlan, deleteContentPlan, importContentPlan, updateContentPlanItem, updateContentPlanStatus } from "../lib/contentPlans"
 import { markdownToHtml, normalizeDraftOutput } from "../lib/draftExport"
 import { buildBatchZip } from "../lib/zipExport"
 import { inReviewSample, pipelineSettings, type RerunGate } from "../lib/pipeline"
@@ -95,7 +96,7 @@ export type CrmProps = {
   onMigrateLegacy: (article: Article) => void
 }
 
-type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "run-items"; id: string; ids?: string[] } | { kind: "step"; i: number } | { kind: "cmd" } | null
+type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc"; previousVersionId?: string } | { kind: "run-items"; id: string; ids?: string[] } | { kind: "step"; i: number } | { kind: "cmd" } | null
 type Ctx = CrmProps & {
   settings: PipelineSettings
   list: CrmArticle[]
@@ -180,7 +181,7 @@ export default function CrmApp(props: CrmProps) {
       {panel?.kind === "plan" && can("plans") && <AddPlanPanel ctx={ctx} />}
       {panel?.kind === "review" && <ReviewPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "doc" && <DocPanel ctx={ctx} id={panel.id} />}
-      {panel?.kind === "add-doc" && <AddDocPanel ctx={ctx} />}
+      {panel?.kind === "add-doc" && <AddDocPanel ctx={ctx} previousVersionId={panel.previousVersionId} />}
       {panel?.kind === "run-items" && <RunItemsPanel ctx={ctx} planId={panel.id} ids={panel.ids} />}
       {panel?.kind === "step" && <StepPanel ctx={ctx} i={panel.i} />}
       {panel?.kind === "cmd" && <CommandMenu ctx={ctx} />}
@@ -663,7 +664,11 @@ function PlanTopics({ ctx, p }: { ctx: Ctx; p: CrmPlan }) {
       <button className="btn primary" onClick={() => ctx.setPanel({ kind: "run-items", id: p.id, ids: chosen.map(i => i.id) })}><I n="stack-2" />{tr(`Tạo batch từ ${chosen.length} bài`, `Create batch from ${chosen.length} topic${chosen.length > 1 ? "s" : ""}`)}</button>
     </div>}
     {items.map(item => { const a = byItem.get(item.id); if (a) return article(a); const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]
-      return <div key={item.id} className={`list-row${picked.has(item.id) ? " sel" : ""}`} style={{ cursor: "default" }}>{canPick && item.status !== "archived" && <input type="checkbox" aria-label={`${tr("Chọn", "Select")} ${item.title}`} checked={picked.has(item.id)} onChange={() => setPicked(prev => { const next = new Set(prev); if (!next.delete(item.id)) next.add(item.id); return next })} />}<Tag c={c}>{l}</Tag><span className="grow" style={{ color: "var(--f2)" }}>{item.title}{item.keywords?.length ? <span className="muted" style={{ color: "var(--f3)" }}> · {item.keywords.slice(0, 3).join(", ")}</span> : null}</span><Tag c="gray">{item.status === "archived" ? "Archived" : tr("Chưa chạy", "Not started")}</Tag></div> })}
+      return <div key={item.id} className={`list-row${picked.has(item.id) ? " sel" : ""}`} style={{ cursor: "default" }}>{canPick && pending.some(topic => topic.id === item.id) && <input type="checkbox" aria-label={`${tr("Chọn", "Select")} ${item.title}`} checked={picked.has(item.id)} onChange={() => setPicked(prev => { const next = new Set(prev); if (!next.delete(item.id)) next.add(item.id); return next })} />}{canPick && p.plan.status !== "archived" && item.status !== "archived" ? <select className="inp" aria-label={`${tr("Nhóm topic", "Topic group")} · ${item.title}`} value={item.type} onChange={e => {
+      const next = e.target.value as typeof item.type
+      void trackHandoff(e.timeStamp, () => updateContentPlanItem(p.id, item.id, next, ctx.config.railwayUrl))
+        .then(plan => ctx.onContentPlansChange([plan])).catch(toastErr)
+    }}>{Object.entries(ITEM_TYPE).map(([type, [, label]]) => <option key={type} value={type}>{label}</option>)}</select> : <Tag c={c}>{l}</Tag>}<span className="grow" style={{ color: "var(--f2)" }} title={[item.confidence !== undefined ? `Confidence: ${item.confidence}` : "", item.classificationReason, item.sourceQuote].filter(Boolean).join("\n")}>{item.title}{item.keywords?.length ? <span className="muted" style={{ color: "var(--f3)" }}> · {item.keywords.slice(0, 3).join(", ")}</span> : null}</span><Tag c="gray">{item.status === "archived" ? "Archived" : tr("Chưa chạy", "Not started")}</Tag></div> })}
     {orphans.map(article)}
     {!items.length && !orphans.length && <div className="empty-state"><I n="file-text" /><h3>{tr("Plan chưa có topic", "This plan has no topics")}</h3>
       {canPick && <><p>{tr("Plan đã được lưu nhưng chưa phân loại topic.", "The plan is saved but its topics are not classified yet.")}</p><button className="btn primary" disabled={classifying} onClick={e => void classify(e.timeStamp)}><I n={classifying ? "loader-2" : "sparkles"} />{tr("Phân loại topic", "Classify topics")}</button></>}</div>}
@@ -713,7 +718,7 @@ function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
     <Frow icon="arrows-split" label="Max parallel">{String(ctx.settings.maxParallel)}</Frow>
   </div></>
   return <ShowShell crumbs={<><a className="crumb" href="#/objects/plans">Content Plans</a><span className="crumb">/</span>{p.name}</>}
-    actions={<>{bs.length > 0 && <button className="btn" aria-label={paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")} onClick={e => void togglePause(e.timeStamp)}><I n={paused ? "player-play" : "player-pause"} /><span>{paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")}</span></button>}
+    actions={<>{ctx.isAdmin && <button className="btn" onClick={() => ctx.setPanel({ kind: "add-doc", previousVersionId: p.id })}><I n="file-plus" />{tr("Phiên bản mới", "New version")}</button>}{bs.length > 0 && <button className="btn" aria-label={paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")} onClick={e => void togglePause(e.timeStamp)}><I n={paused ? "player-play" : "player-pause"} /><span>{paused ? tr("Tiếp tục", "Resume") : tr("Tạm dừng", "Pause")}</span></button>}
       {ctx.can("plans") && (p.articles.length
         ? <button className="btn" aria-label={archived ? tr("Bỏ lưu trữ", "Restore") : tr("Lưu trữ", "Archive")} onClick={e => void removePlan(e.timeStamp)}><I n={archived ? "archive-off" : "archive"} /><span>{archived ? tr("Bỏ lưu trữ", "Restore") : tr("Lưu trữ", "Archive")}</span></button>
         : <button className="icon-btn" aria-label={tr("Xoá plan", "Delete plan")} onClick={e => void removePlan(e.timeStamp)}><I n="trash" /></button>)}</>}
@@ -762,9 +767,9 @@ function SidePanel({ ctx, title, icon, extra, children }: { ctx: Ctx; title: Rea
   </>
 }
 
-/** Split plan topics into batches by type and start them. needs-review topics run as editorial so none is dropped. */
+/** Split plan topics into batches by type and start them. Topics awaiting review stay in the plan until a user assigns a group. */
 async function startPlanItems(ctx: Ctx, plan: ContentPlan, items: ContentPlanItem[], perBatch: number, structure: OutlineStructureSnapshot, onBatch: (n: number) => void) {
-  const byType: Array<["comparison-seo" | "editorial-originality", ContentPlanItem[]]> = [["comparison-seo", items.filter(i => i.type === "comparison-seo")], ["editorial-originality", items.filter(i => i.type !== "comparison-seo")]]
+  const byType: Array<["comparison-seo" | "editorial-originality", ContentPlanItem[]]> = [["comparison-seo", items.filter(i => i.type === "comparison-seo")], ["editorial-originality", items.filter(i => i.type === "editorial-originality")]]
   let made = 0
   for (const [type, group] of byType)
     for (let i = 0; i < group.length; i += perBatch) {
@@ -804,13 +809,13 @@ function RunItemsPanel({ ctx, planId, ids }: { ctx: Ctx; planId: string; ids?: s
       <div className="frow"><div className="flabel"><I n="layout-rows" />Per batch</div><div className="fval"><input aria-label="Per batch" type="number" min={1} max={20} value={per} onChange={e => setPer(+e.target.value)} /></div></div>
       <div className="frow"><div className="flabel"><I n="stack-2" />Batches</div><div className="fval"><b>{batches} batch</b></div></div>
     </div>
-    {pending.length > count("comparison-seo") && <div style={{ color: "var(--f3)", margin: "4px 0 8px" }}>{tr("Bài Editorial (kể cả \"Needs review\") chạy G1–G2 rồi dừng chờ người duyệt outline trong Chế độ thủ công, sau đó mới viết draft.", "Editorial articles (including \"Needs review\") run G1–G2, then wait for a person to approve the outline in Manual mode before drafting.")}</div>}
+    {pending.length > count("comparison-seo") && <div style={{ color: "var(--f3)", margin: "4px 0 8px" }}>{tr("Bài Editorial chạy G1–G2 rồi chờ duyệt outline trong Chế độ thủ công.", "Editorial articles run G1–G2 and wait for outline approval in Manual mode.")}</div>}
     <div style={{ margin: "4px 0 12px" }}><StructureSelect files={ctx.files} allowedIds={ctx.config.stepConfigs[3]?.fileAccess?.rules ?? []} value={structure} onChange={setStructure} disabled={Boolean(busy)} /></div>
     <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={Boolean(busy) || !pending.length} onClick={e => void run(e.timeStamp)}><I n={busy ? "loader-2" : "player-play"} />{busy || "Generate"}</button>
   </SidePanel>
 }
 
-const pendingItems = (p: CrmPlan) => { const used = new Set(p.articles.map(a => a.a.contentPlanItemId)); return (p.plan.items ?? []).filter(i => !used.has(i.id) && i.status !== "archived") }
+const pendingItems = (p: CrmPlan) => { if (p.plan.status === "archived") return []; const used = new Set(p.articles.map(a => a.a.contentPlanItemId)); return (p.plan.items ?? []).filter(i => !used.has(i.id) && i.status !== "archived" && i.type !== "needs-review") }
 
 function AddPlanPanel({ ctx }: { ctx: Ctx }) {
   const { tr } = useI18n()
@@ -835,7 +840,7 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
     if (!structure) return toast(tr("Chọn cấu trúc outline trước khi chạy.", "Choose an outline structure first."))
     setBusy(tr("Đang import plan…", "Importing plan…"))
     try {
-      const planId = await trackHandoff(eventTimeStamp, async () => {
+      const result = await trackHandoff(eventTimeStamp, async () => {
       const railway = ctx.config.railwayUrl
       const planName = name.trim() || file?.name.replace(/\.[^.]+$/, "") || `Content Plan ${new Date().toLocaleDateString()}`
       const imported = importedRef.current = await importContentPlan(source === "file" ? { name: planName, sourceType: "file", file: file! } : source === "paste" ? { name: planName, sourceType: "paste", content: lines.join("\n") } : { name: planName, sourceType: source, url: url.trim() }, railway)
@@ -846,12 +851,12 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
       if (ctx.isAdmin && par !== ctx.settings.maxParallel) await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...ctx.settings, maxParallel: Math.max(1, Math.min(5, par)) } }, ctx.files, false)
       const items = plan.items ?? []
       if (!items.length) throw new Error(tr("Không tìm thấy topic nào trong Content Plan này.", "No topics were found in this Content Plan."))
-      await startPlanItems(ctx, plan, items, perBatch, structure, n => setBusy(`${tr("Đang tạo batch", "Creating batch")} ${n}…`))
-      return plan.id
+      const batches = await startPlanItems(ctx, plan, items, perBatch, structure, n => setBusy(`${tr("Đang tạo batch", "Creating batch")} ${n}…`))
+      return { id: plan.id, batches }
       })
       ctx.setPanel(null)
-      go(`#/object/plans/${planId}`)
-      toast(tr("Đã tạo plan và bắt đầu chạy", "Plan created and running"))
+      go(`#/object/plans/${result.id}`)
+      toast(result.batches ? tr("Đã tạo plan và bắt đầu chạy", "Plan created and running") : tr("Đã lưu plan. Hãy duyệt nhóm của các topic trước khi tạo batch.", "Plan saved. Review topic groups before creating a batch."))
     } catch (err) {
       // The plan was already saved: don't let a second Generate import a duplicate. Finish it from the plan page.
       if (importedRef.current) {
@@ -994,13 +999,14 @@ function PlanFromDoc({ ctx, file }: { ctx: Ctx; file: DocumentFile }) {
   </div>
 }
 
-function AddDocPanel({ ctx }: { ctx: Ctx }) {
+function AddDocPanel({ ctx, previousVersionId }: { ctx: Ctx; previousVersionId?: string }) {
   const { tr } = useI18n()
+  const [classifyAsNewVersion, setClassifyAsNewVersion] = useState(false)
   if (!ctx.isAdmin) return null
   // Upload/import already stored each record on the server's list; reload that list instead of re-posting ours.
   const onAdded = async (_docs: DocumentFile[]) => ctx.onFilesSynced(await db.fetchFiles())
   const onPlanFile = async (file: File, started: number) => {
-    const imported = await trackHandoff(started, () => importContentPlan({ name: file.name.replace(/\.[^.]+$/, ""), sourceType: "file", file }, ctx.config.railwayUrl))
+    const imported = await trackHandoff(started, () => importContentPlan({ name: file.name.replace(/\.[^.]+$/, ""), sourceType: "file", file, previousVersionId, classifyAsNewVersion }, ctx.config.railwayUrl))
     ctx.onContentPlansChange([imported])
     try {
       const classified = await trackHandoff(performance.now(), () => classifyContentPlan(imported.id, ctx.config.railwayUrl))
@@ -1011,7 +1017,7 @@ function AddDocPanel({ ctx }: { ctx: Ctx }) {
     ctx.setPanel(null)
     go(`#/object/plans/${enc(imported.id)}`)
   }
-  return <SidePanel ctx={ctx} title={tr("Thêm tài liệu", "Add document")} icon={<I n="upload" />}><AddDocForm railwayUrl={ctx.config.railwayUrl} onAdded={onAdded} onPlanFile={onPlanFile} /></SidePanel>
+  return <SidePanel ctx={ctx} title={previousVersionId ? tr("Phiên bản Content Plan mới", "New Content Plan version") : tr("Thêm tài liệu", "Add document")} icon={<I n="upload" />}>{previousVersionId && <label className="box-row"><input type="checkbox" checked={classifyAsNewVersion} onChange={e => setClassifyAsNewVersion(e.target.checked)} />{tr("Tạo phiên bản để phân loại ngay cả khi nội dung giống hệt", "Create a version for classification even if the content is identical")}</label>}<AddDocForm railwayUrl={ctx.config.railwayUrl} onAdded={onAdded} onPlanFile={onPlanFile} planOnly={Boolean(previousVersionId)} /></SidePanel>
 }
 
 /* ─── command menu ─────────────────────────────────────────────────────── */
@@ -1210,6 +1216,7 @@ function EmbeddedSettings({ ctx, p, title }: { ctx: Ctx; p: string; title: strin
   return <SettingsShell title={title} actions={actions}>
     {p === "workflow-ai" && <WorkflowAiSettings config={config} files={files} articles={ctx.articles} onChange={setConfig} />}
     {p === "models" && <ModelsSettings config={config} onChange={setConfig} />}
+    {p === "workflow-ai" && <PlanClassificationSettingsEditor config={config} onChange={setConfig} />}
     {p === "workflow-ai" && <WorkflowRules config={config} files={files} onChange={setConfig} />}
   </SettingsShell>
 }

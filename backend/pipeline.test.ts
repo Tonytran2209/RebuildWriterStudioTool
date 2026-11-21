@@ -1,3 +1,4 @@
+import { splitPlanByPublishingWave } from "./stepContext.ts"
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DEFAULT_PIPELINE, rerunPatch, aiApproval, articleStage, firstPassApprovalRate, inReviewSample, pipelineSettings } from '../src/lib/pipeline.ts'
@@ -76,4 +77,20 @@ test('CRM status: a running article ignores an old passing QC report; awaiting E
   assert.equal(done.status, 'failed')
   const waiting = toCrmArticle({ ...base, activityKind: 'batch', activityType: 'editorial-originality', batchStatus: 'awaiting_approval', selectedCoreIdeaId: 'x', outline: [{ id: 's', heading: 'h', notes: '', level: 'h2' }] }, DEFAULT_PIPELINE)
   assert.deepEqual([waiting.status, waiting.gate, waiting.awaiting], ['running', 2, true])
+})
+
+test("Content Plan Wave classification preserves preamble and all topic lines", () => {
+  const input = [
+    "Topic before Wave headings",
+    "The plan refers to Wave 4 in an editorial note",
+    "## Wave 1 — Tháng 11",
+    "First Wave topic",
+    "Publishing Wave 2 — Q1 2027",
+    "Second Wave topic",
+  ]
+  assert.deepEqual(splitPlanByPublishingWave(input.join("\r\n")), [
+    input.slice(0, 2),
+    input.slice(2, 4),
+    input.slice(4),
+  ])
 })

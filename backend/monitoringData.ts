@@ -1,5 +1,5 @@
 import { articleStepRuns, estimatedStepRuns, jobHistoryWindows, singleArticleRuns } from "./jobHistory.ts"
-import { ARTICLE_JOB } from "./batchSteps.ts"
+import { ARTICLE_JOB, PLAN_CLASSIFICATION_RUN_PREFIX } from "./batchSteps.ts"
 import { performance } from "node:perf_hooks"
 import { database } from "./postgres.ts"
 // Fixed aggregate SQL only. No article content, user identity or credentials leave this module.
@@ -39,6 +39,10 @@ export async function readMonitoringData(
       )
     ).rows
     const taskRows=(await client.query("SELECT key,value FROM writer_studio.kv_store WHERE key LIKE 'lab-task:v1:%' AND value->>'startedAt'>=$1 ORDER BY value->>'startedAt' DESC LIMIT 1001",[since])).rows;
+    const classificationRuns = (await client.query(
+      "SELECT value FROM writer_studio.kv_store WHERE key LIKE $1 AND key >= $2 ORDER BY key DESC LIMIT 1251",
+      [PLAN_CLASSIFICATION_RUN_PREFIX + "%", PLAN_CLASSIFICATION_RUN_PREFIX + new Date(Date.now() - 61 * 86400000).toISOString()],
+    )).rows
     let historicalTasks:any[]=[];
     if(await exists('article_stage_runs')) historicalTasks=(await client.query(`SELECT id::text AS id,article_id AS "entityId",stage AS label,status,created_at AS "startedAt",input_tokens AS "inputTokens",output_tokens AS "outputTokens",cost_usd::float8 AS "knownCostUsd",model FROM writer_studio.article_stage_runs WHERE created_at >= $1 ORDER BY created_at DESC LIMIT 1001`,[since])).rows.map(r=>({...r,kind:'historical-stage',coverage:'Saved final-result usage; may omit retries and cache attribution'}));
     let articles: any = null,
@@ -207,6 +211,8 @@ export async function readMonitoringData(
       buckets: buckets.slice(0, 10000),
       ...history,
       contentWorkload,
+      classificationRuns: classificationRuns.slice(0, 1250).map(row => row.value),
+      classificationRunsComplete: classificationRuns.length <= 1250,
       taskRows:taskRows.slice(0,1000),
       historicalTasks:historicalTasks.slice(0,1000),
       taskReadComplete:taskRows.length<=1000&&historicalTasks.length<=1000,
