@@ -20,6 +20,7 @@ import { constants as fsConstants } from "node:fs"
 import { fileURLToPath } from "url"
 import { generate, getAvailableProviders } from "./providers.ts"
 import { assertStructuredDraftFields, isCompleteStructuredDraft, structuredDraftTokenBudget } from "./draftContract.ts"
+import { isCompleteSemanticReview, semanticReviewTokenBudget } from "./semanticReviewContract.ts"
 import {
   kvGet,
   kvSet,
@@ -1125,6 +1126,12 @@ async function projectBatchState(article: any) {
   )
 }
 
+function canCacheBatchResponse(content: string, schema?: Record<string, unknown>) {
+  if (schema === structuredDraftJsonSchema) return isCompleteStructuredDraft(content)
+  if (schema === semanticQualityJsonSchema) return isCompleteSemanticReview(content)
+  return true
+}
+
 async function runBatchModel(
   article: any,
   step: 2 | 3 | 4,
@@ -1171,7 +1178,7 @@ async function runBatchModel(
   })
   const traceContext = options.skipDocumentContext ? null : context
   const cached = await kvGet<any>(key)
-  if (cached?.content && (jsonSchema !== structuredDraftJsonSchema || isCompleteStructuredDraft(cached.content)))
+  if (cached?.content && canCacheBatchResponse(cached.content, jsonSchema))
     return {
       ...cached,
       provider: model.provider,
@@ -1214,7 +1221,7 @@ async function runBatchModel(
         output * Number(pricing.outputUsdPerMillion ?? 0)) /
       1_000_000
     : null
-  if (jsonSchema !== structuredDraftJsonSchema || isCompleteStructuredDraft(response.content)) {
+  if (canCacheBatchResponse(response.content, jsonSchema)) {
     await kvSet(key, {
       ...response,
       costUsd,
@@ -2896,7 +2903,7 @@ async function runBatchArticle(
             `Return checks as an object with exactly these keys: ${SEMANTIC_IDS.join(", ")}. Each value has label,status(pass|warning|fail),reason,evidence,location,recommendedAction,autoFixAllowed. Evidence support passes when concrete claims are supported by the registry and declared section mapping; do not penalize general explanatory prose for lacking a citation. Never evaluate URLs, internal links, link targets, or Website Inventory in a semantic check; those are validated separately by deterministic code. Use warning only for a genuine non-blocking publish-quality concern and fail only for a blocking unsupported claim or contract violation.`,
           ].filter(Boolean).join("\n\n"),
           true,
-          1600,
+          semanticReviewTokenBudget(incompleteRecovery),
           semanticQualityJsonSchema,
           "recovery",
           { skipDocumentContext: true, modelTask: "review" },
