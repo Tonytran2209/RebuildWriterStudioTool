@@ -2,7 +2,7 @@ import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
 import { aiApproval, pipelineSettings, rerunPatch, type RerunGate } from "../src/lib/pipeline.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, CLASSIFY_PLAN_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
-import { CHUNK_MAX_TOKENS, CLASSIFIER_SYSTEM, CONTENT_PLAN_CLASSIFIER_VERSION, classifierPrompt, itemsOf, splitPlanChunks, verifiedClassificationItems } from './contentPlanClassifier.ts';
+import { CHUNK_MAX_TOKENS, CLASSIFIER_SYSTEM, CONTENT_PLAN_CLASSIFIER_VERSION, classifierPrompt, itemsOf, mergeDuplicateTopics, numberedLines, planItemsFromPicks, splitPlanChunks } from './contentPlanClassifier.ts';
 import { convertStepRunsToTelemetryStages, sendArticleRunTelemetry } from "./telemetry.ts";
 import { outlineReviewInstruction } from '../src/lib/outlineQuality.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
@@ -3923,7 +3923,7 @@ async function classifyPlan(planId: string, force: boolean) {
       const cached = force ? null : await kvGet<any>(cacheKey)
       if (cached?.content) return itemsOf(parseJsonObject(cached.content))
       if (!budgetReserved) { await reserveAIBudget(`content-plan-${plan.id}`, 1); budgetReserved = true }
-      const response = await generate({ modelId: model.id, provider: model.provider, jsonMode: true, maxTokens: CHUNK_MAX_TOKENS, temperature: 0, systemPrompt: CLASSIFIER_SYSTEM, prompt: classifierPrompt(text) })
+      const response = await generate({ modelId: model.id, provider: model.provider, jsonMode: true, maxTokens: CHUNK_MAX_TOKENS, temperature: 0, reasoningEffort: "low", systemPrompt: CLASSIFIER_SYSTEM, prompt: classifierPrompt(text) })
       responses.push(response)
       const truncated = Number(response.usage?.outputTokens ?? 0) >= CHUNK_MAX_TOKENS - 64
       let parsed: any = null
@@ -3936,17 +3936,14 @@ async function classifyPlan(planId: string, force: boolean) {
       await kvSet(cacheKey, { ...response, generatedAt: new Date().toISOString() })
       return itemsOf(parsed)
     }
-    const rawItems = (await Promise.all((plan.sources ?? []).flatMap((source: any) => {
-      // Rows with an explicit label were handled deterministically; the rest is classified in chunks.
-      const remaining = String(source.extractedContent ?? "").replace(/\r\n?/g, "\n").split("\n").filter(line => !explicitContentGroupLine(line)).join("\n")
-      return splitPlanChunks(remaining).map(async chunk => (await classifyChunk(chunk)).map(raw => ({ ...raw, sourceId: source.id })))
-    }))).flat()
-    const { items: aiItems, dropped } = verifiedClassificationItems(rawItems, plan)
-    const items = [...explicitItems, ...aiItems].filter(
-      (item, index, all) => all.findIndex(candidate =>
-        String(candidate.title).toLocaleLowerCase() === String(item.title).toLocaleLowerCase(),
-      ) === index,
-    )
+    // Each source goes out as numbered lines (labelled rows were handled above); chunks run in parallel.
+    const picked = await Promise.all((plan.sources ?? []).map(async (source: any) => {
+      const chunks = splitPlanChunks(numberedLines(String(source.extractedContent ?? ""), line => Boolean(explicitContentGroupLine(line))).join("\n"))
+      return planItemsFromPicks((await Promise.all(chunks.map(chunk => classifyChunk(chunk)))).flat(), source)
+    }))
+    const aiItems = picked.flatMap(p => p.items), dropped = picked.flatMap(p => p.dropped)
+    // The same topic listed twice (e.g. a priority list and an action plan, sometimes shortened) is one article.
+    const items = mergeDuplicateTopics([...explicitItems, ...aiItems])
     if (!items.length)
       throw new Error("AI không trả về topic nào có source evidence hợp lệ.")
     let saved = await saveClassifiedPlan(
@@ -3989,7 +3986,7 @@ async function classifyPlan(planId: string, force: boolean) {
         await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, saved)
       }
     }
-    await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: explicitItems.length + rawItems.length, succeeded: saved.items?.length ?? items.length } })
+    await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: explicitItems.length + aiItems.length + dropped.length, succeeded: saved.items?.length ?? items.length } })
     // Rows the AI named that could not be found in the source, so the user can check them.
     await kvSet(`${PLAN_RUN_PREFIX}${plan.id}`, { dropped, endedAt: new Date().toISOString() })
     return { plan: { ...saved, ...(dropped.length ? { classificationDropped: dropped } : {}) }, cacheHit: responses.length === 0 }

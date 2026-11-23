@@ -114,12 +114,18 @@ The image worker, style library and image suggestion APIs were removed from the 
 | SEO keyword research | `taskModels.seo` (enabled OpenAI model only; needs web search) | `gpt-5.4-mini` | `researchSeoKeywords(seeds, count, model)` |
 | Website Inventory summary | `taskModels.inventory` (any enabled model) | `WEBSITE_SUMMARY_MODEL` env, else `gpt-5.4-mini` | `processWebsiteInventoryUrl` |
 
-### Content Plan classification (`content-plan-classifier-v2`, `backend/contentPlanClassifier.ts`)
+### Content Plan classification (`content-plan-classifier-v3`, `backend/contentPlanClassifier.ts`)
 
-- Rows labelled `comparison-seo:` / `editorial-originality:` are saved without AI. The remaining text is split into chunks of whole lines (about 20,000 characters each), and each chunk becomes one AI call (`temperature 0`, 12,000 output tokens).
-- A truncated or unreadable answer is split in half and retried, up to two levels. The cache key is classifier version + model + chunk-text hash, so re-uploading the same text reuses the answers whatever the file name is. The daily budget counts one call per classify request.
-- The prompt makes one item per planned-article row. Headings, cluster names, notes and KPIs are not items. The title is copied verbatim.
-- An item is kept only when its quote or title is found in its source, after normalising quotes, dashes, markdown marks and spacing. The classify response lists the topics left out in `plan.classificationDropped` (this list is not stored), and the CRM shows it.
+- Rows labelled `comparison-seo:` / `editorial-originality:` are saved without AI.
+- The rest of each source is sent as numbered non-empty lines (`n| text`, at most 300 characters per line), in chunks of about 20,000 characters that run in parallel.
+- The AI returns only `{"items":[[lineNumber,"c"|"e"|"r"]]}`. The call uses `temperature 0`, reasoning effort `low` on OpenAI GPT-5+, and an 8,000-token cap. Every list of titles counts (priority topics, backlogs and action plans alike).
+- The title is copied from the file line, with list markers and markdown removed; text after ` | ` becomes keywords.
+- The group follows the first rule that applies:
+  1. the closest numbered or markdown heading above the line, when that heading names Comparison or Editorial;
+  2. the title's wording (`Why…`, `not`, `cannot` and `fails` mean editorial; `vs`, `alternatives`, `instead of`, `different from`, `best/top`, `template`, `how to price/choose/evaluate` mean comparison);
+  3. the AI's letter.
+- The same topic listed twice (identical, or a shortened copy sharing ≥85% of its key words) is merged into its first title. The merged topic takes the group of its most certain copy.
+- A truncated or unreadable answer is split in half and retried, up to two levels. The cache key is classifier version + model + chunk-text hash. Line numbers that match no line are reported in `classificationDropped`.
 - Background run: `POST /api/content-plans/import` with `classify=1` (form field or JSON `classify: true`), or `POST /api/content-plans/:id/classify?background=1`, sets the plan to `processing`, answers immediately (`201`/`202`) and classifies after the response. The plan ends as `ready`, or as `failed` with `classificationError`. `writer:content-plan-run:<planId>` keeps the error, or the dropped topics in `classificationDropped`. A second request for a plan that is already running gets `409`. After a restart, plans left in `processing` become `failed` and the user is asked to classify again. The CRM refreshes processing plans every 2.5 s through `GET /api/content-plans/:id`, and Storage shows them as "Analyzing". The Storage upload panel, Storage documents and the plan page's Classify button all use the background run. Add Plan still classifies synchronously, because it starts batches right after.
 - Monitoring: each run that does work is saved as `lab-run:v1:<runId>` with job `Phân loại Content Plan`, `parent: "Writer article"`, workload `Content Plan · <plan name>`, `status`, `startedAt`, `endedAt`, `items {total, succeeded}` and an error code. It is reported in `jobRuns` and declared as the first step of `profile.mainJob.steps`. It has no `parentRunId`, because it runs once per plan, before any article run exists.
 

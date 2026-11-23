@@ -14,6 +14,8 @@ export interface GenerateRequest {
   temperature?: number;
   jsonMode?: boolean;
   jsonSchema?: Record<string, unknown>;
+  /** OpenAI GPT-5+ reasoning effort; other providers ignore it. */
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 export interface GenerateResponse {
@@ -80,6 +82,7 @@ async function callOpenAI(req: GenerateRequest): Promise<GenerateResponse> {
       model: req.modelId,
       input,
       max_output_tokens: req.maxTokens ?? 4096,
+      ...(req.reasoningEffort ? { reasoning: { effort: req.reasoningEffort } } : {}),
       ...(req.jsonSchema
         ? { text: { format: { type: 'json_schema' as const, name: 'structured_response', strict: true, schema: req.jsonSchema } } }
         : req.jsonMode

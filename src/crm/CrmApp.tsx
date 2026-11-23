@@ -993,10 +993,10 @@ function usePlanClassificationWatch(props: CrmProps) {
   }, [processing])
 }
 
-/** Topics the AI named that are not in the source were left out; say how many, so the user can check the file. */
+/** AI picks that match no line of the file were left out; say how many, so the user can check the file. */
 const droppedNote = (plan: ContentPlan, tr: (vi: string, en: string) => string) => {
   const n = plan.classificationDropped?.length ?? 0
-  return n ? tr(`Bỏ qua ${n} topic không tìm thấy nguyên văn trong file: ${plan.classificationDropped!.slice(0, 3).join("; ")}${n > 3 ? "…" : ""}`, `Skipped ${n} topic(s) not found verbatim in the file: ${plan.classificationDropped!.slice(0, 3).join("; ")}${n > 3 ? "…" : ""}`) : ""
+  return n ? tr(`Bỏ qua ${n} kết quả AI không khớp dòng nào trong file: ${plan.classificationDropped!.slice(0, 3).join("; ")}${n > 3 ? "…" : ""}`, `Skipped ${n} AI result(s) that match no line of the file: ${plan.classificationDropped!.slice(0, 3).join("; ")}${n > 3 ? "…" : ""}`) : ""
 }
 
 function PlanFromDoc({ ctx, file }: { ctx: Ctx; file: DocumentFile }) {
