@@ -15,7 +15,7 @@ import { draftWithoutImagePlaceholders, step4ChecklistDocs } from "../lib/qualit
 const readable = (draft?: string) => normalizeDraftOutput(draftWithoutImagePlaceholders(draft ?? ""))
 import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../lib/qcGroups"
 import StructureSelect from "./StructureSelect"
-import { ModelsSettings, WorkflowAiSettings } from "./AiSettings"
+import { ModelsSettings, SystemStatus, WorkflowAiSettings } from "./AiSettings"
 import { AddDocForm, DocDetails, LegacyArchive } from "./StorageDocs"
 import WebsiteInventory from "./WebsiteInventory"
 import WorkflowRules from "./WorkflowRules"
@@ -1263,8 +1263,11 @@ function EmbeddedSettings({ ctx, p, title }: { ctx: Ctx; p: string; title: strin
   const save = async (eventTimeStamp: number) => { setSaving(true); try { await trackHandoff(eventTimeStamp, () => ctx.onSaveConfig(config, files, false)); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } finally { setSaving(false) } }
   const actions = <button className="btn primary" aria-label={tr("Lưu thay đổi", "Save changes")} disabled={!dirty || saving} onClick={e => void save(e.timeStamp)}><I n="device-floppy" /><span>{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</span></button>
   return <SettingsShell title={title} actions={actions}>
-    {p === "workflow-ai" && <WorkflowAiSettings config={config} files={files} articles={ctx.articles} docs={ctx.docs} onChange={setConfig} />}
+    {p === "workflow-ai" && <>
+      <WorkflowAiSettings config={config} files={files} articles={ctx.articles} onChange={setConfig} />
+      <WorkflowRules config={config} files={files} onChange={setConfig} />
+      <SystemStatus config={config} docs={ctx.docs} />
+    </>}
     {p === "models" && <ModelsSettings config={config} onChange={setConfig} />}
-    {p === "workflow-ai" && <WorkflowRules config={config} files={files} onChange={setConfig} />}
   </SettingsShell>
 }

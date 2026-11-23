@@ -338,6 +338,15 @@ test('CRM plan capacity note shows only next to a batch list', async ({ page }) 
   await expect(note).toHaveCount(0);
 });
 
+test('CRM Workflow AI reads top to bottom: models, numbers, instructions, always on, system', async ({ page }) => {
+  await mockApp(page);
+  await goHash(page, '/settings/workflow-ai');
+  await expect(page.getByRole('heading', { name: 'Models per gate' })).toBeVisible();
+  const headings = await page.locator('.set-inner h2').allTextContents();
+  expect(headings).toEqual(['Models per gate', 'Thông số pipeline', 'Hướng dẫn riêng của team', 'Luôn bật', 'Hệ thống']);
+  await expect(page.getByText('0 AI calls')).toHaveCount(0);
+});
+
 test('CRM Editorial article waits for outline approval, then drafts through the pipeline', async ({ page }) => {
   const editorial = { id: 'a-editorial', title: 'Editorial piece', topic: 'Editorial piece', currentStep: 3, status: 'review', createdAt: now, updatedAt: now,
     contentPlanId: 'plan-1', contentPlanItemId: 'i9', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-ed', activityType: 'editorial-originality', batchStatus: 'awaiting_approval',

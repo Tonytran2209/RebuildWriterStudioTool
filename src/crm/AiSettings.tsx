@@ -14,11 +14,8 @@ type TaskKey = "review" | "seo" | "inventory"
 type Task = { key: string; tag: string; color: string; label: string; desc: string; step?: number; task?: TaskKey; required?: boolean; openaiOnly?: boolean; fallback?: string }
 
 /** Settings › Workflow AI in the demo layout: one row per AI task that has a model to choose. */
-export function WorkflowAiSettings({ config, articles, docs = [], onChange }: WorkflowProps) {
+export function WorkflowAiSettings({ config, articles, onChange }: WorkflowProps) {
   const { tr } = useI18n()
-  const [status, setStatus] = useState<BackendStatus | null>(null)
-  const check = () => { setStatus(null); void pingRailway(config.railwayUrl || RAILWAY_URL).then(setStatus) }
-  useEffect(check, [config.railwayUrl])
   const models = config.models.filter(m => m.enabled)
   // Every AI call the tool makes, in pipeline order. Steps keep their document access (Shipper); only the model changes here.
   const tasks: Task[] = [
@@ -37,19 +34,12 @@ export function WorkflowAiSettings({ config, articles, docs = [], onChange }: Wo
   const usage = (step?: number) => {
     if (!step || step === 1) return null
     const calls = articles.flatMap(a => a.aiUsageByStep?.[step as 2 | 3 | 4] ?? [])
+    if (!calls.length) return null
     return `${calls.reduce((n, c) => n + Number(c.totalTokens ?? 0), 0).toLocaleString()} tokens · ${calls.length} AI calls`
   }
   const missing = tasks.filter(t => t.required && !models.some(m => m.id === valueOf(t)))
   return <>
-    <Sec title={tr("Hệ thống", "System")}>
-      <div className="box">
-        <BackendRows status={status} onRecheck={check} />
-        {/* Same five groups as Storage, so a document is filed in one place everywhere. */}
-        {STORAGE_GROUPS.map(([g, c]) => { const ready = docs.filter(d => d.g === g && d.st !== "missing")
-          return <div key={g} className="box-row"><span className={`tag t-${c}`}>{g}</span><div className="grow" style={{ minWidth: 0 }}><div className="s" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ready.map(d => d.name).join(", ") || tr("Chưa có dữ liệu", "No data loaded")}</div></div>{ready.length}</div> })}
-      </div>
-    </Sec>
-    <Sec title={tr("Model cho từng tác vụ AI", "Model per AI task")} desc={tr("Mọi bước có gọi AI trong tool, theo thứ tự pipeline. Tài liệu mỗi gate được nạp do Shipper quyết định; model chỉ hiện khi đã bật ở AI Models.", "Every AI call the tool makes, in pipeline order. Shipper decides which documents each gate gets; a model appears here once enabled in AI Models.")}>
+    <Sec title="Models per gate" desc={tr("Mỗi bước có gọi AI, theo thứ tự pipeline. Danh sách chỉ gồm model đã bật ở AI Models.", "Every AI call the tool makes, in pipeline order. Shipper decides which documents each gate gets; a model appears here once enabled in AI Models.")}>
       {missing.length > 0 && <div className="box" style={{ marginBottom: 12, borderColor: "var(--c-orange-bg)", background: "var(--c-orange-bg)" }}><div className="box-row" style={{ color: "var(--c-orange)" }}><I n="alert-triangle" /><div className="grow">{tr("Chưa chọn model", "No model selected")}: {missing.map(t => t.label).join(", ")}<div className="s">{tr("Batch sẽ dừng ở bước này cho đến khi có model.", "Batches stop at this step until a model is set.")}</div></div></div></div>}
       <div className="box">{tasks.map(t => {
         const choices = t.openaiOnly ? models.filter(m => m.provider === "openai") : models
@@ -57,14 +47,30 @@ export function WorkflowAiSettings({ config, articles, docs = [], onChange }: Wo
         return <div key={t.key} className="box-row" style={{ flexWrap: "wrap" }}>
           <span className={`tag t-${t.color}`}>{t.tag}</span>
           <div className="grow" style={{ minWidth: 200 }}>{t.label}<div className="s">{t.desc}{stat && <> · {stat}</>}</div></div>
-          <select className="inp" style={{ width: 200 }} aria-label={`${t.label} model`} value={valueOf(t)} onChange={e => setValue(t, e.target.value)}>
-            <option value="">{t.required ? `— ${tr("Chọn model", "Select model")} —` : t.task === "review" ? tr("Giống model G3", "Same as G3") : `${tr("Mặc định", "Default")} (${t.fallback})`}</option>
+          <select className="inp" style={{ width: 170 }} title={!valueOf(t) && t.fallback ? `${tr("Mặc định", "Default")}: ${t.fallback}` : undefined} aria-label={`${t.label} model`} value={valueOf(t)} onChange={e => setValue(t, e.target.value)}>
+            <option value="">{t.required ? `— ${tr("Chọn model", "Select model")} —` : t.task === "review" ? tr("Giống model G3", "Same as G3") : tr("Mặc định", "Default")}</option>
             {choices.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
       })}</div>
     </Sec>
   </>
+}
+
+/** Diagnostics, kept at the end of Workflow AI: backend health and where documents live. */
+export function SystemStatus({ config, docs = [] }: { config: AppConfig; docs?: StorageDoc[] }) {
+  const { tr } = useI18n()
+  const [status, setStatus] = useState<BackendStatus | null>(null)
+  const check = () => { setStatus(null); void pingRailway(config.railwayUrl || RAILWAY_URL).then(setStatus) }
+  useEffect(check, [config.railwayUrl])
+  const ready = docs.filter(d => d.st !== "missing")
+  return <Sec title={tr("Hệ thống", "System")} desc={tr("Chỉ để kiểm tra; không có gì cần cài đặt ở đây.", "For checking only; nothing to set here.")}>
+    <div className="box">
+      <BackendRows status={status} onRecheck={check} />
+      <div className="box-row"><I n="folders" /><div className="grow">{tr("Tài liệu", "Documents")}<div className="s">{STORAGE_GROUPS.map(([g]) => `${g} ${ready.filter(d => d.g === g).length}`).join(" · ")}</div></div>
+        <a className="btn" href="#/settings/shipper"><I n="truck-delivery" />Shipper</a><a className="btn" href="#/objects/storage"><I n="folders" />Storage</a></div>
+    </div>
+  </Sec>
 }
 
 const Light = ({ ok, on, off, wait }: { ok: boolean | null | undefined; on: string; off: string; wait?: string }) =>
