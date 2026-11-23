@@ -111,7 +111,7 @@ export function plansOf(contentPlans: ContentPlan[], articles: CrmArticle[], set
 /* ─── Storage (5 groups) over real Knowledge & Rules files ─────────────── */
 
 export const STORAGE_GROUPS = [["Domain Knowledge", "red"], ["Playbooks", "purple"], ["Standards", "sky"], ["Voice & Style", "pink"], ["Source data", "turq"]] as const
-export type StorageDoc = { id: string; g: string; name: string; st: "ok" | "partial" | "draft" | "missing"; used: number[]; types: ArticleType[]; note: string; updatedAt?: string; file?: DocumentFile; planId?: string }
+export type StorageDoc = { id: string; g: string; name: string; st: "ok" | "partial" | "draft" | "missing" | "running"; used: number[]; types: ArticleType[]; note: string; updatedAt?: string; file?: DocumentFile; planId?: string }
 
 const SHIP_STEPS = [2, 3, 4] as const
 /** Groups a document can be added to; Source data comes in through the Content Plan upload instead. */
@@ -151,7 +151,9 @@ export function storageDocs(files: DocumentFile[], config: AppConfig, approvedAr
   // Imported Content Plans are the topic source for G1; they are added through Add Plan, not Storage.
   // totalArticles counts created articles, so the topic count comes from the plan's classified items.
   const plans: StorageDoc[] = contentPlans.map(plan => { const topics = (plan.items ?? []).filter(i => i.status !== "archived").length
-    return { id: `plan-${plan.id}`, planId: plan.id, g: "Source data", name: plan.name, st: topics ? "ok" : "draft", used: [1], types: ["A", "B", "C", "ED"], note: `Content Plan · ${topics ? `${topics} topic` : "chưa phân loại topic"}${plan.status === "archived" ? " · archived" : ""}`, updatedAt: plan.updatedAt } })
+    const st = plan.status === "processing" ? "running" : plan.status === "failed" ? "partial" : topics ? "ok" : "draft"
+    const state = plan.status === "processing" ? "AI đang phân tích topic" : plan.status === "failed" ? `phân tích lỗi${plan.classificationError ? `: ${plan.classificationError}` : ""}` : topics ? `${topics} topic` : "chưa phân loại topic"
+    return { id: `plan-${plan.id}`, planId: plan.id, g: "Source data", name: plan.name, st, used: [1], types: ["A", "B", "C", "ED"], note: `Content Plan · ${state}${plan.status === "archived" ? " · archived" : ""}`, updatedAt: plan.updatedAt } })
   return [...real, ...plans, ...missing, approved]
 }
 

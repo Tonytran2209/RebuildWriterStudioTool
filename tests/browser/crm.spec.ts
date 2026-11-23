@@ -23,6 +23,12 @@ const structureFile = { id: 'outline-md', name: 'Outline forms.md', category: 'r
 async function mockApp(page: Page, role: 'admin' | 'user' | 'reviewer' = 'admin') {
   const user = { id: role, email: role + '@example.com', role };
   let serverFiles: any[] = [structureFile];
+  let newPlanProcessing = false;
+  const classifiedPlan = { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3, status: 'ready', items: [
+    { id: 'n1', title: 'A vs B', keywords: ['a vs b'], type: 'comparison-seo', sourceLine: 'A vs B' },
+    { id: 'n2', title: 'C vs D', keywords: [], type: 'comparison-seo', sourceLine: 'C vs D' },
+    { id: 'n3', title: 'Why E matters', keywords: [], type: 'needs-review', sourceLine: 'Why E matters' },
+  ], classificationDropped: ['Ghost topic'] };
   const log = { files: [] as any[][], imports: [] as any[], reruns: [] as any[], puts: [] as any[], configs: [] as any[], created: [] as any[], started: [] as string[], imported: [] as any[], deleted: [] as string[] };
   await page.addInitScript(user => localStorage.setItem('writer:auth-session', JSON.stringify({ authProvider: 'postgres', accessToken: '', expiresAt: null, user })), user);
   const config = { ...DEFAULT_CONFIG, stepConfigs: { ...DEFAULT_CONFIG.stepConfigs, 3: { ...DEFAULT_CONFIG.stepConfigs[3], fileAccess: { kb: [], rules: ['outline-md'] } } } };
@@ -41,12 +47,19 @@ async function mockApp(page: Page, role: 'admin' | 'user' | 'reviewer' = 'admin'
     if (rerun) { const body = route.request().postDataJSON(); log.reruns.push({ id: rerun[1], ...body }); return route.fulfill({ status: 202, json: { ok: true, article: { ...articles[0], qualityReport: null, batchStatus: 'queued' } } }); }
     if (method === 'DELETE' && /^\/api\/(articles|batches)\//.test(url.pathname)) { log.deleted.push(decodeURIComponent(url.pathname)); return route.fulfill({ json: { ok: true } }); }
     if (url.pathname.startsWith('/api/articles/') && method === 'PUT') { const patch = route.request().postDataJSON(); log.puts.push(patch); return route.fulfill({ json: { ok: true, article: { ...articles[0], ...patch } } }); }
-    if (url.pathname === '/api/content-plans/import') { const ct = route.request().headers()['content-type'] ?? ''; log.imported.push(ct.includes('multipart') ? { multipart: route.request().postDataBuffer()?.toString() } : route.request().postDataJSON()); return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3 } } }); }
-    if (url.pathname === '/api/content-plans/plan-new/classify') return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3, items: [
-      { id: 'n1', title: 'A vs B', keywords: ['a vs b'], type: 'comparison-seo', sourceLine: 'A vs B' },
-      { id: 'n2', title: 'C vs D', keywords: [], type: 'comparison-seo', sourceLine: 'C vs D' },
-      { id: 'n3', title: 'Why E matters', keywords: [], type: 'needs-review', sourceLine: 'Why E matters' },
-    ], classificationDropped: ['Ghost topic'] } } });
+    if (url.pathname === '/api/content-plans/import') {
+      const ct = route.request().headers()['content-type'] ?? '';
+      const sent = ct.includes('multipart') ? { multipart: route.request().postDataBuffer()?.toString() } : route.request().postDataJSON();
+      log.imported.push(sent);
+      // Storage asks the server to classify in the background: the plan comes back processing.
+      const background = 'multipart' in sent ? /name="classify"/.test(sent.multipart ?? '') : Boolean(sent.classify);
+      if (background) newPlanProcessing = true;
+      return route.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', totalArticles: 3, status: background ? 'processing' : 'draft', items: [] } } });
+    }
+    if (url.pathname === '/api/content-plans/plan-new/classify' && url.searchParams.get('background') === '1') { newPlanProcessing = true; return route.fulfill({ status: 202, json: { plan: { ...plan, id: 'plan-new', name: 'New plan', status: 'processing', items: [] } } }); }
+    if (url.pathname === '/api/content-plans/plan-new/classify') return route.fulfill({ json: { plan: classifiedPlan } });
+    // The first poll after a background start finds the plan classified.
+    if (url.pathname === '/api/content-plans/plan-new' && method === 'GET') { newPlanProcessing = false; return route.fulfill({ json: { plan: classifiedPlan } }); }
     if (url.pathname === '/api/content-plans') return route.fulfill({ json: [plan] });
     const fileId = url.pathname.match(/^\/api\/files\/([^/]+)$/);
     if (fileId && method === 'DELETE') { serverFiles = serverFiles.filter(f => f.id !== decodeURIComponent(fileId[1])); log.files.push(serverFiles.map(f => f.id)); const cfg = { ...config, stepConfigs: { ...config.stepConfigs, 3: { ...config.stepConfigs[3], fileAccess: { kb: [], rules: [] } } } }; log.configs.push(cfg); return route.fulfill({ json: { ok: true, files: serverFiles, config: cfg } }); }
@@ -311,7 +324,7 @@ test('CRM Storage Add Content Plan dialog uploads, shows each step and opens the
 
 test('CRM Add Content Plan dialog keeps the saved plan when classification fails', async ({ page }) => {
   await mockApp(page);
-  await page.route('**/api/content-plans/plan-new/classify', r => r.fulfill({ status: 422, json: { error: 'CLASSIFY_FAILED_SENTINEL' } }));
+  await page.route('**/api/content-plans/plan-new', r => r.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', status: 'failed', items: [], classificationError: 'CLASSIFY_FAILED_SENTINEL' } } }));
   await goHash(page, '/objects/storage');
   await page.getByRole('button', { name: /Thêm Content Plan|Add Content Plan/ }).click();
   const dialog = page.getByRole('dialog', { name: /Thêm Content Plan|Add Content Plan/ });
@@ -320,6 +333,27 @@ test('CRM Add Content Plan dialog keeps the saved plan when classification fails
   await expect(dialog.locator('.tl-item.pu-error')).toContainText('CLASSIFY_FAILED_SENTINEL');
   await expect(dialog.locator('.tl-item.pu-done')).toHaveCount(1);
   await expect(dialog.getByRole('button', { name: /Mở Content Plan|Open Content Plan/ })).toBeVisible();
+  await dialog.getByRole('button', { name: /Mở Content Plan|Open Content Plan/ }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'CLASSIFY_FAILED_SENTINEL' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Phân loại lại|Classify again/ })).toBeVisible();
+});
+
+test('CRM background Content Plan analysis keeps running after the panel closes and Storage shows it', async ({ page }) => {
+  await mockApp(page);
+  let polls = 0;
+  await page.route('**/api/content-plans/plan-new', async r => { polls++; if (polls < 2) return r.fulfill({ json: { plan: { ...plan, id: 'plan-new', name: 'New plan', status: 'processing', items: [] } } }); return r.fallback(); });
+  await goHash(page, '/objects/storage');
+  await page.getByRole('button', { name: /Thêm Content Plan|Add Content Plan/ }).click();
+  const dialog = page.getByRole('dialog', { name: /Thêm Content Plan|Add Content Plan/ });
+  await dialog.getByLabel(/File Content Plan|Content Plan file/).setInputFiles({ name: 'Plan.txt', mimeType: 'text/plain', buffer: Buffer.from('A vs B') });
+  await dialog.getByRole('button', { name: /Phân tích & tạo Content Plan|Analyze & create Content Plan/ }).click();
+  await expect(dialog).toContainText(/Có thể đóng panel|You can close this panel/);
+  await page.getByRole('button', { name: 'Close' }).click();
+  const row = page.locator('tr', { hasText: 'New plan' });
+  await expect(row).toContainText('Analyzing');
+  await expect(row).toContainText(/AI đang phân tích topic/);
+  await expect(row).toContainText('3 topic', { timeout: 10000 });
+  await expect(row).toContainText('Ready');
 });
 
 test('CRM Settings list documents in the same groups as Storage', async ({ page }) => {

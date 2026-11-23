@@ -427,3 +427,8 @@
 .crm .tl-item.pu-error .dot{border-color:var(--danger);color:var(--danger)}
 .crm .tl-item.pu-error .pu-out{color:var(--danger)}
 .crm .pu-topics{max-height:300px;overflow:auto}
+
+/* Loader icons turn while work runs (status tags, buttons, timelines). */
+@keyframes crm-spin{to{transform:rotate(360deg)}}
+.crm .ti-loader-2{display:inline-block;animation:crm-spin 1s linear infinite}
+@media (prefers-reduced-motion:reduce){.crm .ti-loader-2{animation:none}}

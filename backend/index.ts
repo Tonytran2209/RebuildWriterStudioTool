@@ -3388,7 +3388,19 @@ async function relationalPlansAvailable() {
   return tableAvailable("content_plans")
 }
 
+// Latest classification outcome per plan: error of a failed run, topics left out of a finished one.
+const PLAN_RUN_PREFIX = "writer:content-plan-run:"
+async function withRunMeta(plan: any) {
+  if (!plan) return plan
+  const meta = await kvGet<any>(`${PLAN_RUN_PREFIX}${plan.id}`)
+  return { ...plan, ...(plan.status === "failed" && meta?.error ? { classificationError: meta.error } : {}), ...(Array.isArray(meta?.dropped) && meta.dropped.length ? { classificationDropped: meta.dropped } : {}) }
+}
+
 async function getContentPlan(id: string): Promise<any | null> {
+  return withRunMeta(await readContentPlan(id))
+}
+
+async function readContentPlan(id: string): Promise<any | null> {
   if (await relationalPlansAvailable()) {
     const [plans, sources, items] = await Promise.all([
       tableSelect<any>("content_plans", (query) => query.eq("id", id)),
@@ -3411,9 +3423,10 @@ async function listContentPlans(): Promise<any[]> {
     )
     return Promise.all(plans.map((plan) => getContentPlan(plan.id)))
   }
-  return (await kvGetByPrefix(CONTENT_PLAN_PREFIX))
+  return (await Promise.all((await kvGetByPrefix(CONTENT_PLAN_PREFIX))
     .map((record) => record.value)
     .filter(Boolean)
+    .map(withRunMeta)))
     .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
 }
 
@@ -3817,7 +3830,9 @@ app.post(
           contentLength: content.length,
         },
       })
-      res.status(201).json({ plan, reused: false })
+      // Storage upload and Storage documents ask the server to classify right away, in the background.
+      const classify = ["1", "true"].includes(String(body.classify ?? ""))
+      res.status(201).json({ plan: classify ? await startPlanClassification(plan) : plan, reused: false })
     } catch (err: any) {
       res.status(500).json({ error: err.message })
     }
@@ -3829,26 +3844,61 @@ async function saveLabRun(run: any) {
   try { await kvSet(`lab-run:v1:${run.runId}`, run) } catch (error) { console.warn("lab run not saved", run.runId, error) }
 }
 
+const httpError = (status: number, message: string) => Object.assign(new Error(message), { status, http: true })
+// Plans being classified by this server process; a second request for the same plan waits for nothing and gets 409.
+const classifyingPlans = new Set<string>()
+
 async function classifyPlanRequest(req: any, res: any, force: boolean) {
-  let run: any = null
   try {
     const plan = await getContentPlan(req.params.id)
-    if (!plan)
-      return res.status(404).json({ error: "Content Plan không tồn tại." })
+    if (!plan) return res.status(404).json({ error: "Content Plan không tồn tại." })
+    if (req.query?.background === "1") return res.status(202).json({ plan: await startPlanClassification(plan, force) })
+    res.json(await classifyPlanLocked(plan.id, force))
+  } catch (err: any) {
+    if (err?.http) return res.status(err.status).json({ error: err.message })
+    const classified = classifyAIError(err, "openai", "content-plan-classifier")
+    res.status(classified.status).json(classified.body)
+  }
+}
+
+async function classifyPlanLocked(planId: string, force: boolean) {
+  if (classifyingPlans.has(planId)) throw httpError(409, "Content Plan này đang được phân tích.")
+  classifyingPlans.add(planId)
+  try { return await classifyPlan(planId, force) } finally { classifyingPlans.delete(planId) }
+}
+
+/**
+ * Mark the plan as processing and classify it after the response, so closing the panel, the tab or
+ * the browser does not stop it. The outcome is saved on the plan (ready, or failed with its error).
+ */
+async function startPlanClassification(plan: any, force = false) {
+  if (classifyingPlans.has(plan.id)) return plan
+  if (!force && plan.status === "ready" && plan.items?.length) return plan
+  await setPlanStatus(plan, "processing")
+  await kvSet(`${PLAN_RUN_PREFIX}${plan.id}`, { startedAt: new Date().toISOString() })
+  void classifyPlanLocked(plan.id, force).catch(async (err: any) => {
+    const message = err?.http ? err.message : String(classifyAIError(err, "openai", "content-plan-classifier").body?.error ?? err?.message ?? err)
+    try {
+      await setPlanStatus(plan, "failed")
+      await kvSet(`${PLAN_RUN_PREFIX}${plan.id}`, { error: compactText(message, 400), endedAt: new Date().toISOString() })
+    } catch (saveError) { console.error("content plan failure not saved", plan.id, saveError) }
+  })
+  return getContentPlan(plan.id)
+}
+
+async function classifyPlan(planId: string, force: boolean) {
+  let run: any = null
+  try {
+    const plan = await getContentPlan(planId)
+    if (!plan) throw httpError(404, "Content Plan không tồn tại.")
     if (!force && plan.status === "ready" && plan.items?.length)
-      return res.json({ plan, cacheHit: true })
+      return { plan, cacheHit: true }
     const config = await kvGet<any>("writer:config")
     const step = config?.stepConfigs?.[1]
     const model = config?.models?.find(
       (item: any) => item.id === step?.modelId && item.enabled,
     )
-    if (!model)
-      return res
-        .status(422)
-        .json({
-          error:
-            "Hãy chọn một AI model đang bật cho Step 1 trước khi phân loại Content Plan.",
-        })
+    if (!model) throw httpError(422, "Hãy chọn một AI model đang bật cho Step 1 trước khi phân loại Content Plan.")
     const explicitItems = deterministicPlanItems(plan)
     const hasUnclassifiedContent = (plan.sources ?? []).some((source: any) =>
       String(source.extractedContent ?? "")
@@ -3862,7 +3912,8 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
     if (explicitItems.length && !hasUnclassifiedContent) {
       const saved = await saveClassifiedPlan(plan, explicitItems, "deterministic-plan-v1")
       await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: explicitItems.length, succeeded: saved.items?.length ?? explicitItems.length } })
-      return res.json({ plan: saved, cacheHit: false, deterministic: true })
+      await kvSet(`${PLAN_RUN_PREFIX}${plan.id}`, { endedAt: new Date().toISOString() })
+      return { plan: saved, cacheHit: false, deterministic: true }
     }
     const responses: any[] = []
     let budgetReserved = false
@@ -3939,12 +3990,12 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
       }
     }
     await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: explicitItems.length + rawItems.length, succeeded: saved.items?.length ?? items.length } })
-    // Not stored: rows the AI named but that could not be found in the source, so the user can check them.
-    res.json({ plan: { ...saved, classificationDropped: dropped }, cacheHit: responses.length === 0 })
+    // Rows the AI named that could not be found in the source, so the user can check them.
+    await kvSet(`${PLAN_RUN_PREFIX}${plan.id}`, { dropped, endedAt: new Date().toISOString() })
+    return { plan: { ...saved, ...(dropped.length ? { classificationDropped: dropped } : {}) }, cacheHit: responses.length === 0 }
   } catch (err: any) {
-    const classified = classifyAIError(err, "openai", "content-plan-classifier")
-    if (run) await saveLabRun({ ...run, status: "failed", endedAt: new Date().toISOString(), error: String((classified.body as any)?.code ?? classified.status) })
-    res.status(classified.status).json(classified.body)
+    if (run) await saveLabRun({ ...run, status: "failed", endedAt: new Date().toISOString(), error: String(err?.http ? err.status : (classifyAIError(err, "openai", "content-plan-classifier").body as any)?.code ?? "CLASSIFY_FAILED") })
+    throw err
   }
 }
 
@@ -4007,6 +4058,15 @@ app.patch("/api/content-plans/:id/items/:itemId", async (req, res) => {
   }
 })
 
+async function setPlanStatus(plan: any, status: string) {
+  if (await relationalPlansAvailable())
+    await tableUpdate("content_plans", plan.id, { status, updated_at: new Date().toISOString() })
+  else {
+    const stored = await kvGet<any>(`${CONTENT_PLAN_PREFIX}${plan.id}`)
+    if (stored) await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, { ...stored, status, updatedAt: new Date().toISOString() })
+  }
+}
+
 app.patch("/api/content-plans/:id/status", async (req, res) => {
   try {
     const status = String(req.body?.status ?? "")
@@ -4017,16 +4077,7 @@ app.patch("/api/content-plans/:id/status", async (req, res) => {
     const plan = await getContentPlan(req.params.id)
     if (!plan)
       return res.status(404).json({ error: "Content Plan không tồn tại." })
-    if (await relationalPlansAvailable())
-      await tableUpdate("content_plans", plan.id, {
-        status,
-        updated_at: new Date().toISOString(),
-      })
-    else {
-      plan.status = status
-      plan.updatedAt = new Date().toISOString()
-      await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, plan)
-    }
+    await setPlanStatus(plan, status)
     res.json({ plan: await getContentPlan(plan.id) })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
@@ -5552,6 +5603,11 @@ app.get("*", (_req, res) => {
 
 const server = app.listen(PORT, () => {
   console.log(`\n🚀 Writer Studio Backend running on port ${PORT}`)
+  // A restart stops background classification; say so on those plans instead of leaving them "processing".
+  void listContentPlans().then(plans => Promise.all(plans.filter(plan => plan?.status === "processing").map(async plan => {
+    await setPlanStatus(plan, "failed")
+    await kvSet(`${PLAN_RUN_PREFIX}${plan.id}`, { error: "Server khởi động lại khi đang phân tích. Hãy bấm Phân loại lại.", endedAt: new Date().toISOString() })
+  }))).catch(error => console.error("[content-plans] stale processing check failed:", error))
   console.log(`   Providers: ${JSON.stringify(getAvailableProviders())}`)
   console.log(`   Database provider: ${databaseProvider()} (connection checked at /health/dependencies); Auth: Supabase; Files: ${storageProvider()}`)
   if (process.env.WRITER_MAINTENANCE_MODE === "true" || process.env.RUN_LEGACY_PROJECTION_ON_START !== "true") return

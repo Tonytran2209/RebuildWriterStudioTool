@@ -4,7 +4,7 @@ import type { OutlineStructureSnapshot } from "../../shared/outlineStructures"
 import type { ThemePreference } from "../lib/theme"
 import { useI18n } from "../lib/i18n"
 import * as db from "../lib/db"
-import { classifyContentPlan, deleteContentPlan, importContentPlan, updateContentPlanStatus } from "../lib/contentPlans"
+import { classifyContentPlan, deleteContentPlan, fetchContentPlan, importContentPlan, startContentPlanClassification, updateContentPlanStatus } from "../lib/contentPlans"
 import { markdownToHtml, normalizeDraftOutput } from "../lib/draftExport"
 import { buildBatchZip } from "../lib/zipExport"
 import { inReviewSample, pipelineSettings, type RerunGate } from "../lib/pipeline"
@@ -123,6 +123,7 @@ const NavToggle = createContext<() => void>(() => {})
 
 export default function CrmApp(props: CrmProps) {
   const settings = pipelineSettings(props.config)
+  usePlanClassificationWatch(props)
   const [hash, setHash] = useState(() => window.location.hash)
   const [panel, setPanel] = useState<Panel>(null)
   const [navOpen, setNavOpen] = useState(false)
@@ -273,7 +274,7 @@ const PersonChip = ({ n }: { n?: string }) => n ? <span className="rchip"><Av na
 /* ─── object index (table / kanban) ────────────────────────────────────── */
 
 type Field = { key: string; label: string; icon: string; num?: boolean; render?: (r: any) => ReactNode; sortVal?: (r: any) => string | number; text?: (r: any) => string }
-const docStatus = (d: StorageDoc) => ({ ok: ["Ready", "green"], partial: ["Partial", "orange"], draft: ["Draft", "orange"], missing: ["Missing", "red"] } as const)[d.st]
+const docStatus = (d: StorageDoc) => ({ ok: ["Ready", "green"], partial: ["Partial", "orange"], draft: ["Draft", "orange"], missing: ["Missing", "red"], running: ["Analyzing", "blue"] } as const)[d.st]
 const nameOf = (o: Obj, r: any): string => o === "batches" ? `Batch ${r.idx}` : r.name ?? r.title
 
 function fieldsFor(ctx: Ctx, o: Obj, ago: (d?: string | null) => string, tr: (vi: string, en: string) => string): Field[] {
@@ -320,7 +321,7 @@ function fieldsFor(ctx: Ctx, o: Obj, ago: (d?: string | null) => string, tr: (vi
   return [
     { key: "name", label: "Document", icon: "abc", text: (r: StorageDoc) => r.name },
     { key: "g", label: "Group", icon: "folder", render: (r: StorageDoc) => <Tag c={STORAGE_GROUPS.find(g => g[0] === r.g)![1]}>{r.g}</Tag> },
-    { key: "st", label: "Status", icon: "progress-check", render: (r: StorageDoc) => { const [l, c] = docStatus(r); return <Tag c={c}>{l}</Tag> } },
+    { key: "st", label: "Status", icon: "progress-check", render: (r: StorageDoc) => { const [l, c] = docStatus(r); return <Tag c={c}>{r.st === "running" && <I n="loader-2" />}{l}</Tag> } },
     { key: "used", label: "Used at", icon: "git-merge", render: (r: StorageDoc) => r.used.map(u => <Tag key={u} c="blue" s={{ marginRight: 4 }}>{u === 4 ? "Final" : "G" + u}</Tag>) },
     { key: "types", label: "Applies to types", icon: "category", render: (r: StorageDoc) => r.types.map(x => <Tag key={x} c="gray" s={{ marginRight: 4 }}>{x}</Tag>) },
     { key: "note", label: "Note", icon: "notes", render: (r: StorageDoc) => <span className="muted">{r.note}</span> },
@@ -650,7 +651,8 @@ function PlanTopics({ ctx, p }: { ctx: Ctx; p: CrmPlan }) {
   const [classifying, setClassifying] = useState(false)
   const classify = async (eventTimeStamp: number) => {
     setClassifying(true)
-    try { ctx.onContentPlansChange([await trackHandoff(eventTimeStamp, () => classifyContentPlan(p.id, ctx.config.railwayUrl))]) } catch (err) { toastErr(err) } finally { setClassifying(false) }
+    // Runs on the server; the plan watch picks up the result, so the user can leave this page.
+    try { ctx.onContentPlansChange([await trackHandoff(eventTimeStamp, () => startContentPlanClassification(p.id, ctx.config.railwayUrl, p.plan.status === "failed"))]) } catch (err) { toastErr(err) } finally { setClassifying(false) }
   }
   const orphans = p.articles.filter(a => !items.some(i => i.id === a.a.contentPlanItemId))
   const article = (a: CrmArticle) => <div key={a.id} className="list-row" role="link" tabIndex={0} onClick={() => go(`#/object/articles/${enc(a.id)}`)} onKeyDown={e => { if (e.key === "Enter") go(`#/object/articles/${enc(a.id)}`) }}><TypeTag t={a.type} /><span className="grow">{a.title}</span><GateBar a={a} /><StatusTag k={a.status} /></div>
@@ -667,8 +669,11 @@ function PlanTopics({ ctx, p }: { ctx: Ctx; p: CrmPlan }) {
     {items.map(item => { const a = byItem.get(item.id); if (a) return article(a); const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]
       return <div key={item.id} className={`list-row${picked.has(item.id) ? " sel" : ""}`} style={{ cursor: "default" }}>{canPick && item.status !== "archived" && <input type="checkbox" aria-label={`${tr("Chọn", "Select")} ${item.title}`} checked={picked.has(item.id)} onChange={() => setPicked(prev => { const next = new Set(prev); if (!next.delete(item.id)) next.add(item.id); return next })} />}<Tag c={c}>{l}</Tag><span className="grow" style={{ color: "var(--f2)" }}>{item.title}{item.keywords?.length ? <span className="muted" style={{ color: "var(--f3)" }}> · {item.keywords.slice(0, 3).join(", ")}</span> : null}</span><Tag c="gray">{item.status === "archived" ? "Archived" : tr("Chưa chạy", "Not started")}</Tag></div> })}
     {orphans.map(article)}
-    {!items.length && !orphans.length && <div className="empty-state"><I n="file-text" /><h3>{tr("Plan chưa có topic", "This plan has no topics")}</h3>
-      {canPick && <><p>{tr("Plan đã được lưu nhưng chưa phân loại topic.", "The plan is saved but its topics are not classified yet.")}</p><button className="btn primary" disabled={classifying} onClick={e => void classify(e.timeStamp)}><I n={classifying ? "loader-2" : "sparkles"} />{tr("Phân loại topic", "Classify topics")}</button></>}</div>}
+    {!items.length && !orphans.length && (p.plan.status === "processing"
+      ? <div className="empty-state" role="status"><I n="loader-2" /><h3>{tr("AI đang phân tích topic…", "AI is analyzing topics…")}</h3><p>{tr("Việc phân tích chạy trên server; có thể rời trang này, tool sẽ báo khi xong.", "The analysis runs on the server; you can leave this page and the tool will tell you when it is done.")}</p></div>
+      : <div className="empty-state"><I n={p.plan.status === "failed" ? "alert-triangle" : "file-text"} /><h3>{p.plan.status === "failed" ? tr("Phân tích topic bị lỗi", "Topic analysis failed") : tr("Plan chưa có topic", "This plan has no topics")}</h3>
+      {p.plan.status === "failed" && p.plan.classificationError && <p role="alert">{p.plan.classificationError}</p>}
+      {canPick && <><p>{tr("Plan đã được lưu nhưng chưa phân loại topic.", "The plan is saved but its topics are not classified yet.")}</p><button className="btn primary" disabled={classifying} onClick={e => void classify(e.timeStamp)}><I n={classifying ? "loader-2" : "sparkles"} />{p.plan.status === "failed" ? tr("Phân loại lại", "Classify again") : tr("Phân loại topic", "Classify topics")}</button></>}</div>)}
   </div>
 }
 
@@ -969,6 +974,25 @@ function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
 }
 
 /** A plan-like Storage document becomes a real Content Plan: import its text, classify topics, open the plan. */
+/** While a plan is classified on the server, refresh it every few seconds and say when it is done. */
+function usePlanClassificationWatch(props: CrmProps) {
+  const { tr } = useI18n()
+  const processing = props.contentPlans.filter(p => p.status === "processing").map(p => p.id).join(",")
+  useEffect(() => {
+    if (!processing) return
+    const t = setInterval(async () => {
+      const fresh = (await Promise.all(processing.split(",").map(id => fetchContentPlan(id, props.config.railwayUrl).catch(() => null)))).filter((p): p is ContentPlan => Boolean(p))
+      if (!fresh.length) return
+      props.onContentPlansChange(fresh)
+      for (const p of fresh) {
+        if (p.status === "ready") toast(tr(`Đã phân tích xong "${p.name}": ${p.items?.length ?? 0} topic`, `"${p.name}" analyzed: ${p.items?.length ?? 0} topics`))
+        if (p.status === "failed") toast(tr(`Phân tích "${p.name}" lỗi: ${p.classificationError ?? ""}`, `Analyzing "${p.name}" failed: ${p.classificationError ?? ""}`), "error")
+      }
+    }, 2500)
+    return () => clearInterval(t)
+  }, [processing])
+}
+
 /** Topics the AI named that are not in the source were left out; say how many, so the user can check the file. */
 const droppedNote = (plan: ContentPlan, tr: (vi: string, en: string) => string) => {
   const n = plan.classificationDropped?.length ?? 0
@@ -986,16 +1010,13 @@ function PlanFromDoc({ ctx, file }: { ctx: Ctx; file: DocumentFile }) {
     let planId = ""
     try {
       await trackHandoff(eventTimeStamp, async () => {
-        const imported = await importContentPlan({ name, sourceType: "paste", content: file.content! }, ctx.config.railwayUrl)
+        const imported = await importContentPlan({ name, sourceType: "paste", content: file.content!, classify: true }, ctx.config.railwayUrl)
         planId = imported.id
         ctx.onContentPlansChange([imported])
-        const classified = await classifyContentPlan(imported.id, ctx.config.railwayUrl)
-        ctx.onContentPlansChange([classified])
-        if (droppedNote(classified, tr)) toast(droppedNote(classified, tr), "error")
       })
-      toast(tr("Đã tạo Content Plan và phân loại topic", "Content Plan created and topics classified"))
+      toast(tr("Đã tạo Content Plan; AI đang phân loại topic", "Content Plan created; AI is classifying topics"))
     } catch (err) { toastErr(err) } finally { setBusy(false) }
-    // Even when classification fails the plan exists; its page offers Classify topics.
+    // The plan page shows the analysis while it runs, and Classify again if it fails.
     if (planId) { ctx.setPanel(null); go(`#/object/plans/${enc(planId)}`) }
   }
   return <div className="box" style={{ padding: 12, margin: "12px 0", background: "var(--bg2)" }}>
@@ -1027,18 +1048,23 @@ function PlanUploadDialog({ ctx }: { ctx: Ctx }) {
     let step = 0
     try {
       await trackHandoff(eventTimeStamp, async () => {
-        const imported = await importContentPlan({ name: file.name.replace(/\.[^.]+$/, ""), sourceType: "file", file }, ctx.config.railwayUrl)
+        // The server classifies in the background; the outcome arrives through the plan watch below.
+        const imported = await importContentPlan({ name: file.name.replace(/\.[^.]+$/, ""), sourceType: "file", file, classify: true }, ctx.config.railwayUrl)
         ctx.onContentPlansChange([imported]); setPlan(imported)
         const chars = (imported.sources ?? []).reduce((n, s) => n + (s.contentLength || 0), 0)
         set(0, { end: Date.now(), out: chars ? tr(`Đã đọc ${chars.toLocaleString()} ký tự`, `Read ${chars.toLocaleString()} characters`) : tr("Đã tải lên", "Uploaded") })
-        step = 1; set(1, { at: Date.now() })
-        const classified = await classifyContentPlan(imported.id, ctx.config.railwayUrl)
-        ctx.onContentPlansChange([classified]); setPlan(classified)
-        set(1, { end: Date.now(), out: <>{classified.items?.length ?? 0} topic · <Tag c="blue">Comparison {count(classified, "comparison-seo")}</Tag> <Tag c="pink">Editorial {count(classified, "editorial-originality")}</Tag>{count(classified, "needs-review") > 0 && <> <Tag c="orange">Needs review {count(classified, "needs-review")}</Tag></>}{droppedNote(classified, tr) && <div role="alert" style={{ color: "var(--c-orange, var(--f2))", marginTop: 4 }}><I n="alert-triangle" /> {droppedNote(classified, tr)}</div>}</> })
-        step = 2; set(2, { at: Date.now(), end: Date.now(), out: tr("Content Plan đã lưu trong Source data, chưa chạy batch.", "Saved to Source data; no batch started.") })
+        set(1, { at: Date.now() })
       })
-    } catch (err) { set(step, { error: errText(err) }) }
+    } catch (err) { set(0, { error: errText(err) }) }
   }
+  const live = plan ? ctx.plans.find(x => x.id === plan.id)?.plan ?? plan : null
+  useEffect(() => {
+    if (!live || !steps[1].at || steps[1].end || steps[1].error) return
+    if (live.status === "failed") set(1, { error: live.classificationError ?? tr("Phân tích lỗi", "Analysis failed") })
+    if (live.status !== "ready") return
+    set(1, { end: Date.now(), out: <>{live.items?.length ?? 0} topic · <Tag c="blue">Comparison {count(live, "comparison-seo")}</Tag> <Tag c="pink">Editorial {count(live, "editorial-originality")}</Tag>{count(live, "needs-review") > 0 && <> <Tag c="orange">Needs review {count(live, "needs-review")}</Tag></>}{droppedNote(live, tr) && <div role="alert" style={{ color: "var(--c-orange, var(--f2))", marginTop: 4 }}><I n="alert-triangle" /> {droppedNote(live, tr)}</div>}</> })
+    set(2, { at: Date.now(), end: Date.now(), out: tr("Content Plan đã lưu trong Source data, chưa chạy batch.", "Saved to Source data; no batch started.") })
+  }, [live?.status])
   const labels = [tr("Tải lên & đọc file", "Upload & read file"), tr("AI phân tích & phân loại topic", "AI analyzes & classifies topics"), tr("Lưu Content Plan", "Save Content Plan")]
   const open = () => { if (!plan) return; ctx.setPanel(null); go(`#/object/plans/${enc(plan.id)}`) }
   const started = steps[0].at !== undefined, done = Boolean(steps[2].end)
@@ -1050,7 +1076,7 @@ function PlanUploadDialog({ ctx }: { ctx: Ctx }) {
     <div className="fields" style={{ paddingTop: 0 }}>
       <div className="frow"><div className="flabel"><I n="folder" />Group</div><div className="fval"><Tag c="turq">Source data</Tag></div></div>
       <div className="frow"><div className="flabel"><I n="progress-check" />Status</div><div className="fval">{status}</div></div>
-      <div className="frow"><div className="flabel"><I n="list" />Topics</div><div className="fval" style={{ flexWrap: "wrap", rowGap: 4 }}>{plan?.items?.length ? <>{plan.items.length}&nbsp;·&nbsp;<Tag c="blue">Comparison {count(plan, "comparison-seo")}</Tag>&nbsp;<Tag c="pink">Editorial {count(plan, "editorial-originality")}</Tag>{count(plan, "needs-review") > 0 && <>&nbsp;<Tag c="orange">Needs review {count(plan, "needs-review")}</Tag></>}</> : <span className="empty">{tr("đếm sau khi AI phân loại", "counted after AI classification")}</span>}</div></div>
+      <div className="frow"><div className="flabel"><I n="list" />Topics</div><div className="fval" style={{ flexWrap: "wrap", rowGap: 4 }}>{live?.items?.length ? <>{live.items.length}&nbsp;·&nbsp;<Tag c="blue">Comparison {count(live, "comparison-seo")}</Tag>&nbsp;<Tag c="pink">Editorial {count(live, "editorial-originality")}</Tag>{count(live, "needs-review") > 0 && <>&nbsp;<Tag c="orange">Needs review {count(live, "needs-review")}</Tag></>}</> : <span className="empty">{tr("đếm sau khi AI phân loại", "counted after AI classification")}</span>}</div></div>
     </div>
     <div style={{ borderTop: "1px solid var(--b2)", margin: "8px 0 12px" }} />
     {!started && <><label className="box" style={{ display: "block", padding: 20, textAlign: "center", borderStyle: "dashed", background: "var(--bg2)", cursor: "pointer", color: "var(--f2)", marginBottom: 8 }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); setFile(e.dataTransfer.files[0] ?? null) }}>
@@ -1065,8 +1091,9 @@ function PlanUploadDialog({ ctx }: { ctx: Ctx }) {
         const secs = s.at ? ((s.end ?? (s.error ? s.at : now)) - s.at) / 1000 : 0
         return <div key={i} role="listitem" className={`tl-item pu-${state}`}><span className="dot"><I n={state === "done" ? "check" : state === "error" ? "x" : state === "run" ? "loader-2" : "point"} /></span>
           <span><b>{labels[i]}</b>{(s.error || s.out) && <div className="pu-out">{s.error ?? s.out}</div>}</span>{state !== "wait" && i < 2 && <span className="when">{secs.toFixed(1)}s</span>}</div>
-      })}</div></>}
-    {done && plan?.items?.length ? <><div className="fsec"><I n="list" />&nbsp;Topics</div><div className="pu-topics">{plan.items.slice(0, 50).map(item => { const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]; return <div key={item.id} className="list-row" style={{ cursor: "default" }}><Tag c={c}>{l}</Tag><span className="grow">{item.title}</span></div> })}</div></> : null}
+      })}</div>
+      {running && steps[1].at && <p style={{ color: "var(--f3)", fontSize: 12, margin: "0 0 8px" }}><I n="info-circle" /> {tr("Có thể đóng panel và làm việc khác: server vẫn phân tích, Storage hiện tag Đang phân tích và báo khi xong.", "You can close this panel and keep working: the server keeps analyzing, Storage shows an Analyzing tag and tells you when it is done.")}</p>}</>}
+    {done && live?.items?.length ? <><div className="fsec"><I n="list" />&nbsp;Topics</div><div className="pu-topics">{live.items.slice(0, 50).map(item => { const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]; return <div key={item.id} className="list-row" style={{ cursor: "default" }}><Tag c={c}>{l}</Tag><span className="grow">{item.title}</span></div> })}</div></> : null}
     <div style={{ marginTop: 14 }}>{plan && !running
       ? <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} onClick={open}><I n="list-details" />{tr("Mở Content Plan", "Open Content Plan")}</button>
       : <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={!file || running} onClick={e => void start(e.timeStamp)}><I n={running ? "loader-2" : "sparkles"} />{running ? tr("Đang phân tích…", "Analyzing…") : tr("Phân tích & tạo Content Plan", "Analyze & create Content Plan")}</button>}</div>

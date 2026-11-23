@@ -7,9 +7,10 @@ function contentPlanRequest(path: string, railwayUrl: string, init?: RequestInit
   return authenticatedRailwayFetch(path, init, railwayUrl);
 }
 
-export async function importContentPlan(input: { name: string; sourceType: ContentPlanSourceType; content?: string; url?: string; file?: File; previousVersionId?: string }, railwayUrl: string): Promise<ContentPlan> {
+/** `classify: true` asks the server to classify right after import, in the background (the plan comes back as `processing`). */
+export async function importContentPlan(input: { name: string; sourceType: ContentPlanSourceType; content?: string; url?: string; file?: File; previousVersionId?: string; classify?: boolean }, railwayUrl: string): Promise<ContentPlan> {
   if (input.file) {
-    const body = new FormData(); body.append('file', input.file); body.append('name', input.name); body.append('sourceType', 'file'); if (input.previousVersionId) body.append('previousVersionId', input.previousVersionId);
+    const body = new FormData(); body.append('file', input.file); body.append('name', input.name); body.append('sourceType', 'file'); if (input.previousVersionId) body.append('previousVersionId', input.previousVersionId); if (input.classify) body.append('classify', '1');
     return (await parse(await contentPlanRequest('/api/content-plans/import', railwayUrl, { method: 'POST', body }))).plan;
   }
   return (await parse(await contentPlanRequest('/api/content-plans/import', railwayUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }))).plan;
@@ -17,6 +18,15 @@ export async function importContentPlan(input: { name: string; sourceType: Conte
 
 export async function classifyContentPlan(id: string, railwayUrl: string, force = false): Promise<ContentPlan> {
   return (await parse(await contentPlanRequest(`/api/content-plans/${encodeURIComponent(id)}/${force ? 'reclassify' : 'classify'}`, railwayUrl, { method: 'POST' }))).plan;
+}
+
+/** Start classification on the server in the background; the plan comes back as `processing`. */
+export async function startContentPlanClassification(id: string, railwayUrl: string, force = false): Promise<ContentPlan> {
+  return (await parse(await contentPlanRequest(`/api/content-plans/${encodeURIComponent(id)}/${force ? 'reclassify' : 'classify'}?background=1`, railwayUrl, { method: 'POST' }))).plan;
+}
+
+export async function fetchContentPlan(id: string, railwayUrl: string): Promise<ContentPlan> {
+  return (await parse(await contentPlanRequest(`/api/content-plans/${encodeURIComponent(id)}`, railwayUrl))).plan;
 }
 
 export async function fetchContentPlans(railwayUrl: string): Promise<ContentPlan[]> {
