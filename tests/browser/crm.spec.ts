@@ -285,6 +285,45 @@ test('CRM Storage plan-like document becomes a Content Plan with classified topi
   await expect(page.locator('.list-row', { hasText: 'C vs D' })).toBeVisible();
 });
 
+test('CRM Storage Add Content Plan dialog uploads, shows each step and opens the classified plan', async ({ page }) => {
+  const log = await mockApp(page);
+  await goHash(page, '/objects/storage');
+  await page.getByRole('button', { name: /Thêm Content Plan|Add Content Plan/ }).click();
+  const dialog = page.getByRole('dialog', { name: /Thêm Content Plan|Add Content Plan/ });
+  await dialog.getByLabel(/File Content Plan|Content Plan file/).setInputFiles({ name: 'Topic Map.docx', mimeType: 'application/octet-stream', buffer: Buffer.from('A vs B') });
+  await dialog.getByRole('button', { name: /Phân tích & tạo Content Plan|Analyze & create Content Plan/ }).click();
+  const steps = dialog.getByRole('list', { name: /Tiến trình|Progress/ });
+  await expect(steps.locator('.tl-item.pu-done')).toHaveCount(3);
+  await expect(steps).toContainText('3 topic');
+  await expect(dialog.locator('.pu-topics')).toContainText('C vs D');
+  expect(log.imported[0].multipart).toContain('Topic Map.docx');
+  expect(log.created).toHaveLength(0);
+  await dialog.getByRole('button', { name: /Mở Content Plan|Open Content Plan/ }).click();
+  await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
+});
+
+test('CRM Add Content Plan dialog keeps the saved plan when classification fails', async ({ page }) => {
+  await mockApp(page);
+  await page.route('**/api/content-plans/plan-new/classify', r => r.fulfill({ status: 422, json: { error: 'CLASSIFY_FAILED_SENTINEL' } }));
+  await goHash(page, '/objects/storage');
+  await page.getByRole('button', { name: /Thêm Content Plan|Add Content Plan/ }).click();
+  const dialog = page.getByRole('dialog', { name: /Thêm Content Plan|Add Content Plan/ });
+  await dialog.getByLabel(/File Content Plan|Content Plan file/).setInputFiles({ name: 'Plan.txt', mimeType: 'text/plain', buffer: Buffer.from('A vs B') });
+  await dialog.getByRole('button', { name: /Phân tích & tạo Content Plan|Analyze & create Content Plan/ }).click();
+  await expect(dialog.locator('.tl-item.pu-error')).toContainText('CLASSIFY_FAILED_SENTINEL');
+  await expect(dialog.locator('.tl-item.pu-done')).toHaveCount(1);
+  await expect(dialog.getByRole('button', { name: /Mở Content Plan|Open Content Plan/ })).toBeVisible();
+});
+
+test('CRM Settings list documents in the same groups as Storage', async ({ page }) => {
+  await mockApp(page);
+  await goHash(page, '/settings/workflow-ai');
+  for (const g of ['Domain Knowledge', 'Playbooks', 'Standards', 'Voice & Style', 'Source data']) await expect(page.locator('.box-row', { hasText: g }).first()).toBeVisible();
+  await expect(page.getByText('Skills & Rules')).toHaveCount(0);
+  await goHash(page, '/settings/shipper');
+  await expect(page.locator('tr.grp', { hasText: 'Playbooks' })).toBeVisible();
+});
+
 test('CRM Editorial article waits for outline approval, then drafts through the pipeline', async ({ page }) => {
   const editorial = { id: 'a-editorial', title: 'Editorial piece', topic: 'Editorial piece', currentStep: 3, status: 'review', createdAt: now, updatedAt: now,
     contentPlanId: 'plan-1', contentPlanItemId: 'i9', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-ed', activityType: 'editorial-originality', batchStatus: 'awaiting_approval',

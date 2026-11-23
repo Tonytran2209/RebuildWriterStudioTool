@@ -1,28 +1,25 @@
 import { useEffect, useState, type ReactNode } from "react"
 import type { AIProvider, AppConfig, Article, DocumentFile } from "../types"
 import { pingRailway, type BackendStatus } from "../lib/db"
-import { isDocumentReady } from "../lib/documentStatus"
 import { PROVIDER_LABELS } from "../lib/defaultData"
 import { useI18n } from "../lib/i18n"
-import { GATES } from "./model"
+import { GATES, STORAGE_GROUPS, type StorageDoc } from "./model"
 import { I } from "./ui"
 
 const RAILWAY_URL = "https://rebuildwriterstudiotool-production.up.railway.app"
 const Sec = ({ title, desc, children }: { title: ReactNode; desc?: ReactNode; children: ReactNode }) => <section><h2>{title}</h2>{desc ? <p className="desc">{desc}</p> : <div style={{ height: 12 }} />}{children}</section>
 
-type WorkflowProps = { config: AppConfig; files: DocumentFile[]; articles: Article[]; onChange: (config: AppConfig) => void }
+type WorkflowProps = { config: AppConfig; files: DocumentFile[]; articles: Article[]; docs?: StorageDoc[]; onChange: (config: AppConfig) => void }
 type TaskKey = "review" | "seo" | "inventory"
 type Task = { key: string; tag: string; color: string; label: string; desc: string; step?: number; task?: TaskKey; required?: boolean; openaiOnly?: boolean; fallback?: string }
 
 /** Settings › Workflow AI in the demo layout: one row per AI task that has a model to choose. */
-export function WorkflowAiSettings({ config, files, articles, onChange }: WorkflowProps) {
+export function WorkflowAiSettings({ config, articles, docs = [], onChange }: WorkflowProps) {
   const { tr } = useI18n()
   const [status, setStatus] = useState<BackendStatus | null>(null)
   const check = () => { setStatus(null); void pingRailway(config.railwayUrl || RAILWAY_URL).then(setStatus) }
   useEffect(check, [config.railwayUrl])
   const models = config.models.filter(m => m.enabled)
-  const kb = files.filter(f => f.category === "kb" && isDocumentReady(f))
-  const rules = files.filter(f => f.category === "rules" && isDocumentReady(f))
   // Every AI call the tool makes, in pipeline order. Steps keep their document access (Shipper); only the model changes here.
   const tasks: Task[] = [
     { key: "classify", tag: "Plan", color: "gray", step: 1, required: true, label: tr("Phân loại Content Plan", "Content Plan classification"), desc: tr("Chạy khi Add Plan: xếp từng topic vào Comparison hoặc Editorial.", "Runs on Add Plan: sorts each topic into Comparison or Editorial.") },
@@ -47,8 +44,9 @@ export function WorkflowAiSettings({ config, files, articles, onChange }: Workfl
     <Sec title={tr("Hệ thống", "System")}>
       <div className="box">
         <BackendRows status={status} onRecheck={check} />
-        <div className="box-row"><I n="books" /><div className="grow">Knowledge Base<div className="s">{kb.map(f => f.name).join(", ") || tr("Chưa có dữ liệu", "No data loaded")}</div></div>{kb.length}</div>
-        <div className="box-row"><I n="file-description" /><div className="grow">Skills & Rules<div className="s">{rules.map(f => f.name).join(", ") || tr("Chưa có dữ liệu", "No data loaded")}</div></div>{rules.length}</div>
+        {/* Same five groups as Storage, so a document is filed in one place everywhere. */}
+        {STORAGE_GROUPS.map(([g, c]) => { const ready = docs.filter(d => d.g === g && d.st !== "missing")
+          return <div key={g} className="box-row"><span className={`tag t-${c}`}>{g}</span><div className="grow" style={{ minWidth: 0 }}><div className="s" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ready.map(d => d.name).join(", ") || tr("Chưa có dữ liệu", "No data loaded")}</div></div>{ready.length}</div> })}
       </div>
     </Sec>
     <Sec title={tr("Model cho từng tác vụ AI", "Model per AI task")} desc={tr("Mọi bước có gọi AI trong tool, theo thứ tự pipeline. Tài liệu mỗi gate được nạp do Shipper quyết định; model chỉ hiện khi đã bật ở AI Models.", "Every AI call the tool makes, in pipeline order. Shipper decides which documents each gate gets; a model appears here once enabled in AI Models.")}>

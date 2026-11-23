@@ -95,7 +95,7 @@ export type CrmProps = {
   onMigrateLegacy: (article: Article) => void
 }
 
-type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "run-items"; id: string; ids?: string[] } | { kind: "step"; i: number } | { kind: "cmd" } | null
+type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "plan-upload" } | { kind: "run-items"; id: string; ids?: string[] } | { kind: "step"; i: number } | { kind: "cmd" } | null
 type Ctx = CrmProps & {
   settings: PipelineSettings
   list: CrmArticle[]
@@ -178,6 +178,7 @@ export default function CrmApp(props: CrmProps) {
         <NavToggle.Provider value={() => setNavOpen(v => !v)}>{page}</NavToggle.Provider>
       </div>
       {panel?.kind === "plan" && can("plans") && <AddPlanPanel ctx={ctx} />}
+      {panel?.kind === "plan-upload" && can("plans") && <PlanUploadDialog ctx={ctx} />}
       {panel?.kind === "review" && <ReviewPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "doc" && <DocPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "add-doc" && <AddDocPanel ctx={ctx} />}
@@ -358,6 +359,7 @@ function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
   const primary = o === "storage" ? <>
       {legacyCount > 0 && <button className="btn" aria-label="Legacy Action Plans" onClick={() => go("#/storage/legacy")}><I n="archive" /><span>Legacy</span></button>}
       {ctx.isAdmin && <button className="btn" aria-label="Website Inventory" onClick={() => go("#/storage/website")}><I n="world" /><span>Website Inventory</span></button>}
+      {ctx.can("plans") && <button className="btn" aria-label={tr("Thêm Content Plan", "Add Content Plan")} onClick={() => ctx.setPanel({ kind: "plan-upload" })}><I n="file-analytics" /><span>{tr("Thêm Content Plan", "Add Content Plan")}</span></button>}
       {ctx.isAdmin && <button className="btn" aria-label={tr("Thêm tài liệu", "Add document")} onClick={addDoc}><I n="upload" /><span>{tr("Thêm tài liệu", "Add document")}</span></button>}
     </>
     : o === "reviews" ? <button className="btn" aria-label={tr("Chọn ngẫu nhiên", "Random pick")} onClick={randomReview}><I n="dice-5" /><span>{tr("Chọn ngẫu nhiên", "Random pick")} · {tr("mẫu", "sample")} {ctx.settings.reviewSample}%</span></button>
@@ -992,6 +994,72 @@ function PlanFromDoc({ ctx, file }: { ctx: Ctx; file: DocumentFile }) {
   </div>
 }
 
+type UploadStep = { at?: number; end?: number; out?: ReactNode; error?: string }
+/** Storage › Add Content Plan: upload a raw plan, then watch reading and AI classification step by step. */
+function PlanUploadDialog({ ctx }: { ctx: Ctx }) {
+  const { tr } = useI18n()
+  const [file, setFile] = useState<File | null>(null)
+  const [steps, setSteps] = useState<UploadStep[]>([{}, {}, {}])
+  const [plan, setPlan] = useState<ContentPlan | null>(null)
+  const [now, setNow] = useState(Date.now())
+  const running = steps.some(s => s.at && !s.end && !s.error)
+  // Ticks the elapsed time while a step runs. shortcut: the server reports no partial progress, so each step shows elapsed time until it returns.
+  useEffect(() => { if (!running) return; const t = setInterval(() => setNow(Date.now()), 200); return () => clearInterval(t) }, [running])
+  const set = (i: number, patch: UploadStep) => setSteps(prev => prev.map((s, k) => k === i ? { ...s, ...patch } : s))
+  const count = (p: ContentPlan, t: string) => (p.items ?? []).filter(i => i.type === t).length
+  const start = async (eventTimeStamp: number) => {
+    if (!file) return
+    if (file.size > 15 * 1024 * 1024) return set(0, { at: Date.now(), error: tr("File vượt quá 15 MB", "File exceeds 15 MB") })
+    setPlan(null); setSteps([{ at: Date.now() }, {}, {}])
+    let step = 0
+    try {
+      await trackHandoff(eventTimeStamp, async () => {
+        const imported = await importContentPlan({ name: file.name.replace(/\.[^.]+$/, ""), sourceType: "file", file }, ctx.config.railwayUrl)
+        ctx.onContentPlansChange([imported]); setPlan(imported)
+        const chars = (imported.sources ?? []).reduce((n, s) => n + (s.contentLength || 0), 0)
+        set(0, { end: Date.now(), out: chars ? tr(`Đã đọc ${chars.toLocaleString()} ký tự`, `Read ${chars.toLocaleString()} characters`) : tr("Đã tải lên", "Uploaded") })
+        step = 1; set(1, { at: Date.now() })
+        const classified = await classifyContentPlan(imported.id, ctx.config.railwayUrl)
+        ctx.onContentPlansChange([classified]); setPlan(classified)
+        set(1, { end: Date.now(), out: <>{classified.items?.length ?? 0} topic · <Tag c="blue">Comparison {count(classified, "comparison-seo")}</Tag> <Tag c="pink">Editorial {count(classified, "editorial-originality")}</Tag>{count(classified, "needs-review") > 0 && <> <Tag c="orange">Needs review {count(classified, "needs-review")}</Tag></>}</> })
+        step = 2; set(2, { at: Date.now(), end: Date.now(), out: tr("Content Plan đã lưu trong Source data, chưa chạy batch.", "Saved to Source data; no batch started.") })
+      })
+    } catch (err) { set(step, { error: errText(err) }) }
+  }
+  const labels = [tr("Tải lên & đọc file", "Upload & read file"), tr("AI phân tích & phân loại topic", "AI analyzes & classifies topics"), tr("Lưu Content Plan", "Save Content Plan")]
+  const open = () => { if (!plan) return; ctx.setPanel(null); go(`#/object/plans/${enc(plan.id)}`) }
+  const started = steps[0].at !== undefined, done = Boolean(steps[2].end)
+  const failed = steps.some(s => s.error)
+  const status = !started ? <span className="empty">{tr("Chưa chạy", "Not started")}</span> : failed ? <Tag c="red">{tr("Lỗi", "Failed")}</Tag> : done ? <Tag c="green">{tr("Xong", "Done")}</Tag> : <Tag c="blue">{tr("Đang chạy", "Running")}</Tag>
+  // Same layout as the demo's Add Plan side panel: title, field rows, drop zone, then a timeline of the steps.
+  return <SidePanel ctx={ctx} title={tr("Thêm Content Plan", "Add Content Plan")} icon={<I n="file-analytics" />}>
+    <div className="sp-title">{file ? file.name.replace(/\.[^.]+$/, "") : <span className="empty">{tr("Content Plan mới", "New Content Plan")}</span>}</div>
+    <div className="fields" style={{ paddingTop: 0 }}>
+      <div className="frow"><div className="flabel"><I n="folder" />Group</div><div className="fval"><Tag c="turq">Source data</Tag></div></div>
+      <div className="frow"><div className="flabel"><I n="progress-check" />Status</div><div className="fval">{status}</div></div>
+      <div className="frow"><div className="flabel"><I n="list" />Topics</div><div className="fval" style={{ flexWrap: "wrap", rowGap: 4 }}>{plan?.items?.length ? <>{plan.items.length}&nbsp;·&nbsp;<Tag c="blue">Comparison {count(plan, "comparison-seo")}</Tag>&nbsp;<Tag c="pink">Editorial {count(plan, "editorial-originality")}</Tag>{count(plan, "needs-review") > 0 && <>&nbsp;<Tag c="orange">Needs review {count(plan, "needs-review")}</Tag></>}</> : <span className="empty">{tr("đếm sau khi AI phân loại", "counted after AI classification")}</span>}</div></div>
+    </div>
+    <div style={{ borderTop: "1px solid var(--b2)", margin: "8px 0 12px" }} />
+    {!started && <><label className="box" style={{ display: "block", padding: 20, textAlign: "center", borderStyle: "dashed", background: "var(--bg2)", cursor: "pointer", color: "var(--f2)", marginBottom: 8 }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); setFile(e.dataTransfer.files[0] ?? null) }}>
+      <I n="upload" s={{ fontSize: 22, color: "var(--f3)" }} /><div style={{ marginTop: 6 }}>{file ? file.name : tr("Chọn hoặc kéo thả file Content Plan", "Choose or drop a Content Plan file")}</div>
+      <div style={{ color: "var(--f3)", fontSize: 12, marginTop: 2 }}>DOCX · PDF · XLSX · CSV · MD · TXT</div>
+      <input type="file" hidden aria-label={tr("File Content Plan", "Content Plan file")} accept=".docx,.pdf,.xlsx,.csv,.md,.txt,.tsv,.json" onChange={e => setFile(e.target.files?.[0] ?? null)} />
+    </label>
+    <p style={{ color: "var(--f4)", fontSize: 12, margin: "0 0 12px" }}>{tr("AI tách từng topic và xếp vào Comparison hoặc Editorial. Content Plan nằm trong Source data, không cấp cho gate như tài liệu KB/Rules và chưa chạy batch.", "AI extracts each topic and sorts it into Comparison or Editorial. The plan lives in Source data, is not given to gates like KB/Rules documents and starts no batch.")}</p></>}
+    {started && <><div className="fsec"><I n="activity" />&nbsp;{tr("Tiến trình", "Progress")}</div>
+      <div className="tl" role="list" aria-label={tr("Tiến trình", "Progress")} aria-live="polite" style={{ marginBottom: 8 }}>{steps.map((s, i) => {
+        const state = s.error ? "error" : s.end ? "done" : s.at ? "run" : "wait"
+        const secs = s.at ? ((s.end ?? (s.error ? s.at : now)) - s.at) / 1000 : 0
+        return <div key={i} role="listitem" className={`tl-item pu-${state}`}><span className="dot"><I n={state === "done" ? "check" : state === "error" ? "x" : state === "run" ? "loader-2" : "point"} /></span>
+          <span><b>{labels[i]}</b>{(s.error || s.out) && <div className="pu-out">{s.error ?? s.out}</div>}</span>{state !== "wait" && i < 2 && <span className="when">{secs.toFixed(1)}s</span>}</div>
+      })}</div></>}
+    {done && plan?.items?.length ? <><div className="fsec"><I n="list" />&nbsp;Topics</div><div className="pu-topics">{plan.items.slice(0, 50).map(item => { const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]; return <div key={item.id} className="list-row" style={{ cursor: "default" }}><Tag c={c}>{l}</Tag><span className="grow">{item.title}</span></div> })}</div></> : null}
+    <div style={{ marginTop: 14 }}>{plan && !running
+      ? <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} onClick={open}><I n="list-details" />{tr("Mở Content Plan", "Open Content Plan")}</button>
+      : <button className="btn primary lg" style={{ width: "100%", justifyContent: "center" }} disabled={!file || running} onClick={e => void start(e.timeStamp)}><I n={running ? "loader-2" : "sparkles"} />{running ? tr("Đang phân tích…", "Analyzing…") : tr("Phân tích & tạo Content Plan", "Analyze & create Content Plan")}</button>}</div>
+  </SidePanel>
+}
+
 function AddDocPanel({ ctx }: { ctx: Ctx }) {
   const { tr } = useI18n()
   if (!ctx.isAdmin) return null
@@ -1163,7 +1231,8 @@ function SettingsPage({ ctx, p }: { ctx: Ctx; p: string }) {
     <Sec title="Capacity" desc={tr("Mục tiêu 30 bài/ngày.", "Target: 30 articles/day.")}><div className="box"><div className="box-row"><div className="grow">T = 24h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 24 * 60 / 30)} min / article</div><div className="box-row"><div className="grow">T = 8h<div className="s">c = {st.maxParallel}</div></div>≤ {Math.round(st.maxParallel * 8 * 60 / 30)} min / article</div></div></Sec>
   </>
   if (p === "shipper") body = <Sec title="Shipper mapping" desc={tr("Gate nào lấy tài liệu nào. Không bao giờ nạp cả thư viện.", "Which gate gets which documents. Never the whole library.")}><div className="box"><table className="tbl" style={{ width: "100%" }}><thead><tr><th style={{ position: "static" }}>Document</th>{["G1", "G2", "G3"].map(g => <th key={g} style={{ position: "static", textAlign: "center" }}>{g}</th>)}</tr></thead><tbody>
-    {ctx.docs.filter(d => d.file).map(d => <tr key={d.id}><td>{d.name} <span className="muted">· {d.g}</span></td>{[1, 2, 3].map(g => <td key={g} style={{ textAlign: "center" }}><button role="switch" aria-checked={d.used.includes(g)} aria-label={`${d.name} G${g}`} className={`toggle${d.used.includes(g) ? " on" : ""}`} style={{ display: "inline-block" }} onClick={e => void trackHandoff(e.timeStamp, () => ctx.onSaveConfig(toggleShip(ctx.config, d.file!, g), ctx.files, false)).then(() => toast(tr("Đã lưu", "Saved"))).catch(err => toastErr(err))} /></td>)}</tr>)}
+    {/* Grouped like Storage: one header per group, only documents Shipper can load. */}
+    {STORAGE_GROUPS.map(([g, c]) => { const docs = ctx.docs.filter(d => d.file && d.g === g); return docs.length > 0 && <GroupRows key={g} label={<Tag c={c}>{g}</Tag>} count={docs.length} span={4}>{docs.map(d => <tr key={d.id}><td>{d.name}</td>{[1, 2, 3].map(g => <td key={g} style={{ textAlign: "center" }}><button role="switch" aria-checked={d.used.includes(g)} aria-label={`${d.name} G${g}`} className={`toggle${d.used.includes(g) ? " on" : ""}`} style={{ display: "inline-block" }} onClick={e => void trackHandoff(e.timeStamp, () => ctx.onSaveConfig(toggleShip(ctx.config, d.file!, g), ctx.files, false)).then(() => toast(tr("Đã lưu", "Saved"))).catch(err => toastErr(err))} /></td>)}</tr>)}</GroupRows> })}
   </tbody></table></div></Sec>
   // These editors keep a draft and need a Save button in the header, so they render their own page.
   if (["workflow-ai", "models"].includes(p)) return <EmbeddedSettings ctx={ctx} p={p} title={titles[p]} />
@@ -1194,7 +1263,7 @@ function EmbeddedSettings({ ctx, p, title }: { ctx: Ctx; p: string; title: strin
   const save = async (eventTimeStamp: number) => { setSaving(true); try { await trackHandoff(eventTimeStamp, () => ctx.onSaveConfig(config, files, false)); toast(tr("Đã lưu", "Saved")) } catch (err) { toastErr(err) } finally { setSaving(false) } }
   const actions = <button className="btn primary" aria-label={tr("Lưu thay đổi", "Save changes")} disabled={!dirty || saving} onClick={e => void save(e.timeStamp)}><I n="device-floppy" /><span>{saving ? tr("Đang lưu…", "Saving…") : tr("Lưu thay đổi", "Save changes")}</span></button>
   return <SettingsShell title={title} actions={actions}>
-    {p === "workflow-ai" && <WorkflowAiSettings config={config} files={files} articles={ctx.articles} onChange={setConfig} />}
+    {p === "workflow-ai" && <WorkflowAiSettings config={config} files={files} articles={ctx.articles} docs={ctx.docs} onChange={setConfig} />}
     {p === "models" && <ModelsSettings config={config} onChange={setConfig} />}
     {p === "workflow-ai" && <WorkflowRules config={config} files={files} onChange={setConfig} />}
   </SettingsShell>

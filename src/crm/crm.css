@@ -418,3 +418,12 @@
 .crm .bulk-bar b{font-weight:600}
 /* <html> can carry codex-dark while the app is light; native checkboxes follow the app theme instead. */
 .writer-light .crm input[type=checkbox]{color-scheme:light}
+/* Storage › Add Content Plan panel: step states on the demo timeline */
+.crm .tl-item .pu-out{color:var(--f3);font-size:12px;margin-top:2px}
+.crm .tl-item.pu-wait{color:var(--f4)}
+.crm .tl-item.pu-wait b{color:var(--f3)}
+.crm .tl-item.pu-run .dot{border-color:var(--accent-b);color:var(--accent)}
+.crm .tl-item.pu-done .dot{border-color:var(--c-green);color:var(--c-green)}
+.crm .tl-item.pu-error .dot{border-color:var(--danger);color:var(--danger)}
+.crm .tl-item.pu-error .pu-out{color:var(--danger)}
+.crm .pu-topics{max-height:300px;overflow:auto}
