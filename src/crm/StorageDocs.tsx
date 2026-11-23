@@ -29,12 +29,8 @@ const MODES: Array<[ActionSourceType, string, string]> = [
 ]
 
 /** Body of the Storage "Add document" panel: upload or import, saved on the server before it reaches the list. */
-export function AddDocForm({ railwayUrl, onAdded, onPlanFile, planOnly = false }: { railwayUrl: string; onAdded: (docs: DocumentFile[]) => Promise<void>; onPlanFile?: (file: File, started: number) => Promise<void>; planOnly?: boolean }) {
+export function AddDocForm({ railwayUrl, onAdded }: { railwayUrl: string; onAdded: (docs: DocumentFile[]) => Promise<void> }) {
   const { tr } = useI18n()
-  const [purpose, setPurpose] = useState(planOnly ? "plan" : "reference")
-  const planFileRef = useRef<HTMLInputElement>(null)
-  const [dragging, setDragging] = useState(false)
-  const [planFile, setPlanFile] = useState<File | null>(null)
   const [category, setCategory] = useState<FileCategory>("kb")
   const [mode, setMode] = useState<ActionSourceType>("file")
   const [busy, setBusy] = useState("")
@@ -95,48 +91,10 @@ export function AddDocForm({ railwayUrl, onAdded, onPlanFile, planOnly = false }
     } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
     finally { setBusy("") }
   }
-  const choosePlanFile = (files: FileList | null) => {
-    if (busy || !files?.length) return
-    setError("")
-    if (files.length !== 1) { setError(tr("Chọn một file Content Plan mỗi lần.", "Choose one Content Plan file at a time.")); return }
-    const file = files[0]
-    if (!/\.(docx|pdf|txt|md|csv|xlsx|json|xml|tsv)$/i.test(file.name)) { setError(tr("Định dạng file không được hỗ trợ.", "This file format is not supported.")); return }
-    if (file.size > 15 * 1024 * 1024) { setError(tr("File vượt quá 15 MB", "File exceeds 15 MB")); return }
-    setPlanFile(file)
-  }
   const ready = mode !== "file" && Boolean(sourceFor())
   const lbl = (label: string, el: ReactNode) => <label style={{ display: "flex", flexDirection: "column", gap: 6, color: "var(--f3)", fontSize: 12 }}>{label}{el}</label>
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-    {onPlanFile && !planOnly && <label>{tr("Mục đích tài liệu", "Document purpose")}<select className="inp" aria-label={tr("Mục đích tài liệu", "Document purpose")} disabled={Boolean(busy)} value={purpose} onChange={e => { setPurpose(e.target.value); setError(""); setDone("") }}><option value="reference">{tr("Tài liệu Knowledge Base / Skills & Rules", "Knowledge Base / Skills & Rules document")}</option><option value="plan">{tr("Content Plan nguồn — phân tích topic", "Raw Content Plan — analyze topics")}</option></select></label>}
-    {purpose === "plan" ? <>
-      <p className="plan-upload-help">{tr("Tải kế hoạch nguồn để AI trích xuất và phân loại topic. Bạn có thể kiểm tra danh sách trước khi tạo batch.", "Upload your source plan for AI to extract and classify topics. Review the list before creating batches.")}</p>
-      <input ref={planFileRef} type="file" hidden aria-label={tr("File Content Plan nguồn", "Raw Content Plan file")} disabled={Boolean(busy)} accept=".docx,.pdf,.txt,.md,.csv,.xlsx,.json,.xml,.tsv" onChange={e => { choosePlanFile(e.target.files); e.target.value = "" }} />
-      <button type="button" className={`plan-upload-zone${dragging ? " dragging" : ""}`} disabled={Boolean(busy)} onClick={() => planFileRef.current?.click()}
-        onDragOver={e => { e.preventDefault(); if (!busy) setDragging(true) }} onDragLeave={() => setDragging(false)}
-        onDrop={e => { e.preventDefault(); setDragging(false); choosePlanFile(e.dataTransfer.files) }}>
-        <I n="cloud-upload" />
-        <strong>{tr("Kéo thả file Content Plan vào đây", "Drop your Content Plan here")}</strong>
-        <span>{tr("hoặc bấm để chọn file", "or click to browse files")}</span>
-        <small>DOCX · PDF · TXT · MD · CSV · XLSX · JSON · XML · TSV</small>
-        <small>{tr("1 file · tối đa 15 MB", "1 file · up to 15 MB")}</small>
-      </button>
-      {planFile && <div className="box plan-upload-file">
-        <I n="file-description" /><div className="grow"><strong>{planFile.name}</strong><span>{(planFile.size / 1024).toFixed(1)} KB · {tr("Sẵn sàng phân tích", "Ready to analyze")}</span></div>
-        <button className="icon-btn" disabled={Boolean(busy)} aria-label={tr("Đổi file", "Replace file")} onClick={() => planFileRef.current?.click()}><I n="replace" /></button>
-        <button className="icon-btn" disabled={Boolean(busy)} aria-label={tr("Bỏ file", "Remove file")} onClick={() => { setPlanFile(null); setError("") }}><I n="x" /></button>
-      </div>}
-      <button className="btn primary" disabled={!planFile || Boolean(busy)} onClick={async e => {
-        const started = e.timeStamp
-        if (!planFile || !onPlanFile) return
-        setBusy(tr("Đang phân tích và tổng hợp topic…", "Analyzing and classifying topics…")); setError("")
-        try {
-          if (planFile.size > 15 * 1024 * 1024) throw new Error(tr("File vượt quá 15 MB", "File exceeds 15 MB"))
-          await onPlanFile(planFile, started)
-        } catch (err) { setError(err instanceof Error ? err.message : String(err)) }
-        finally { setBusy("") }
-      }}><I n={busy ? "loader-2" : "sparkles"} />{tr("Phân tích & tạo Content Plan", "Analyze & create Content Plan")}</button>
-    </> : <>
     <div className="fields" style={{ paddingTop: 0 }}>
       <div className="frow"><div className="flabel"><I n="folder" />{tr("Thư viện", "Library")}</div><div className="fval"><select aria-label={tr("Thư viện", "Library")} value={category} onChange={e => setCategory(e.target.value as FileCategory)}><option value="kb">Knowledge Base</option><option value="rules">Skills & Rules</option></select></div></div>
     </div>
@@ -182,11 +140,10 @@ export function AddDocForm({ railwayUrl, onAdded, onPlanFile, planOnly = false }
       <div style={{ display: "flex", gap: 6 }}><button className="btn ghost" onClick={() => { setColumns(cs => [...cs, `Cột ${cs.length + 1}`]); setRows(rs => rs.map(r => ({ ...r, cells: [...r.cells, ""] }))) }}><I n="plus" />{tr("Cột", "Column")}</button><button className="btn ghost" onClick={() => setRows(rs => [...rs, { id: uid(), cells: columns.map(() => "") }])}><I n="plus" />{tr("Hàng", "Row")}</button></div>
     </>}
 
-    </>}
     {busy && <div role="status" style={{ color: "var(--accent)" }}><I n="loader-2" /> {busy}</div>}
     {done && !busy && <div role="status" style={{ color: "var(--c-green)" }}><I n="circle-check" /> {done}</div>}
     {error && <div role="alert" style={{ color: "var(--danger)", whiteSpace: "pre-line" }}>{error}</div>}
-    {purpose !== "plan" && mode !== "file" && <button className="btn primary lg" disabled={!ready || Boolean(busy)} onClick={() => void importSource()}><I n="download" />{tr("Nhập qua Railway", "Import through Railway")}</button>}
+    {mode !== "file" && <button className="btn primary lg" disabled={!ready || Boolean(busy)} onClick={() => void importSource()}><I n="download" />{tr("Nhập qua Railway", "Import through Railway")}</button>}
   </div>
 }
 
@@ -194,7 +151,7 @@ const KNOWLEDGE_TYPES: KnowledgeMetadata["type"][] = ["reference", "usp", "posit
 const DEFAULT_META: KnowledgeMetadata = { type: "reference", topics: [], visibility: "internal", approvedForExternalUse: false }
 
 /** Real-file part of the Storage document panel: governance, preview, download and delete. */
-export function DocDetails({ file, railwayUrl, canEdit, onSave, onDelete, sourceData = false }: { sourceData?: boolean; file: DocumentFile; railwayUrl: string; canEdit: boolean; onSave: (file: DocumentFile) => Promise<void>; onDelete: () => Promise<void> }) {
+export function DocDetails({ file, railwayUrl, canEdit, onSave, onDelete }: { file: DocumentFile; railwayUrl: string; canEdit: boolean; onSave: (file: DocumentFile) => Promise<void>; onDelete: () => Promise<void> }) {
   const { tr } = useI18n()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -206,11 +163,11 @@ export function DocDetails({ file, railwayUrl, canEdit, onSave, onDelete, source
   return <>
     <div className="fsec"><I n="file-info" />&nbsp;{tr("Tài liệu", "Document")}</div>
     <div className="fields" style={{ paddingTop: 0 }}>
-      <div className="frow"><div className="flabel"><I n="folder" />{tr("Thư viện", "Library")}</div><div className="fval">{sourceData ? "Source data" : file.category === "kb" ? "Knowledge Base" : "Skills & Rules"}</div></div>
+      <div className="frow"><div className="flabel"><I n="folder" />{tr("Thư viện", "Library")}</div><div className="fval">{file.category === "kb" ? "Knowledge Base" : "Skills & Rules"}</div></div>
       <div className="frow"><div className="flabel"><I n="file" />{tr("Nguồn", "Source")}</div><div className="fval">{(file.sourceType ?? "file").toUpperCase()}{file.size ? ` · ${file.size}` : ""}{file.rowCount ? ` · ${file.rowCount} ${tr("dòng", "rows")}` : ""}</div></div>
       <div className="frow"><div className="flabel"><I n="eye" />AI</div><div className="fval">{ready ? <span className="tag t-green">{tr("Đọc được", "Readable")}</span> : <span className="tag t-red">{tr("Cần tải lại", "Needs re-upload")}</span>}</div></div>
     </div>
-    {!sourceData && file.category === "kb" && <>
+    {file.category === "kb" && <>
       <div className="fsec"><I n="shield-lock" />&nbsp;{tr("Quyền sử dụng", "Usage")}</div>
       <div className="fields" style={{ paddingTop: 0 }}>
         <div className="frow"><div className="flabel"><I n="category" />{tr("Loại", "Type")}</div><div className="fval"><select aria-label={tr("Loại kiến thức", "Knowledge type")} disabled={!canEdit || busy} value={meta.type} onChange={e => void setMeta({ type: e.target.value as KnowledgeMetadata["type"] })}>{KNOWLEDGE_TYPES.map(t => <option key={t} value={t}>{t.replace("_", " ")}</option>)}</select></div></div>

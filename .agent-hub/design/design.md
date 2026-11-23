@@ -51,7 +51,7 @@ Neutral grays remain the default. Blue is the single accent: primary actions, fo
 - Launcher greeting exception (REQ-040C6C78, superseding REQ-F11599E3): reduce the main empty-workspace greeting to 32px on desktop (>=900px), 28px on tablet (601-899px), and 24px on mobile (<=600px), consistently in Light, Dark and System. Retain weight 500 and line-height 1.25, and wrap naturally without clipping or overlapping the composer; other headings retain their existing hierarchy.
 - Use a 4px spacing rhythm. Radius: 4px (`--ui-radius-sm`) for buttons, inputs, menu items and tags; 8px (`--ui-radius-md`) for cards, panels, popovers and dialogs; pills only for avatars and counters.
 - Prefer hairline borders over shadows. Only popovers, menus and dialogs use Twenty's layered shadow. Avoid gradients, glass effects, large illustrations and decorative motion in operational screens.
-- Inputs: hairline border, 4px radius. Per the 2026-11-20 user request, inputs, textareas, selects, editable fields and comboboxes retain their resting border with no focus outline or glow, including on the sign-in screen. Other controls keep a 2px keyboard focus outline. Twenty's light border (#d6d6d6) is lighter than WCAG 1.4.11 non-text contrast; labels and placeholders identify fields; focus highlighting is disabled by the user-requested exception above.
+- Inputs: hairline border, 4px radius. Focus shows the blue accent border with a 3px `--ui-accent-soft` ring. Other controls keep a 2px focus outline. Twenty's light border (#d6d6d6) is lighter than WCAG 1.4.11 non-text contrast; labels, placeholders and the focus ring identify fields instead.
 - Sidebar items are 28px high with 4px radius and transparent hover/selected overlays (44px on narrow screens). Inspector tabs use Twenty's underline style.
 
 ## Interaction rules
@@ -59,7 +59,7 @@ Neutral grays remain the default. Blue is the single accent: primary actions, fo
 - Every AI action has visible `idle`, `running`, `saved`, `warning` and `error` feedback.
 - A completed action must show persisted output without requiring reload or reselecting a task.
 - Disable or explain unsafe actions rather than silently failing them.
-- Buttons, links and navigation keep visible keyboard focus; editable and selection fields use the no-focus-highlight exception requested on 2026-11-20. Keyboard operation must remain functional.
+- Focus must remain visible via the neutral focus ring; keyboard navigation cannot depend on hover.
 - Destructive actions require confirmation and identify scope (single article, batch, plan or source).
 
 ## Responsive rules
@@ -101,11 +101,3 @@ User decision (2026-11-17): the CRM UI copies `twenty-demo-ui/pipeline-crm.html`
 - Additions at the end of `crm.css` only undo app-wide `!important` rules (dark `main`/`input`, heading sizes) and style the embedded draft; keep them minimal.
 - Default theme is Light, like the demo. Manual mode is native CRM markup (`src/crm/ManualTab.tsx`); only the Settings editors and the outline picker are embedded components with their own styles.
 - 2026-11-18: the classic UI was removed; the CRM is the only interface. The rules above this section are historical until the contract is rewritten.
-
-### Empty states (2026-11-20)
-
-Only the leading direct-child empty-state icon is enlarged and muted. Icons inside action buttons retain the normal button size and inherit its text color. Empty plan tabs explain the next action; batch concurrency information appears only once batches exist.
-
-### Content Plan file picker (2026-11-20)
-
-Use a neutral dashed drop zone with a keyboard-operable browse button, supported formats and size limit. Keep the native file input hidden. Show the selected file name, size, readiness and replace/remove actions in a compact CRM row. Selecting or dropping a file does not start analysis; the explicit Analyze action does.

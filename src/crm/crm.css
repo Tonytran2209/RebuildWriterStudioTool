@@ -99,9 +99,7 @@
 .crm .rchip.plain{background:none;padding-left:0}
 .crm .rchip.plain:hover{text-decoration:underline}
 .crm .link{color:var(--accent);background:var(--accent-bg);border-radius:4px;padding:2px 6px}
-.crm .tag{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:4px;font-weight:500;white-space:nowrap;flex:none}
-/* Topic group picker sized like a tag so the title keeps the row, as in the demo list rows. */
-.crm .tag-select{flex:none;height:24px;padding:0 4px;border:1px solid var(--b2);border-radius:4px;background:var(--bg1);font-size:12px;font-weight:500;color:var(--f2);cursor:pointer}
+.crm .tag{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:4px;font-weight:500}
 .crm .t-red{color:var(--c-red);background:var(--c-red-bg)}
 .crm .t-purple{color:var(--c-purple);background:var(--c-purple-bg)}
 .crm .t-sky{color:var(--c-sky);background:var(--c-sky-bg)}
@@ -156,9 +154,7 @@
 .crm .tl-item .when{margin-left:auto;color:var(--f4);font-size:12px;white-space:nowrap}
 .crm .tl-month{font-weight:500;color:var(--f1);margin:4px 0 -6px -28px}
 .crm .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:60px 20px;color:var(--f3);text-align:center}
-.crm .empty-state > .ti{font-size:40px;color:var(--f5)}
-.crm .empty-state p{max-width:440px;margin:0;line-height:1.5}
-.crm .empty-state .btn{margin-top:6px}
+.crm .empty-state .ti{font-size:40px;color:var(--f5)}
 .crm .empty-state h3{margin:0;color:var(--f1);font-weight:600;font-size:13px}
 .crm .list-row{display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border:1px solid var(--b2);border-top:0;cursor:pointer}
 .crm .list-row:first-child{border-top:1px solid var(--b2);border-radius:6px 6px 0 0}
@@ -167,8 +163,6 @@
 .crm .list-row:hover{background:var(--bg2)}
 .crm .list-row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .crm .list-row.sel{background:var(--accent-bg)}
-/* Narrow screens: the title takes its own line instead of shrinking beside tags. */
-@media (max-width:640px){.crm .list-row{flex-wrap:wrap;height:auto;min-height:40px;padding:6px 12px;row-gap:4px}.crm .list-row .grow{flex:1 1 100%;order:1;white-space:normal}}
 .crm .list-row.done .grow{text-decoration:line-through;color:var(--f3)}
 .crm .note-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .crm .note-card{border:1px solid var(--b2);border-radius:6px;padding:12px;height:150px;display:flex;flex-direction:column;gap:6px;cursor:pointer;background:var(--bg1)}
@@ -424,18 +418,3 @@
 .crm .bulk-bar b{font-weight:600}
 /* <html> can carry codex-dark while the app is light; native checkboxes follow the app theme instead. */
 .writer-light .crm input[type=checkbox]{color-scheme:light}
-
-/* Content Plan intake follows the CRM panel's neutral, compact controls. */
-.crm .plan-upload-help{margin:0;color:var(--f3);font-size:12px;line-height:1.5}
-.crm .plan-upload-zone{display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 16px;border:1px dashed var(--b2);border-radius:8px;background:var(--bg2);color:var(--f2);text-align:center;cursor:pointer;transition:background .12s,border-color .12s}
-.crm .plan-upload-zone:hover,.crm .plan-upload-zone.dragging{background:var(--bg3);border-color:var(--f3)}
-.crm .plan-upload-zone:disabled{cursor:wait;opacity:.6}
-.crm .plan-upload-zone>.ti{font-size:24px;color:var(--f3);margin-bottom:4px}
-.crm .plan-upload-zone strong{font-weight:500;font-size:13px}
-.crm .plan-upload-zone span,.crm .plan-upload-zone small{font-size:12px;color:var(--f3)}
-.crm .plan-upload-zone small:first-of-type{margin-top:6px}
-.crm .plan-upload-file{display:flex;align-items:center;gap:8px;padding:10px 12px;min-width:0}
-.crm .plan-upload-file>.ti{font-size:20px;color:var(--f3)}
-.crm .plan-upload-file .grow{min-width:0}
-.crm .plan-upload-file strong{display:block;overflow-wrap:anywhere;font-size:13px;font-weight:500}
-.crm .plan-upload-file span{display:block;font-size:12px;color:var(--f3);margin-top:2px}

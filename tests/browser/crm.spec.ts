@@ -131,13 +131,12 @@ test('CRM Add Plan imports, classifies, splits into batches and starts them', as
   await panel.getByRole('button', { name: 'Generate' }).click();
   await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
   expect(log.imported[0]).toMatchObject({ name: 'New plan', sourceType: 'paste', content: 'A vs B\nC vs D\nWhy E matters' });
-  expect(log.created).toHaveLength(2);
-  await page.getByRole('tab', { name: /Articles/ }).click();
-  await expect(page.getByRole('combobox', { name: /Why E matters/ })).toHaveValue('needs-review');
-  expect(log.created.map(a => a.activityKind)).toEqual(['batch', 'batch']);
-  expect(new Set(log.created.map(a => a.activityId)).size).toBe(2);
+  expect(log.created).toHaveLength(3);
+  expect(log.created.map(a => a.activityKind)).toEqual(['batch', 'batch', 'batch']);
+  expect(new Set(log.created.map(a => a.activityId)).size).toBe(3);
+  expect(log.created[2].activityType).toBe('editorial-originality');
   expect(log.created[0].outlineStructure?.id).toBe('comparison');
-  expect(log.started).toHaveLength(2);
+  expect(log.started).toHaveLength(3);
 });
 
 test('CRM manual mode uses the demo layout and re-runs gates through the pipeline', async ({ page }) => {
@@ -207,9 +206,7 @@ test('CRM Add Plan imports a Content Plan file and Storage lists it as Source da
   await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
   expect(log.imported[0].multipart).toContain('Q3 plan.docx');
   expect(log.imported[0].multipart).toContain('Q3 plan');
-  expect(log.created).toHaveLength(2);
-  await page.getByRole('tab', { name: /Articles/ }).click();
-  await expect(page.getByRole('combobox', { name: /Why E matters/ })).toHaveValue('needs-review');
+  expect(log.created).toHaveLength(3);
 });
 
 test('CRM plan page lists every topic and starts the unprocessed ones', async ({ page }) => {
@@ -286,28 +283,6 @@ test('CRM Storage plan-like document becomes a Content Plan with classified topi
   await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
   expect(log.imported[0]).toMatchObject({ name: 'Topic Map', sourceType: 'paste', content: 'A vs B\nC vs D\nWhy E matters' });
   await expect(page.locator('.list-row', { hasText: 'C vs D' })).toBeVisible();
-});
-
-test('CRM plan topic rows keep the title readable and a plan without articles can be re-classified', async ({ page }) => {
-  const log = await mockApp(page);
-  const longTitle = 'TOPIC_TITLE_SENTINEL Why compliance training fails when you scale it across regions';
-  const fresh = { ...plan, id: 'plan-fresh', name: 'Fresh plan', items: [{ id: 'f1', title: longTitle, keywords: ['compliance'], type: 'editorial-originality', sourceLine: 'x' }] };
-  let reclassified = 0;
-  await page.route('**/api/content-plans', r => r.fulfill({ json: [plan, fresh] }));
-  await page.route('**/api/content-plans/plan-fresh/reclassify', r => { reclassified++; return r.fulfill({ json: { plan: { ...fresh, items: [{ id: 'f2', title: 'Motion Graphics vs Character Animation', keywords: [], type: 'comparison-seo', sourceLine: 'x' }] } } }); });
-  await page.reload();
-  await goHash(page, '/object/plans/plan-fresh');
-  const row = page.locator('.list-row', { hasText: 'TOPIC_TITLE_SENTINEL' });
-  const title = row.locator('.grow');
-  await expect(title).toBeVisible();
-  const [select, text] = [await row.getByRole('combobox').boundingBox(), await title.boundingBox()];
-  expect(select!.width).toBeLessThan(160);
-  expect(text!.width).toBeGreaterThan(select!.width);
-  page.once('dialog', d => void d.accept());
-  await page.getByRole('button', { name: /Phân loại lại|Re-classify/ }).click();
-  await expect(page.locator('.list-row', { hasText: 'Motion Graphics vs Character Animation' })).toBeVisible();
-  expect(reclassified).toBe(1);
-  void log;
 });
 
 test('CRM Editorial article waits for outline approval, then drafts through the pipeline', async ({ page }) => {
@@ -431,8 +406,6 @@ test('CRM Workflow AI lists every AI task and saves models, numbers and team ins
   await page.getByLabel('AI Review model').selectOption({ label: 'GPT-6.2 Sol' });
   await page.getByLabel('SEO keyword research model').selectOption({ label: 'GPT-6.2 Sol' });
   await page.getByLabel('Phân loại Content Plan model').selectOption({ label: 'GPT-6.2 Sol' });
-  await page.getByRole('checkbox', { name: /splitByWave/ }).check();
-  await page.getByRole('textbox', { name: 'comparison-seo', exact: true }).fill('Use this group for explicit product comparisons.');
   await page.getByLabel('Số keyword nghiên cứu').fill('12');
   await page.getByLabel(/Hướng dẫn cho G2/).fill('Use short H2 headings.');
   await page.locator('.ph-actions').getByRole('button', { name: /Lưu thay đổi|Save changes/ }).click();
@@ -440,12 +413,6 @@ test('CRM Workflow AI lists every AI task and saves models, numbers and team ins
   const saved = log.configs[1];
   expect(saved.taskModels).toMatchObject({ review: 'gpt-6.2-sol', seo: 'gpt-6.2-sol' });
   expect(saved.stepConfigs[1].modelId).toBe('gpt-6.2-sol');
-  expect(saved.planClassification).toMatchObject({
-    splitByWave: true,
-    recognizeLabels: true,
-    confidenceThreshold: 0.65,
-    comparisonRule: 'Use this group for explicit product comparisons.',
-  });
   expect(saved.workflowRules['core-idea'].stageOverrides['market-research'].parameters.keywordCount).toBe(12);
   expect(saved.workflowRules.outline.customInstruction).toBe('Use short H2 headings.');
 });
@@ -463,25 +430,4 @@ test('CRM tables keep long titles readable next to the checkbox column', async (
     expect(chip!.x).toBeGreaterThanOrEqual(title!.x);
     expect(chip!.width).toBeGreaterThan(120);
   } finally { (articles as any).pop(); }
-});
-
-test('Storage imports raw plans through the plan pipeline without creating KB documents or batches', async ({ page }) => {
-  const log = await mockApp(page);
-  await goHash(page, '/objects/storage');
-  await page.locator('.ph-actions').getByRole('button', { name: /Thêm tài liệu|Add document/ }).click();
-  const panel = page.getByRole('dialog', { name: /Thêm tài liệu|Add document/ });
-  await panel.getByLabel(/Mục đích tài liệu|Document purpose/).selectOption('plan');
-  await expect(panel.getByLabel(/^(Thư viện|Library)$/)).toHaveCount(0);
-  await panel.getByLabel(/File Content Plan nguồn|Raw Content Plan file/).setInputFiles({ name: 'Raw strategy.docx', mimeType: 'application/octet-stream', buffer: Buffer.from('A vs B') });
-  await expect(panel.getByText('Raw strategy.docx', { exact: true })).toBeVisible();
-  await panel.getByRole('button', { name: /Bỏ file|Remove file/ }).click();
-  await expect(panel.getByRole('button', { name: /Phân tích & tạo Content Plan|Analyze & create Content Plan/ })).toBeDisabled();
-  await panel.getByLabel(/File Content Plan nguồn|Raw Content Plan file/).setInputFiles({ name: 'Raw strategy.docx', mimeType: 'application/octet-stream', buffer: Buffer.from('A vs B') });
-  expect(log.imported).toHaveLength(0);
-  await panel.getByRole('button', { name: /Phân tích & tạo Content Plan|Analyze & create Content Plan/ }).click();
-  await expect(page).toHaveURL(/#\/object\/plans\/plan-new/);
-  expect(log.imported[0].multipart).toContain('Raw strategy.docx');
-  await expect(page.getByRole('combobox', { name: /A vs B/ })).toHaveValue('comparison-seo');
-  expect(log.files).toHaveLength(0);
-  expect(log.created).toHaveLength(0);
 });

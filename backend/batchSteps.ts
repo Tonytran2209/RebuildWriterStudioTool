@@ -14,14 +14,12 @@ export const batchStepLabels: Record<BatchStepKey, string> = {
 // earlier batch articles is reported under the same name.
 export const ARTICLE_JOB = "Writer article"
 export const BATCH_ARTICLE_JOB = ARTICLE_JOB
-export const PLAN_CLASSIFICATION_JOB = "Phân loại Content Plan"
-export const PLAN_CLASSIFICATION_RUN_PREFIX = "lab-plan-classification:v1:"
 
 // app-monitoring profile-v1: the Main Job and its sub-jobs in pipeline order. No title, so AI Agent
 // Lab keeps showing the content-workload card in its technical report.
 export const labProfile = {
   version: "profile-v1",
-  mainJob: { job: ARTICLE_JOB, steps: [PLAN_CLASSIFICATION_JOB, ...Object.values(batchStepLabels)] },
+  mainJob: { job: ARTICLE_JOB, steps: Object.values(batchStepLabels) },
   // Kept from AI Agent Lab's earlier built-in target for batch articles.
   jobTargets: { [ARTICLE_JOB]: 10 },
   // What the browser KPIs measure (ui-kpi-v2: src/crm/ui.tsx trackHandoff).

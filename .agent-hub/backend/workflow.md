@@ -49,15 +49,3 @@ Browser specs under `tests/browser/` use the browser fixture and mocked API resp
 ## Generate snapshots (REQ-44E4C670)
 
 Manual and batch outline/draft checkpoints assign a generation ID before persistence. Capture the initial generated output plus Article Spec, outline, structure, evidence usage and source fingerprint once; later QC/repairs/autosave do not rewrite that generation snapshot. Each new ID has a distinct stage fingerprint; repeated persistence uses the same ID and existing adapter deduplication. Capture available legacy output as a single baseline before replacing/clearing current output; it is not evidence of individual historical generations. Persist stage snapshots before updating article KV; failures preserve current article state, while an already-inserted snapshot remains readable/retryable. Unavailable history storage blocks new generation checkpoints. Existing legacy revision rows remain unchanged. No new retention, migration or batch scheduling rules.
-
-### Storage Content Plan intake (2026-11-20)
-
-Storage → Add document offers a document-purpose choice. Raw Content Plan files use the existing `/api/content-plans/import` and `/classify` endpoints, then open the saved plan for topic review without starting batches or creating a KB/Rules copy. Import persists before classification; classification failure retains the plan and offers retry on its page. Existing Source data documents retain the conversion action, preview, download and delete, but hide Shipper, article-type applicability and KB usage metadata.
-
-Monitoring reuses the existing Content Plan import/classification jobs and browser `trackHandoff`; there is no new processing stage or migration.
-
-### Content Plan classifier settings
-
-The CRM import and classify endpoints share saved `writer:config.planClassification` settings. Defaults keep whole-source classification and explicit `[comparison-seo]:` / `[editorial-originality]:` row handling. Wave mode recognizes the classic publishing headings and sends consecutive source partitions separately. Unscoped text is retained for classification. The cache identity includes source hash, model, provider, classifier version and normalized settings.
-
-Instructions and thresholds are configurable. Source quote validation, persisted output fields and the three allowed groups are application contracts. Classification runs are saved in KV and exposed in the PostgreSQL monitoring report as **Phân loại Content Plan**, before **Nhận bài từ Content Plan**. No migration is required.

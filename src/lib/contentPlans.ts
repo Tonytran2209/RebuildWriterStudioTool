@@ -7,9 +7,9 @@ function contentPlanRequest(path: string, railwayUrl: string, init?: RequestInit
   return authenticatedRailwayFetch(path, init, railwayUrl);
 }
 
-export async function importContentPlan(input: { name: string; sourceType: ContentPlanSourceType; content?: string; url?: string; file?: File; previousVersionId?: string; classifyAsNewVersion?: boolean }, railwayUrl: string): Promise<ContentPlan> {
+export async function importContentPlan(input: { name: string; sourceType: ContentPlanSourceType; content?: string; url?: string; file?: File; previousVersionId?: string }, railwayUrl: string): Promise<ContentPlan> {
   if (input.file) {
-    const body = new FormData(); body.append('file', input.file); body.append('name', input.name); body.append('sourceType', 'file'); if (input.previousVersionId) body.append('previousVersionId', input.previousVersionId); if (input.classifyAsNewVersion) body.append('classifyAsNewVersion', 'true');
+    const body = new FormData(); body.append('file', input.file); body.append('name', input.name); body.append('sourceType', 'file'); if (input.previousVersionId) body.append('previousVersionId', input.previousVersionId);
     return (await parse(await contentPlanRequest('/api/content-plans/import', railwayUrl, { method: 'POST', body }))).plan;
   }
   return (await parse(await contentPlanRequest('/api/content-plans/import', railwayUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }))).plan;

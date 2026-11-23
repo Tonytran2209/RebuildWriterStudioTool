@@ -7,12 +7,6 @@ body { color: var(--ui-text); font: 400 13px/1.5 var(--ui-font); -webkit-font-sm
   outline: 2px solid var(--ui-focus) !important;
   outline-offset: 2px !important;
 }
-/* Fields keep their resting appearance while editing, per the shared UI request. */
-:root :is(input, textarea, select, [contenteditable="true"], [role="combobox"]):is(:focus, :focus-visible) {
-  outline: none !important;
-  box-shadow: none !important;
-}
-.crm .inp:focus { border-color: var(--b2) !important; }
 /* Put Content Plan focus on its rounded container, not inside the text area.
    Keep specificity above the generic and legacy dark focus rules. */
 :where(button, input, textarea, select):disabled { cursor: not-allowed; }

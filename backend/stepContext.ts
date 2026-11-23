@@ -117,16 +117,6 @@ export function extractStep1PublishingScopes(content: string): PublishingScope[]
   }).filter(scope => scope.content);
 }
 
-// Keep every line available for classification, including the preamble outside a Wave.
-export function splitPlanByPublishingWave(content: string): string[][] {
-  const groups: string[][] = [[]]
-  for (const line of content.replace(/\r\n?/g, "\n").split("\n")) {
-    if (extractStep1PublishingScopes(line).length) groups.push([])
-    groups[groups.length - 1].push(line)
-  }
-  return groups
-}
-
 function sourceFingerprint(items: Array<{ role: Role; document: StoredDocument }>): string {
   return items
     .map(item => `${item.role}:${item.document.id}:${item.document.contentHash ?? 'legacy'}`)

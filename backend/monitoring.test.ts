@@ -3,11 +3,9 @@ import assert from "node:assert/strict"
 import express from "express"
 import { createMonitoring, configuredCost, monitoring } from "./monitoring.ts"
 const source =
-  (rows: any[] = [], classificationRuns: any[] = []) =>
+  (rows: any[] = []) =>
   async () => ({
     buckets: rows,
-    classificationRuns,
-    classificationRunsComplete: true,
     jobHistory: null,
     contentWorkload: null,
     jobHistoryAllTime: null,
@@ -90,7 +88,7 @@ test("AI instrumentation preserves results, errors and restart-safe aggregate to
     const report = await m.snapshot(7)
     assert.equal(report.profile.version, "profile-v1")
     assert.deepEqual(report.profile.mainJob, { job: "Writer article", steps: [
-      "Phân loại Content Plan", "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Article Spec & Core Idea", "Lập outline", "Viết draft",
+      "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Article Spec & Core Idea", "Lập outline", "Viết draft",
       "Kiểm tra chất lượng",
     ] })
     assert.deepEqual(report.profile.jobTargets, { "Writer article": 10 })
@@ -250,33 +248,5 @@ test("ui-kpi-v2 report uses nearest-rank P95 over raw samples of the requested w
     }
   } finally {
     await monitor.stop()
-  }
-})
-
-test("classification runs report their parent, states and measured timestamps", async () => {
-  const startedAt = new Date().toISOString()
-  const classification = ["success", "failed", "running"].map(status => ({
-    job: "Phân loại Content Plan",
-    workload: "Content Plan",
-    runId: status + ":classification",
-    parentRunId: status,
-    parent: "Writer article",
-    status,
-    startedAt,
-    endedAt: status === "running" ? null : startedAt,
-  }))
-  const m = createMonitoring("test", {
-    readData: source([], classification),
-    save: async () => {},
-    getConfig: async () => ({}),
-  })
-  try {
-    const report = await m.snapshot(1)
-    for (const run of classification) {
-      assert.deepEqual(report.jobRuns.runs.find(item => item.runId === run.runId), run)
-      assert.equal(report.jobRuns.runs.find(item => item.runId === run.parentRunId)?.status, run.status)
-    }
-  } finally {
-    await m.stop()
   }
 })
