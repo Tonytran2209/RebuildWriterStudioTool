@@ -5367,20 +5367,25 @@ app.post("/api/files", async (req, res) => {
   }
 })
 
+// Mirrors DOC_GROUPS in src/crm/model.ts: each Storage group lives in one library.
+const STORAGE_GROUP_CATEGORY: Record<string, string> = { "Domain Knowledge": "kb", Playbooks: "rules", Standards: "rules", "Voice & Style": "rules" }
 // Per-file edits so one admin's stale list never overwrites documents another admin added.
 app.patch("/api/files/:id", async (req, res) => {
   try {
     const metadata = req.body?.knowledgeMetadata
-    if (!metadata || typeof metadata !== "object") return res.status(400).json({ error: "knowledgeMetadata is required." })
+    const group = req.body?.storageGroup
+    if (group !== undefined && !Object.hasOwn(STORAGE_GROUP_CATEGORY, group)) return res.status(400).json({ error: "storageGroup is not a Storage group." })
+    if (group === undefined && (!metadata || typeof metadata !== "object")) return res.status(400).json({ error: "knowledgeMetadata or storageGroup is required." })
     const file = await withConfigLock(async () => {
       const files = (await kvGet<any[]>("writer:files")) ?? []
       const found = files.find((item) => item.id === req.params.id)
       if (!found) throw Object.assign(new Error("Tài liệu không tồn tại."), { status: 404 })
-      const next = { ...found, knowledgeMetadata: metadata }
+      if (group !== undefined && STORAGE_GROUP_CATEGORY[group] !== found.category) throw Object.assign(new Error("Nhóm này thuộc thư viện khác."), { status: 400 })
+      const next = group !== undefined ? { ...found, storageGroup: group } : { ...found, knowledgeMetadata: metadata }
       await kvSet("writer:files", files.map((item) => item.id === next.id ? next : item))
       return next
     })
-    if (file.category === "kb" && await tableAvailable("knowledge_items"))
+    if (metadata && group === undefined && file.category === "kb" && await tableAvailable("knowledge_items"))
       await tableUpsert("knowledge_items", { id: file.id, source_name: file.name, knowledge_type: metadata.type ?? "reference", topics: metadata.topics ?? [], service: metadata.service ?? null, audience: metadata.audience ?? null, visibility: metadata.visibility ?? "internal", approved_for_external_use: Boolean(metadata.approvedForExternalUse), metadata, updated_at: new Date().toISOString() }, "id")
     res.json({ ok: true, file })
   } catch (err: any) {

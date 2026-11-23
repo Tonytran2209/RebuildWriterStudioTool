@@ -13,10 +13,15 @@ test('Storage importer retains successful documents after a partial upload failu
       if (uploads === 2) return route.fulfill({ status: 422, json: { error: 'No readable text' } });
       return route.fulfill({ json: { target: 'writer:files', record: { id: `file-${uploads}`, name: `guide-${uploads}.md`, category: 'rules', content: 'Writing guide', fileType: 'md' } } });
     }
+    const patched = url.pathname.match(/^\/api\/files\/([^/]+)$/);
+    if (patched && route.request().method() === 'PATCH') {
+      const id = decodeURIComponent(patched[1]);
+      return route.fulfill({ json: { ok: true, file: { id, name: `guide-${id.slice(5)}.md`, category: 'rules', content: 'Writing guide', fileType: 'md', ...route.request().postDataJSON() } } });
+    }
     return route.fallback();
   });
   await page.goto('/?library');
-  await page.getByLabel(/^(Thư viện|Library)$/).selectOption('rules');
+  await page.getByLabel('Group').selectOption('Voice & Style');
   await page.locator('input[type=file]').setInputFiles([
     { name: 'good.md', mimeType: 'text/markdown', buffer: Buffer.from('Guide one') },
     { name: 'empty.txt', mimeType: 'text/plain', buffer: Buffer.from('') },
@@ -27,5 +32,5 @@ test('Storage importer retains successful documents after a partial upload failu
   await expect(page.getByTestId('library-records')).toContainText('file-3');
   const records = JSON.parse(await page.getByTestId('library-records').innerText());
   expect(records).toHaveLength(2);
-  expect(records.every((record: any) => record.category === 'rules')).toBe(true);
+  expect(records.every((record: any) => record.category === 'rules' && record.storageGroup === 'Voice & Style')).toBe(true);
 });

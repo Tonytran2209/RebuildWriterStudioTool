@@ -454,6 +454,10 @@ export async function fetchFiles(): Promise<DocumentFile[]> {
   return railwayRequest<DocumentFile[]>("/api/files")
 }
 
+export async function updateFileGroup(id: string, storageGroup: string): Promise<DocumentFile> {
+  return (await railwayRequest<{ file: DocumentFile }>(`/api/files/${encodeURIComponent(id)}`, jsonRequest("PATCH", { storageGroup }))).file
+}
+
 export async function updateFileMetadata(id: string, knowledgeMetadata: NonNullable<DocumentFile["knowledgeMetadata"]>): Promise<DocumentFile> {
   return (await railwayRequest<{ file: DocumentFile }>(`/api/files/${encodeURIComponent(id)}`, jsonRequest("PATCH", { knowledgeMetadata }))).file
 }

@@ -83,6 +83,8 @@ export interface DocumentFile {
   airtableBase?: string
   airtableTable?: string
   knowledgeMetadata?: KnowledgeMetadata
+  /** Storage group chosen when the document was added (same groups as Storage and Settings). */
+  storageGroup?: string
 }
 
 export interface KnowledgeMetadata {

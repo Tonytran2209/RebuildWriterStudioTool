@@ -176,6 +176,12 @@ test('CRM Storage adds, governs and deletes documents without the old settings p
   expect(log.imports[0]).toMatchObject({ sourceType: 'paste', category: 'kb', name: 'Brand facts' });
   expect(log.files[0]).toEqual(['imported-1', 'outline-md']);
   await expect(page.getByText('Brand facts')).toBeVisible();
+  await expect(page.locator('tr', { hasText: 'Brand facts' })).toContainText('Domain Knowledge');
+
+  // Same groups as the Storage list; Source data goes to the Content Plan upload instead of the library.
+  await panel.getByLabel('Group').selectOption('Source data');
+  await panel.getByRole('button', { name: /Thêm Content Plan|Add Content Plan/ }).click();
+  await expect(page.getByRole('dialog', { name: /Thêm Content Plan|Add Content Plan/ })).toBeVisible();
 
   await page.getByRole('button', { name: 'Close' }).click();
   await page.getByText('Outline forms.md').click();

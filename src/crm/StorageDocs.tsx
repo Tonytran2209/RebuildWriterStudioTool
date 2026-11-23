@@ -5,6 +5,8 @@ import { importSourceThroughRailway } from "../lib/railwayImport"
 import { downloadDocumentFromRailway } from "../lib/railwayDownload"
 import { isDocumentReady } from "../lib/documentStatus"
 import { useI18n } from "../lib/i18n"
+import { updateFileGroup } from "../lib/db"
+import { DOC_GROUPS, groupOf } from "./model"
 import { I, trackHandoff } from "./ui"
 
 const uid = () => Math.random().toString(36).slice(2, 9)
@@ -29,9 +31,11 @@ const MODES: Array<[ActionSourceType, string, string]> = [
 ]
 
 /** Body of the Storage "Add document" panel: upload or import, saved on the server before it reaches the list. */
-export function AddDocForm({ railwayUrl, onAdded }: { railwayUrl: string; onAdded: (docs: DocumentFile[]) => Promise<void> }) {
+export function AddDocForm({ railwayUrl, onAdded, onSourceData }: { railwayUrl: string; onAdded: (docs: DocumentFile[]) => Promise<void>; onSourceData?: () => void }) {
   const { tr } = useI18n()
-  const [category, setCategory] = useState<FileCategory>("kb")
+  const [group, setGroup] = useState(DOC_GROUPS[0][0])
+  const info = DOC_GROUPS.find(([g]) => g === group)
+  const category: FileCategory = info?.[1] ?? "kb"
   const [mode, setMode] = useState<ActionSourceType>("file")
   const [busy, setBusy] = useState("")
   const [error, setError] = useState("")
@@ -49,9 +53,11 @@ export function AddDocForm({ railwayUrl, onAdded }: { railwayUrl: string; onAdde
   const sheetId = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/)?.[1] ?? null
 
   const finish = async (docs: DocumentFile[], failures: string[] = []) => {
-    if (docs.length) await onAdded(docs)
+    // The group is saved on each stored record so Storage and Settings › Shipper list it in the same place.
+    const grouped = await Promise.all(docs.map(d => updateFileGroup(d.id, group)))
+    if (grouped.length) await onAdded(grouped)
     setError(failures.join("\n"))
-    setDone(docs.length ? tr(`Đã lưu ${docs.length} tài liệu vào ${category === "kb" ? "Knowledge Base" : "Skills & Rules"}.`, `Saved ${docs.length} document(s) to ${category === "kb" ? "Knowledge Base" : "Skills & Rules"}.`) : "")
+    setDone(grouped.length ? tr(`Đã lưu ${grouped.length} tài liệu vào ${group}.`, `Saved ${grouped.length} document(s) to ${group}.`) : "")
   }
   const upload = async (list: FileList | null) => {
     if (!list?.length || busy) return
@@ -96,9 +102,13 @@ export function AddDocForm({ railwayUrl, onAdded }: { railwayUrl: string; onAdde
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
     <div className="fields" style={{ paddingTop: 0 }}>
-      <div className="frow"><div className="flabel"><I n="folder" />{tr("Thư viện", "Library")}</div><div className="fval"><select aria-label={tr("Thư viện", "Library")} value={category} onChange={e => setCategory(e.target.value as FileCategory)}><option value="kb">Knowledge Base</option><option value="rules">Skills & Rules</option></select></div></div>
+      <div className="frow"><div className="flabel"><I n="folder" />Group</div><div className="fval"><select aria-label="Group" value={group} disabled={Boolean(busy)} onChange={e => { setGroup(e.target.value); setError(""); setDone("") }}>{DOC_GROUPS.map(([g]) => <option key={g} value={g}>{g}</option>)}<option value="Source data">Source data · Content Plan</option></select></div></div>
     </div>
-    <div className="muted" style={{ color: "var(--f3)" }}>{category === "kb" ? tr("Kiến thức cốt lõi, sản phẩm, nghiên cứu và tài liệu tham khảo.", "Core knowledge, products, research and references.") : tr("Hướng dẫn viết, checklist, tone of voice, cấu trúc và quy tắc bắt buộc.", "Writing guides, checklists, tone of voice, structures and mandatory rules.")} {tr("Tài liệu mới chưa được cấp cho gate nào — bật trong Shipper.", "New documents are not given to any gate yet — enable them in Shipper.")}</div>
+    {!info ? <>
+      <div className="muted" style={{ color: "var(--f3)" }}>{tr("Content Plan / source data được AI đọc và phân loại thành topic, không lưu như tài liệu tham khảo.", "Content plans / source data are read by AI and classified into topics, not stored as reference documents.")}</div>
+      {onSourceData && <button className="btn primary lg" style={{ justifyContent: "center" }} onClick={onSourceData}><I n="sparkles" />{tr("Thêm Content Plan", "Add Content Plan")}</button>}
+    </> : <>
+    <div className="muted" style={{ color: "var(--f3)" }}>{tr(info[2], info[3])} {tr("Tài liệu mới chưa được cấp cho gate nào — bật trong Settings › Shipper.", "New documents are not given to any gate yet — enable them in Settings › Shipper.")}</div>
     <div role="tablist" aria-label={tr("Cách nhập", "Import method")} style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
       {MODES.map(([id, icon, label]) => <button key={id} role="tab" aria-selected={mode === id} className={`btn${mode === id ? " primary" : ""}`} onClick={() => { setMode(id); setError(""); setDone("") }}><I n={icon} />{label}</button>)}
     </div>
@@ -144,6 +154,7 @@ export function AddDocForm({ railwayUrl, onAdded }: { railwayUrl: string; onAdde
     {done && !busy && <div role="status" style={{ color: "var(--c-green)" }}><I n="circle-check" /> {done}</div>}
     {error && <div role="alert" style={{ color: "var(--danger)", whiteSpace: "pre-line" }}>{error}</div>}
     {mode !== "file" && <button className="btn primary lg" disabled={!ready || Boolean(busy)} onClick={() => void importSource()}><I n="download" />{tr("Nhập qua Railway", "Import through Railway")}</button>}
+    </>}
   </div>
 }
 
@@ -151,7 +162,7 @@ const KNOWLEDGE_TYPES: KnowledgeMetadata["type"][] = ["reference", "usp", "posit
 const DEFAULT_META: KnowledgeMetadata = { type: "reference", topics: [], visibility: "internal", approvedForExternalUse: false }
 
 /** Real-file part of the Storage document panel: governance, preview, download and delete. */
-export function DocDetails({ file, railwayUrl, canEdit, onSave, onDelete }: { file: DocumentFile; railwayUrl: string; canEdit: boolean; onSave: (file: DocumentFile) => Promise<void>; onDelete: () => Promise<void> }) {
+export function DocDetails({ file, railwayUrl, canEdit, onSave, onGroup, onDelete }: { file: DocumentFile; railwayUrl: string; canEdit: boolean; onSave: (file: DocumentFile) => Promise<void>; onGroup?: (group: string) => Promise<void>; onDelete: () => Promise<void> }) {
   const { tr } = useI18n()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -163,7 +174,7 @@ export function DocDetails({ file, railwayUrl, canEdit, onSave, onDelete }: { fi
   return <>
     <div className="fsec"><I n="file-info" />&nbsp;{tr("Tài liệu", "Document")}</div>
     <div className="fields" style={{ paddingTop: 0 }}>
-      <div className="frow"><div className="flabel"><I n="folder" />{tr("Thư viện", "Library")}</div><div className="fval">{file.category === "kb" ? "Knowledge Base" : "Skills & Rules"}</div></div>
+      <div className="frow"><div className="flabel"><I n="folder" />Group</div><div className="fval">{canEdit && onGroup && file.category === "rules" ? <select aria-label="Group" value={groupOf(file)} disabled={busy} onChange={e => void run(() => onGroup(e.target.value))}>{DOC_GROUPS.filter(([, c]) => c === "rules").map(([g]) => <option key={g} value={g}>{g}</option>)}</select> : groupOf(file)}</div></div>
       <div className="frow"><div className="flabel"><I n="file" />{tr("Nguồn", "Source")}</div><div className="fval">{(file.sourceType ?? "file").toUpperCase()}{file.size ? ` · ${file.size}` : ""}{file.rowCount ? ` · ${file.rowCount} ${tr("dòng", "rows")}` : ""}</div></div>
       <div className="frow"><div className="flabel"><I n="eye" />AI</div><div className="fval">{ready ? <span className="tag t-green">{tr("Đọc được", "Readable")}</span> : <span className="tag t-red">{tr("Cần tải lại", "Needs re-upload")}</span>}</div></div>
     </div>

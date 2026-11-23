@@ -114,7 +114,15 @@ export const STORAGE_GROUPS = [["Domain Knowledge", "red"], ["Playbooks", "purpl
 export type StorageDoc = { id: string; g: string; name: string; st: "ok" | "partial" | "draft" | "missing"; used: number[]; types: ArticleType[]; note: string; updatedAt?: string; file?: DocumentFile; planId?: string }
 
 const SHIP_STEPS = [2, 3, 4] as const
+/** Groups a document can be added to; Source data comes in through the Content Plan upload instead. */
+export const DOC_GROUPS: Array<[group: string, category: "kb" | "rules", vi: string, en: string]> = [
+  ["Domain Knowledge", "kb", "Kiến thức cốt lõi, sản phẩm, nghiên cứu và tài liệu tham khảo.", "Core knowledge, products, research and references."],
+  ["Playbooks", "rules", "Hướng dẫn viết, cấu trúc bài và ví dụ mẫu.", "Writing guides, article structures and examples."],
+  ["Standards", "rules", "Checklist, quy tắc bắt buộc, link và chuẩn upload.", "Checklists, mandatory rules, links and upload standards."],
+  ["Voice & Style", "rules", "Tone of voice, giọng văn và văn phong.", "Tone of voice and writing style."],
+]
 export function groupOf(file: DocumentFile): string {
+  if (DOC_GROUPS.some(([g]) => g === file.storageGroup)) return file.storageGroup!
   const name = file.name.toLowerCase()
   if (file.category === "kb") return /plan|topic|priority/.test(name) ? "Source data" : "Domain Knowledge"
   if (/checklist|standard|link|upload|quy tắc/.test(name)) return "Standards"
