@@ -46,7 +46,7 @@ async function mockApp(page: Page, role: 'admin' | 'user' | 'reviewer' = 'admin'
       { id: 'n1', title: 'A vs B', keywords: ['a vs b'], type: 'comparison-seo', sourceLine: 'A vs B' },
       { id: 'n2', title: 'C vs D', keywords: [], type: 'comparison-seo', sourceLine: 'C vs D' },
       { id: 'n3', title: 'Why E matters', keywords: [], type: 'needs-review', sourceLine: 'Why E matters' },
-    ] } } });
+    ], classificationDropped: ['Ghost topic'] } } });
     if (url.pathname === '/api/content-plans') return route.fulfill({ json: [plan] });
     const fileId = url.pathname.match(/^\/api\/files\/([^/]+)$/);
     if (fileId && method === 'DELETE') { serverFiles = serverFiles.filter(f => f.id !== decodeURIComponent(fileId[1])); log.files.push(serverFiles.map(f => f.id)); const cfg = { ...config, stepConfigs: { ...config.stepConfigs, 3: { ...config.stepConfigs[3], fileAccess: { kb: [], rules: [] } } } }; log.configs.push(cfg); return route.fulfill({ json: { ok: true, files: serverFiles, config: cfg } }); }
@@ -301,6 +301,7 @@ test('CRM Storage Add Content Plan dialog uploads, shows each step and opens the
   const steps = dialog.getByRole('list', { name: /Tiến trình|Progress/ });
   await expect(steps.locator('.tl-item.pu-done')).toHaveCount(3);
   await expect(steps).toContainText('3 topic');
+  await expect(steps.getByRole('alert')).toContainText('Ghost topic');
   await expect(dialog.locator('.pu-topics')).toContainText('C vs D');
   expect(log.imported[0].multipart).toContain('Topic Map.docx');
   expect(log.created).toHaveLength(0);

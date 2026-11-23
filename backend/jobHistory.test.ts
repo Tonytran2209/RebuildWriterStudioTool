@@ -130,3 +130,27 @@ test("single article sessions use the last run of each step and merge parallel c
   assert.equal(byJob["Writer article"], 90000)
   assert.deepEqual(singleArticleRuns({ runId: "x", job: "Writer article", workload: "w", endedAt: null, usage: null }), [])
 })
+
+test("stored Content Plan classification runs report success, failure, running and missing start", async () => {
+  const { storedLabRuns } = await import("./jobHistory.ts")
+  const base = { job: "Phân loại Content Plan", parent: "Writer article", workload: "Content Plan · Q3 plan" }
+  const runs = storedLabRuns([
+    { ...base, runId: "r1", status: "success", startedAt: "2026-11-20T10:00:00.000Z", endedAt: "2026-11-20T10:00:30.000Z", items: { total: 40, succeeded: 37 } },
+    { ...base, runId: "r2", status: "failed", startedAt: "2026-11-20T11:00:00.000Z", endedAt: "2026-11-20T11:00:05.000Z", error: "AI_PROVIDER_ERROR" },
+    { ...base, runId: "r3", status: "running", startedAt: "2026-11-20T12:00:00.000Z", endedAt: null },
+    { ...base, runId: "r4", status: "success", endedAt: "2026-11-20T13:00:00.000Z" },
+    { runId: "bad", status: "weird" },
+  ])
+  assert.deepEqual(runs.map(r => [r.runId, r.status, r.startedAt, r.endedAt]), [
+    ["r1", "success", "2026-11-20T10:00:00.000Z", "2026-11-20T10:00:30.000Z"],
+    ["r2", "failed", "2026-11-20T11:00:00.000Z", "2026-11-20T11:00:05.000Z"],
+    ["r3", "running", "2026-11-20T12:00:00.000Z", null],
+    ["r4", "success", null, "2026-11-20T13:00:00.000Z"],
+  ])
+  assert.deepEqual(runs[0].items, { total: 40, succeeded: 37 })
+  assert.equal(runs[1].error, "AI_PROVIDER_ERROR")
+  assert.equal(runs[0].parent, "Writer article")
+  const report = jobRuns([], Date.parse("2026-11-23T00:00:00.000Z"), 5000, runs)
+  assert.equal(report.runs[0].runId, "r4")
+  assert.deepEqual(report.runs.find(r => r.runId === "r1")?.items, { total: 40, succeeded: 37 })
+})

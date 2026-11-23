@@ -520,6 +520,8 @@ export interface ContentPlan {
   createdAt: string
   updatedAt: string
   classifiedAt?: string
+  /** Only in the classify response: topics the AI named that were not found in the source (not stored). */
+  classificationDropped?: string[]
   sources?: ContentPlanSource[]
   items?: ContentPlanItem[]
   changeSummary?: { added: string[]; removed: string[]; unchanged: string[] }

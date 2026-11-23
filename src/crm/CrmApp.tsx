@@ -845,6 +845,7 @@ function AddPlanPanel({ ctx }: { ctx: Ctx }) {
       setBusy(tr("Đang phân loại article type…", "Classifying article types…"))
       const plan = await classifyContentPlan(imported.id, railway)
       ctx.onContentPlansChange([plan])
+      if (droppedNote(plan, tr)) toast(droppedNote(plan, tr), "error")
       if (ctx.isAdmin && par !== ctx.settings.maxParallel) await ctx.onSaveConfig({ ...ctx.config, pipeline: { ...ctx.settings, maxParallel: Math.max(1, Math.min(5, par)) } }, ctx.files, false)
       const items = plan.items ?? []
       if (!items.length) throw new Error(tr("Không tìm thấy topic nào trong Content Plan này.", "No topics were found in this Content Plan."))
@@ -968,6 +969,12 @@ function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
 }
 
 /** A plan-like Storage document becomes a real Content Plan: import its text, classify topics, open the plan. */
+/** Topics the AI named that are not in the source were left out; say how many, so the user can check the file. */
+const droppedNote = (plan: ContentPlan, tr: (vi: string, en: string) => string) => {
+  const n = plan.classificationDropped?.length ?? 0
+  return n ? tr(`Bỏ qua ${n} topic không tìm thấy nguyên văn trong file: ${plan.classificationDropped!.slice(0, 3).join("; ")}${n > 3 ? "…" : ""}`, `Skipped ${n} topic(s) not found verbatim in the file: ${plan.classificationDropped!.slice(0, 3).join("; ")}${n > 3 ? "…" : ""}`) : ""
+}
+
 function PlanFromDoc({ ctx, file }: { ctx: Ctx; file: DocumentFile }) {
   const { tr } = useI18n()
   const [busy, setBusy] = useState(false)
@@ -982,7 +989,9 @@ function PlanFromDoc({ ctx, file }: { ctx: Ctx; file: DocumentFile }) {
         const imported = await importContentPlan({ name, sourceType: "paste", content: file.content! }, ctx.config.railwayUrl)
         planId = imported.id
         ctx.onContentPlansChange([imported])
-        ctx.onContentPlansChange([await classifyContentPlan(imported.id, ctx.config.railwayUrl)])
+        const classified = await classifyContentPlan(imported.id, ctx.config.railwayUrl)
+        ctx.onContentPlansChange([classified])
+        if (droppedNote(classified, tr)) toast(droppedNote(classified, tr), "error")
       })
       toast(tr("Đã tạo Content Plan và phân loại topic", "Content Plan created and topics classified"))
     } catch (err) { toastErr(err) } finally { setBusy(false) }
@@ -1025,7 +1034,7 @@ function PlanUploadDialog({ ctx }: { ctx: Ctx }) {
         step = 1; set(1, { at: Date.now() })
         const classified = await classifyContentPlan(imported.id, ctx.config.railwayUrl)
         ctx.onContentPlansChange([classified]); setPlan(classified)
-        set(1, { end: Date.now(), out: <>{classified.items?.length ?? 0} topic · <Tag c="blue">Comparison {count(classified, "comparison-seo")}</Tag> <Tag c="pink">Editorial {count(classified, "editorial-originality")}</Tag>{count(classified, "needs-review") > 0 && <> <Tag c="orange">Needs review {count(classified, "needs-review")}</Tag></>}</> })
+        set(1, { end: Date.now(), out: <>{classified.items?.length ?? 0} topic · <Tag c="blue">Comparison {count(classified, "comparison-seo")}</Tag> <Tag c="pink">Editorial {count(classified, "editorial-originality")}</Tag>{count(classified, "needs-review") > 0 && <> <Tag c="orange">Needs review {count(classified, "needs-review")}</Tag></>}{droppedNote(classified, tr) && <div role="alert" style={{ color: "var(--c-orange, var(--f2))", marginTop: 4 }}><I n="alert-triangle" /> {droppedNote(classified, tr)}</div>}</> })
         step = 2; set(2, { at: Date.now(), end: Date.now(), out: tr("Content Plan đã lưu trong Source data, chưa chạy batch.", "Saved to Source data; no batch started.") })
       })
     } catch (err) { set(step, { error: errText(err) }) }

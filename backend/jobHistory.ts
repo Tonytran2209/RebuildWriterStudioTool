@@ -32,6 +32,25 @@ export type ParentRun = {
   // Reconstructed from other saved timestamps, not measured: AI Agent Lab shows it in run
   // history but keeps it out of P95, targets and job detection.
   estimated?: boolean
+  items?: { total: number; succeeded: number }
+  error?: string
+}
+
+// Runs saved as `lab-run:v1:<runId>` (Content Plan classification). Missing or out-of-order times
+// become null instead of being guessed; malformed records are skipped.
+export function storedLabRuns(values: unknown[]): ParentRun[] {
+  return values.slice(0, 5000).flatMap((value: any) => {
+    if (!value || typeof value.runId !== "string" || typeof value.job !== "string" || !["success", "failed", "running"].includes(value.status)) return []
+    const startedAt = iso(value.startedAt), endedAt = value.status === "running" ? null : iso(value.endedAt)
+    const total = Number(value.items?.total), succeeded = Number(value.items?.succeeded)
+    return [{
+      job: value.job.slice(0, 80), runId: value.runId.slice(0, 80), workload: String(value.workload ?? value.job).slice(0, 200),
+      status: value.status, startedAt: startedAt && (!endedAt || Date.parse(startedAt) <= Date.parse(endedAt)) ? startedAt : null, endedAt,
+      ...(typeof value.parent === "string" ? { parent: value.parent } : {}),
+      ...(Number.isFinite(total) && Number.isFinite(succeeded) ? { items: { total, succeeded } } : {}),
+      ...(typeof value.error === "string" && value.status === "failed" ? { error: value.error.slice(0, 80) } : {}),
+    }]
+  })
 }
 
 type StepRecord = { key?: unknown; label?: unknown; startedAt?: unknown; endedAt?: unknown; status?: unknown }
@@ -135,7 +154,7 @@ const iso = (value: string | Date | null | undefined) => {
 export function jobRuns(rows: JobRecord[], now: number, max = 5000, parents: ParentRun[] = []) {
   const since = now - 61 * 86400000
   type Run = { job: string; workload: string; status: "success" | "failed" | "running"; startedAt: string | null; endedAt: string | null
-    runId?: string; parentRunId?: string; parent?: string }
+    runId?: string; parentRunId?: string; parent?: string; items?: { total: number; succeeded: number }; error?: string }
   const runs: Run[] = []
   let truncated = false
   for (const row of rows) {

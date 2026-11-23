@@ -1,7 +1,8 @@
 import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
 import { aiApproval, pipelineSettings, rerunPatch, type RerunGate } from "../src/lib/pipeline.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
-import { BATCH_ARTICLE_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
+import { BATCH_ARTICLE_JOB, CLASSIFY_PLAN_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
+import { CHUNK_MAX_TOKENS, CLASSIFIER_SYSTEM, CONTENT_PLAN_CLASSIFIER_VERSION, classifierPrompt, itemsOf, splitPlanChunks, verifiedClassificationItems } from './contentPlanClassifier.ts';
 import { convertStepRunsToTelemetryStages, sendArticleRunTelemetry } from "./telemetry.ts";
 import { outlineReviewInstruction } from '../src/lib/outlineQuality.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
@@ -3333,7 +3334,6 @@ async function fetchAirtableSource(
 }
 
 const CONTENT_PLAN_PREFIX = "writer:content-plan:"
-const CONTENT_PLAN_CLASSIFIER_VERSION = "content-plan-classifier-v1"
 
 function planFromRow(row: any, sources: any[] = [], items: any[] = []) {
   return {
@@ -3573,67 +3573,6 @@ function googleExportUrl(value: string, sourceType: string): string {
   return sourceType === "google_sheet"
     ? `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv`
     : `https://docs.google.com/document/d/${match[1]}/export?format=txt`
-}
-
-function verifiedClassificationItems(parsed: any, plan: any) {
-  const rawItems = Array.isArray(parsed)
-    ? parsed
-    : Array.isArray(parsed?.items)
-      ? parsed.items
-      : []
-  const sources = new Map(
-    (plan.sources ?? []).map((source: any) => [source.id, source]),
-  )
-  const seen = new Set<string>()
-  return rawItems.flatMap((raw: any, index: number) => {
-    const source = (sources.get(String(raw.sourceId ?? "")) ??
-      (sources.size === 1 ? [...sources.values()][0] : null)) as any
-    const title = String(raw.title ?? "").trim()
-    let quote = String(raw.sourceQuote ?? "").trim()
-    const group = String(raw.contentGroup ?? raw.type ?? "").replaceAll(
-      "_",
-      "-",
-    )
-    const confidence = Math.max(0, Math.min(1, Number(raw.confidence ?? 0)))
-    if (
-      source &&
-      title &&
-      (!quote || !String(source.extractedContent).includes(quote)) &&
-      String(source.extractedContent).includes(title)
-    )
-      quote = title
-    if (
-      !source ||
-      !title ||
-      !quote ||
-      !String(source.extractedContent).includes(quote)
-    )
-      return []
-    const key = title.toLocaleLowerCase()
-    if (seen.has(key)) return []
-    seen.add(key)
-    const type =
-      ["comparison-seo", "editorial-originality"].includes(group) &&
-      confidence >= 0.65
-        ? group
-        : "needs-review"
-    return [
-      {
-        id: crypto.randomUUID(),
-        title,
-        keywords: Array.isArray(raw.keywords)
-          ? raw.keywords.map(String).filter(Boolean)
-          : [],
-        type,
-        sourceLine: String(raw.sourceLine ?? quote),
-        confidence,
-        classificationReason: String(raw.classificationReason ?? "").trim(),
-        sourceId: source.id,
-        sourceSectionId: String(raw.sourceSectionId ?? `item-${index + 1}`),
-        sourceQuote: quote,
-      },
-    ]
-  })
 }
 
 // ─── Serve Vite frontend static files ────────────────────────────────────────
@@ -3885,7 +3824,13 @@ app.post(
   },
 )
 
+// app-monitoring-v1 runs outside the batch tables (read by monitoringData.ts). Never blocks the work it records.
+async function saveLabRun(run: any) {
+  try { await kvSet(`lab-run:v1:${run.runId}`, run) } catch (error) { console.warn("lab run not saved", run.runId, error) }
+}
+
 async function classifyPlanRequest(req: any, res: any, force: boolean) {
+  let run: any = null
   try {
     const plan = await getContentPlan(req.params.id)
     if (!plan)
@@ -3904,11 +3849,6 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
           error:
             "Hãy chọn một AI model đang bật cho Step 1 trước khi phân loại Content Plan.",
         })
-    const cacheKey = aiCacheKey({
-      kind: CONTENT_PLAN_CLASSIFIER_VERSION,
-      fingerprint: plan.sourceFingerprint,
-      model: model.id,
-    })
     const explicitItems = deterministicPlanItems(plan)
     const hasUnclassifiedContent = (plan.sources ?? []).some((source: any) =>
       String(source.extractedContent ?? "")
@@ -3916,57 +3856,41 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
         .split("\n")
         .some(line => line.trim() && !explicitContentGroupLine(line)),
     )
+    // Monitoring sub-job: one run per classification that does real work (cached plans return above).
+    run = { runId: crypto.randomUUID(), job: CLASSIFY_PLAN_JOB, parent: BATCH_ARTICLE_JOB, workload: `Content Plan · ${compactText(plan.name, 120)}`, status: "running", startedAt: new Date().toISOString(), endedAt: null }
+    await saveLabRun(run)
     if (explicitItems.length && !hasUnclassifiedContent) {
       const saved = await saveClassifiedPlan(plan, explicitItems, "deterministic-plan-v1")
+      await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: explicitItems.length, succeeded: saved.items?.length ?? explicitItems.length } })
       return res.json({ plan: saved, cacheHit: false, deterministic: true })
     }
-    const cached = force ? null : await kvGet<any>(cacheKey)
-    let parsed: any
-    let response: any
-    if (cached?.content) {
-      response = cached
-      parsed = parseJsonObject(cached.content)
-    } else {
-      await reserveAIBudget(`content-plan-${plan.id}`, 1)
-      const sourceBlock = (plan.sources ?? [])
-        .map(
-          (source: any) => {
-            // Preserve the original source for verification, but omit rows
-            // whose classification is explicit and already deterministic.
-            const remaining = String(source.extractedContent)
-              .replace(/\r\n?/g, "\n")
-              .split("\n")
-              .filter(line => !explicitContentGroupLine(line))
-              .join("\n")
-              .slice(0, 500_000)
-            return `SOURCE id=${source.id} name=${JSON.stringify(source.name)}\n${remaining}`
-          },
-        )
-        .join("\n\n---\n\n")
-      response = await generate({
-        modelId: model.id,
-        provider: model.provider,
-        jsonMode: true,
-        maxTokens: 10000,
-        temperature: 0.2,
-        systemPrompt:
-          "Classify only topics explicitly present in the supplied Content Plan sources. Never invent topics. Every item must include a verbatim sourceQuote copied from its source.",
-        prompt: [
-          "Extract and classify every remaining planned article. Rows with an explicit content-group label were already handled deterministically; do not repeat them.",
-          "comparison-seo: comparisons, versus, alternatives, reviews, best/top lists, pricing, buyer guides, commercial or transactional SEO intent.",
-          "editorial-originality: thought leadership, analysis, opinion, original research, storytelling, brand editorial, or expert insight.",
-          "Use needs-review when confidence is below 0.65 or the source is ambiguous.",
-          'Return JSON only: {"items":[{"title":string,"keywords":string[],"contentGroup":"comparison-seo"|"editorial-originality"|"needs-review","confidence":number,"classificationReason":string,"sourceId":string,"sourceSectionId":string,"sourceLine":string,"sourceQuote":string}]}',
-          sourceBlock,
-        ].join("\n\n"),
-      })
-      await kvSet(cacheKey, {
-        ...response,
-        generatedAt: new Date().toISOString(),
-      })
-      parsed = parseJsonObject(response.content)
+    const responses: any[] = []
+    let budgetReserved = false
+    // One AI call per chunk of plan rows. A cut-off or unreadable answer is split in half and retried, twice at most.
+    const classifyChunk = async (text: string, depth = 0): Promise<any[]> => {
+      const cacheKey = aiCacheKey({ kind: CONTENT_PLAN_CLASSIFIER_VERSION, model: model.id, text: crypto.createHash("sha256").update(text).digest("hex") })
+      const cached = force ? null : await kvGet<any>(cacheKey)
+      if (cached?.content) return itemsOf(parseJsonObject(cached.content))
+      if (!budgetReserved) { await reserveAIBudget(`content-plan-${plan.id}`, 1); budgetReserved = true }
+      const response = await generate({ modelId: model.id, provider: model.provider, jsonMode: true, maxTokens: CHUNK_MAX_TOKENS, temperature: 0, systemPrompt: CLASSIFIER_SYSTEM, prompt: classifierPrompt(text) })
+      responses.push(response)
+      const truncated = Number(response.usage?.outputTokens ?? 0) >= CHUNK_MAX_TOKENS - 64
+      let parsed: any = null
+      try { if (!truncated) parsed = parseJsonObject(response.content) } catch { /* split below */ }
+      if (!parsed) {
+        const halves = splitPlanChunks(text, Math.ceil(text.length / 2))
+        if (depth >= 2 || halves.length < 2) throw new Error("AI trả về danh sách topic bị cắt hoặc không đọc được. Hãy thử model khác cho bước Phân loại Content Plan.")
+        return (await Promise.all(halves.map(half => classifyChunk(half, depth + 1)))).flat()
+      }
+      await kvSet(cacheKey, { ...response, generatedAt: new Date().toISOString() })
+      return itemsOf(parsed)
     }
-    const aiItems = verifiedClassificationItems(parsed, plan)
+    const rawItems = (await Promise.all((plan.sources ?? []).flatMap((source: any) => {
+      // Rows with an explicit label were handled deterministically; the rest is classified in chunks.
+      const remaining = String(source.extractedContent ?? "").replace(/\r\n?/g, "\n").split("\n").filter(line => !explicitContentGroupLine(line)).join("\n")
+      return splitPlanChunks(remaining).map(async chunk => (await classifyChunk(chunk)).map(raw => ({ ...raw, sourceId: source.id })))
+    }))).flat()
+    const { items: aiItems, dropped } = verifiedClassificationItems(rawItems, plan)
     const items = [...explicitItems, ...aiItems].filter(
       (item, index, all) => all.findIndex(candidate =>
         String(candidate.title).toLocaleLowerCase() === String(item.title).toLocaleLowerCase(),
@@ -3977,9 +3901,9 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
     let saved = await saveClassifiedPlan(
       plan,
       items,
-      response.model ?? model.id,
+      responses[0]?.model ?? model.id,
     )
-    if (!cached && response.usage) {
+    for (const response of responses.filter(r => r.usage)) {
       const usage = batchUsage(1, model.provider, {
         ...response,
         provider: model.provider,
@@ -4014,9 +3938,12 @@ async function classifyPlanRequest(req: any, res: any, force: boolean) {
         await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, saved)
       }
     }
-    res.json({ plan: saved, cacheHit: Boolean(cached) })
+    await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: explicitItems.length + rawItems.length, succeeded: saved.items?.length ?? items.length } })
+    // Not stored: rows the AI named but that could not be found in the source, so the user can check them.
+    res.json({ plan: { ...saved, classificationDropped: dropped }, cacheHit: responses.length === 0 })
   } catch (err: any) {
     const classified = classifyAIError(err, "openai", "content-plan-classifier")
+    if (run) await saveLabRun({ ...run, status: "failed", endedAt: new Date().toISOString(), error: String((classified.body as any)?.code ?? classified.status) })
     res.status(classified.status).json(classified.body)
   }
 }

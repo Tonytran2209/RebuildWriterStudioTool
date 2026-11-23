@@ -1,4 +1,4 @@
-import { articleStepRuns, estimatedStepRuns, jobHistoryWindows, singleArticleRuns } from "./jobHistory.ts"
+import { articleStepRuns, estimatedStepRuns, jobHistoryWindows, singleArticleRuns, storedLabRuns } from "./jobHistory.ts"
 import { ARTICLE_JOB } from "./batchSteps.ts"
 import { performance } from "node:perf_hooks"
 import { database } from "./postgres.ts"
@@ -164,13 +164,18 @@ export async function readMonitoringData(
       runId: "single:" + row.id, job: ARTICLE_JOB, usage: row.usage, endedAt: row.endedAt,
       workload: row.title?.trim() ? (row.workload + " · " + row.title.trim()).slice(0, 200) : row.workload,
     }))
+    // Content Plan classification runs (lab-run:v1), last 61 days, newest first.
+    const labRuns = storedLabRuns((await client.query(
+      "SELECT value FROM writer_studio.kv_store WHERE key LIKE 'lab-run:v1:%' AND COALESCE(value->>'endedAt',value->>'startedAt') >= $1 ORDER BY COALESCE(value->>'endedAt',value->>'startedAt') DESC LIMIT 5000",
+      [new Date(Date.now() - 61 * 86400000).toISOString()],
+    )).rows.map((row: any) => row.value))
     const history = articleRows
       ? jobHistoryWindows(articleRows, since, jobLimit, Date.now(), articleRows.flatMap((row: any) => {
           const article = { runId: row.runId, job: row.job, workload: row.title?.trim() ? (row.workload + " · " + row.title.trim()).slice(0, 200) : row.workload }
           // Measured steps when saved; otherwise steps estimated from AI call times.
           return row.steps ? articleStepRuns(row.steps, article)
             : estimatedStepRuns(row.callMarks, { ...article, startedAt: row.startedAt, endedAt: row.endedAt })
-        }).concat(singleRuns))
+        }).concat(singleRuns, labRuns))
       : { jobHistory: null, jobHistoryAllTime: null }
     const contentWorkload = await exists("batch_job_items") && await exists("writer_articles")
       ? {

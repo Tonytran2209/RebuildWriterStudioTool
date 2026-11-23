@@ -114,6 +114,14 @@ The image worker, style library and image suggestion APIs were removed from the 
 | SEO keyword research | `taskModels.seo` (enabled OpenAI model only; needs web search) | `gpt-5.4-mini` | `researchSeoKeywords(seeds, count, model)` |
 | Website Inventory summary | `taskModels.inventory` (any enabled model) | `WEBSITE_SUMMARY_MODEL` env, else `gpt-5.4-mini` | `processWebsiteInventoryUrl` |
 
+### Content Plan classification (`content-plan-classifier-v2`, `backend/contentPlanClassifier.ts`)
+
+- Rows labelled `comparison-seo:` / `editorial-originality:` are saved without AI. The remaining text is split into chunks of whole lines (about 20,000 characters each), and each chunk becomes one AI call (`temperature 0`, 12,000 output tokens).
+- A truncated or unreadable answer is split in half and retried, up to two levels. The cache key is classifier version + model + chunk-text hash, so re-uploading the same text reuses the answers whatever the file name is. The daily budget counts one call per classify request.
+- The prompt makes one item per planned-article row. Headings, cluster names, notes and KPIs are not items. The title is copied verbatim.
+- An item is kept only when its quote or title is found in its source, after normalising quotes, dashes, markdown marks and spacing. The classify response lists the topics left out in `plan.classificationDropped` (this list is not stored), and the CRM shows it.
+- Monitoring: each run that does work is saved as `lab-run:v1:<runId>` with job `Phân loại Content Plan`, `parent: "Writer article"`, workload `Content Plan · <plan name>`, `status`, `startedAt`, `endedAt`, `items {total, succeeded}` and an error code. It is reported in `jobRuns` and declared as the first step of `profile.mainJob.steps`. It has no `parentRunId`, because it runs once per plan, before any article run exists.
+
 Settings › Workflow AI edits these plus the pipeline numbers stored as workflow-rule stage parameters (`keywordCount`, `ideaCount`, `minimumSections`, `conclusionPercent`, `maxSentencesPerParagraph`) and one team instruction per gate (`workflowRules[core-idea|outline|draft].customInstruction`). Enforcement, execution modes and per-stage text are no longer editable; old values still compile until "Reset to defaults".
 
 ## Roles and accounts (PostgreSQL auth)
