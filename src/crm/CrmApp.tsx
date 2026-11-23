@@ -724,7 +724,7 @@ function PlanShow({ ctx, id }: { ctx: Ctx; id: string }) {
       {bs.length ? <table className="tbl" style={{ border: "1px solid var(--b2)", borderRadius: 6 }}><thead><tr><th style={{ position: "static" }}>Batch</th><th style={{ position: "static" }}>Schedule</th><th style={{ position: "static" }}>Status</th><th style={{ position: "static" }}>AI Approved</th></tr></thead><tbody>
         {bs.map(b => <tr key={b.id} tabIndex={0} style={{ cursor: "pointer" }} onClick={() => go(`#/object/batches/${enc(b.id)}`)} onKeyDown={e => { if (e.key === "Enter") go(`#/object/batches/${enc(b.id)}`) }}><td><span className="rchip"><I n="stack-2" />Batch {b.idx}</span></td><td>{fmtTime(b.schedule)}</td><td>{b.paused ? <Tag c="orange">Paused</Tag> : <StatusTag k={b.status} />}</td><td>{b.done}/{b.articles.length}</td></tr>)}
       </tbody></table> : <div className="empty-state"><I n="stack-2" /><h3>{tr("Chưa có batch", "No batches yet")}</h3></div>}
-      <p style={{ color: "var(--f3)", marginTop: 10 }}><I n="info-circle" /> {tr(`Toàn hệ thống chạy tối đa ${ctx.settings.maxParallel} bài cùng lúc; bài kế tiếp bắt đầu khi có chỗ trống.`, `Up to ${ctx.settings.maxParallel} articles run at a time across all batches; the next starts when a slot frees up.`)}</p>
+      {bs.length > 0 && <p style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--f3)", fontSize: 12, margin: "10px 0 0" }}><I n="info-circle" />{tr(`Toàn hệ thống chạy tối đa ${ctx.settings.maxParallel} bài cùng lúc; bài kế tiếp bắt đầu khi có chỗ trống.`, `Up to ${ctx.settings.maxParallel} articles run at a time across all batches; the next starts when a slot frees up.`)}</p>}
     </> : <PlanTopics ctx={ctx} p={p} />}
   </ShowShell>
 }

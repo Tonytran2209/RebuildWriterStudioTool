@@ -324,6 +324,20 @@ test('CRM Settings list documents in the same groups as Storage', async ({ page 
   await expect(page.locator('tr.grp', { hasText: 'Playbooks' })).toBeVisible();
 });
 
+test('CRM plan capacity note shows only next to a batch list', async ({ page }) => {
+  await mockApp(page);
+  await page.route('**/api/content-plans', r => r.fulfill({ json: [plan, { ...plan, id: 'plan-empty', name: 'Empty plan', items: [] }] }));
+  await page.reload();
+  const note = page.getByText(/Toàn hệ thống chạy tối đa|articles run at a time/);
+  await goHash(page, '/object/plans/plan-1');
+  await page.getByRole('tab', { name: /Batches/ }).click();
+  await expect(note).toBeVisible();
+  await goHash(page, '/object/plans/plan-empty');
+  await page.getByRole('tab', { name: /Batches/ }).click();
+  await expect(page.getByText(/Chưa có batch|No batches yet/)).toBeVisible();
+  await expect(note).toHaveCount(0);
+});
+
 test('CRM Editorial article waits for outline approval, then drafts through the pipeline', async ({ page }) => {
   const editorial = { id: 'a-editorial', title: 'Editorial piece', topic: 'Editorial piece', currentStep: 3, status: 'review', createdAt: now, updatedAt: now,
     contentPlanId: 'plan-1', contentPlanItemId: 'i9', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-ed', activityType: 'editorial-originality', batchStatus: 'awaiting_approval',
