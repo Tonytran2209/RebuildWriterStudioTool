@@ -360,6 +360,9 @@ test('CRM Settings list documents in the same groups as Storage', async ({ page 
   await mockApp(page);
   await goHash(page, '/settings/workflow-ai');
   for (const g of ['Domain Knowledge', 'Playbooks', 'Standards', 'Voice & Style', 'Source data']) await expect(page.locator('.box-row', { hasText: g }).first()).toBeVisible();
+  // Each group is its own colored tag with a count (Outline forms.md is a Playbooks rule).
+  await expect(page.locator('.box-row .tag', { hasText: 'Playbooks' })).toHaveText(/Playbooks\s*1/);
+  await expect(page.locator('.box-row .tag.t-gray', { hasText: 'Voice & Style' })).toHaveText(/Voice & Style\s*0/);
   await expect(page.getByText('Skills & Rules')).toHaveCount(0);
   await goHash(page, '/settings/shipper');
   await expect(page.locator('tr.grp', { hasText: 'Playbooks' })).toBeVisible();

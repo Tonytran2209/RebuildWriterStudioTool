@@ -67,7 +67,9 @@ export function SystemStatus({ config, docs = [] }: { config: AppConfig; docs?: 
   return <Sec title={tr("Hệ thống", "System")} desc={tr("Chỉ để kiểm tra; không có gì cần cài đặt ở đây.", "For checking only; nothing to set here.")}>
     <div className="box">
       <BackendRows status={status} onRecheck={check} />
-      <div className="box-row"><I n="folders" /><div className="grow">{tr("Tài liệu", "Documents")}<div className="s">{STORAGE_GROUPS.map(([g]) => `${g} ${ready.filter(d => d.g === g).length}`).join(" · ")}</div></div>
+      <div className="box-row" style={{ flexWrap: "wrap" }}><I n="folders" /><div className="grow" style={{ minWidth: 220 }}>{tr("Tài liệu", "Documents")}{/* One colored tag per Storage group with its document count; empty groups stay gray. */}
+          <div className="s" style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>{STORAGE_GROUPS.map(([g, c]) => { const n = ready.filter(d => d.g === g).length
+            return <span key={g} className={`tag t-${n ? c : "gray"}`} style={{ whiteSpace: "nowrap" }} title={tr(`${n} tài liệu`, `${n} documents`)}>{g}<b style={{ marginLeft: 6, fontVariantNumeric: "tabular-nums" }}>{n}</b></span> })}</div></div>
         <a className="btn" href="#/settings/shipper"><I n="truck-delivery" />Shipper</a><a className="btn" href="#/objects/storage"><I n="folders" />Storage</a></div>
     </div>
   </Sec>
