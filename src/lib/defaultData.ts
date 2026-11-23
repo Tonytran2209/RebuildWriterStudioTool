@@ -25,7 +25,7 @@ export const DEFAULT_MODELS: AIModel[] = [
   { id: 'mistral-small-2603', name: 'Mistral Small 4', provider: 'mistral', description: 'Model hybrid nhanh, hiệu quả cho instruct và reasoning.', enabled: false, contextWindow: '256K', speed: 'fast', pricing: { inputUsdPerMillion: 0.15, outputUsdPerMillion: 0.6 } },
   // DeepSeek (giá giờ cao điểm; ngoài giờ cao điểm rẻ hơn một nửa)
   { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', provider: 'deepseek', description: 'Suy luận sâu cho nội dung dài và tác vụ agent phức tạp.', enabled: false, contextWindow: '1M', speed: 'medium', pricing: { inputUsdPerMillion: 1.32, cachedInputUsdPerMillion: 0.044, outputUsdPerMillion: 3.96 } },
-  { id: 'deepseek-flash', name: 'DeepSeek Flash', provider: 'deepseek', description: 'Nhanh và tiết kiệm cho workflow nội dung sản lượng lớn.', enabled: false, contextWindow: '1M', speed: 'fast', pricing: { inputUsdPerMillion: 0.3, cachedInputUsdPerMillion: 0.006, outputUsdPerMillion: 1.2 } },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', provider: 'deepseek', description: 'Nhanh và tiết kiệm cho workflow nội dung sản lượng lớn.', enabled: false, contextWindow: '1M', speed: 'fast', pricing: { inputUsdPerMillion: 0.3, cachedInputUsdPerMillion: 0.006, outputUsdPerMillion: 1.2 } },
   // Together AI
   { id: 'moonshotai/Kimi-K3.1-Pro', name: 'Kimi K3.1 Pro', provider: 'together', description: 'Model context dài chất lượng cao qua Together Serverless.', enabled: false, contextWindow: '1M', speed: 'medium', pricing: { inputUsdPerMillion: 2, outputUsdPerMillion: 10 } },
   { id: 'Qwen/Qwen4-Max', name: 'Qwen4 Max', provider: 'together', description: 'Model Qwen mạnh nhất, context 1M.', enabled: false, contextWindow: '1M', speed: 'medium', pricing: { inputUsdPerMillion: 1.425, outputUsdPerMillion: 4.275 } },
@@ -43,7 +43,8 @@ export const MODEL_REPLACEMENTS: Record<string, string> = {
   'gpt-5.6-sol': 'gpt-6.2-sol', 'gpt-5.6-terra': 'gpt-6.1-terra', 'gpt-5.6-luna': 'gpt-6-luna', 'gpt-5.5': 'gpt-6.2-sol', 'gpt-5.4': 'gpt-6.1-terra', 'gpt-5.4-mini': 'gpt-6.1-terra', 'gpt-5.4-nano': 'gpt-6-luna',
   'gemini-3.6-flash': 'gemini-3.8-flash',
   'mistral-medium-3-5': 'mistral-large-latest',
-  'deepseek-v4-flash': 'deepseek-flash',
+  // deepseek-v4-flash is the real API id; a bad rename to deepseek-flash broke saved model choices.
+  'deepseek-flash': 'deepseek-v4-flash',
   'moonshotai/Kimi-K3': 'moonshotai/Kimi-K3.1-Pro',
   'llama-3.1-8b-instant': 'groq-gpt-oss-20b',
 };

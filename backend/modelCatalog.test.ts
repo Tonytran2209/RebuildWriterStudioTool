@@ -29,3 +29,12 @@ test("manual price edits survive within the same catalog version", () => {
   edited.models = edited.models.map(m => m.id === "gpt-6.2-sol" ? { ...m, pricing: { inputUsdPerMillion: 9, outputUsdPerMillion: 9 } } : m)
   assert.equal(mergeWithLatestModelCatalog(edited).models.find(m => m.id === "gpt-6.2-sol")!.pricing?.inputUsdPerMillion, 9)
 })
+
+test("DeepSeek V4 Flash keeps its API id; configs saved with the bad deepseek-flash id move back", () => {
+  assert.ok(DEFAULT_MODELS.some(m => m.id === "deepseek-v4-flash"))
+  assert.ok(!DEFAULT_MODELS.some(m => m.id === "deepseek-flash"))
+  const config = { ...DEFAULT_CONFIG, models: DEFAULT_CONFIG.models.map(m => m.id === "deepseek-v4-flash" ? { ...m, id: "deepseek-flash", enabled: true } : m), stepConfigs: { ...DEFAULT_CONFIG.stepConfigs, 1: { ...DEFAULT_CONFIG.stepConfigs[1], modelId: "deepseek-flash" } } }
+  const merged = mergeWithLatestModelCatalog(config)
+  assert.equal(merged.stepConfigs[1].modelId, "deepseek-v4-flash")
+  assert.equal(merged.models.find(m => m.id === "deepseek-v4-flash")?.enabled, true)
+})
