@@ -288,6 +288,28 @@ test('CRM Storage plan-like document becomes a Content Plan with classified topi
   await expect(page.locator('.list-row', { hasText: 'C vs D' })).toBeVisible();
 });
 
+test('CRM plan topic rows keep the title readable and a plan without articles can be re-classified', async ({ page }) => {
+  const log = await mockApp(page);
+  const longTitle = 'TOPIC_TITLE_SENTINEL Why compliance training fails when you scale it across regions';
+  const fresh = { ...plan, id: 'plan-fresh', name: 'Fresh plan', items: [{ id: 'f1', title: longTitle, keywords: ['compliance'], type: 'editorial-originality', sourceLine: 'x' }] };
+  let reclassified = 0;
+  await page.route('**/api/content-plans', r => r.fulfill({ json: [plan, fresh] }));
+  await page.route('**/api/content-plans/plan-fresh/reclassify', r => { reclassified++; return r.fulfill({ json: { plan: { ...fresh, items: [{ id: 'f2', title: 'Motion Graphics vs Character Animation', keywords: [], type: 'comparison-seo', sourceLine: 'x' }] } } }); });
+  await page.reload();
+  await goHash(page, '/object/plans/plan-fresh');
+  const row = page.locator('.list-row', { hasText: 'TOPIC_TITLE_SENTINEL' });
+  const title = row.locator('.grow');
+  await expect(title).toBeVisible();
+  const [select, text] = [await row.getByRole('combobox').boundingBox(), await title.boundingBox()];
+  expect(select!.width).toBeLessThan(160);
+  expect(text!.width).toBeGreaterThan(select!.width);
+  page.once('dialog', d => void d.accept());
+  await page.getByRole('button', { name: /Phân loại lại|Re-classify/ }).click();
+  await expect(page.locator('.list-row', { hasText: 'Motion Graphics vs Character Animation' })).toBeVisible();
+  expect(reclassified).toBe(1);
+  void log;
+});
+
 test('CRM Editorial article waits for outline approval, then drafts through the pipeline', async ({ page }) => {
   const editorial = { id: 'a-editorial', title: 'Editorial piece', topic: 'Editorial piece', currentStep: 3, status: 'review', createdAt: now, updatedAt: now,
     contentPlanId: 'plan-1', contentPlanItemId: 'i9', contentPlanInput: 'x', activityKind: 'batch', activityId: 'batch-ed', activityType: 'editorial-originality', batchStatus: 'awaiting_approval',

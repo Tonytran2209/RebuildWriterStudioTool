@@ -99,7 +99,9 @@
 .crm .rchip.plain{background:none;padding-left:0}
 .crm .rchip.plain:hover{text-decoration:underline}
 .crm .link{color:var(--accent);background:var(--accent-bg);border-radius:4px;padding:2px 6px}
-.crm .tag{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:4px;font-weight:500}
+.crm .tag{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:4px;font-weight:500;white-space:nowrap;flex:none}
+/* Topic group picker sized like a tag so the title keeps the row, as in the demo list rows. */
+.crm .tag-select{flex:none;height:24px;padding:0 4px;border:1px solid var(--b2);border-radius:4px;background:var(--bg1);font-size:12px;font-weight:500;color:var(--f2);cursor:pointer}
 .crm .t-red{color:var(--c-red);background:var(--c-red-bg)}
 .crm .t-purple{color:var(--c-purple);background:var(--c-purple-bg)}
 .crm .t-sky{color:var(--c-sky);background:var(--c-sky-bg)}
@@ -165,6 +167,8 @@
 .crm .list-row:hover{background:var(--bg2)}
 .crm .list-row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .crm .list-row.sel{background:var(--accent-bg)}
+/* Narrow screens: the title takes its own line instead of shrinking beside tags. */
+@media (max-width:640px){.crm .list-row{flex-wrap:wrap;height:auto;min-height:40px;padding:6px 12px;row-gap:4px}.crm .list-row .grow{flex:1 1 100%;order:1;white-space:normal}}
 .crm .list-row.done .grow{text-decoration:line-through;color:var(--f3)}
 .crm .note-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .crm .note-card{border:1px solid var(--b2);border-radius:6px;padding:12px;height:150px;display:flex;flex-direction:column;gap:6px;cursor:pointer;background:var(--bg1)}

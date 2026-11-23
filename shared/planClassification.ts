@@ -3,7 +3,7 @@ export const PLAN_CLASSIFICATION_DEFAULTS = {
   recognizeLabels: true,
   confidenceThreshold: 0.65,
   systemPrompt: "Classify only topics explicitly present in the supplied Content Plan sources. Never invent topics. Every item must include a verbatim sourceQuote copied from its source.",
-  extractionPrompt: "Extract and classify every planned article present in the supplied text.",
+  extractionPrompt: "Extract and classify every planned article in the supplied Content Plan. Section headings (for example \"Comparison Content\" or an audience list) describe the topics listed under them: include every topic in every section.",
   comparisonRule: "comparisons, versus, alternatives, reviews, best/top lists, pricing, buyer guides, commercial or transactional SEO intent.",
   editorialRule: "thought leadership, analysis, opinion, original research, storytelling, brand editorial, or expert insight.",
   resultPrompt: "",

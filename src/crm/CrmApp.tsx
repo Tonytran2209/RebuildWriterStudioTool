@@ -647,15 +647,19 @@ function PlanTopics({ ctx, p }: { ctx: Ctx; p: CrmPlan }) {
   const chosen = pending.filter(i => picked.has(i.id))
   const canPick = ctx.can("plans")
   const [classifying, setClassifying] = useState(false)
-  const classify = async (eventTimeStamp: number) => {
+  const classify = async (eventTimeStamp: number, force = false) => {
+    // Re-classifying replaces every topic, so it is offered only before any article exists.
+    if (force && !window.confirm(tr("Phân loại lại sẽ thay toàn bộ danh sách topic của plan này. Tiếp tục?", "Re-classifying replaces every topic in this plan. Continue?"))) return
+    const started = force ? performance.now() : eventTimeStamp
     setClassifying(true)
-    try { ctx.onContentPlansChange([await trackHandoff(eventTimeStamp, () => classifyContentPlan(p.id, ctx.config.railwayUrl))]) } catch (err) { toastErr(err) } finally { setClassifying(false) }
+    try { ctx.onContentPlansChange([await trackHandoff(started, () => classifyContentPlan(p.id, ctx.config.railwayUrl, force))]) } catch (err) { toastErr(err) } finally { setClassifying(false) }
   }
   const orphans = p.articles.filter(a => !items.some(i => i.id === a.a.contentPlanItemId))
   const article = (a: CrmArticle) => <div key={a.id} className="list-row" role="link" tabIndex={0} onClick={() => go(`#/object/articles/${enc(a.id)}`)} onKeyDown={e => { if (e.key === "Enter") go(`#/object/articles/${enc(a.id)}`) }}><TypeTag t={a.type} /><span className="grow">{a.title}</span><GateBar a={a} /><StatusTag k={a.status} /></div>
   return <div>
-    {pending.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, color: "var(--f3)" }}>
+    {pending.length > 0 && <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10, color: "var(--f3)" }}>
       <I n="info-circle" /><span className="grow">{tr(`${pending.length} topic chưa chạy`, `${pending.length} topics not started`)} · Comparison {pending.filter(i => i.type === "comparison-seo").length} · Editorial {pending.filter(i => i.type !== "comparison-seo").length}</span>
+      {canPick && !p.articles.length && <button className="btn" disabled={classifying} onClick={e => void classify(e.timeStamp, true)}><I n={classifying ? "loader-2" : "refresh"} />{tr("Phân loại lại", "Re-classify")}</button>}
       {canPick && <button className="btn primary" onClick={() => ctx.setPanel({ kind: "run-items", id: p.id })}><I n="player-play" />{tr("Chạy topic chưa xử lý", "Run unprocessed topics")}</button>}
     </div>}
     {chosen.length > 0 && <div className="bulk-bar" role="region" aria-label={tr("Thao tác hàng loạt", "Bulk actions")}>
@@ -664,7 +668,7 @@ function PlanTopics({ ctx, p }: { ctx: Ctx; p: CrmPlan }) {
       <button className="btn primary" onClick={() => ctx.setPanel({ kind: "run-items", id: p.id, ids: chosen.map(i => i.id) })}><I n="stack-2" />{tr(`Tạo batch từ ${chosen.length} bài`, `Create batch from ${chosen.length} topic${chosen.length > 1 ? "s" : ""}`)}</button>
     </div>}
     {items.map(item => { const a = byItem.get(item.id); if (a) return article(a); const [c, l] = ITEM_TYPE[item.type] ?? ITEM_TYPE["needs-review"]
-      return <div key={item.id} className={`list-row${picked.has(item.id) ? " sel" : ""}`} style={{ cursor: "default" }}>{canPick && pending.some(topic => topic.id === item.id) && <input type="checkbox" aria-label={`${tr("Chọn", "Select")} ${item.title}`} checked={picked.has(item.id)} onChange={() => setPicked(prev => { const next = new Set(prev); if (!next.delete(item.id)) next.add(item.id); return next })} />}{canPick && p.plan.status !== "archived" && item.status !== "archived" ? <select className="inp" aria-label={`${tr("Nhóm topic", "Topic group")} · ${item.title}`} value={item.type} onChange={e => {
+      return <div key={item.id} className={`list-row${picked.has(item.id) ? " sel" : ""}`} style={{ cursor: "default" }}>{canPick && pending.some(topic => topic.id === item.id) && <input type="checkbox" aria-label={`${tr("Chọn", "Select")} ${item.title}`} checked={picked.has(item.id)} onChange={() => setPicked(prev => { const next = new Set(prev); if (!next.delete(item.id)) next.add(item.id); return next })} />}{canPick && p.plan.status !== "archived" && item.status !== "archived" ? <select className="tag-select" aria-label={`${tr("Nhóm topic", "Topic group")} · ${item.title}`} value={item.type} onChange={e => {
       const next = e.target.value as typeof item.type
       void trackHandoff(e.timeStamp, () => updateContentPlanItem(p.id, item.id, next, ctx.config.railwayUrl))
         .then(plan => ctx.onContentPlansChange([plan])).catch(toastErr)
