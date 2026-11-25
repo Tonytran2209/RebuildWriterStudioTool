@@ -2,7 +2,7 @@ import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
 import { aiApproval, pipelineSettings, rerunPatch, type RerunGate } from "../src/lib/pipeline.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, CLASSIFY_PLAN_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
-import { CHUNK_MAX_TOKENS, CONTENT_PLAN_CLASSIFIER_VERSION, classifierPrompt, itemsOf, mergeDuplicateTopics, numberedLines, planItemsFromPicks, promptSettingsOf, splitPlanChunks } from './contentPlanClassifier.ts';
+import { CHUNK_MAX_TOKENS, CONTENT_PLAN_CLASSIFIER_VERSION, classifierPrompt, itemsOf, mergeDuplicateTopics, numberedLines, planItemsFromPicks, promptSettingsOf, splitPlanChunks, stableItemId } from './contentPlanClassifier.ts';
 import { normalizeContentPlanSettings, type ContentPlanSettings } from '../shared/contentPlanSettings.ts';
 import { convertStepRunsToTelemetryStages, sendArticleRunTelemetry } from "./telemetry.ts";
 import { outlineReviewInstruction } from '../src/lib/outlineQuality.ts';
@@ -271,7 +271,7 @@ function deterministicPlanItems(plan: any) {
   const items: any[] = []
   for (const source of plan?.sources ?? []) {
     const lines = String(source?.extractedContent ?? "").replace(/\r\n?/g, "\n").split("\n")
-    for (const line of lines) {
+    for (const [n, line] of lines.entries()) {
       const match = explicitContentGroupLine(line)
       if (!match) continue
       const detail = compactText(match[2], 500)
@@ -279,7 +279,7 @@ function deterministicPlanItems(plan: any) {
       const title = compactText(rawTitle, 220)
       if (!title) continue
       items.push({
-        id: `explicit-${crypto.createHash("sha256").update(`${source.id}|${line}`).digest("hex").slice(0, 20)}`,
+        id: stableItemId(`explicit|${source.id}|${n}`),
         title,
         keywords: rawKeywords.split(/[,;]+/).map((item: string) => compactText(item, 120)).filter(Boolean),
         type: match[1].toLocaleLowerCase(),

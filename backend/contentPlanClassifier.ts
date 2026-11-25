@@ -38,6 +38,12 @@ export function splitPlanChunks(text: string, max = CHUNK_CHARS): string[] {
   return chunks
 }
 
+/** Same key, same id, in UUID form (content_plan_items.id is a Postgres uuid column). */
+export function stableItemId(key: string) {
+  const h = crypto.createHash("sha256").update(key).digest("hex")
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${((parseInt(h[16], 16) & 3) | 8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`
+}
+
 export const itemsOf = (parsed: any): any[] => Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : []
 
 type Group = "comparison-seo" | "editorial-originality" | "needs-review"
@@ -119,7 +125,7 @@ export function planItemsFromPicks(picks: any[], source: { id: string; extracted
     const type = section?.group ?? pattern ?? (aiGroup === "needs-review" ? unsure : aiGroup)
     return [{
       // Stable per source line, so applying new rules again keeps the links from articles to topics.
-      id: `line-${crypto.createHash("sha256").update(`${source.id}|${n}`).digest("hex").slice(0, 20)}`, title,
+      id: stableItemId(`${source.id}|${n}`), title,
       keywords: rawKeywords.split(/[,;]+/).map(k => k.trim()).filter(Boolean),
       type, confidence: section ? 1 : pattern ? 0.95 : type === "needs-review" ? 0.5 : 0.8,
       classificationReason: section ? `Section "${section.heading}"` : pattern ? "Title wording" : "AI",

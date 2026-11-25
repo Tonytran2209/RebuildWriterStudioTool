@@ -129,6 +129,8 @@ test("admin settings: edited prompt, rule toggles, unsure topics and merging", a
   assert.equal(keep.type, "needs-review")
   assert.equal(planItemsFromPicks([[1, "r"]], source, { ...D, keepNeedsReview: false }).items[0].type, "editorial-originality")
   assert.equal(planItemsFromPicks([[1, "r"]], source).items[0].id, keep.id)
+  // Ids go into a Postgres uuid column.
+  assert.match(keep.id, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   assert.equal(planItemsFromPicks([[1, "e"], [1, "c"]], source, { ...D, mergeDuplicates: false }).items.length, 1)
   const both = planItemsFromPicks([[1, "e"], [2, "e"]], source).items
   assert.equal(mergeDuplicateTopics(both).length, 1)
