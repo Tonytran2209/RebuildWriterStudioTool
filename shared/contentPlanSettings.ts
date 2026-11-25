@@ -5,10 +5,10 @@ export type DuplicateSensitivity = "strict" | "normal" | "loose"
 export type NeedsReviewMode = "keep" | "editorial" | "comparison"
 
 export interface ContentPlanSettings {
-  /** A heading containing one of these words puts the topics under it in the group. */
+  /** A heading with one of these words puts the topics under it in the group (same syntax as phrases). */
   comparisonHeadings: string[]
   editorialHeadings: string[]
-  /** Whole-word phrases in a title. "^" first = the title starts with it; "#" = any number. */
+  /** Whole-word phrases in a title. "^" first = the title starts with it; "#" = any number; "*" = any letters. */
   comparisonPhrases: string[]
   editorialPhrases: string[]
   /** How the AI is told what each group means, for topics no heading or phrase decides. */
@@ -25,8 +25,8 @@ export interface ContentPlanSettings {
 }
 
 export const DEFAULT_CONTENT_PLAN_SETTINGS: ContentPlanSettings = {
-  comparisonHeadings: ["comparison", "compare", "so sánh", "vs", "versus"],
-  editorialHeadings: ["editorial", "thought leadership", "góc nhìn"],
+  comparisonHeadings: ["compar*", "so sánh", "vs", "versus"],
+  editorialHeadings: ["editorial*", "thought leadership", "góc nhìn"],
   comparisonPhrases: ["vs", "vs.", "versus", "alternative", "alternatives", "instead of", "different from", "compared to", "compared with", "template", "checklist", "pricing", "how to price", "how to choose", "how to evaluate", "how to pick", "what to look for", "^best", "^top #"],
   editorialPhrases: ["^why", "not", "cannot", "can't", "fail", "fails", "myth", "myths"],
   comparisonDefinition: "comparison or commercial SEO (X vs Y, alternatives, best/top, reviews, pricing, buyer guides, templates, how to choose/evaluate)",
@@ -45,7 +45,7 @@ function list(value: unknown, fallback: string[]) {
   if (!Array.isArray(value)) return fallback
   const seen = new Set<string>()
   return value.map(v => clean(v, CONTENT_PLAN_LIMITS.phraseChars).toLocaleLowerCase())
-    .filter(v => v.replace(/[\^#\s]/g, "") && !seen.has(v) && seen.add(v))
+    .filter(v => v.replace(/[\^#*\s]/g, "") && !seen.has(v) && seen.add(v))
     .slice(0, CONTENT_PLAN_LIMITS.listItems)
 }
 const oneOf = <T extends string>(value: unknown, options: readonly T[], fallback: T) => options.includes(value as T) ? value as T : fallback

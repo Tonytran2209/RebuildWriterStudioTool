@@ -97,15 +97,15 @@ test("admin settings change headings, wording, unsure topics, merging and the AI
   const { normalizeContentPlanSettings, DEFAULT_CONTENT_PLAN_SETTINGS } = await import("../shared/contentPlanSettings.ts")
   const { compileRules, planItemsFromPicks, mergeDuplicateTopics, classifierPrompt, promptSettingsOf } = await import("./contentPlanClassifier.ts")
   // Unsafe or junk input is capped and defaulted, never passed through as regex.
-  const s = normalizeContentPlanSettings({ comparisonHeadings: ["Buyer Guides", "", "(.*)+"], editorialPhrases: ["^Is"], comparisonPhrases: ["top # tools"], extraInstructions: "x".repeat(5000), dailyAiLimit: 9999, needsReview: "bogus", mergeDuplicates: "yes" })
-  assert.deepEqual(s.comparisonHeadings, ["buyer guides", "(.*)+"])
+  const s = normalizeContentPlanSettings({ comparisonHeadings: ["Buyer Guides", "", "(a|b)+"], editorialPhrases: ["^Is"], comparisonPhrases: ["top # tools"], extraInstructions: "x".repeat(5000), dailyAiLimit: 9999, needsReview: "bogus", mergeDuplicates: "yes" })
+  assert.deepEqual(s.comparisonHeadings, ["buyer guides", "(a|b)+"])
   assert.equal(s.extraInstructions.length, 1000)
   assert.equal(s.dailyAiLimit, 100)
   assert.equal(s.needsReview, "keep")
   assert.equal(s.mergeDuplicates, true)
   const rules = compileRules(s)
   assert.equal(rules.section("3. Buyer guides for L&D"), "comparison-seo")
-  assert.equal(rules.section("(.*)+ literally"), "comparison-seo")
+  assert.equal(rules.section("(a|b)+ literally"), "comparison-seo")
   assert.equal(rules.section("Anything else"), null)
   assert.equal(rules.title("Is microlearning dead"), "editorial-originality")
   assert.equal(rules.title("This is fine"), null) // ^ = start of title only
@@ -135,4 +135,12 @@ test("admin settings change headings, wording, unsure topics, merging and the AI
   assert.match(classifierPrompt("1| A", custom), /e = editorial = opinion pieces/)
   assert.doesNotMatch(classifierPrompt("1| A"), /Team notes/)
   assert.notDeepEqual(promptSettingsOf(custom), promptSettingsOf(DEFAULT_CONTENT_PLAN_SETTINGS))
+})
+
+test("default heading words match the v3 rules, and * means any letters", async () => {
+  const { compileRules } = await import("./contentPlanClassifier.ts")
+  const r = compileRules()
+  for (const h of ["Comparison topics", "Comparative guides", "Comparing LMS tools", "So sánh công cụ", "A vs B", "Versus"]) assert.equal(r.section(h), "comparison-seo", h)
+  for (const h of ["Editorial support", "Editorials", "Thought leadership", "Góc nhìn"]) assert.equal(r.section(h), "editorial-originality", h)
+  for (const h of ["VSphere setup", "Action Plan", "Priority Topics"]) assert.equal(r.section(h), null, h)
 })

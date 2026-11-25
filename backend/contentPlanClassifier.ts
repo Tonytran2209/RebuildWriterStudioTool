@@ -56,18 +56,18 @@ const GROUPS: Record<string, Group> = { c: "comparison-seo", e: "editorial-origi
 const HEADING = /^\s*(?:#{1,6}\s+|(?:\d{1,2}|[IVXLC]{1,6})[.)]\s+)(.+)$/
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 // Admin phrases become a plain escaped alternation (no user regex), so matching stays linear.
-// "^" first = start of the title, "#" = any number; whole words unless `prefix` (headings match word starts).
-function phraseRegex(phrases: string[], prefix = false) {
+// Whole words; "^" first = start of the text, "#" = any number, "*" = any letters ("compar*").
+function phraseRegex(phrases: string[]) {
   const parts = phrases.map(p => {
     const start = p.startsWith("^")
-    const body = escape(p.replace(/^\^/, "").trim()).replace(/\s+/g, "\\s+").replace(/#/g, "\\d+")
-    return `${start ? "^" : "(?<![\\p{L}\\p{N}])"}${body}${prefix ? "" : "(?![\\p{L}\\p{N}])"}`
-  }).filter(Boolean)
+    const body = escape(p.replace(/^\^/, "").trim()).replace(/\s+/g, "\\s+").replace(/#/g, "\\d+").replace(/\\\*/g, "[\\p{L}\\p{N}]*")
+    return `${start ? "^" : "(?<![\\p{L}\\p{N}])"}${body}(?![\\p{L}\\p{N}])`
+  })
   return parts.length ? new RegExp(parts.join("|"), "iu") : null
 }
 type Rules = { section(heading: string): Group | null; title(title: string): Group | null }
 export function compileRules(s: ContentPlanSettings = DEFAULT_CONTENT_PLAN_SETTINGS): Rules {
-  const cHead = phraseRegex(s.comparisonHeadings, true), eHead = phraseRegex(s.editorialHeadings, true)
+  const cHead = phraseRegex(s.comparisonHeadings), eHead = phraseRegex(s.editorialHeadings)
   const cTitle = phraseRegex(s.comparisonPhrases), eTitle = phraseRegex(s.editorialPhrases)
   return {
     section: heading => cHead?.test(heading) ? "comparison-seo" : eHead?.test(heading) ? "editorial-originality" : null,
