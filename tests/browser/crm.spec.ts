@@ -381,25 +381,30 @@ test('CRM Settings show the classification prompt to edit, rule toggles, preview
   await page.reload();
   await goHash(page, '/settings/workflow-ai');
   // The prompt the AI gets is shown in full and editable; the answer format stays fixed.
-  const rules = page.getByLabel('Quy tắc phân tích & phân loại');
+  const rules = page.getByLabel('Prompt phân loại');
   await expect(rules).toHaveValue(/^Each line below starts with its line number/);
+  await expect(page.getByLabel('Phần cố định')).toBeHidden();
+  await page.getByText('Nâng cao: system prompt').click();
   await expect(page.getByLabel('Phần cố định')).toContainText('Return JSON only');
   await rules.fill('Only lines under Wave 3 are articles.');
   await expect(page.getByText('Đã sửa', { exact: true })).toBeVisible();
+  // Word lists stay hidden until asked for.
+  await expect(page.getByLabel('Comparison', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Sửa từ: Xếp nhóm theo heading' }).click();
   const headings = page.getByLabel('Comparison', { exact: true }).first();
   await headings.fill('compar*, so sánh, vs, versus, Buyer guides');
   await headings.blur();
   await page.getByRole('switch', { name: 'Giữ nhãn Needs review' }).click();
   await expect(page.getByRole('switch', { name: 'Giữ nhãn Needs review' })).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByText(/giới hạn|AI calls \/ plan/i)).toHaveCount(0);
-  await page.getByRole('button', { name: 'Thử quy tắc trên plan' }).click();
+  await page.getByRole('button', { name: 'Thử trên plan' }).click();
   // The preview carries the unsaved draft settings; applying waits for Save.
   await expect.poll(() => reapply.length).toBe(1);
   expect(reapply[0]).toMatchObject({ dryRun: true, settings: { keepNeedsReview: false, rulesPrompt: 'Only lines under Wave 3 are articles.' } });
   expect(reapply[0].settings.comparisonHeadings).toContain('buyer guides');
   await expect(page.getByLabel('Kết quả thử')).toContainText('1 đổi nhóm');
+  await expect(page.getByRole('button', { name: 'Lưu trước khi áp dụng' })).toBeDisabled();
   const apply = page.getByRole('button', { name: 'Áp dụng cho plan này' });
-  await expect(apply).toBeDisabled();
   await page.getByRole('button', { name: 'Lưu thay đổi' }).click();
   await expect.poll(() => log.configs.length).toBe(1);
   expect(log.configs[0].contentPlan).toMatchObject({ keepNeedsReview: false, rulesPrompt: 'Only lines under Wave 3 are articles.' });
