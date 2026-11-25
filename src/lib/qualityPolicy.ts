@@ -1,5 +1,5 @@
 import { outlineReviewInstruction } from './outlineQuality.ts';
-import { INTRODUCTION_INSTRUCTION, INTRODUCTION_REVIEW_CONTRACT } from './introductionPolicy.ts';
+import { introductionInstruction, INTRODUCTION_REVIEW_CONTRACT } from './introductionPolicy.ts';
 import type { Article, ArticleSpec, DocumentFile, QualityGateCheck } from '../types/index.ts';
 
 export const QUALITY_VERSION = 11;
@@ -84,7 +84,7 @@ export function qualityInputFingerprint(article: Partial<Article>, draft: string
     const setting = rules?.[id] ?? {};
     return { id, enforcement: setting.enforcement ?? 'strict', customInstruction: setting.customInstruction ?? '', appliesTo: { manual: true, batch: true, ...setting.appliesTo }, stageOverrides: setting.stageOverrides ?? {} };
   });
-  return `qc-${QUALITY_VERSION}-${fingerprint({ draft: draftWithoutImagePlaceholders(draft), spec: article.articleSpec ? canonicalSpecFingerprint(article.articleSpec) : null, outline: article.outline ?? [], outlineStructure: article.outlineStructure ?? null, draftEvidenceUsage: article.draftEvidenceUsage ?? {}, keywords: article.keywords, targetWords, sources, workflow })}`;
+  return `qc-${QUALITY_VERSION}-${fingerprint({ draft: draftWithoutImagePlaceholders(draft), spec: article.articleSpec ? canonicalSpecFingerprint(article.articleSpec) : null, outline: article.outline ?? [], outlineStructure: article.outlineStructure ?? null, introductionBudget: article.introductionBudget, draftEvidenceUsage: article.draftEvidenceUsage ?? {}, keywords: article.keywords, targetWords, sources, workflow })}`;
 }
 
 export function blocksPublication(check: { id: string; status: string; kind: string; blocking?: boolean }): boolean {
@@ -99,12 +99,12 @@ export function qualityAllowsCompletion(checks: QualityGateCheck[]) {
 
 export const EVIDENCE_ATTRIBUTION_INSTRUCTION = 'Name an organization, person or product as part of a factual example only when the approved KB excerpt mapped to that section explicitly supports the attribution. A name in a filename, outline, brief or Content Plan is insufficient. Keep the supported details and omit the unsupported attribution.';
 
-export const EVIDENCE_REVIEW_INSTRUCTION = 'EVIDENCE CONTRACT: Content Plan establishes topic/intent only; Rules establish style only. Neither is factual evidence. Only supplied KB excerpts can support factual or expert claims. A registered/mapped ID does not prove that a claim is supported. Evaluate actual prose against the quote. General explanatory prose and clearly framed editorial decision guidance do not require citations and may pass. For an unsupported concrete claim (statistics, measured effects, healthcare outcomes, product capabilities), quote the exact claim and its section location; fail blocking claims. If support is unavailable, recommend adding verified KB evidence or removing/qualifying that claim. Never request external research automatically or invent evidence. Do not warn merely because a general explanation lacks a citation.';
+export const EVIDENCE_REVIEW_INSTRUCTION = 'EVIDENCE CONTRACT: Content Plan establishes topic/intent only. Playbooks, Standards and Voice & Style govern how to write and what to check, but are not factual evidence. Only supplied KB excerpts can support factual or expert claims. A registered/mapped ID does not prove that a claim is supported. Evaluate actual prose against the quote. General explanatory prose and clearly framed editorial decision guidance do not require citations and may pass. For an unsupported concrete claim (statistics, measured effects, healthcare outcomes, product capabilities), quote the exact claim and its section location; fail blocking claims. If support is unavailable, recommend adding verified KB evidence or removing/qualifying that claim. Never request external research automatically or invent evidence. Do not warn merely because a general explanation lacks a citation.';
 
 
 /** One semantic cache identity for browser and server; includes the frozen MD definition. */
 export function semanticReviewInputFingerprint(article: Partial<Article>, draft: string, usage: Record<string, string[]> = {}, checklist = '') {
-  return `semantic-${QUALITY_VERSION}-${fingerprint({ checklist, evidenceContract: EVIDENCE_REVIEW_INSTRUCTION, introductionContract: INTRODUCTION_INSTRUCTION, introductionReviewContract: INTRODUCTION_REVIEW_CONTRACT, structureContract: outlineReviewInstruction(article), draft: draftWithoutImagePlaceholders(draft), spec: article.articleSpec ? canonicalSpecFingerprint(article.articleSpec) : null, outline: article.outline ?? [], structure: article.outlineStructure ?? null, usage })}`;
+  return `semantic-${QUALITY_VERSION}-${fingerprint({ checklist, evidenceContract: EVIDENCE_REVIEW_INSTRUCTION, introductionContract: introductionInstruction(article.introductionBudget), introductionReviewContract: INTRODUCTION_REVIEW_CONTRACT, structureContract: outlineReviewInstruction(article), draft: draftWithoutImagePlaceholders(draft), spec: article.articleSpec ? canonicalSpecFingerprint(article.articleSpec) : null, outline: article.outline ?? [], structure: article.outlineStructure ?? null, usage })}`;
 }
 export function missingSemanticChecks(checks: Array<Pick<QualityGateCheck, 'id' | 'kind' | 'status'>>) {
   return SEMANTIC_IDS.filter(id => !checks.some(check => check.id === id && check.kind === 'semantic' && ['pass', 'warning', 'fail'].includes(check.status)));

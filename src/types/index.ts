@@ -146,6 +146,8 @@ export interface StepConfig {
   /** Legacy character setting, read once as a numeric migration fallback. */
   maxDraftCharacters?: number
   categoryPromptRules?: StepCategoryPromptRules
+  /** The Gate's primary Playbook (a Rules file ticked for this step); sent as the authoritative method. */
+  primaryPlaybookId?: string
   /** Legacy per-document rules, retained only for automatic migration. */
   documentPromptRules?: StepDocumentPromptRules
   systemPrompt?: string
@@ -414,6 +416,8 @@ export interface Article {
   step3ProcessTrace?: AIProcessTraceEvent[]
   step3SuggestedKeywords?: string[]
   outlineStructure?: OutlineStructureSnapshot | null
+  /** Introduction word range from the G3 Playbook, frozen when the draft is written; QC measures against it. */
+  introductionBudget?: { min: number; max: number }
   outlineNeedsRegeneration?: boolean
   draftNeedsRegeneration?: boolean
   /** Legacy storage only; layout comes from outlineStructure. */

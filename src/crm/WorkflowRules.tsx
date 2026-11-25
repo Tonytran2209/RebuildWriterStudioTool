@@ -4,35 +4,33 @@ import { compileWorkflowRules, getWorkflowRuleSetting } from '../lib/workflowRul
 import { useI18n } from '../lib/i18n';
 import { GATES } from './model';
 import { I } from './ui';
+import { GATE_DOCUMENT_CONTRACT, GATE_PARAMETERS, ROLE_LABEL_VI, ROLE_ORDER, primaryPlaybookId, resolveGateParameters, ruleRoleOf, type GateRole } from '../../shared/gateDocuments';
 
 interface Props { config: AppConfig; files: DocumentFile[]; onChange: (config: AppConfig) => void }
 
 const Sec = ({ title, desc, children }: { title: string; desc: string; children: ReactNode }) => <section><h2>{title}</h2><p className="desc">{desc}</p>{children}</section>;
 
-/** Numbers the pipeline reads (backend clamps to the same ranges). Stored as workflow-rule stage parameters. */
-const PARAMS: Array<{ gate: number; rule: WorkflowRuleId; stage: string; param: string; min: number; max: number; def: number; vi: string; en: string; hintVi: string; hintEn: string }> = [
-  { gate: 0, rule: 'core-idea', stage: 'market-research', param: 'keywordCount', min: 5, max: 20, def: 10, vi: 'Số keyword nghiên cứu', en: 'Keywords to research', hintVi: 'Số keyword SEO tra trên web cho mỗi bài.', hintEn: 'SEO keywords looked up on the web per article.' },
-  { gate: 0, rule: 'core-idea', stage: 'idea-generation', param: 'ideaCount', min: 2, max: 6, def: 3, vi: 'Số ý tưởng', en: 'Ideas', hintVi: 'Số ý tưởng AI tạo ra để chọn một ý viết bài.', hintEn: 'Ideas generated before one is chosen.' },
-  { gate: 1, rule: 'outline', stage: 'outline-mapping', param: 'minimumSections', min: 4, max: 12, def: 4, vi: 'Số section tối thiểu', en: 'Minimum sections', hintVi: 'Outline không được ít hơn số section này.', hintEn: 'The outline never has fewer sections.' },
-  { gate: 2, rule: 'draft', stage: 'word-allocation', param: 'conclusionPercent', min: 5, max: 12, def: 7, vi: 'Độ dài kết luận (%)', en: 'Conclusion length (%)', hintVi: 'Phần trăm số từ dành cho kết luận.', hintEn: 'Share of the word budget for the conclusion.' },
-  { gate: 2, rule: 'draft', stage: 'structured-assembly', param: 'maxSentencesPerParagraph', min: 2, max: 7, def: 5, vi: 'Số câu tối đa mỗi đoạn', en: 'Max sentences per paragraph', hintVi: 'Giữ đoạn văn ngắn, dễ đọc.', hintEn: 'Keeps paragraphs short and readable.' },
-];
-
 /** Team instructions per gate, appended to that gate's prompt. */
 const NOTES: Array<{ gate: number; rule: WorkflowRuleId; step: number }> = [{ gate: 0, rule: 'core-idea', step: 2 }, { gate: 1, rule: 'outline', step: 3 }, { gate: 2, rule: 'draft', step: 4 }];
 
-export default function WorkflowRules({ config, onChange }: Props) {
+export default function WorkflowRules({ config, files, onChange }: Props) {
   const { tr } = useI18n();
   const rule = (id: WorkflowRuleId) => getWorkflowRuleSetting(config, id);
   const save = (id: WorkflowRuleId, patch: Partial<ReturnType<typeof getWorkflowRuleSetting>>) => {
     const current = rule(id);
     onChange({ ...config, workflowRules: { ...config.workflowRules, [id]: { ...current, ...patch, version: current.version + 1 } } });
   };
-  const paramValue = (p: typeof PARAMS[number]) => Number(rule(p.rule).stageOverrides[p.stage]?.parameters?.[p.param] ?? p.def);
-  const setParam = (p: typeof PARAMS[number], raw: number) => {
-    const value = Math.min(p.max, Math.max(p.min, Math.round(raw) || p.def));
-    const stages = rule(p.rule).stageOverrides;
-    save(p.rule, { stageOverrides: { ...stages, [p.stage]: { ...stages[p.stage], parameters: { ...stages[p.stage]?.parameters, [p.param]: value } } } });
+  const params = resolveGateParameters(files, config);
+  const gateOf = (step: number) => GATES.find(g => g.step === step)!;
+  const sourceText = (id: string) => { const src = params[id].source; return src.kind === 'file' ? tr(`đọc từ ${src.name}`, `from ${src.name}`) : src.kind === 'settings' ? tr('giá trị cũ trong Settings', 'old Settings value') : tr('mặc định', 'default'); };
+  const rulesFor = (step: number) => files.filter(f => f.category === 'rules' && (config.stepConfigs[step]?.fileAccess?.rules ?? []).includes(f.id));
+  const setPrimary = (step: number, id: string) => onChange({ ...config, stepConfigs: { ...config.stepConfigs, [step]: { ...config.stepConfigs[step], primaryPlaybookId: id || undefined } } });
+  /** Documents of a Gate in the order and role the backend sends them. */
+  const docsFor = (step: number) => {
+    const access = config.stepConfigs[step]?.fileAccess;
+    const kb = files.filter(f => f.category === 'kb' && (access?.kb ?? []).includes(f.id)).map(f => ({ name: f.name, role: 'KNOWLEDGE_BASE' as GateRole }));
+    const rules = rulesFor(step).map(f => ({ name: f.name, role: ruleRoleOf(f, config, step) }));
+    return [...rules, ...kb, { name: tr('Content Plan của bài', "Article's Content Plan"), role: 'CONTENT_PLAN' as GateRole }].sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role));
   };
   const words = Math.max(800, config.stepConfigs[4]?.maxDraftWords ?? config.stepConfigs[4]?.maxDraftCharacters ?? 1500);
   const setWords = (value: number) => onChange({ ...config, stepConfigs: { ...config.stepConfigs, 4: { ...config.stepConfigs[4], maxDraftWords: Math.min(10000, Math.max(800, value || 1500)) } } });
@@ -60,35 +58,43 @@ export default function WorkflowRules({ config, onChange }: Props) {
   ];
 
   return <>
-    <Sec title={tr('Thông số pipeline', 'Pipeline numbers')} desc={tr('Các con số pipeline dùng khi chạy từng gate. Áp dụng cho lượt chạy tiếp theo.', 'Numbers the pipeline uses at each gate. Apply to the next run.')}>
+    <Sec title={tr('Thông số pipeline', 'Pipeline numbers')} desc={tr('Các con số pipeline dùng ở từng gate. Sửa trong front matter của Playbook chính hoặc Standards của Gate; áp dụng cho lượt chạy tiếp theo.', "Numbers the pipeline uses at each gate. Edit them in the front matter of the Gate's primary Playbook or Standards; they apply to the next run.")}>
       <div className="box">
-        {PARAMS.slice(0, 3).map(p => <div key={p.param} className="box-row" style={{ flexWrap: 'wrap' }}>
-          <span className={`tag t-${GATES[p.gate].color}`}>{GATES[p.gate].short}</span>
-          <div className="grow" style={{ minWidth: 200 }}>{tr(p.vi, p.en)}<div className="s">{tr(p.hintVi, p.hintEn)} ({p.min}–{p.max})</div></div>
-          <input className="inp" style={{ width: 90 }} type="number" min={p.min} max={p.max} aria-label={tr(p.vi, p.en)} value={paramValue(p)} onChange={e => setParam(p, Number(e.target.value))} />
+        {GATE_PARAMETERS.map(p => <div key={p.id} className="box-row" style={{ flexWrap: 'wrap' }}>
+          <span className={`tag t-${gateOf(p.step).color}`}>{gateOf(p.step).short}</span>
+          <div className="grow" style={{ minWidth: 200 }}>{tr(p.vi, p.en)} <code style={{ fontSize: 11, color: 'var(--f3)' }}>{p.id}</code><div className="s">{tr(p.hintVi, p.hintEn)} ({p.min}–{p.max}) · {sourceText(p.id)}</div></div>
+          <b style={{ minWidth: 40, textAlign: 'right' }}>{params[p.id].value}</b>
         </div>)}
         <div className="box-row" style={{ flexWrap: 'wrap' }}>
           <span className={`tag t-${GATES[2].color}`}>{GATES[2].short}</span>
           <div className="grow" style={{ minWidth: 200 }}>{tr('Số từ mục tiêu', 'Target words')}<div className="s">{tr('Độ dài bài tiếng Anh; QC chấp nhận khoảng ±15%.', 'English article length; QC accepts about ±15%.')} (800–10000)</div></div>
           <input className="inp" style={{ width: 90 }} type="number" min={800} max={10000} step={100} aria-label={tr('Số từ tiếng Anh mục tiêu', 'Target English words')} value={words} onChange={e => setWords(Number(e.target.value))} />
         </div>
-        {PARAMS.slice(3).map(p => <div key={p.param} className="box-row" style={{ flexWrap: 'wrap' }}>
-          <span className={`tag t-${GATES[p.gate].color}`}>{GATES[p.gate].short}</span>
-          <div className="grow" style={{ minWidth: 200 }}>{tr(p.vi, p.en)}<div className="s">{tr(p.hintVi, p.hintEn)} ({p.min}–{p.max})</div></div>
-          <input className="inp" style={{ width: 90 }} type="number" min={p.min} max={p.max} aria-label={tr(p.vi, p.en)} value={paramValue(p)} onChange={e => setParam(p, Number(e.target.value))} />
-        </div>)}
       </div>
     </Sec>
 
-    <Sec title={tr('Hướng dẫn riêng của team', 'Team instructions')} desc={tr('Thêm yêu cầu riêng cho từng gate, ví dụ giọng văn hay điều cần tránh. Không cần chép lại quy tắc mặc định.', 'Add your own requirements per gate, such as tone or things to avoid. No need to repeat the default rules.')}>
+    <Sec title={tr('Playbook chính của mỗi Gate', 'Primary Playbook per Gate')} desc={tr('Playbook chính là quy tắc AI phải bám theo ở Gate đó. Chỉ chọn được file Rules đã tick cho Gate trong Storage. Standards là yêu cầu bắt buộc, Voice & Style chỉ quyết định cách diễn đạt.', 'The primary Playbook is the method AI must follow at that Gate. Only Rules files ticked for the Gate in Storage can be chosen. Standards are mandatory; Voice & Style only shapes wording.')}>
       <div className="box">{NOTES.map(n => {
+        const gate = GATES[n.gate];
         const prompt = compileWorkflowRules(config, n.step, 'batch');
+        const primary = primaryPlaybookId(config, n.step);
+        const note = rule(n.rule).customInstruction;
         return <div key={n.rule} className="box-row" style={{ display: 'block' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}><span className={`tag t-${GATES[n.gate].color}`}>{GATES[n.gate].short}</span>{GATES[n.gate].label}</div>
-          <textarea className="inp" rows={2} style={{ height: 'auto', padding: 8, resize: 'vertical' }} aria-label={`${tr('Hướng dẫn cho', 'Instructions for')} ${GATES[n.gate].label}`} placeholder={tr('Không có hướng dẫn thêm', 'No extra instructions')} value={rule(n.rule).customInstruction} onChange={e => save(n.rule, { customInstruction: e.target.value })} />
-          <details style={{ marginTop: 6 }}><summary style={{ cursor: 'pointer', color: 'var(--f3)', fontSize: 12 }}>{tr('Xem quy tắc AI nhận ở gate này', 'See the rules AI receives at this gate')}</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: 'var(--f2)', background: 'var(--bg2)', borderRadius: 6, padding: 8, marginTop: 6, maxHeight: 260, overflow: 'auto' }}>{[prompt.systemPrompt, prompt.taskGuidance].filter(Boolean).join('\n\n')}</pre></details>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className={`tag t-${gate.color}`}>{gate.short}</span><span className="grow">{gate.label}</span>
+            <select className="inp" style={{ width: 280, maxWidth: '100%' }} aria-label={`${tr('Playbook chính cho', 'Primary Playbook for')} ${gate.label}`} value={primary ?? ''} onChange={e => setPrimary(n.step, e.target.value)}>
+              <option value="">{tr('Chưa chọn Playbook chính', 'No primary Playbook')}</option>
+              {rulesFor(n.step).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          </div>
+          {primary
+            ? note.trim() && <p className="s" style={{ marginTop: 8 }}>{tr('Ghi chú cũ của team không còn được gửi vì Gate đã có Playbook chính. Chép vào file nếu cần:', 'The old team note is no longer sent because this Gate has a primary Playbook. Copy it into the file if needed:')} <i>{note}</i></p>
+            : <textarea className="inp" rows={2} style={{ height: 'auto', padding: 8, resize: 'vertical', marginTop: 8 }} aria-label={`${tr('Ghi chú cho', 'Note for')} ${gate.label}`} placeholder={tr('Ghi chú tạm cho Gate (nên chuyển vào Playbook chính)', 'Temporary note for this Gate (better moved into the primary Playbook)')} value={note} onChange={e => save(n.rule, { customInstruction: e.target.value })} />}
+          <details style={{ marginTop: 6 }}><summary style={{ cursor: 'pointer', color: 'var(--f3)', fontSize: 12 }}>{tr('Xem prompt AI nhận ở gate này', 'See what AI receives at this gate')}</summary><pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: 'var(--f2)', background: 'var(--bg2)', borderRadius: 6, padding: 8, marginTop: 6, maxHeight: 320, overflow: 'auto' }}>{[prompt.systemPrompt, prompt.taskGuidance, GATE_DOCUMENT_CONTRACT, `${tr('Tài liệu gửi theo thứ tự', 'Documents in send order')}:\n${docsFor(n.step).map(d => `- ${ROLE_LABEL_VI[d.role]}: ${d.name}`).join('\n')}`].filter(Boolean).join('\n\n')}</pre></details>
         </div>;
       })}</div>
+      <p className="s" style={{ marginTop: 8 }}>{tr('Đặt các con số ở đầu file Playbook chính hoặc file Standards của Gate, ví dụ:', "Set the numbers at the top of the Gate's primary Playbook or a Standards file, for example:")}</p>
+      <pre style={{ fontSize: 12, color: 'var(--f2)', background: 'var(--bg2)', borderRadius: 6, padding: 8 }}>{'---\nintroMinWords: 60\nintroMaxWords: 85\nconclusionPercent: 7\nmaxSentencesPerParagraph: 5\n---'}</pre>
     </Sec>
 
     <Sec title={tr('Luôn bật', 'Always on')} desc={tr('Các bảo vệ chất lượng này luôn chạy ở mọi bài, không cần cài đặt.', 'These quality safeguards always run on every article; nothing to set.')}>

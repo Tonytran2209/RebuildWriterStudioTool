@@ -17,6 +17,16 @@ Railway Express (`backend/index.ts`) owns authentication, provider calls, articl
 - **Draft quality:** structured output → deterministic checks → optional semantic review/recheck → persisted report.
 - **Inventory:** scan/crawl → classify/summarize → approved pages become internal-link candidates.
 
+## Gate documents (Storage → prompt)
+
+`shared/gateDocuments.ts` is the one source for how Storage files drive a Gate (G1 = step 2, G2 = step 3, G3 and AI review = step 4).
+
+- **Platform contract (code):** gate order, JSON schemas, evidence boundary, confidentiality, English output, editorial approval, cache/budget/monitoring and deterministic measurement. `workflowRules.ts` (version 5) holds only these; it carries no writing criteria or numbers.
+- **Roles by Storage group:** a Rules file ticked for a step is sent as `PLAYBOOK` (the step's `stepConfigs[step].primaryPlaybookId`, only while ticked), `STANDARD` (Standards), `VOICE` (Voice & Style) or `SUPPORTING_PLAYBOOK` (other Playbooks). KB is `KNOWLEDGE_BASE` (facts only, excerpted; a file named *vocab* goes whole), the activity plan is `CONTENT_PLAN` (topic only, excerpted). Rule roles go whole.
+- **Precedence** (stated to the model in `GATE_DOCUMENT_CONTRACT`): platform contract > STANDARD > PLAYBOOK > SUPPORTING_PLAYBOOK > VOICE; KB and Content Plan never instruct.
+- **Numbers:** `keywordCount`, `ideaCount`, `minimumSections`, `introMinWords`, `introMaxWords`, `conclusionPercent`, `maxSentencesPerParagraph` are read from a leading `---` front matter of the Gate's primary Playbook, then a ticked Standards file, then the old workflow-rule stage parameter, then the default (`resolveGateParameters`). Settings shows them read-only with their source.
+- A Gate with a primary Playbook no longer sends the Settings team note (`customInstruction`).
+
 ## Safety invariants
 
 - Serialize article mutations by article ID.
@@ -34,7 +44,7 @@ Railway Express (`backend/index.ts`) owns authentication, provider calls, articl
 - Re-check refreshes bounded, relevant excerpts from the authorized KB and remaps historical IDs by source/quote/role. If no relevant evidence is available and evidence support is unresolved, preserve the draft and request a source or manual qualification rather than another automatic rewrite. Semantic JSON recovery receives the same registry as the original review.
 - Failures, evidence-support warnings, incomplete reviews and stale reviews block completion in manual and batch flows. Other semantic warnings are advisory unless explicitly blocking; retain them visibly in the report.
 
-- Draft introductions use a fixed 60–85 English words in one paragraph, ideally 3–4 concise sentences, aiming for about 5–6 desktop reading lines. This overrides historical introduction percentage settings. Single and batch generation, deterministic QC, semantic review and targeted repair share this contract. Start with the reader's pain point/decision and answer the search intent directly; avoid generic setup and unsupported promises. Allocate the remaining word budget to body sections.
+- Draft introductions use one paragraph of `introMinWords`–`introMaxWords` English words (default 60–85, set in the G3 Playbook front matter and frozen on the article as `introductionBudget`), ideally 3–4 concise sentences, aiming for about 5–6 desktop reading lines. This overrides historical introduction percentage settings. Single and batch generation, deterministic QC, semantic review and targeted repair share this contract. Start with the reader's pain point/decision and answer the search intent directly; avoid generic setup and unsupported promises. Allocate the remaining word budget to body sections.
 
 - API or workflow changes require matching updates to `backend/api-contracts.md` and affected UI flow documentation.
 - Preserve legacy-compatible step numbers 2/3/4 in storage unless a migration request is explicitly approved.

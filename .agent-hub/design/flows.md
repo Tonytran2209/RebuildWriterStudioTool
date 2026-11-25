@@ -29,7 +29,7 @@ projectId: writer-studio
 
 ## Draft introduction display
 
-Show the complete introduction in draft preview and full editing. The 5–6 line goal is a writing guideline, enforced through a shared 60–85-word single-paragraph contract, not CSS clipping. Responsive line wrapping must not hide saved content.
+Show the complete introduction in draft preview and full editing. The 5–6 line goal is a writing guideline, enforced through a shared single-paragraph contract (default 60–85 words, set in the G3 Playbook), not CSS clipping. Responsive line wrapping must not hide saved content.
 
 ## Draft copy and export
 

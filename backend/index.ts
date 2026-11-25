@@ -57,7 +57,8 @@ import { internalLinkInstruction, addMissingInternalLinks } from "../src/lib/int
 import { canonicalSpecFingerprint, qualityInputFingerprint, outlineContentChanged, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, EVIDENCE_ATTRIBUTION_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS, primaryKeyword, step4ChecklistDocs, checklistReviewInstruction } from "../src/lib/qualityPolicy.ts"
 import { deterministicQualityChecks } from "../src/lib/universalQuality.ts"
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from "../src/lib/evidencePolicy.ts"
-import { INTRODUCTION_BUDGET, INTRODUCTION_INSTRUCTION, introductionReviewInstruction } from "../src/lib/introductionPolicy.ts"
+import { introductionBudget, introductionInstruction, introductionReviewInstruction, type IntroductionBudget } from "../src/lib/introductionPolicy.ts"
+import { RULE_ROLES, gateParameterValues } from "../shared/gateDocuments.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
 import {
   agentLibraryStatus,
@@ -706,12 +707,14 @@ function batchUsage(step: 1 | 2 | 3 | 4, provider: string, response: any) {
 }
 
 /** Short, inspectable record of one AI call for the CRM process log (no full prompts stored). */
-function aiCallTrace(prompt: string, content: unknown, context: { summary: { kb: string[]; rules: string[] } } | null, rules: any[]) {
+function aiCallTrace(prompt: string, content: unknown, context: { summary: { kb: string[]; rules: string[]; playbook?: string } } | null, rules: any[]) {
   const cut = (value: unknown, max: number) => { const text = String(value ?? "").replace(/\s+/g, " ").trim(); return text.length > max ? `${text.slice(0, max)}…` : text }
   return {
     input: cut(prompt, 700),
     output: cut(content, 700),
     sources: context ? [...context.summary.kb, ...context.summary.rules].slice(0, 30) : [],
+    // Which primary Playbook drove this call (a user-named file), so a result can be traced to its rules.
+    playbook: context?.summary.playbook ?? null,
     rules: (rules ?? []).map((rule: any) => `${rule.id} (${rule.enforcement})`),
   }
 }
@@ -1328,7 +1331,7 @@ function batchContextDocuments(contextDocs: string[]) {
     )
     if (!match) return []
     const role =
-      match[1] === "RULES"
+      RULE_ROLES.has(match[1])
         ? "rules"
         : match[1] === "CONTENT_PLAN"
           ? "content_plan"
@@ -1662,7 +1665,7 @@ function batchSemanticReviewInstruction(article: any, draft: string, checklist: 
   const wordCount = draft.trim().split(/\s+/).filter(Boolean).length
   return [
     EVIDENCE_REVIEW_INSTRUCTION,
-    INTRODUCTION_INSTRUCTION,
+    introductionInstruction(article.introductionBudget),
     outlineReviewInstruction(article),
     "For keyword-naturalness, pass when the primary query is present in the H1/body and reads grammatically in context.",
     "Do not warn merely because an exact-match keyword is used. Warn only for a clearly awkward sentence or avoidable repetition, and quote its exact location.",
@@ -1676,10 +1679,11 @@ function batchDraftBudget(
   outline: any[],
   wordTarget: number,
   conclusionPercent = 7,
+  introBudget?: IntroductionBudget,
 ) {
   const targetMin = Math.ceil(wordTarget * 0.95)
   const targetMax = Math.floor(wordTarget * 1.03)
-  const introduction = { ...INTRODUCTION_BUDGET }
+  const introduction = introductionBudget(introBudget)
   const conclusion = {
     min: Math.floor((targetMin * conclusionPercent) / 100),
     max: Math.floor((targetMax * (conclusionPercent + 1)) / 100),
@@ -2101,61 +2105,19 @@ async function runBatchArticle(
       ),
     ),
   )
-  const workflowParam = (
-    rule: string,
-    stage: string,
-    param: string,
-    fallback: number,
-  ) =>
-    Number(
-      runtimeConfig?.workflowRules?.[rule]?.stageOverrides?.[stage]
-        ?.parameters?.[param] ?? fallback,
-    )
-  const minimumOutlineSections = Math.min(
-    12,
-    Math.max(
-      4,
-      workflowParam("outline", "outline-mapping", "minimumSections", 4),
-    ),
-  )
+  // Pipeline numbers come from the Gate Playbook/Standards front matter, else old Settings values, else defaults.
+  const gateParams = gateParameterValues((await kvGet<any[]>("writer:files")) ?? [], runtimeConfig)
+  const minimumOutlineSections = gateParams.minimumSections
   const desiredOutlineSections = Math.max(
     article.outlineStructure?.requiredHeadings?.length ?? 0,
     minimumOutlineSections,
     maxDraftWords <= 1000 ? 6 : maxDraftWords <= 1800 ? 8 : 10,
   )
-  const keywordCount = Math.min(
-    20,
-    Math.max(
-      5,
-      workflowParam("core-idea", "market-research", "keywordCount", 10),
-    ),
-  )
-  const batchIdeaCount = Math.min(
-    6,
-    Math.max(
-      2,
-      workflowParam("core-idea", "idea-generation", "ideaCount", 3),
-    ),
-  )
-  const conclusionPercent = Math.min(
-    12,
-    Math.max(
-      5,
-      workflowParam("draft", "word-allocation", "conclusionPercent", 7),
-    ),
-  )
-  const maxSentencesPerParagraph = Math.min(
-    7,
-    Math.max(
-      2,
-      workflowParam(
-        "draft",
-        "structured-assembly",
-        "maxSentencesPerParagraph",
-        5,
-      ),
-    ),
-  )
+  const keywordCount = gateParams.keywordCount
+  const batchIdeaCount = gateParams.ideaCount
+  const conclusionPercent = gateParams.conclusionPercent
+  const maxSentencesPerParagraph = gateParams.maxSentencesPerParagraph
+  const introBudget = { min: gateParams.introMinWords, max: gateParams.introMaxWords }
   const appendUsage = (step: 2 | 3 | 4, response: any) => ({
     ...article.aiUsageByStep,
     [step]: [
@@ -2633,10 +2595,13 @@ async function runBatchArticle(
       const draftPrerequisite = articleStepPrerequisite(article, 4)
       if (draftPrerequisite) throw new Error(draftPrerequisite)
       const effectiveDraftWords = maxDraftWords
+      // Frozen on the article (saved with the next checkpoint) so QC measures the range the draft was written for.
+      article = { ...article, introductionBudget: introBudget }
       const budget = batchDraftBudget(
         article.outline ?? [],
         effectiveDraftWords,
         conclusionPercent,
+        introBudget,
       )
       const verifiedOutline = batchVerifiedOutline(article.outline ?? [])
       let response: any = null
@@ -2660,7 +2625,7 @@ async function runBatchArticle(
             `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
             `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(approvedInternalLinkCandidates)}`,
             internalLinkInstruction(effectiveDraftWords, approvedInternalLinkCandidates.length),
-            INTRODUCTION_INSTRUCTION,
+            introductionInstruction(introBudget),
             outlineStructurePrompt(article.outlineStructure, "draft"),
             `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
             "Knowledge Base is the only source for concrete facts, figures, evidence and product claims. If a concrete claim has no approved evidence, omit it or replace it with general explanatory prose.",
@@ -2770,7 +2735,7 @@ async function runBatchArticle(
             4,
             [
               "Repair only the failed introduction and/or conclusion: shorten over-length text, expand under-length text and fix paragraph structure. Preserve supported meaning. Do not return a title, headings, body sections, or any other article field.",
-              INTRODUCTION_INSTRUCTION,
+              introductionInstruction(introBudget),
               `LENGTH FAILURES: ${JSON.stringify(fieldFailures)}`,
               `INTRODUCTION: preferred ${budget.introduction.min}-${budget.introduction.max}; mandatory accepted range ${budget.introduction.acceptedMin}-${budget.introduction.acceptedMax} English words.`,
               `CONCLUSION: preferred ${budget.conclusion.min}-${budget.conclusion.max}; mandatory accepted range ${budget.conclusion.acceptedMin}-${budget.conclusion.acceptedMax} English words.`,
@@ -2899,7 +2864,7 @@ async function runBatchArticle(
             `APPROVED EVIDENCE REGISTRY: ${JSON.stringify(verifiedOutline.evidenceRegistry)}`,
             `OUTLINE EVIDENCE MAPPING: ${JSON.stringify(verifiedOutline.sections.map((section: any) => ({ id: section.id, evidenceRefs: section.evidenceRefs })))}`,
             `DRAFT EVIDENCE USAGE: ${JSON.stringify(candidateUsage)}`,
-            introductionReviewInstruction(candidate),
+            introductionReviewInstruction(candidate, article.introductionBudget),
             `DRAFT: ${candidate}`,
             batchSemanticReviewInstruction(article, candidate, checklistInstruction),
             incompleteRecovery

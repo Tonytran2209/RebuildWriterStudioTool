@@ -108,7 +108,7 @@ export function validateOutlineStructure(sections: Array<{ heading: string; leve
 
 export const OUTLINE_OPERATIONAL_STAGES = [
   { id: 'structured-handoff', instruction: 'Lock the selected title, angle, audience, tone and accepted keywords.' },
-  { id: 'outline-mapping', instruction: 'Create ordered H2/H3 sections with search intent, keyword mapping and rationale. Layout and required sections come only from the selected frozen Markdown structure.', parameters: { minimumSections: 4 } },
+  { id: 'outline-mapping', instruction: 'Return ordered H2/H3 sections with search intent, keyword mapping and rationale in the JSON schema. Section rules come from the Gate Playbook; layout and required headings come from the selected frozen Markdown structure.' },
   { id: 'evidence-registry', instruction: 'Reuse verified quotes by ID and reject unsupported references.' },
 ];
 export const OUTLINE_RESPONSE_CONTRACT = [

@@ -71,7 +71,7 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
   const title = normalized(draft.split("\n").find(line => /^#\s+\S/.test(line.trim()))?.replace(/^\s*#\s+/, "") ?? "");
   const conclusionCount = [...draft.matchAll(/^##\s+conclusion\s*$/gim)].length;
   const checks: QualityGateCheck[] = [
-    introductionCheck(draft),
+    introductionCheck(draft, article.introductionBudget),
     ...outlineQualityChecks(article, draft),
     { id: "complete-structure", label: "Complete article structure", kind: "deterministic", status: /^#\s+/m.test(draft) && /^##\s+/m.test(draft) ? "pass" : "fail", reason: "Draft must contain one H1 and at least one H2.", autoFixAllowed: true },
     { id: "duplicate-headings", label: "No consecutive duplicate headings", kind: "deterministic", status: duplicateHeadings.length ? "fail" : "pass", reason: duplicateHeadings.length ? `Repeated heading immediately before its prose: ${duplicateHeadings.join(", ")}` : "Each section heading appears once before its prose.", autoFixAllowed: true },

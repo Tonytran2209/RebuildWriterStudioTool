@@ -1,4 +1,5 @@
 import type { AppConfig, Article, ContentPlan, DocumentFile, PipelineSettings } from "../types/index.ts"
+import { storageGroupOf } from "../../shared/gateDocuments.ts"
 import { aiApproval, articleStage } from "../lib/pipeline.ts"
 import { isArticleCompleted } from "../lib/workflowGuards.ts"
 import { articleSpecFingerprint } from "../lib/articleSpec.ts"
@@ -122,12 +123,7 @@ export const DOC_GROUPS: Array<[group: string, category: "kb" | "rules", vi: str
   ["Voice & Style", "rules", "Tone of voice, giọng văn và văn phong.", "Tone of voice and writing style."],
 ]
 export function groupOf(file: DocumentFile): string {
-  if (DOC_GROUPS.some(([g]) => g === file.storageGroup)) return file.storageGroup!
-  const name = file.name.toLowerCase()
-  if (file.category === "kb") return /plan|topic|priority/.test(name) ? "Source data" : "Domain Knowledge"
-  if (/checklist|standard|link|upload|quy tắc/.test(name)) return "Standards"
-  if (/tone|voice|style|giọng/.test(name)) return "Voice & Style"
-  return "Playbooks"
+  return storageGroupOf(file)
 }
 export function usedAt(file: DocumentFile, config: AppConfig): number[] {
   const key = file.category === "kb" ? "kb" : "rules"
