@@ -153,4 +153,13 @@ test("stored Content Plan classification runs report success, failure, running a
   const report = jobRuns([], Date.parse("2026-11-23T00:00:00.000Z"), 5000, runs)
   assert.equal(report.runs[0].runId, "r4")
   assert.deepEqual(report.runs.find(r => r.runId === "r1")?.items, { total: 40, succeeded: 37 })
+  // Classification runs also count in jobHistory (not in jobRuns twice); running ones are left out.
+  const { labJobRecords } = await import("./jobHistory.ts")
+  const counted = labJobRecords([...runs, { ...runs[1], runId: "r5", error: "DATABASE_ERROR", endedAt: "2026-11-20T14:00:00.000Z" }, { ...runs[0], runId: "child", parentRunId: "r1" }])
+  assert.deepEqual(counted.map(r => [r.status, r.valid, r.error]), [["completed", true, null], ["failed", false, "AI_PROVIDER_ERROR"], ["completed", true, null], ["failed", false, "DATABASE_ERROR"]])
+  const windows = jobHistoryWindows([], "2026-11-20T10:30:00.000Z", 100, Date.parse("2026-11-23T00:00:00.000Z"), runs, counted)
+  assert.equal(windows.jobRuns.runs.length, 4)
+  assert.deepEqual([windows.jobHistory.executed, windows.jobHistory.failed, windows.jobHistory.technicalErrors, windows.jobHistory.validCompletions], [3, 2, 2, 1])
+  assert.deepEqual([windows.jobHistoryAllTime.executed, windows.jobHistoryAllTime.validCompletions], [4, 2])
+  assert.equal(windows.jobHistory.latestJob?.workload, "Content Plan · Q3 plan")
 })

@@ -1,4 +1,5 @@
-const technicalFailure = /\b(?:ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|timeout|timed out)\b|\b(?:HTTP|status(?: code)?)\s*[:=]?\s*5\d{2}\b/i
+// Last alternative: error codes saved by lab runs (database, AI provider, quota, credits).
+const technicalFailure = /\b(?:ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|timeout|timed out)\b|\b(?:HTTP|status(?: code)?)\s*[:=]?\s*5\d{2}\b|^(?:DATABASE_ERROR|AI_PROVIDER_ERROR|AI_PROVIDER_QUOTA_EXCEEDED|AI_CREDITS_EXHAUSTED)$/i
 
 const rejectedOutput = /^(?:Brief còn thông tin N\/A\.|AI did not return a valid JSON object after one automatic format recovery\.|Batch Step 1 did not return a valid rated Core Idea\.)/
 
@@ -51,6 +52,18 @@ export function storedLabRuns(values: unknown[]): ParentRun[] {
       ...(typeof value.error === "string" && value.status === "failed" ? { error: value.error.slice(0, 80) } : {}),
     }]
   })
+}
+
+/**
+ * Finished lab runs that are jobs of their own (no parentRunId: Content Plan classification), as
+ * jobHistory records. They are already in jobRuns, so they are only added to the jobHistory counts.
+ * A success saved at least one topic (classification fails otherwise), so it is a valid completion.
+ */
+export function labJobRecords(runs: ParentRun[]): JobRecord[] {
+  return runs.flatMap(run => run.parentRunId || run.status === "running" || !run.endedAt ? [] : [{
+    job: run.job, workload: run.workload, status: run.status === "success" ? "completed" as const : "failed" as const,
+    valid: run.status === "success", startedAt: run.startedAt, endedAt: run.endedAt, recordedAt: run.endedAt, error: run.error ?? null,
+  }])
 }
 
 type StepRecord = { key?: unknown; label?: unknown; startedAt?: unknown; endedAt?: unknown; status?: unknown }
@@ -183,14 +196,17 @@ export function jobRuns(rows: JobRecord[], now: number, max = 5000, parents: Par
   return { since: new Date(since).toISOString(), complete: !truncated, runs }
 }
 
-export function jobHistoryWindows(rows: JobRecord[], since: string, limit: number, now = Date.now(), parents: ParentRun[] = []) {
+/** `counted`: records already sent to jobRuns as parents (labJobRecords) that also count in jobHistory. */
+export function jobHistoryWindows(rows: JobRecord[], since: string, limit: number, now = Date.now(), parents: ParentRun[] = [], counted: JobRecord[] = []) {
   const start = Date.parse(since)
-  const recent = rows.filter(({ recordedAt }) => recordedAt && new Date(recordedAt).getTime() >= start)
+  const time = (value: JobRecord["recordedAt"]) => value ? new Date(value).getTime() : NaN
+  const all = counted.length ? [...rows, ...counted].sort((a, b) => (time(b.recordedAt) || 0) - (time(a.recordedAt) || 0)) : rows
+  const recent = all.filter(({ recordedAt }) => time(recordedAt) >= start)
   const runs = jobRuns(rows, now, 5000, parents)
   return {
     jobRuns: { ...runs, complete: rows.length <= limit && runs.complete },
     jobHistory: summarizeJobHistory(recent, limit),
-    jobHistoryAllTime: summarizeJobHistory(rows, limit),
+    jobHistoryAllTime: summarizeJobHistory(all, limit),
   }
 }
 

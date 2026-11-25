@@ -1,4 +1,4 @@
-import { articleStepRuns, estimatedStepRuns, jobHistoryWindows, singleArticleRuns, storedLabRuns } from "./jobHistory.ts"
+import { articleStepRuns, estimatedStepRuns, jobHistoryWindows, labJobRecords, singleArticleRuns, storedLabRuns } from "./jobHistory.ts"
 import { ARTICLE_JOB } from "./batchSteps.ts"
 import { performance } from "node:perf_hooks"
 import { database } from "./postgres.ts"
@@ -175,7 +175,7 @@ export async function readMonitoringData(
           // Measured steps when saved; otherwise steps estimated from AI call times.
           return row.steps ? articleStepRuns(row.steps, article)
             : estimatedStepRuns(row.callMarks, { ...article, startedAt: row.startedAt, endedAt: row.endedAt })
-        }).concat(singleRuns, labRuns))
+        }).concat(singleRuns, labRuns), labJobRecords(labRuns))
       : { jobHistory: null, jobHistoryAllTime: null }
     const contentWorkload = await exists("batch_job_items") && await exists("writer_articles")
       ? {
