@@ -2,7 +2,7 @@ import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
 import { aiApproval, pipelineSettings, rerunPatch, type RerunGate } from "../src/lib/pipeline.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, CLASSIFY_PLAN_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
-import { CHUNK_MAX_TOKENS, CLASSIFIER_SYSTEM, CONTENT_PLAN_CLASSIFIER_VERSION, classifierPrompt, itemsOf, mergeDuplicateTopics, numberedLines, planItemsFromPicks, promptSettingsOf, splitPlanChunks } from './contentPlanClassifier.ts';
+import { CHUNK_MAX_TOKENS, CONTENT_PLAN_CLASSIFIER_VERSION, classifierPrompt, itemsOf, mergeDuplicateTopics, numberedLines, planItemsFromPicks, promptSettingsOf, splitPlanChunks } from './contentPlanClassifier.ts';
 import { normalizeContentPlanSettings, type ContentPlanSettings } from '../shared/contentPlanSettings.ts';
 import { convertStepRunsToTelemetryStages, sendArticleRunTelemetry } from "./telemetry.ts";
 import { outlineReviewInstruction } from '../src/lib/outlineQuality.ts';
@@ -558,14 +558,13 @@ async function loadArticles(): Promise<any[]> {
 async function reserveAIBudget(
   articleId: string,
   stepNumber: number,
-  limitOverride?: number,
 ): Promise<{ used: number; limit: number }> {
   const date = new Date().toISOString().slice(0, 10)
   const key = `writer:ai-budget:${date}:${articleId}:step-${stepNumber}`
   return serializeByKey(aiBudgetQueues, key, async () => {
     const current = await kvGet<{ used?: number }>(key)
     const used = Number(current?.used ?? 0)
-    const limit = limitOverride ?? DAILY_AI_LIMITS[stepNumber] ?? 6
+    const limit = DAILY_AI_LIMITS[stepNumber] ?? 6
     if (used >= limit)
       throw new Error(
         `Đã đạt giới hạn ${limit} AI calls tính phí cho Step ${stepNumber} hôm nay. Hãy dùng kết quả đã lưu hoặc chờ sang ngày mới.`,
@@ -3922,14 +3921,12 @@ async function classifyPlan(planId: string, force: boolean) {
       return { plan: saved, cacheHit: false, deterministic: true }
     }
     const responses: any[] = []
-    let budgetReserved = false
     // One AI call per chunk of plan rows. A cut-off or unreadable answer is split in half and retried, twice at most.
     const classifyChunk = async (text: string, depth = 0): Promise<any[]> => {
       const cacheKey = aiCacheKey({ kind: CONTENT_PLAN_CLASSIFIER_VERSION, model: model.id, text: crypto.createHash("sha256").update(text).digest("hex"), prompt: promptSettingsOf(settings) })
       const cached = force ? null : await kvGet<any>(cacheKey)
       if (cached?.content) return itemsOf(parseJsonObject(cached.content))
-      if (!budgetReserved) { await reserveAIBudget(`content-plan-${plan.id}`, 1, settings.dailyAiLimit); budgetReserved = true }
-      const response = await generate({ modelId: model.id, provider: model.provider, jsonMode: true, maxTokens: CHUNK_MAX_TOKENS, temperature: 0, reasoningEffort: "low", systemPrompt: CLASSIFIER_SYSTEM, prompt: classifierPrompt(text, settings) })
+      const response = await generate({ modelId: model.id, provider: model.provider, jsonMode: true, maxTokens: CHUNK_MAX_TOKENS, temperature: 0, reasoningEffort: "low", systemPrompt: settings.systemPrompt, prompt: classifierPrompt(text, settings) })
       responses.push(response)
       const truncated = Number(response.usage?.outputTokens ?? 0) >= CHUNK_MAX_TOKENS - 64
       let parsed: any = null

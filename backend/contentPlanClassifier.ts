@@ -1,5 +1,5 @@
 import crypto from "node:crypto"
-import { DEFAULT_CONTENT_PLAN_SETTINGS, type ContentPlanSettings } from "../shared/contentPlanSettings.ts"
+import { CLASSIFIER_ANSWER_FORMAT, DEFAULT_CONTENT_PLAN_SETTINGS, DEFAULT_SYSTEM_PROMPT, type ContentPlanSettings } from "../shared/contentPlanSettings.ts"
 
 // v3: the AI only picks which numbered lines are planned articles. Titles are copied from the file,
 // and the content group comes from the file's own section headings and title patterns before the
@@ -10,24 +10,15 @@ export const CHUNK_CHARS = 20_000
 export const CHUNK_MAX_TOKENS = 8_000
 const LINE_CHARS = 300
 
-export const CLASSIFIER_SYSTEM =
-  "You read a Content Plan whose lines are numbered and return which lines are planned articles. Answer with line numbers from the input only."
+export const CLASSIFIER_SYSTEM = DEFAULT_SYSTEM_PROMPT
 
+/** The admin's rules, then the fixed answer format (so any rules still give a readable answer), then the numbered lines. */
 export function classifierPrompt(numberedText: string, settings: ContentPlanSettings = DEFAULT_CONTENT_PLAN_SETTINGS) {
-  return [
-    "Each line below starts with its line number and \"|\". Return every line that names ONE article to write.",
-    "Include every list of article titles in the document (priority topics, backlogs, action plans, waves, ICP lists): a title listed in two sections is still returned for both lines.",
-    "Do NOT return: document titles, section or cluster headings, table headers or cells that describe a cluster, audience, angle, value proposition, signal or criteria, notes, goals, KPIs, dates, owners, statuses, or instructions.",
-    // Admin notes refine which lines count; they cannot change the answer format below.
-    ...(settings.extraInstructions ? [`Team notes on which lines to return:\n${settings.extraInstructions}`] : []),
-    `Group for each line: c = ${settings.comparisonDefinition}; e = ${settings.editorialDefinition}; r = unsure.`,
-    'Return JSON only: {"items":[[lineNumber,"c"|"e"|"r"], ...]}',
-    numberedText,
-  ].join("\n\n")
+  return [settings.rulesPrompt, CLASSIFIER_ANSWER_FORMAT, numberedText].join("\n\n")
 }
 
 /** The settings that change what the AI is asked; part of the AI cache key, so editing them asks again. */
-export const promptSettingsOf = (s: ContentPlanSettings) => ({ c: s.comparisonDefinition, e: s.editorialDefinition, notes: s.extraInstructions })
+export const promptSettingsOf = (s: ContentPlanSettings) => ({ system: s.systemPrompt, rules: s.rulesPrompt })
 
 /** Non-empty lines of a source with their line numbers, as sent to the AI (`n| text`). */
 export function numberedLines(text: string, skip: (line: string) => boolean = () => false) {
@@ -106,7 +97,7 @@ export function titleOf(line: string) {
  */
 export function planItemsFromPicks(picks: any[], source: { id: string; extractedContent?: string }, settings: ContentPlanSettings = DEFAULT_CONTENT_PLAN_SETTINGS) {
   const rules = compileRules(settings)
-  const unsure: Group = settings.needsReview === "editorial" ? "editorial-originality" : settings.needsReview === "comparison" ? "comparison-seo" : "needs-review"
+  const unsure: Group = settings.keepNeedsReview ? "needs-review" : "editorial-originality"
   const lines = String(source.extractedContent ?? "").replace(/\r\n?/g, "\n").split("\n")
   const dropped: string[] = []
   const lineOf = (pick: any) => Number(Array.isArray(pick) ? pick[0] : pick?.line ?? pick?.n)
@@ -121,8 +112,9 @@ export function planItemsFromPicks(picks: any[], source: { id: string; extracted
     const [rawTitle, rawKeywords = ""] = titleOf(line ?? "").split(/\s+\|\s+/, 2)
     const title = rawTitle.slice(0, 220)
     if (!line?.trim() || !title) { dropped.push(Number.isFinite(n) ? `#${n}` : String(pick)); return [] }
-    const section = sectionGroupAt(lines, n, topics, rules)
-    const pattern = rules.title(title)
+    // Each rule can be switched off in Settings, leaving the group to the AI's prompt.
+    const section = settings.useHeadings ? sectionGroupAt(lines, n, topics, rules) : null
+    const pattern = settings.useTitleWords ? rules.title(title) : null
     const aiGroup = GROUPS[String(Array.isArray(pick) ? pick[1] : pick?.group ?? pick?.g ?? "")] ?? "needs-review"
     const type = section?.group ?? pattern ?? (aiGroup === "needs-review" ? unsure : aiGroup)
     return [{

@@ -368,7 +368,7 @@ test('CRM Settings list documents in the same groups as Storage', async ({ page 
   await expect(page.locator('tr.grp', { hasText: 'Playbooks' })).toBeVisible();
 });
 
-test('CRM Settings edit Content Plan rules, preview them on a plan, then apply after saving', async ({ page }) => {
+test('CRM Settings show the classification prompt to edit, rule toggles, preview and apply after saving', async ({ page }) => {
   const log = await mockApp(page);
   const ready = { ...plan, id: 'plan-r', name: 'Ready plan', status: 'ready', items: [{ id: 'r1', title: 'Why E matters', keywords: [], type: 'needs-review', sourceLine: 'Why E matters' }] };
   const reapply: any[] = [];
@@ -380,22 +380,30 @@ test('CRM Settings edit Content Plan rules, preview them on a plan, then apply a
   });
   await page.reload();
   await goHash(page, '/settings/workflow-ai');
-  const add = page.getByLabel('Heading Comparison: thêm');
-  await add.fill('Buyer guides');
-  await add.press('Enter');
-  await expect(page.locator('.tag', { hasText: 'buyer guides' })).toBeVisible();
-  await page.getByLabel('Needs review', { exact: true }).selectOption('editorial');
-  await page.getByRole('button', { name: 'Thử trên plan' }).click();
+  // The prompt the AI gets is shown in full and editable; the answer format stays fixed.
+  const rules = page.getByLabel('Quy tắc phân tích & phân loại');
+  await expect(rules).toHaveValue(/^Each line below starts with its line number/);
+  await expect(page.getByLabel('Phần cố định')).toContainText('Return JSON only');
+  await rules.fill('Only lines under Wave 3 are articles.');
+  await expect(page.getByText('Đã sửa', { exact: true })).toBeVisible();
+  const headings = page.getByLabel('Comparison', { exact: true }).first();
+  await headings.fill('compar*, so sánh, vs, versus, Buyer guides');
+  await headings.blur();
+  await page.getByRole('switch', { name: 'Giữ nhãn Needs review' }).click();
+  await expect(page.getByRole('switch', { name: 'Giữ nhãn Needs review' })).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByText(/giới hạn|AI calls \/ plan/i)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Thử quy tắc trên plan' }).click();
   // The preview carries the unsaved draft settings; applying waits for Save.
   await expect.poll(() => reapply.length).toBe(1);
-  expect(reapply[0]).toMatchObject({ dryRun: true, settings: { needsReview: 'editorial' } });
+  expect(reapply[0]).toMatchObject({ dryRun: true, settings: { keepNeedsReview: false, rulesPrompt: 'Only lines under Wave 3 are articles.' } });
   expect(reapply[0].settings.comparisonHeadings).toContain('buyer guides');
   await expect(page.getByLabel('Kết quả thử')).toContainText('1 đổi nhóm');
   const apply = page.getByRole('button', { name: 'Áp dụng cho plan này' });
   await expect(apply).toBeDisabled();
   await page.getByRole('button', { name: 'Lưu thay đổi' }).click();
   await expect.poll(() => log.configs.length).toBe(1);
-  expect(log.configs[0].contentPlan).toMatchObject({ needsReview: 'editorial' });
+  expect(log.configs[0].contentPlan).toMatchObject({ keepNeedsReview: false, rulesPrompt: 'Only lines under Wave 3 are articles.' });
+  expect(log.configs[0].contentPlan.dailyAiLimit).toBeUndefined();
   await expect(apply).toBeEnabled();
   await apply.click();
   await expect.poll(() => reapply.length).toBe(2);

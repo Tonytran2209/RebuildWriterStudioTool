@@ -93,16 +93,16 @@ test("title wording rules", () => {
   assert.equal(titleGroup("Storyboarding for learning should map understanding"), null)
 })
 
-test("admin settings change headings, wording, unsure topics, merging and the AI prompt", async () => {
-  const { normalizeContentPlanSettings, DEFAULT_CONTENT_PLAN_SETTINGS } = await import("../shared/contentPlanSettings.ts")
+test("admin settings: edited prompt, rule toggles, unsure topics and merging", async () => {
+  const { normalizeContentPlanSettings, DEFAULT_CONTENT_PLAN_SETTINGS: D, CLASSIFIER_ANSWER_FORMAT } = await import("../shared/contentPlanSettings.ts")
   const { compileRules, planItemsFromPicks, mergeDuplicateTopics, classifierPrompt, promptSettingsOf } = await import("./contentPlanClassifier.ts")
-  // Unsafe or junk input is capped and defaulted, never passed through as regex.
-  const s = normalizeContentPlanSettings({ comparisonHeadings: ["Buyer Guides", "", "(a|b)+"], editorialPhrases: ["^Is"], comparisonPhrases: ["top # tools"], extraInstructions: "x".repeat(5000), dailyAiLimit: 9999, needsReview: "bogus", mergeDuplicates: "yes" })
+  // Unsafe or junk input is capped and defaulted, never passed through as regex; empty prompts fall back to the original.
+  const s = normalizeContentPlanSettings({ comparisonHeadings: ["Buyer Guides", "", "(a|b)+"], editorialPhrases: ["^Is"], comparisonPhrases: ["top # tools"], rulesPrompt: "x".repeat(9000), systemPrompt: "  ", keepNeedsReview: "no", dailyAiLimit: 3 })
   assert.deepEqual(s.comparisonHeadings, ["buyer guides", "(a|b)+"])
-  assert.equal(s.extraInstructions.length, 1000)
-  assert.equal(s.dailyAiLimit, 100)
-  assert.equal(s.needsReview, "keep")
-  assert.equal(s.mergeDuplicates, true)
+  assert.equal(s.rulesPrompt.length, 8000)
+  assert.equal(s.systemPrompt, D.systemPrompt)
+  assert.equal(s.keepNeedsReview, true)
+  assert.ok(!("dailyAiLimit" in s))
   const rules = compileRules(s)
   assert.equal(rules.section("3. Buyer guides for L&D"), "comparison-seo")
   assert.equal(rules.section("(a|b)+ literally"), "comparison-seo")
@@ -112,29 +112,33 @@ test("admin settings change headings, wording, unsure topics, merging and the AI
   assert.equal(rules.title("Top 7 tools for onboarding"), "comparison-seo")
   assert.equal(rules.title("Top tools for onboarding"), null) // # needs a number
   // Defaults keep the v3 behaviour.
-  const d = compileRules(DEFAULT_CONTENT_PLAN_SETTINGS)
+  const d = compileRules(D)
   assert.equal(d.title("Best LMS for startups"), "comparison-seo")
   assert.equal(d.title("Why onboarding fails"), "editorial-originality")
   assert.equal(d.title("Articulate vs Rise: which is not worth it"), "comparison-seo")
   assert.equal(d.section("II. Comparisons"), "comparison-seo")
-  // Unsure AI picks follow needsReview; ids are stable per source line.
-  // Reworded copies: 6 of 7 words shared, merged at "normal", kept apart at "strict".
+  // Switching the heading and wording rules off leaves the group to the AI.
+  const plan = { id: "p", extractedContent: "## Comparison\n- Why onboarding fails" }
+  assert.equal(planItemsFromPicks([[1, "e"]], plan).items[0].type, "comparison-seo")
+  assert.equal(planItemsFromPicks([[1, "e"]], plan, { ...D, useHeadings: false }).items[0].type, "editorial-originality")
+  assert.equal(planItemsFromPicks([[1, "c"]], plan, { ...D, useHeadings: false, useTitleWords: false }).items[0].type, "comparison-seo")
+  assert.equal(planItemsFromPicks([[1, "c"]], plan, { ...D, useHeadings: false, useTitleWords: false }).items[0].classificationReason, "AI")
+  // Reworded copies: 6 of 7 words shared, merged at "normal", kept apart at "strict". Unsure picks follow keepNeedsReview; ids are stable per line.
   const source = { id: "s1", extractedContent: "Plan\n- Learning culture scale managers onboarding budget wins\n- Learning culture scale managers onboarding budget losses" }
   const keep = planItemsFromPicks([[1, "r"]], source).items[0]
   assert.equal(keep.type, "needs-review")
-  assert.equal(planItemsFromPicks([[1, "r"]], source, { ...DEFAULT_CONTENT_PLAN_SETTINGS, needsReview: "comparison" }).items[0].type, "comparison-seo")
+  assert.equal(planItemsFromPicks([[1, "r"]], source, { ...D, keepNeedsReview: false }).items[0].type, "editorial-originality")
   assert.equal(planItemsFromPicks([[1, "r"]], source).items[0].id, keep.id)
-  assert.equal(planItemsFromPicks([[1, "e"], [1, "c"]], source, { ...DEFAULT_CONTENT_PLAN_SETTINGS, mergeDuplicates: false }).items.length, 1)
+  assert.equal(planItemsFromPicks([[1, "e"], [1, "c"]], source, { ...D, mergeDuplicates: false }).items.length, 1)
   const both = planItemsFromPicks([[1, "e"], [2, "e"]], source).items
   assert.equal(mergeDuplicateTopics(both).length, 1)
-  assert.equal(mergeDuplicateTopics(both, { ...DEFAULT_CONTENT_PLAN_SETTINGS, mergeDuplicates: false }).length, 2)
-  assert.equal(mergeDuplicateTopics(both, { ...DEFAULT_CONTENT_PLAN_SETTINGS, duplicateSensitivity: "strict" }).length, 2)
-  // Prompt-facing settings reach the prompt and the cache key input.
-  const custom = { ...DEFAULT_CONTENT_PLAN_SETTINGS, extraInstructions: "Skip lines starting with Note", editorialDefinition: "editorial = opinion pieces" }
-  assert.match(classifierPrompt("1| A", custom), /Team notes on which lines to return:\nSkip lines starting with Note/)
-  assert.match(classifierPrompt("1| A", custom), /e = editorial = opinion pieces/)
-  assert.doesNotMatch(classifierPrompt("1| A"), /Team notes/)
-  assert.notDeepEqual(promptSettingsOf(custom), promptSettingsOf(DEFAULT_CONTENT_PLAN_SETTINGS))
+  assert.equal(mergeDuplicateTopics(both, { ...D, mergeDuplicates: false }).length, 2)
+  assert.equal(mergeDuplicateTopics(both, { ...D, duplicateSensitivity: "strict" }).length, 2)
+  // The edited prompt replaces the rules; the answer format and the lines are always appended.
+  const custom = { ...D, rulesPrompt: "Only lines under Wave 3 are articles." }
+  assert.equal(classifierPrompt("1| A", custom), `Only lines under Wave 3 are articles.\n\n${CLASSIFIER_ANSWER_FORMAT}\n\n1| A`)
+  assert.match(classifierPrompt("1| A"), /^Each line below starts with its line number/)
+  assert.notDeepEqual(promptSettingsOf(custom), promptSettingsOf(D))
 })
 
 test("default heading words match the v3 rules, and * means any letters", async () => {
