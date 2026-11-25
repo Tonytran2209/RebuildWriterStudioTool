@@ -10,7 +10,7 @@ import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePromp
 import "dotenv/config"
 import { authProvider, AuthService, AuthError } from "./authService.ts"
 import { postgresAuthRouter, assertAuthConfig, appOrigin } from "./authRoutes.ts"
-import { provider as databaseProvider, closeDatabase } from "./postgres.ts"
+import { provider as databaseProvider, closeDatabase, isDatabaseError } from "./postgres.ts"
 import { storageProvider } from "./documentStorage.ts"
 import express from "express"
 import cors from "cors"
@@ -418,6 +418,9 @@ const PROVIDER_NAMES: Record<string, string> = {
 
 function classifyAIError(error: unknown, provider: string, modelId: string) {
   const raw = error instanceof Error ? error.message : String(error)
+  // A failed database write inside an AI job is not the provider's fault.
+  if (isDatabaseError(error))
+    return { status: 500, body: { code: "DATABASE_ERROR", provider, modelId, error: raw || "Lỗi database" } }
   const details =
     typeof error === "object" && error
       ? JSON.stringify(error, Object.getOwnPropertyNames(error))
@@ -4113,7 +4116,7 @@ app.post("/api/content-plans/:id/reapply", async (req: any, res) => {
     await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: next.length, succeeded: next.length } })
     res.json({ plan: await getContentPlan(plan.id), preview })
   } catch (err: any) {
-    if (run) await saveLabRun({ ...run, status: "failed", endedAt: new Date().toISOString(), error: String(err?.http ? err.status : "REAPPLY_FAILED") }).catch(() => undefined)
+    if (run) await saveLabRun({ ...run, status: "failed", endedAt: new Date().toISOString(), error: String(err?.http ? err.status : isDatabaseError(err) ? "DATABASE_ERROR" : "REAPPLY_FAILED") }).catch(() => undefined)
     res.status(err?.http ? err.status : 500).json({ error: err.message })
   }
 })

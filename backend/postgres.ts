@@ -5,6 +5,11 @@ pg.types.setTypeParser(1114, value => value);
 pg.types.setTypeParser(1700, value => Number(value));
 
 export const TABLES = ['kv_store', 'content_plans', 'content_plan_sources', 'content_plan_items', 'writer_articles', 'writer_ai_usage', 'article_stage_runs', 'batch_jobs', 'batch_job_items', 'article_specs', 'knowledge_items', 'website_content_inventory', 'quality_gate_runs', 'editorial_approvals', 'agent_library_versions', 'agent_library_documents', 'agent_library_chunks'] as const;
+/** A PostgreSQL error (node-postgres/PGlite, or PostgREST via Supabase): 5-character SQLSTATE code plus server detail. */
+export function isDatabaseError(error: unknown): boolean {
+  const e = error as any
+  return typeof e?.code === 'string' && /^[0-9A-Z]{5}$/.test(e.code) && (typeof e.severity === 'string' || 'hint' in e || 'details' in e)
+}
 export function provider(): 'supabase' | 'postgres' {
   const value = process.env.DATABASE_PROVIDER ?? 'supabase';
   if (value !== 'supabase' && value !== 'postgres') throw new Error('Invalid DATABASE_PROVIDER');

@@ -4,7 +4,7 @@ import { readFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
-import { SelectQuery, provider, tableName, insertRow, rowValues, insertStageRevision, selectRows, updateRow, deleteRows, available } from './postgres.ts';
+import { SelectQuery, isDatabaseError, provider, tableName, insertRow, rowValues, insertStageRevision, selectRows, updateRow, deleteRows, available } from './postgres.ts';
 import { validateScope } from './importScope.ts';
 import { upload, download, remove, safeDocumentPath } from './documentStorage.ts';
 import { migrate } from './dbMigrate.ts';
@@ -151,4 +151,18 @@ test('migration ledger idempotence and snapshot importer dry-run/apply/no-overwr
     if (targetEnv === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = targetEnv;
     await source.close(); await target.close(); await rm(root, { recursive: true, force: true });
   }
+});
+
+test('database errors are told apart from other errors (monitoring code DATABASE_ERROR)', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec('CREATE TABLE t (id uuid PRIMARY KEY)');
+    const error = await db.query('INSERT INTO t (id) VALUES ($1)', ['line-aafbdc18a8cfc257ae46']).then(() => null, e => e);
+    assert.match(String(error?.message), /invalid input syntax for type uuid/);
+    assert.equal(isDatabaseError(error), true);
+  } finally { await db.close(); }
+  assert.equal(isDatabaseError({ code: '22P02', message: 'x', details: null, hint: null }), true); // PostgREST shape
+  assert.equal(isDatabaseError(Object.assign(new Error('Rate limit'), { code: 'rate_limit_exceeded' })), false);
+  assert.equal(isDatabaseError(Object.assign(new Error('socket'), { code: 'ECONNRESET' })), false);
+  assert.equal(isDatabaseError(new Error('AI returned nothing')), false);
 });
