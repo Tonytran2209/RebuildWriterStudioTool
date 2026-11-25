@@ -1159,7 +1159,8 @@ async function runBatchModel(
     throw new Error(`${model.provider} API is not configured.`)
   const compiledRules = compileBackendWorkflowRules(config, step, "batch")
   const structureGuidance = step === 3 || step === 4 ? outlineStructurePrompt(article.outlineStructure, step === 3 ? "outline" : "draft") : ""
-  prompt = [prompt, structureGuidance].filter(Boolean).join("\n\n")
+  // The G2 outline task and G3 draft prompt already carry it; add it only to prompts that lack it.
+  if (!prompt.includes(structureGuidance)) prompt = `${prompt}\n\n${structureGuidance}`
   const effectivePrompt = compiledRules.taskGuidance
     ? `${prompt}\n\n${compiledRules.taskGuidance}`
     : prompt

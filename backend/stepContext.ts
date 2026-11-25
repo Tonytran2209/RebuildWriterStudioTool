@@ -191,7 +191,11 @@ function relevantTerms(query: string): string[] {
     .filter(term => term.length >= 3 && !stopWords.has(term)))].slice(0, 40);
 }
 
-function selectRelevantContent(document: StoredDocument & { content: string }, query: string): string {
+// A KB section that says how its facts may be used (e.g. "Evidence boundary") is kept with every excerpt.
+const EVIDENCE_HEADING = /evidence|dẫn chứng|bằng chứng/i;
+
+/** The KB sections relevant to `query` (at most 2, about 8,000 characters), plus the evidence-rule sections. */
+export function selectRelevantContent(document: Pick<StoredDocument, 'structuredSections'> & { content: string }, query: string): string {
   const terms = relevantTerms(query);
   if (!terms.length || document.content.length <= 6_000) return document.content;
   const sourceSections = document.structuredSections?.length
@@ -218,12 +222,16 @@ function selectRelevantContent(document: StoredDocument & { content: string }, q
       + Math.min(content.split(term).length - 1, 3), 0);
     return { section, index, score };
   }).sort((a, b) => b.score - a.score || a.index - b.index);
-  const selected: typeof ranked = [];
+  const pinned = ranked.filter(candidate => EVIDENCE_HEADING.test(candidate.section.heading));
+  const selected: typeof ranked = [...pinned];
+  let picked = 0;
   let chars = 0;
   for (const candidate of ranked) {
-    if (selected.length >= 2 || chars >= 8_000) break;
-    if (candidate.score <= 0 && selected.length >= 1) continue;
+    if (picked >= 2 || chars >= 8_000) break;
+    if (pinned.includes(candidate)) continue;
+    if (candidate.score <= 0 && picked >= 1) continue;
     selected.push(candidate);
+    picked += 1;
     chars += candidate.section.content.length;
   }
   return selected.sort((a, b) => a.index - b.index)
@@ -234,7 +242,8 @@ function selectRelevantContent(document: StoredDocument & { content: string }, q
 export async function resolveStepContext(stepNumber: number, query = '', articleId?: string): Promise<StepContextResult> {
   const resolved = await resolveDocuments(stepNumber, articleId);
   if (!query.trim()) return buildResult(stepNumber, resolved);
-  return buildResult(stepNumber, resolved.map(item => ({
+  // Rules (skills, checklists, brand voice) are instructions and go whole; only KB and the plan are excerpted.
+  return buildResult(stepNumber, resolved.map(item => item.role === 'RULES' ? item : ({
     ...item,
     document: { ...item.document, content: selectRelevantContent(item.document, query) },
   })));

@@ -25,6 +25,22 @@ test('checklist uses only Rules granted to Step 4, excluding the MD outline stru
   assert.match(checklistReviewInstruction([{ name: 'big', content: 'x'.repeat(CHECKLIST_MAX_CHARS + 10) }]), /\[checklist truncated\]/)
 })
 
+test('a long checklist set keeps every document: short ones whole, long ones shortened evenly', () => {
+  const docs = [
+    { name: 'long-a.md', content: 'a'.repeat(30_000) },
+    { name: 'short.md', content: 'short rule END' },
+    { name: 'long-b.md', content: 'b'.repeat(30_000) + 'LAST' },
+  ]
+  const text = checklistReviewInstruction(docs)
+  for (const doc of docs) assert.match(text, new RegExp(`--- ${doc.name} ---`))
+  assert.match(text, /short rule END/)
+  assert.doesNotMatch(text, /LAST/)
+  const share = (CHECKLIST_MAX_CHARS - 'short rule END'.length) / 2
+  assert.ok(text.includes('a'.repeat(Math.floor(share))) && text.includes('b'.repeat(Math.floor(share))))
+  // Today's six Step 4 Rules (about 26,000 characters) fit whole.
+  assert.doesNotMatch(checklistReviewInstruction([{ name: 'x', content: 'y'.repeat(26_500) }]), /truncated/)
+})
+
 test('editing the checklist invalidates the cached semantic review', () => {
   const article = { outline: [] } as unknown as Article
   assert.notEqual(semanticReviewInputFingerprint(article, '# D', {}, 'rule A'), semanticReviewInputFingerprint(article, '# D', {}, 'rule B'))
