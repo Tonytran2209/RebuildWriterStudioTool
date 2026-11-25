@@ -368,6 +368,40 @@ test('CRM Settings list documents in the same groups as Storage', async ({ page 
   await expect(page.locator('tr.grp', { hasText: 'Playbooks' })).toBeVisible();
 });
 
+test('CRM Settings edit Content Plan rules, preview them on a plan, then apply after saving', async ({ page }) => {
+  const log = await mockApp(page);
+  const ready = { ...plan, id: 'plan-r', name: 'Ready plan', status: 'ready', items: [{ id: 'r1', title: 'Why E matters', keywords: [], type: 'needs-review', sourceLine: 'Why E matters' }] };
+  const reapply: any[] = [];
+  await page.route('**/api/content-plans', r => r.fulfill({ json: [ready] }));
+  await page.route('**/api/content-plans/plan-r/reapply', r => {
+    const body = r.request().postDataJSON(); reapply.push(body);
+    const preview = { before: { total: 1, comparison: 0, editorial: 0, review: 1 }, after: { total: 1, comparison: 0, editorial: 1, review: 0 }, changed: [{ id: 'r1', title: 'Why E matters', from: 'needs-review', to: 'editorial-originality' }], added: [], removed: [] };
+    return r.fulfill({ json: body.dryRun ? { preview } : { plan: { ...ready, items: [{ ...ready.items[0], type: 'editorial-originality' }] }, preview } });
+  });
+  await page.reload();
+  await goHash(page, '/settings/workflow-ai');
+  const add = page.getByLabel('Heading Comparison: thêm');
+  await add.fill('Buyer guides');
+  await add.press('Enter');
+  await expect(page.locator('.tag', { hasText: 'buyer guides' })).toBeVisible();
+  await page.getByLabel('Needs review', { exact: true }).selectOption('editorial');
+  await page.getByRole('button', { name: 'Thử trên plan' }).click();
+  // The preview carries the unsaved draft settings; applying waits for Save.
+  await expect.poll(() => reapply.length).toBe(1);
+  expect(reapply[0]).toMatchObject({ dryRun: true, settings: { needsReview: 'editorial' } });
+  expect(reapply[0].settings.comparisonHeadings).toContain('buyer guides');
+  await expect(page.getByLabel('Kết quả thử')).toContainText('1 đổi nhóm');
+  const apply = page.getByRole('button', { name: 'Áp dụng cho plan này' });
+  await expect(apply).toBeDisabled();
+  await page.getByRole('button', { name: 'Lưu thay đổi' }).click();
+  await expect.poll(() => log.configs.length).toBe(1);
+  expect(log.configs[0].contentPlan).toMatchObject({ needsReview: 'editorial' });
+  await expect(apply).toBeEnabled();
+  await apply.click();
+  await expect.poll(() => reapply.length).toBe(2);
+  expect(reapply[1].dryRun).toBeUndefined();
+});
+
 test('CRM plan capacity note shows only next to a batch list', async ({ page }) => {
   await mockApp(page);
   await page.route('**/api/content-plans', r => r.fulfill({ json: [plan, { ...plan, id: 'plan-empty', name: 'Empty plan', items: [] }] }));
@@ -387,7 +421,7 @@ test('CRM Workflow AI reads top to bottom: models, numbers, instructions, always
   await goHash(page, '/settings/workflow-ai');
   await expect(page.getByRole('heading', { name: 'Models per gate' })).toBeVisible();
   const headings = await page.locator('.set-inner h2').allTextContents();
-  expect(headings).toEqual(['Models per gate', 'Thông số pipeline', 'Hướng dẫn riêng của team', 'Luôn bật', 'Hệ thống']);
+  expect(headings).toEqual(['Models per gate', 'Phân loại Content Plan', 'Thông số pipeline', 'Hướng dẫn riêng của team', 'Luôn bật', 'Hệ thống']);
   await expect(page.getByText('0 AI calls')).toHaveCount(0);
 });
 

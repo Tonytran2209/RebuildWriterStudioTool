@@ -19,6 +19,7 @@ import { ModelsSettings, SystemStatus, WorkflowAiSettings } from "./AiSettings"
 import { AddDocForm, DocDetails, LegacyArchive } from "./StorageDocs"
 import WebsiteInventory from "./WebsiteInventory"
 import WorkflowRules from "./WorkflowRules"
+import ContentPlanRules from "./ContentPlanRules"
 import { isLegacyActionPlan } from "../lib/legacyCompatibility"
 import { GATES, STORAGE_GROUPS, batchesOf, planStats, plansOf, storageDocs, toCrmArticle, toggleShip, type CrmArticle, type CrmBatch, type CrmPlan, type HumanStatus, type StorageDoc } from "./model"
 import { Av, I, confirmDiscard, enc, errText, go, markUnsaved, person, toast, toastErr, trackHandoff } from "./ui"
@@ -1305,6 +1306,7 @@ function EmbeddedSettings({ ctx, p, title }: { ctx: Ctx; p: string; title: strin
   return <SettingsShell title={title} actions={actions}>
     {p === "workflow-ai" && <>
       <WorkflowAiSettings config={config} files={files} articles={ctx.articles} onChange={setConfig} />
+      <ContentPlanRules config={config} saved={ctx.config} plans={ctx.plans.map(p => p.plan)} onChange={setConfig} onPlan={plan => ctx.onContentPlansChange([plan])} />
       <WorkflowRules config={config} files={files} onChange={setConfig} />
       <SystemStatus config={config} docs={ctx.docs} />
     </>}

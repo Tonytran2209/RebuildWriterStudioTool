@@ -92,3 +92,47 @@ test("title wording rules", () => {
   assert.equal(titleGroup("Learning tools can deliver content but they cannot design understanding"), "editorial-originality")
   assert.equal(titleGroup("Storyboarding for learning should map understanding"), null)
 })
+
+test("admin settings change headings, wording, unsure topics, merging and the AI prompt", async () => {
+  const { normalizeContentPlanSettings, DEFAULT_CONTENT_PLAN_SETTINGS } = await import("../shared/contentPlanSettings.ts")
+  const { compileRules, planItemsFromPicks, mergeDuplicateTopics, classifierPrompt, promptSettingsOf } = await import("./contentPlanClassifier.ts")
+  // Unsafe or junk input is capped and defaulted, never passed through as regex.
+  const s = normalizeContentPlanSettings({ comparisonHeadings: ["Buyer Guides", "", "(.*)+"], editorialPhrases: ["^Is"], comparisonPhrases: ["top # tools"], extraInstructions: "x".repeat(5000), dailyAiLimit: 9999, needsReview: "bogus", mergeDuplicates: "yes" })
+  assert.deepEqual(s.comparisonHeadings, ["buyer guides", "(.*)+"])
+  assert.equal(s.extraInstructions.length, 1000)
+  assert.equal(s.dailyAiLimit, 100)
+  assert.equal(s.needsReview, "keep")
+  assert.equal(s.mergeDuplicates, true)
+  const rules = compileRules(s)
+  assert.equal(rules.section("3. Buyer guides for L&D"), "comparison-seo")
+  assert.equal(rules.section("(.*)+ literally"), "comparison-seo")
+  assert.equal(rules.section("Anything else"), null)
+  assert.equal(rules.title("Is microlearning dead"), "editorial-originality")
+  assert.equal(rules.title("This is fine"), null) // ^ = start of title only
+  assert.equal(rules.title("Top 7 tools for onboarding"), "comparison-seo")
+  assert.equal(rules.title("Top tools for onboarding"), null) // # needs a number
+  // Defaults keep the v3 behaviour.
+  const d = compileRules(DEFAULT_CONTENT_PLAN_SETTINGS)
+  assert.equal(d.title("Best LMS for startups"), "comparison-seo")
+  assert.equal(d.title("Why onboarding fails"), "editorial-originality")
+  assert.equal(d.title("Articulate vs Rise: which is not worth it"), "comparison-seo")
+  assert.equal(d.section("II. Comparisons"), "comparison-seo")
+  // Unsure AI picks follow needsReview; ids are stable per source line.
+  // Reworded copies: 6 of 7 words shared, merged at "normal", kept apart at "strict".
+  const source = { id: "s1", extractedContent: "Plan\n- Learning culture scale managers onboarding budget wins\n- Learning culture scale managers onboarding budget losses" }
+  const keep = planItemsFromPicks([[1, "r"]], source).items[0]
+  assert.equal(keep.type, "needs-review")
+  assert.equal(planItemsFromPicks([[1, "r"]], source, { ...DEFAULT_CONTENT_PLAN_SETTINGS, needsReview: "comparison" }).items[0].type, "comparison-seo")
+  assert.equal(planItemsFromPicks([[1, "r"]], source).items[0].id, keep.id)
+  assert.equal(planItemsFromPicks([[1, "e"], [1, "c"]], source, { ...DEFAULT_CONTENT_PLAN_SETTINGS, mergeDuplicates: false }).items.length, 1)
+  const both = planItemsFromPicks([[1, "e"], [2, "e"]], source).items
+  assert.equal(mergeDuplicateTopics(both).length, 1)
+  assert.equal(mergeDuplicateTopics(both, { ...DEFAULT_CONTENT_PLAN_SETTINGS, mergeDuplicates: false }).length, 2)
+  assert.equal(mergeDuplicateTopics(both, { ...DEFAULT_CONTENT_PLAN_SETTINGS, duplicateSensitivity: "strict" }).length, 2)
+  // Prompt-facing settings reach the prompt and the cache key input.
+  const custom = { ...DEFAULT_CONTENT_PLAN_SETTINGS, extraInstructions: "Skip lines starting with Note", editorialDefinition: "editorial = opinion pieces" }
+  assert.match(classifierPrompt("1| A", custom), /Team notes on which lines to return:\nSkip lines starting with Note/)
+  assert.match(classifierPrompt("1| A", custom), /e = editorial = opinion pieces/)
+  assert.doesNotMatch(classifierPrompt("1| A"), /Team notes/)
+  assert.notDeepEqual(promptSettingsOf(custom), promptSettingsOf(DEFAULT_CONTENT_PLAN_SETTINGS))
+})

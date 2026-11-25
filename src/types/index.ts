@@ -1,4 +1,5 @@
 import type { OutlineStructureSnapshot } from '../../shared/outlineStructures.ts';
+import type { ContentPlanSettings } from '../../shared/contentPlanSettings.ts';
 export type AIProvider = "anthropic" | "openai" | "google" | "mistral" | "together" | "groq" | "deepseek"
 
 export interface AIModel {
@@ -177,6 +178,8 @@ export interface AppConfig {
   models: AIModel[]
   /** Models for AI tasks that are not a pipeline step: empty = default (review → G3 model, SEO → gpt-5.4-mini, inventory → env/gpt-5.4-mini). */
   taskModels?: { review?: string; seo?: string; inventory?: string }
+  /** Admin rules of the Content Plan classifier; missing fields use the defaults. */
+  contentPlan?: Partial<ContentPlanSettings>
   /** Catalog version the saved model list and prices were merged from (src/lib/defaultData.ts). */
   modelCatalogVersion?: string
   workflowRules?: WorkflowRuleSettings

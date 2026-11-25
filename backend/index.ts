@@ -2,7 +2,8 @@ import { isArticleCompleted } from "../src/lib/workflowGuards.ts"
 import { aiApproval, pipelineSettings, rerunPatch, type RerunGate } from "../src/lib/pipeline.ts"
 import {jobFailure, monitoring} from './monitoring.ts';
 import { BATCH_ARTICLE_JOB, CLASSIFY_PLAN_JOB, batchStepLabels, type BatchStepKey, type BatchStepRun } from './batchSteps.ts';
-import { CHUNK_MAX_TOKENS, CLASSIFIER_SYSTEM, CONTENT_PLAN_CLASSIFIER_VERSION, classifierPrompt, itemsOf, mergeDuplicateTopics, numberedLines, planItemsFromPicks, splitPlanChunks } from './contentPlanClassifier.ts';
+import { CHUNK_MAX_TOKENS, CLASSIFIER_SYSTEM, CONTENT_PLAN_CLASSIFIER_VERSION, classifierPrompt, itemsOf, mergeDuplicateTopics, numberedLines, planItemsFromPicks, promptSettingsOf, splitPlanChunks } from './contentPlanClassifier.ts';
+import { normalizeContentPlanSettings, type ContentPlanSettings } from '../shared/contentPlanSettings.ts';
 import { convertStepRunsToTelemetryStages, sendArticleRunTelemetry } from "./telemetry.ts";
 import { outlineReviewInstruction } from '../src/lib/outlineQuality.ts';
 import { resolveOutlineSelection, outlineSelectionUpdates, outlineStructurePrompt, validateOutlineStructure, buildOutlineTask, OUTLINE_RESPONSE_CONTRACT } from '../shared/outlineStructures.ts';
@@ -557,13 +558,14 @@ async function loadArticles(): Promise<any[]> {
 async function reserveAIBudget(
   articleId: string,
   stepNumber: number,
+  limitOverride?: number,
 ): Promise<{ used: number; limit: number }> {
   const date = new Date().toISOString().slice(0, 10)
   const key = `writer:ai-budget:${date}:${articleId}:step-${stepNumber}`
   return serializeByKey(aiBudgetQueues, key, async () => {
     const current = await kvGet<{ used?: number }>(key)
     const used = Number(current?.used ?? 0)
-    const limit = DAILY_AI_LIMITS[stepNumber] ?? 6
+    const limit = limitOverride ?? DAILY_AI_LIMITS[stepNumber] ?? 6
     if (used >= limit)
       throw new Error(
         `Đã đạt giới hạn ${limit} AI calls tính phí cho Step ${stepNumber} hôm nay. Hãy dùng kết quả đã lưu hoặc chờ sang ngày mới.`,
@@ -3390,6 +3392,8 @@ async function relationalPlansAvailable() {
 
 // Latest classification outcome per plan: error of a failed run, topics left out of a finished one.
 const PLAN_RUN_PREFIX = "writer:content-plan-run:"
+// The AI's line picks per source of the last successful classification, so new rules can be applied without AI.
+const PLAN_PICKS_PREFIX = "writer:content-plan-picks:"
 async function withRunMeta(plan: any) {
   if (!plan) return plan
   const meta = await kvGet<any>(`${PLAN_RUN_PREFIX}${plan.id}`)
@@ -3899,6 +3903,7 @@ async function classifyPlan(planId: string, force: boolean) {
       (item: any) => item.id === step?.modelId && item.enabled,
     )
     if (!model) throw httpError(422, "Hãy chọn một AI model đang bật cho Step 1 trước khi phân loại Content Plan.")
+    const settings = normalizeContentPlanSettings(config?.contentPlan)
     const explicitItems = deterministicPlanItems(plan)
     const hasUnclassifiedContent = (plan.sources ?? []).some((source: any) =>
       String(source.extractedContent ?? "")
@@ -3913,17 +3918,18 @@ async function classifyPlan(planId: string, force: boolean) {
       const saved = await saveClassifiedPlan(plan, explicitItems, "deterministic-plan-v1")
       await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: explicitItems.length, succeeded: saved.items?.length ?? explicitItems.length } })
       await kvSet(`${PLAN_RUN_PREFIX}${plan.id}`, { endedAt: new Date().toISOString() })
+      await kvSet(`${PLAN_PICKS_PREFIX}${plan.id}`, { sources: {}, savedAt: new Date().toISOString() })
       return { plan: saved, cacheHit: false, deterministic: true }
     }
     const responses: any[] = []
     let budgetReserved = false
     // One AI call per chunk of plan rows. A cut-off or unreadable answer is split in half and retried, twice at most.
     const classifyChunk = async (text: string, depth = 0): Promise<any[]> => {
-      const cacheKey = aiCacheKey({ kind: CONTENT_PLAN_CLASSIFIER_VERSION, model: model.id, text: crypto.createHash("sha256").update(text).digest("hex") })
+      const cacheKey = aiCacheKey({ kind: CONTENT_PLAN_CLASSIFIER_VERSION, model: model.id, text: crypto.createHash("sha256").update(text).digest("hex"), prompt: promptSettingsOf(settings) })
       const cached = force ? null : await kvGet<any>(cacheKey)
       if (cached?.content) return itemsOf(parseJsonObject(cached.content))
-      if (!budgetReserved) { await reserveAIBudget(`content-plan-${plan.id}`, 1); budgetReserved = true }
-      const response = await generate({ modelId: model.id, provider: model.provider, jsonMode: true, maxTokens: CHUNK_MAX_TOKENS, temperature: 0, reasoningEffort: "low", systemPrompt: CLASSIFIER_SYSTEM, prompt: classifierPrompt(text) })
+      if (!budgetReserved) { await reserveAIBudget(`content-plan-${plan.id}`, 1, settings.dailyAiLimit); budgetReserved = true }
+      const response = await generate({ modelId: model.id, provider: model.provider, jsonMode: true, maxTokens: CHUNK_MAX_TOKENS, temperature: 0, reasoningEffort: "low", systemPrompt: CLASSIFIER_SYSTEM, prompt: classifierPrompt(text, settings) })
       responses.push(response)
       const truncated = Number(response.usage?.outputTokens ?? 0) >= CHUNK_MAX_TOKENS - 64
       let parsed: any = null
@@ -3937,13 +3943,15 @@ async function classifyPlan(planId: string, force: boolean) {
       return itemsOf(parsed)
     }
     // Each source goes out as numbered lines (labelled rows were handled above); chunks run in parallel.
+    const picks: Record<string, any[]> = {}
     const picked = await Promise.all((plan.sources ?? []).map(async (source: any) => {
       const chunks = splitPlanChunks(numberedLines(String(source.extractedContent ?? ""), line => Boolean(explicitContentGroupLine(line))).join("\n"))
-      return planItemsFromPicks((await Promise.all(chunks.map(chunk => classifyChunk(chunk)))).flat(), source)
+      picks[source.id] = (await Promise.all(chunks.map(chunk => classifyChunk(chunk)))).flat()
+      return planItemsFromPicks(picks[source.id], source, settings)
     }))
     const aiItems = picked.flatMap(p => p.items), dropped = picked.flatMap(p => p.dropped)
     // The same topic listed twice (e.g. a priority list and an action plan, sometimes shortened) is one article.
-    const items = mergeDuplicateTopics([...explicitItems, ...aiItems])
+    const items = mergeDuplicateTopics([...explicitItems, ...aiItems], settings)
     if (!items.length)
       throw new Error("AI không trả về topic nào có source evidence hợp lệ.")
     let saved = await saveClassifiedPlan(
@@ -3989,6 +3997,7 @@ async function classifyPlan(planId: string, force: boolean) {
     await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: explicitItems.length + aiItems.length + dropped.length, succeeded: saved.items?.length ?? items.length } })
     // Rows the AI named that could not be found in the source, so the user can check them.
     await kvSet(`${PLAN_RUN_PREFIX}${plan.id}`, { dropped, endedAt: new Date().toISOString() })
+    await kvSet(`${PLAN_PICKS_PREFIX}${plan.id}`, { sources: picks, savedAt: new Date().toISOString() })
     return { plan: { ...saved, ...(dropped.length ? { classificationDropped: dropped } : {}) }, cacheHit: responses.length === 0 }
   } catch (err: any) {
     if (run) await saveLabRun({ ...run, status: "failed", endedAt: new Date().toISOString(), error: String(err?.http ? err.status : (classifyAIError(err, "openai", "content-plan-classifier").body as any)?.code ?? "CLASSIFY_FAILED") })
@@ -4005,6 +4014,27 @@ app.post(
   (req, res) => void classifyPlanRequest(req, res, true),
 )
 
+/** Change the group (and how it was decided) of existing plan topics in place, keeping ids, status and article links. */
+async function updatePlanItemTypes(plan: any, changes: Map<string, { type: string; confidence?: number; classificationReason?: string }>) {
+  const items = (plan.items ?? []).map((item: any) => changes.has(item.id) ? { ...item, ...changes.get(item.id) } : item)
+  const counts = {
+    comparisonCount: items.filter((item: any) => item.type === "comparison-seo").length,
+    editorialCount: items.filter((item: any) => item.type === "editorial-originality").length,
+    reviewCount: items.filter((item: any) => item.type === "needs-review").length,
+  }
+  if (await relationalPlansAvailable()) {
+    for (const [id, change] of changes)
+      await tableUpdate("content_plan_items", id, {
+        content_group: change.type.replaceAll("-", "_"),
+        ...(change.confidence !== undefined ? { confidence: change.confidence } : {}),
+        ...(change.classificationReason !== undefined ? { classification_reason: change.classificationReason } : {}),
+      })
+    await tableUpdate("content_plans", plan.id, { comparison_count: counts.comparisonCount, editorial_count: counts.editorialCount, review_count: counts.reviewCount, updated_at: new Date().toISOString() })
+  } else {
+    await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, { ...(await kvGet<any>(`${CONTENT_PLAN_PREFIX}${plan.id}`)), items, ...counts, updatedAt: new Date().toISOString() })
+  }
+}
+
 app.patch("/api/content-plans/:id/items/:itemId", async (req, res) => {
   try {
     const type = String(req.body?.type ?? "")
@@ -4017,41 +4047,77 @@ app.patch("/api/content-plans/:id/items/:itemId", async (req, res) => {
     const plan = await getContentPlan(req.params.id)
     if (!plan)
       return res.status(404).json({ error: "Content Plan không tồn tại." })
-    if (await relationalPlansAvailable()) {
-      await tableUpdate("content_plan_items", req.params.itemId, {
-        content_group: type.replaceAll("-", "_"),
-      })
-      const items = (await getContentPlan(plan.id)).items ?? []
-      await tableUpdate("content_plans", plan.id, {
-        comparison_count: items.filter(
-          (item: any) => item.type === "comparison-seo",
-        ).length,
-        editorial_count: items.filter(
-          (item: any) => item.type === "editorial-originality",
-        ).length,
-        review_count: items.filter((item: any) => item.type === "needs-review")
-          .length,
-        updated_at: new Date().toISOString(),
-      })
-    } else {
-      plan.items = (plan.items ?? []).map((item: any) =>
-        item.id === req.params.itemId ? { ...item, type } : item,
-      )
-      plan.comparisonCount = plan.items.filter(
-        (item: any) => item.type === "comparison-seo",
-      ).length
-      plan.editorialCount = plan.items.filter(
-        (item: any) => item.type === "editorial-originality",
-      ).length
-      plan.reviewCount = plan.items.filter(
-        (item: any) => item.type === "needs-review",
-      ).length
-      plan.updatedAt = new Date().toISOString()
-      await kvSet(`${CONTENT_PLAN_PREFIX}${plan.id}`, plan)
-    }
+    await updatePlanItemTypes(plan, new Map([[req.params.itemId, { type }]]))
     res.json({ plan: await getContentPlan(plan.id) })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+/** The plan's topics rebuilt from the AI's saved line picks under `settings`: no AI call. */
+async function rebuildPlanItems(plan: any, settings: ContentPlanSettings) {
+  const saved = await kvGet<any>(`${PLAN_PICKS_PREFIX}${plan.id}`)
+  if (!saved?.sources) throw httpError(409, "Plan này được phân loại trước khi tool lưu kết quả AI. Hãy bấm Phân loại lại một lần, sau đó mới áp dụng lại rule được.")
+  const picked = (plan.sources ?? []).map((source: any) => planItemsFromPicks(saved.sources[source.id] ?? [], source, settings).items)
+  const items = mergeDuplicateTopics([...deterministicPlanItems(plan), ...picked.flat()], settings)
+  // Plans saved before line ids keep their own ids: match by source line.
+  const byId = new Map((plan.items ?? []).map((item: any) => [item.id, item]))
+  const byLine = new Map((plan.items ?? []).filter((item: any) => String(item.sourceSectionId).startsWith("line-")).map((item: any) => [`${item.sourceId}|${item.sourceSectionId}`, item]))
+  return items.map((item: any) => {
+    const old: any = byId.get(item.id) ?? byLine.get(`${item.sourceId}|${item.sourceSectionId}`)
+    return old ? { ...item, id: old.id } : item
+  })
+}
+
+const groupCounts = (items: any[]) => ({
+  total: items.length,
+  comparison: items.filter(item => item.type === "comparison-seo").length,
+  editorial: items.filter(item => item.type === "editorial-originality").length,
+  review: items.filter(item => item.type === "needs-review").length,
+})
+
+/**
+ * Apply classification rules to a plan again from its saved AI picks. dryRun previews the draft
+ * settings sent from Settings; without it the saved settings are applied. Admin only (settings work).
+ */
+app.post("/api/content-plans/:id/reapply", async (req: any, res) => {
+  let run: any = null
+  try {
+    if (req.auth?.role !== "admin") return res.status(403).json({ error: "Chỉ admin mới được áp dụng lại rule phân loại." })
+    const plan = await getContentPlan(req.params.id)
+    if (!plan) return res.status(404).json({ error: "Content Plan không tồn tại." })
+    if (classifyingPlans.has(plan.id) || plan.status === "processing") return res.status(409).json({ error: "Content Plan này đang được phân tích." })
+    const dryRun = req.body?.dryRun === true
+    const settings = normalizeContentPlanSettings(dryRun && req.body?.settings ? req.body.settings : (await kvGet<any>("writer:config"))?.contentPlan)
+    const next = await rebuildPlanItems(plan, settings)
+    const current: any[] = plan.items ?? []
+    const before = new Map(current.map(item => [item.id, item]))
+    const nextIds = new Set(next.map((item: any) => item.id))
+    const preview = {
+      before: groupCounts(current),
+      after: groupCounts(next),
+      changed: next.filter((item: any) => before.has(item.id) && before.get(item.id).type !== item.type).map((item: any) => ({ id: item.id, title: item.title, from: before.get(item.id).type, to: item.type })),
+      added: next.filter((item: any) => !before.has(item.id)).map((item: any) => item.title),
+      removed: current.filter(item => !nextIds.has(item.id)).map(item => item.title),
+    }
+    if (dryRun) return res.json({ preview })
+    if (!next.length) return res.status(422).json({ error: "Rule mới không giữ lại topic nào." })
+    run = { runId: crypto.randomUUID(), job: CLASSIFY_PLAN_JOB, parent: BATCH_ARTICLE_JOB, workload: `Áp dụng lại rule · ${compactText(plan.name, 120)}`, status: "running", startedAt: new Date().toISOString(), endedAt: null }
+    await saveLabRun(run)
+    if (preview.added.length || preview.removed.length) {
+      // Topics appear or merge away: a full rewrite, which would cut the links of topics already written.
+      const linked = (await loadArticles()).filter(article => article.contentPlanId === plan.id)
+      if (linked.length) throw httpError(409, `Rule mới thêm hoặc gộp topic, nhưng plan đã có ${linked.length} bài viết. Chỉ đổi nhóm được áp dụng lại cho plan đang chạy; hãy tải plan thành phiên bản mới.`)
+      await saveClassifiedPlan(plan, next, plan.classificationModel ?? "rules-reapply")
+    } else if (preview.changed.length) {
+      const nextById = new Map(next.map((item: any) => [item.id, item]))
+      await updatePlanItemTypes(plan, new Map(preview.changed.map(change => { const item: any = nextById.get(change.id); return [change.id, { type: item.type, confidence: item.confidence, classificationReason: item.classificationReason }] })))
+    }
+    await saveLabRun(run = { ...run, status: "success", endedAt: new Date().toISOString(), items: { total: next.length, succeeded: next.length } })
+    res.json({ plan: await getContentPlan(plan.id), preview })
+  } catch (err: any) {
+    if (run) await saveLabRun({ ...run, status: "failed", endedAt: new Date().toISOString(), error: String(err?.http ? err.status : "REAPPLY_FAILED") }).catch(() => undefined)
+    res.status(err?.http ? err.status : 500).json({ error: err.message })
   }
 })
 
@@ -4143,6 +4209,7 @@ app.delete("/api/content-plans/:id", async (req, res) => {
         .map((source: any) => source.storagePath)
         .filter(Boolean),
     ).catch(error => console.warn("[plan-delete] binary cleanup failed", error))
+    await Promise.all([kvDelete(`${PLAN_RUN_PREFIX}${plan.id}`), kvDelete(`${PLAN_PICKS_PREFIX}${plan.id}`)]).catch(() => undefined)
     res.json({ ok: true, deletedId: plan.id })
   } catch (err: any) {
     res.status(500).json({ error: err.message })

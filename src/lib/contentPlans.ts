@@ -1,4 +1,5 @@
 import type { ContentPlan, ContentPlanSourceType } from '../types';
+import type { ContentPlanSettings } from '../../shared/contentPlanSettings';
 import { authenticatedRailwayFetch } from './db';
 
 async function parse(response: Response) { const payload = await response.json().catch(() => ({ error: response.statusText })); if (!response.ok) throw new Error(payload.error || `Content Plan error ${response.status}`); return payload; }
@@ -43,4 +44,17 @@ export async function updateContentPlanItem(planId: string, itemId: string, type
 
 export async function updateContentPlanStatus(planId: string, status: 'active' | 'archived', railwayUrl: string): Promise<ContentPlan> {
   return (await parse(await contentPlanRequest(`/api/content-plans/${encodeURIComponent(planId)}/status`, railwayUrl, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }))).plan;
+}
+
+export type GroupCounts = { total: number; comparison: number; editorial: number; review: number };
+export type RulesPreview = { before: GroupCounts; after: GroupCounts; changed: { id: string; title: string; from: string; to: string }[]; added: string[]; removed: string[] };
+
+/** What the draft classification settings would change on a plan, from its saved AI picks (no AI call, nothing saved). */
+export async function previewPlanRules(planId: string, settings: ContentPlanSettings, railwayUrl: string): Promise<RulesPreview> {
+  return (await parse(await contentPlanRequest(`/api/content-plans/${encodeURIComponent(planId)}/reapply`, railwayUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dryRun: true, settings }) }))).preview;
+}
+
+/** Apply the saved classification settings to a plan again, without AI. */
+export async function reapplyPlanRules(planId: string, railwayUrl: string): Promise<ContentPlan> {
+  return (await parse(await contentPlanRequest(`/api/content-plans/${encodeURIComponent(planId)}/reapply`, railwayUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }))).plan;
 }
