@@ -163,3 +163,21 @@ test("stored Content Plan classification runs report success, failure, running a
   assert.deepEqual([windows.jobHistoryAllTime.executed, windows.jobHistoryAllTime.validCompletions], [4, 2])
   assert.equal(windows.jobHistory.latestJob?.workload, "Content Plan · Q3 plan")
 })
+
+test("G1/G2 self-review sub-jobs are reported in pipeline order with their parent run", async () => {
+  const { articleStepRuns } = await import("./jobHistory.ts")
+  const { batchStepLabels, labProfile } = await import("./batchSteps.ts")
+  assert.deepEqual(labProfile.mainJob.steps.slice(3, 7), ["Article Spec & Core Idea", "Kiểm tra Core Idea", "Lập outline", "Kiểm tra outline"])
+  const article = { runId: "a1", job: "Writer article", workload: "1 SEO article · Review" }
+  const runs = articleStepRuns([
+    { key: "specReview", label: batchStepLabels.specReview, startedAt: "2026-11-26T00:00:00Z", endedAt: "2026-11-26T00:00:09Z", status: "completed" },
+    { key: "outlineReview", label: batchStepLabels.outlineReview, startedAt: "2026-11-26T00:01:00Z", endedAt: "2026-11-26T00:01:04Z", status: "failed" },
+    // Still running, or no saved start: not reported.
+    { key: "outlineReview", label: batchStepLabels.outlineReview, startedAt: "2026-11-26T00:02:00Z", endedAt: null, status: "running" },
+    { key: "specReview", label: batchStepLabels.specReview, startedAt: null, endedAt: "2026-11-26T00:03:00Z", status: "completed" },
+  ], article)
+  assert.deepEqual(runs.map((r) => [r.job, r.runId, r.status, r.parentRunId, r.parent]), [
+    ["Kiểm tra Core Idea", "a1:specReview", "success", "a1", "Writer article"],
+    ["Kiểm tra outline", "a1:outlineReview", "failed", "a1", "Writer article"],
+  ])
+})

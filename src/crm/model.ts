@@ -1,5 +1,5 @@
 import type { AppConfig, Article, ContentPlan, DocumentFile, PipelineSettings } from "../types/index.ts"
-import { storageGroupOf } from "../../shared/gateDocuments.ts"
+import { isBrandContext, storageGroupInfo, storageGroupOf } from "../../shared/gateDocuments.ts"
 import { aiApproval, articleStage } from "../lib/pipeline.ts"
 import { isArticleCompleted } from "../lib/workflowGuards.ts"
 import { articleSpecFingerprint } from "../lib/articleSpec.ts"
@@ -109,22 +109,23 @@ export function plansOf(contentPlans: ContentPlan[], articles: CrmArticle[], set
   }).sort((x, y) => y.created.localeCompare(x.created))
 }
 
-/* ─── Storage (5 groups) over real Knowledge & Rules files ─────────────── */
+/* ─── Storage (4 groups) over real Knowledge & Rules files ─────────────── */
 
-export const STORAGE_GROUPS = [["Domain Knowledge", "red"], ["Playbooks", "purple"], ["Standards", "sky"], ["Voice & Style", "pink"], ["Source data", "turq"]] as const
-export type StorageDoc = { id: string; g: string; name: string; st: "ok" | "partial" | "draft" | "missing" | "running"; used: number[]; types: ArticleType[]; note: string; updatedAt?: string; file?: DocumentFile; planId?: string }
+export const STORAGE_GROUPS = [["Domain Knowledge", "red"], ["Playbooks", "purple"], ["Standards", "sky"], ["Source data", "turq"]] as const
+export type StorageDoc = { id: string; g: string; /** Group guessed from the file name: no saved group yet. */ guessed?: boolean; name: string; st: "ok" | "partial" | "draft" | "missing" | "running"; used: number[]; types: ArticleType[]; note: string; updatedAt?: string; file?: DocumentFile; planId?: string }
 
 const SHIP_STEPS = [2, 3, 4] as const
 /** Groups a document can be added to; Source data comes in through the Content Plan upload instead. */
 export const DOC_GROUPS: Array<[group: string, category: "kb" | "rules", vi: string, en: string]> = [
-  ["Domain Knowledge", "kb", "Kiến thức cốt lõi, sản phẩm, nghiên cứu và tài liệu tham khảo.", "Core knowledge, products, research and references."],
-  ["Playbooks", "rules", "Hướng dẫn viết, cấu trúc bài và ví dụ mẫu.", "Writing guides, article structures and examples."],
-  ["Standards", "rules", "Checklist, quy tắc bắt buộc, link và chuẩn upload.", "Checklists, mandatory rules, links and upload standards."],
-  ["Voice & Style", "rules", "Tone of voice, giọng văn và văn phong.", "Tone of voice and writing style."],
+  ["Domain Knowledge", "kb", "Brand context (định vị, USP, giọng thương hiệu: gửi nguyên văn) và Evidence (case study, số liệu, tài liệu dẫn chứng: trích đoạn theo bài).", "Brand context (positioning, USP, brand voice: sent whole) and Evidence (case studies, figures, references: excerpted per article)."],
+  ["Playbooks", "rules", "Cách AI tạo output của từng Gate: phương pháp, kỹ năng, cấu trúc bài và ví dụ.", "How AI produces each Gate's output: method, skills, article structures and examples."],
+  ["Standards", "rules", "Checklist output phải đạt; AI tự duyệt và sửa theo đây trước khi người dùng duyệt.", "Checklist the output must meet; AI reviews and fixes against it before a person reviews."],
 ]
 export function groupOf(file: DocumentFile): string {
   return storageGroupOf(file)
 }
+/** Domain Knowledge kind shown in Storage: Brand context is sent whole, Evidence is excerpted. */
+export const knowledgeKindOf = (file: DocumentFile) => file.category !== "kb" ? null : isBrandContext(file) ? "Brand context" : "Evidence"
 export function usedAt(file: DocumentFile, config: AppConfig): number[] {
   const key = file.category === "kb" ? "kb" : "rules"
   return SHIP_STEPS.filter(step => config.stepConfigs[step]?.fileAccess?.[key]?.includes(file.id)).map(step => step - 1)
@@ -138,7 +139,7 @@ const REQUIRED: Array<[string, string, RegExp, number[]]> = [
 ]
 export function storageDocs(files: DocumentFile[], config: AppConfig, approvedArticles: number, contentPlans: ContentPlan[] = []): StorageDoc[] {
   const real: StorageDoc[] = files.filter(f => f.category === "kb" || f.category === "rules").map(file => ({
-    id: file.id, g: groupOf(file), name: file.name, st: file.scanStatus === "error" ? "partial" : groupOf(file) === "Source data" ? "draft" : "ok", used: usedAt(file, config),
+    id: file.id, g: groupOf(file), guessed: file.category === "rules" && storageGroupInfo(file).guessed, name: file.name, st: file.scanStatus === "error" ? "partial" : groupOf(file) === "Source data" ? "draft" : "ok", used: usedAt(file, config),
     // A plan-like reference file is not a Content Plan until it is imported through Add Plan.
     types: ["A", "B", "C", "ED"], note: file.scanStatus === "error" ? "Không đọc được nội dung" : groupOf(file) === "Source data" ? "Tài liệu tham khảo · chưa tạo Content Plan" : "", updatedAt: file.contentUpdatedAt || file.uploadedAt, file,
   }))

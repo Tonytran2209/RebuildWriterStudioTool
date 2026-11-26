@@ -5,6 +5,7 @@ import { introductionCheck } from "./introductionPolicy.ts";
 import { QUALITY_VERSION, qualityInputFingerprint, draftWithoutImagePlaceholders, primaryKeyword } from './qualityPolicy.ts';
 import { internalLinkChecks } from './internalLinkPolicy.ts';
 import { missingMustCoverTopics } from './mustCoverPolicy.ts';
+import { conclusionHeadingOf, conclusionHeadingPattern, titleKeywordRequired } from './draftFormat.ts';
 export { internalLinkBudget } from './internalLinkPolicy.ts';
 
 export const UNIVERSAL_QUALITY_VERSION = QUALITY_VERSION;
@@ -69,16 +70,19 @@ export function deterministicQualityChecks(article: Article, draft: string, effe
   const missingCoverage = missingMustCoverTopics(article.outline ?? [], spec?.mustCover ?? [], draft);
   const keyword = normalized(primaryKeyword(article));
   const title = normalized(draft.split("\n").find(line => /^#\s+\S/.test(line.trim()))?.replace(/^\s*#\s+/, "") ?? "");
-  const conclusionCount = [...draft.matchAll(/^##\s+conclusion\s*$/gim)].length;
+  const conclusionHeading = conclusionHeadingOf(article);
+  const conclusionCount = [...draft.matchAll(conclusionHeadingPattern(conclusionHeading, "gim"))].length;
+  // Settings › Workflow rules (G3) "H1 must contain the primary keyword", frozen on the article.
+  const titleCheck: QualityGateCheck[] = titleKeywordRequired(article) ? [{ id: "title-keyword", label: "H1 contains the primary keyword", kind: "deterministic", status: keyword && title.includes(keyword) ? "pass" : "fail", reason: keyword ? `The H1 title must contain "${primaryKeyword(article)}".` : "No primary keyword is set in the Article Spec, core idea, keywords or topic.", evidence: primaryKeyword(article), autoFixAllowed: true }] : [];
   const checks: QualityGateCheck[] = [
     introductionCheck(draft, article.introductionBudget),
     ...outlineQualityChecks(article, draft),
     { id: "complete-structure", label: "Complete article structure", kind: "deterministic", status: /^#\s+/m.test(draft) && /^##\s+/m.test(draft) ? "pass" : "fail", reason: "Draft must contain one H1 and at least one H2.", autoFixAllowed: true },
     { id: "duplicate-headings", label: "No consecutive duplicate headings", kind: "deterministic", status: duplicateHeadings.length ? "fail" : "pass", reason: duplicateHeadings.length ? `Repeated heading immediately before its prose: ${duplicateHeadings.join(", ")}` : "Each section heading appears once before its prose.", autoFixAllowed: true },
     { id: "word-budget", label: "English word target range", kind: "deterministic", status: count >= acceptedMin && count <= acceptedMax ? "pass" : "fail", reason: `${count} English words; target ${wordTarget}, accepted range ${acceptedMin}–${acceptedMax}.`, autoFixAllowed: true },
-    { id: "single-conclusion", label: "Exactly one Conclusion section", kind: "deterministic", status: conclusionCount === 1 ? "pass" : "fail", reason: `Found ${conclusionCount} "## Conclusion" headings; exactly one is required.`, autoFixAllowed: true },
+    { id: "single-conclusion", label: `Exactly one ${conclusionHeading} section`, kind: "deterministic", status: conclusionCount === 1 ? "pass" : "fail", reason: `Found ${conclusionCount} "## ${conclusionHeading}" headings; exactly one is required.`, autoFixAllowed: true },
     { id: "primary-query", label: "Primary query coverage", kind: "deterministic", status: keyword && body.includes(keyword) ? "pass" : "fail", reason: "The primary query must appear naturally in the article.", evidence: primaryKeyword(article), autoFixAllowed: true },
-    { id: "title-keyword", label: "H1 contains the primary keyword", kind: "deterministic", status: keyword && title.includes(keyword) ? "pass" : "fail", reason: keyword ? `The H1 title must contain "${primaryKeyword(article)}".` : "No primary keyword is set in the Article Spec, core idea, keywords or topic.", evidence: primaryKeyword(article), autoFixAllowed: true },
+    ...titleCheck,
     { id: "must-cover", label: "Must-cover topic coverage", kind: "deterministic", status: missingCoverage.length ? "fail" : "pass", reason: missingCoverage.length ? `Not covered in the approved outline or draft: ${missingCoverage.join(", ")}` : "Every required topic is covered in the approved outline or draft.", autoFixAllowed: true },
     { id: "placeholders", label: "No placeholders", kind: "deterministic", status: /\[(?:cần|needs?|todo|tbd)[^\]]*\]|lorem ipsum|about:blank/i.test(draft) ? "fail" : "pass", reason: "Draft must not contain placeholders or about:blank.", autoFixAllowed: true },
     { id: "source-confidentiality", label: "No internal source leakage", kind: "deterministic", status: leaked.length ? "fail" : "pass", reason: leaked.length ? `Leaked source names: ${leaked.join(", ")}` : "No infrastructure filenames detected.", autoFixAllowed: false },

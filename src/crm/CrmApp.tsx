@@ -21,7 +21,7 @@ import WebsiteInventory from "./WebsiteInventory"
 import WorkflowRules from "./WorkflowRules"
 import ContentPlanRules from "./ContentPlanRules"
 import { isLegacyActionPlan } from "../lib/legacyCompatibility"
-import { GATES, STORAGE_GROUPS, batchesOf, planStats, plansOf, storageDocs, toCrmArticle, toggleShip, type CrmArticle, type CrmBatch, type CrmPlan, type HumanStatus, type StorageDoc } from "./model"
+import { GATES, STORAGE_GROUPS, knowledgeKindOf, batchesOf, planStats, plansOf, storageDocs, toCrmArticle, toggleShip, type CrmArticle, type CrmBatch, type CrmPlan, type HumanStatus, type StorageDoc } from "./model"
 import { Av, I, confirmDiscard, enc, errText, go, markUnsaved, person, toast, toastErr, trackHandoff } from "./ui"
 import "./crm.css"
 
@@ -321,7 +321,7 @@ function fieldsFor(ctx: Ctx, o: Obj, ago: (d?: string | null) => string, tr: (vi
   ]
   return [
     { key: "name", label: "Document", icon: "abc", text: (r: StorageDoc) => r.name },
-    { key: "g", label: "Group", icon: "folder", render: (r: StorageDoc) => <Tag c={STORAGE_GROUPS.find(g => g[0] === r.g)![1]}>{r.g}</Tag> },
+    { key: "g", label: "Group", icon: "folder", render: (r: StorageDoc) => <><Tag c={STORAGE_GROUPS.find(g => g[0] === r.g)?.[1] ?? "gray"}>{r.g}</Tag>{r.guessed && <span className="s" title="Nhóm đang được đoán theo tên file. Mở tài liệu và chọn nhóm để xác nhận."> · đoán</span>}{r.file && knowledgeKindOf(r.file) && <span className="s"> · {knowledgeKindOf(r.file)}</span>}</> },
     { key: "st", label: "Status", icon: "progress-check", render: (r: StorageDoc) => { const [l, c] = docStatus(r); return <Tag c={c}>{r.st === "running" && <I n="loader-2" />}{l}</Tag> } },
     { key: "used", label: "Used at", icon: "git-merge", render: (r: StorageDoc) => r.used.map(u => <Tag key={u} c="blue" s={{ marginRight: 4 }}>{u === 4 ? "Final" : "G" + u}</Tag>) },
     { key: "types", label: "Applies to types", icon: "category", render: (r: StorageDoc) => r.types.map(x => <Tag key={x} c="gray" s={{ marginRight: 4 }}>{x}</Tag>) },

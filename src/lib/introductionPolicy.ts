@@ -1,15 +1,17 @@
-export type IntroductionBudget = { min: number; max: number };
-/** Default when no Gate Playbook sets introMinWords/introMaxWords. */
+/** Frozen on the article at draft time from Settings › Workflow rules (G3). `paragraphs` absent = 1. */
+export type IntroductionBudget = { min: number; max: number; paragraphs?: number };
+/** Default when Settings does not change the introduction. */
 export const INTRODUCTION_BUDGET = { min: 60, max: 85, acceptedMin: 60, acceptedMax: 85 };
 export const introductionBudget = (b?: Partial<IntroductionBudget> | null) => {
   const min = Number(b?.min) || INTRODUCTION_BUDGET.min, max = Math.max(min, Number(b?.max) || INTRODUCTION_BUDGET.max);
-  return { min, max, acceptedMin: min, acceptedMax: max };
+  return { min, max, acceptedMin: min, acceptedMax: max, paragraphs: Math.min(3, Math.max(1, Math.round(Number(b?.paragraphs) || 1))) };
 };
+const paragraphText = (n: number) => n === 1 ? 'one compact paragraph' : `exactly ${n} short paragraphs`;
 export function introductionInstruction(budget?: Partial<IntroductionBudget> | null) {
   const b = introductionBudget(budget);
-  // The line hint matches only the default 60–85 words; a Playbook budget drops it.
-  const lines = b.min === INTRODUCTION_BUDGET.min && b.max === INTRODUCTION_BUDGET.max ? 'approximately 5–6' : 'a compact number of';
-  return `INTRODUCTION CONTRACT (overrides percentage budgets and legacy introduction rules): Write one compact paragraph of ${b.min}–${b.max} English words, ideally 3–4 concise sentences, aiming for ${lines} desktop reading lines. Do not insert manual line breaks to manufacture a line count. Start with the reader’s specific pain point, decision or desired outcome and answer the primary search intent immediately. Then offer a concrete useful insight and explain what the reader will gain. Avoid generic scene-setting, repeated titles, rhetorical filler, clickbait and unsupported promises. Do not expand the introduction to meet the overall article word target; allocate additional words to body sections. Evaluate content quality separately from responsive screen line count.`;
+  // The line hint matches only the default 60–85 words in one paragraph; any other budget drops it.
+  const lines = b.min === INTRODUCTION_BUDGET.min && b.max === INTRODUCTION_BUDGET.max && b.paragraphs === 1 ? 'approximately 5–6' : 'a compact number of';
+  return `INTRODUCTION CONTRACT (overrides percentage budgets and legacy introduction rules): Write ${paragraphText(b.paragraphs)} of ${b.min}–${b.max} English words${b.paragraphs === 1 ? '' : ' in total'}, ideally 3–4 concise sentences, aiming for ${lines} desktop reading lines. Do not insert manual line breaks to manufacture a line count. Start with the reader’s specific pain point, decision or desired outcome and answer the primary search intent immediately. Then offer a concrete useful insight and explain what the reader will gain. Avoid generic scene-setting, repeated titles, rhetorical filler, clickbait and unsupported promises. Do not expand the introduction to meet the overall article word target; allocate additional words to body sections. Evaluate content quality separately from responsive screen line count.`;
 }
 export const INTRODUCTION_INSTRUCTION = introductionInstruction();
 
@@ -23,11 +25,11 @@ export function introductionCheck(draft: string, budget?: Partial<IntroductionBu
   const prose = introduction.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[*_`]/g, '');
   const words = prose.split(/\s+/).filter(Boolean).length;
   const paragraphs = introduction ? introduction.split(/\n\s*\n/).filter(part => part.trim()).length : 0;
-  const pass = words >= b.min && words <= b.max && paragraphs === 1;
+  const pass = words >= b.min && words <= b.max && paragraphs === b.paragraphs;
   return {
     id: 'introduction-word-budget', label: 'Concise reader-focused introduction', kind: 'deterministic' as const,
     status: pass ? 'pass' as const : 'fail' as const,
-    reason: `${words} words, ${paragraphs} paragraphs; require ${b.min}–${b.max} English words in one paragraph.`,
+    reason: `${words} words, ${paragraphs} paragraphs; require ${b.min}–${b.max} English words in ${b.paragraphs === 1 ? 'one paragraph' : `${b.paragraphs} paragraphs`}.`,
     recommendedAction: introductionInstruction(b), autoFixAllowed: true,
   };
 }

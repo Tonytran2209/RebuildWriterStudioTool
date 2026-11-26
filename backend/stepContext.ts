@@ -1,6 +1,6 @@
 import { kvGet } from './supabase.ts';
 import { extractStructuredSections, type StructuredSection } from './documentStructure.ts';
-import { GATE_DOCUMENT_CONTRACT, ROLE_ORDER, RULE_ROLES, ruleRoleOf, type GateRole } from '../shared/gateDocuments.ts';
+import { CACHEABLE_ROLES, GATE_DOCUMENT_CONTRACT, ROLE_ORDER, RULE_ROLES, WHOLE_ROLES, kbRoleOf, ruleRoleOf, type GateRole } from '../shared/gateDocuments.ts';
 
 type Role = GateRole;
 
@@ -12,8 +12,6 @@ interface StoredDocument {
   scanStatus?: string;
   category?: string;
   storageGroup?: string;
-  /** Sent whole even when it is Knowledge Base (glossaries such as a Vocabulary Library). */
-  whole?: boolean;
   structuredSections?: StructuredSection[];
   knowledgeMetadata?: { type?: string; topics?: string[]; service?: string; audience?: string; approvedForExternalUse?: boolean };
 }
@@ -30,7 +28,7 @@ function isReady(document: StoredDocument | undefined): document is StoredDocume
 }
 
 function wrapDocument(role: Role, document: StoredDocument & { content: string }): string {
-  const knowledgeMeta = role === 'KNOWLEDGE_BASE' && document.knowledgeMetadata
+  const knowledgeMeta = (role === 'KNOWLEDGE_BASE' || role === 'BRAND_CONTEXT') && document.knowledgeMetadata
     ? ` knowledge_type="${document.knowledgeMetadata.type ?? 'reference'}" topics="${(document.knowledgeMetadata.topics ?? []).join(', ')}" service="${document.knowledgeMetadata.service ?? ''}" audience="${document.knowledgeMetadata.audience ?? ''}" external_use="${Boolean(document.knowledgeMetadata.approvedForExternalUse)}"`
     : '';
   return [
@@ -42,6 +40,8 @@ function wrapDocument(role: Role, document: StoredDocument & { content: string }
 
 export interface StepContextResult {
   contextDocs: string[];
+  /** Leading contextDocs that are identical for every article of the Gate (contract, Playbooks, Standards, Brand context): the provider cache prefix. */
+  cacheableDocs: number;
   contentPlanText: string;
   summary: { stepNumber: number; kb: string[]; contentPlan: string[]; rules: string[]; playbook?: string; totalChars: number; sourceFingerprint: string };
 }
@@ -133,15 +133,14 @@ function buildResult(stepNumber: number, resolved: Array<{ role: Role; document:
   if (totalChars > MAX_CONTEXT_CHARS) {
     throw new Error(`Context Step ${stepNumber} quá lớn (${totalChars} ký tự). Giới hạn là ${MAX_CONTEXT_CHARS}.`);
   }
+  const ordered = [...resolved].sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role));
   return {
-    contextDocs: [
-      GATE_DOCUMENT_CONTRACT,
-      ...[...resolved].sort((a, b) => ROLE_ORDER.indexOf(a.role) - ROLE_ORDER.indexOf(b.role)).map(item => wrapDocument(item.role, item.document)),
-    ],
+    contextDocs: [GATE_DOCUMENT_CONTRACT, ...ordered.map(item => wrapDocument(item.role, item.document))],
+    cacheableDocs: 1 + ordered.filter(item => CACHEABLE_ROLES.has(item.role)).length,
     contentPlanText: resolved.filter(item => item.role === 'CONTENT_PLAN').map(item => item.document.content).join('\n'),
     summary: {
       stepNumber,
-      kb: resolved.filter(item => item.role === 'KNOWLEDGE_BASE').map(item => item.document.name),
+      kb: resolved.filter(item => item.role === 'KNOWLEDGE_BASE' || item.role === 'BRAND_CONTEXT').map(item => item.document.name),
       contentPlan: resolved.filter(item => item.role === 'CONTENT_PLAN').map(item => item.document.name),
       rules: resolved.filter(item => RULE_ROLES.has(item.role)).map(item => item.document.name),
       playbook: resolved.find(item => item.role === 'PLAYBOOK')?.document.name,
@@ -175,9 +174,8 @@ async function resolveDocuments(stepNumber: number, articleId?: string) {
     throw new Error(`Article ${articleId ?? ''} chưa có Content Plan của activity. Hãy mở bài từ kết quả phân loại Content Plan.`);
   }
   const resolved: Array<{ role: Role; document: StoredDocument & { content: string } }> = [
-    ...readyFiles.filter(file => file.category === 'kb' && allowedKb.has(file.id)).map((document, index) => ({ role: 'KNOWLEDGE_BASE' as Role, document: {
+    ...readyFiles.filter(file => file.category === 'kb' && allowedKb.has(file.id)).map((document, index) => ({ role: kbRoleOf(document), document: {
       ...document,
-      whole: /vocab/i.test(document.name),
       name: document.knowledgeMetadata?.approvedForExternalUse ? document.name : `Internal knowledge source ${index + 1}`,
     } })),
     { role: 'CONTENT_PLAN' as Role, document: { id: `content-plan-${articleId}`, name: 'Current activity Content Plan', content: String(article.contentPlanInput), contentHash: `article-${article.updatedAt ?? 'current'}` } },
@@ -244,8 +242,8 @@ export function selectRelevantContent(document: Pick<StoredDocument, 'structured
 export async function resolveStepContext(stepNumber: number, query = '', articleId?: string): Promise<StepContextResult> {
   const resolved = await resolveDocuments(stepNumber, articleId);
   if (!query.trim()) return buildResult(stepNumber, resolved);
-  // Playbooks, Standards and Voice are instructions and go whole; only KB and the plan are excerpted.
-  return buildResult(stepNumber, resolved.map(item => RULE_ROLES.has(item.role) || item.document.whole ? item : ({
+  // Playbooks, Standards and Brand context go whole; only Evidence and the plan are excerpted.
+  return buildResult(stepNumber, resolved.map(item => WHOLE_ROLES.has(item.role) ? item : ({
     ...item,
     document: { ...item.document, content: selectRelevantContent(item.document, query) },
   })));

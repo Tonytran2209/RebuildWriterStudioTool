@@ -7,6 +7,7 @@ import { isLegacyArticle } from "../lib/legacyCompatibility"
 import StructureSelect from "./StructureSelect"
 import StepLog from "./StepLog"
 import { selectIdeaPatch } from "./model"
+import { gateReviewState } from "../lib/gateReview"
 import { I, markUnsaved, toast, toastErr, trackHandoff } from "./ui"
 
 type Props = {
@@ -18,6 +19,29 @@ type Props = {
   onRerun: (article: Article, gate: RerunGate) => Promise<void>
   onToggleComplete: (article: Article) => void
   onMigrateLegacy: (article: Article) => void
+}
+
+/** G1/G2 AI self-review result (Settings › Workflow rules): shown under the Gate, never blocks it. */
+function GateReviewBox({ article, step }: { article: Article; step: 2 | 3 }) {
+  const { tr } = useI18n()
+  const state = gateReviewState(article, step)
+  if (!state) return null
+  const { review, stale } = state
+  const color = review.status === "pass" ? "green" : review.status === "warning" ? "orange" : "red"
+  const label = review.status === "error" ? tr("Tự duyệt lỗi", "Self-review failed") : review.status === "pass" ? tr("Đạt Standards", "Meets Standards") : review.status === "warning" ? tr("Có cảnh báo", "Warnings") : tr("Còn lỗi", "Issues left")
+  const issues = review.checks.filter(check => check.status !== "pass")
+  return <div className="box" style={{ margin: "8px 0" }}>
+    <div className="box-row" style={{ flexWrap: "wrap" }}>
+      <I n="list-check" /><span className="grow">{tr("AI tự duyệt theo Standards", "AI self-review against Standards")}<span className="s"> · {review.standards.join(", ")}{review.rounds ? ` · ${tr(`đã sửa ${review.rounds} lượt`, `${review.rounds} fix round(s)`)}` : ""}</span></span>
+      {stale && <span className="tag t-gray" title={tr("Nội dung đã đổi sau lần duyệt này.", "The output changed after this review.")}>{tr("Đã cũ", "Stale")}</span>}
+      <span className={`tag t-${color}`}>{label}</span>
+    </div>
+    {review.error && <div className="box-row"><span className="s" style={{ color: "var(--danger)" }}>{review.error}</span></div>}
+    {issues.map((check, i) => <div key={i} className="box-row" style={{ alignItems: "flex-start" }}>
+      <span className={`tag t-${check.status === "fail" ? "red" : "orange"}`}>{check.status === "fail" ? "FAIL" : "WARN"}</span>
+      <div className="grow">{check.item}<div className="s">{check.reason}{check.location ? ` · ${check.location}` : ""}</div></div>
+    </div>)}
+  </div>
 }
 
 /** Demo "Chế độ thủ công" (pipeline-crm.html manualTab) on the real article: edits save, regenerations run through the pipeline. */
@@ -89,6 +113,7 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
       <span className={`tag t-${(o.rating?.overall ?? 0) * 10 >= settings.threshold ? "green" : "gray"}`}>{(o.rating?.overall ?? 0).toFixed(1)}</span>
     </div>) : <p className="muted" style={{ color: "var(--f3)" }}>{running ? <><I n="loader-2" /> {tr("AI đang tạo ý tưởng…", "AI is generating ideas…")}</> : tr("Chưa có ý tưởng. Bấm Tạo lại G1.", "No ideas yet. Use Regenerate G1.")}</p>}
     <StepLog article={a} step={2} />
+    <GateReviewBox article={a} step={2} />
 
     <div className="fsec"><I n="list-tree" />&nbsp;{tr("Bước 2 — Dàn bài nháp", "Step 2 — Draft outline")}{a.outlineStructure && <span className="tag t-gray" style={{ marginLeft: 8 }}>{a.outlineStructure.name}</span>}{btn(2, tr("Tạo lại G2", "Regenerate G2"), outline.length ? tr("Tạo lại G2 sẽ xoá outline và draft hiện tại. Tiếp tục?", "Regenerating G2 clears the outline and draft. Continue?") : undefined, !a.selectedCoreIdeaId || !a.outlineStructure)}</div>
     {a.batchStatus === "awaiting_approval" && <div className="plog-in" role="status" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", background: "var(--c-orange-bg)", color: "var(--c-orange)", borderRadius: 6, padding: "8px 12px", marginBottom: 8 }}>
@@ -103,6 +128,7 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
       {open === s.id && <div style={{ border: "1px solid var(--b2)", borderTop: 0, padding: "8px 12px 10px", paddingLeft: s.level === "h3" ? 60 : 36, color: "var(--f2)", lineHeight: 1.5 }}>{s.notes || <span className="empty" style={{ color: "var(--f4)" }}>Empty</span>}{s.keywords?.length ? <div style={{ marginTop: 6, display: "flex", gap: 4, flexWrap: "wrap" }}>{s.keywords.map(k => <span key={k} className="tag t-blue">{k}</span>)}</div> : null}</div>}
     </div>) : <p className="muted" style={{ color: "var(--f3)" }}>{running && a.selectedCoreIdeaId ? <><I n="loader-2" /> {tr("AI đang lập outline…", "AI is writing the outline…")}</> : tr("Chưa có outline.", "No outline yet.")}</p>}
     <StepLog article={a} step={3} />
+    <GateReviewBox article={a} step={3} />
 
     <div className="fsec"><I n="file-text" />&nbsp;{tr("Bước 3 — Bản nháp & Kiểm tra", "Step 3 — Draft & QC")}{btn(4, tr("Chấm lại AI", "Re-check AI"), undefined, !a.draft?.trim() || !outline.length)}{btn(3, tr("Tạo lại Draft", "Regenerate draft"), a.draft?.trim() ? tr("Tạo lại Draft sẽ thay bản nháp hiện tại. Tiếp tục?", "Regenerating replaces the current draft. Continue?") : undefined, !outline.length)}</div>
     {running && !a.draft?.trim() && outline.length > 0 && <p className="muted" style={{ color: "var(--accent)", margin: "0 0 6px" }}><I n="loader-2" /> {tr("AI đang viết draft…", "AI is writing the draft…")}</p>}

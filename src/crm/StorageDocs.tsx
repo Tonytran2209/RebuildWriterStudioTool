@@ -7,6 +7,7 @@ import { isDocumentReady } from "../lib/documentStatus"
 import { useI18n } from "../lib/i18n"
 import { updateFileGroup } from "../lib/db"
 import { DOC_GROUPS, groupOf } from "./model"
+import { BRAND_CONTEXT_TYPES, storageGroupInfo } from "../../shared/gateDocuments"
 import { I, trackHandoff } from "./ui"
 
 const uid = () => Math.random().toString(36).slice(2, 9)
@@ -158,7 +159,7 @@ export function AddDocForm({ railwayUrl, onAdded, onSourceData }: { railwayUrl: 
   </div>
 }
 
-const KNOWLEDGE_TYPES: KnowledgeMetadata["type"][] = ["reference", "usp", "positioning", "client_insight", "case_study", "framework", "approved_claim", "production_insight"]
+const KNOWLEDGE_TYPES: KnowledgeMetadata["type"][] = ["reference", "usp", "positioning", "brand_voice", "client_insight", "case_study", "framework", "approved_claim", "production_insight"]
 const DEFAULT_META: KnowledgeMetadata = { type: "reference", topics: [], visibility: "internal", approvedForExternalUse: false }
 
 /** Real-file part of the Storage document panel: governance, preview, download and delete. */
@@ -174,14 +175,14 @@ export function DocDetails({ file, railwayUrl, canEdit, onSave, onGroup, onDelet
   return <>
     <div className="fsec"><I n="file-info" />&nbsp;{tr("Tài liệu", "Document")}</div>
     <div className="fields" style={{ paddingTop: 0 }}>
-      <div className="frow"><div className="flabel"><I n="folder" />Group</div><div className="fval">{canEdit && onGroup && file.category === "rules" ? <select aria-label="Group" value={groupOf(file)} disabled={busy} onChange={e => void run(() => onGroup(e.target.value))}>{DOC_GROUPS.filter(([, c]) => c === "rules").map(([g]) => <option key={g} value={g}>{g}</option>)}</select> : groupOf(file)}</div></div>
+      <div className="frow"><div className="flabel"><I n="folder" />Group</div><div className="fval">{canEdit && onGroup && file.category === "rules" ? <select aria-label="Group" value={groupOf(file)} disabled={busy} onChange={e => void run(() => onGroup(e.target.value))}>{DOC_GROUPS.filter(([, c]) => c === "rules").map(([g]) => <option key={g} value={g}>{g}</option>)}</select> : groupOf(file)}{file.category === "rules" && storageGroupInfo(file).guessed && <div className="s" style={{ color: "var(--warn, var(--f2))" }}>{tr("Nhóm đang được đoán theo tên file. Chọn lại nhóm để xác nhận.", "The group is guessed from the file name. Pick a group to confirm it.")}{canEdit && onGroup && <> <button className="btn" style={{ marginLeft: 6 }} disabled={busy} onClick={() => void run(() => onGroup(groupOf(file)))}>{tr("Xác nhận", "Confirm")}</button></>}</div>}</div></div>
       <div className="frow"><div className="flabel"><I n="file" />{tr("Nguồn", "Source")}</div><div className="fval">{(file.sourceType ?? "file").toUpperCase()}{file.size ? ` · ${file.size}` : ""}{file.rowCount ? ` · ${file.rowCount} ${tr("dòng", "rows")}` : ""}</div></div>
       <div className="frow"><div className="flabel"><I n="eye" />AI</div><div className="fval">{ready ? <span className="tag t-green">{tr("Đọc được", "Readable")}</span> : <span className="tag t-red">{tr("Cần tải lại", "Needs re-upload")}</span>}</div></div>
     </div>
     {file.category === "kb" && <>
       <div className="fsec"><I n="shield-lock" />&nbsp;{tr("Quyền sử dụng", "Usage")}</div>
       <div className="fields" style={{ paddingTop: 0 }}>
-        <div className="frow"><div className="flabel"><I n="category" />{tr("Loại", "Type")}</div><div className="fval"><select aria-label={tr("Loại kiến thức", "Knowledge type")} disabled={!canEdit || busy} value={meta.type} onChange={e => void setMeta({ type: e.target.value as KnowledgeMetadata["type"] })}>{KNOWLEDGE_TYPES.map(t => <option key={t} value={t}>{t.replace("_", " ")}</option>)}</select></div></div>
+        <div className="frow"><div className="flabel"><I n="category" />{tr("Loại", "Type")}</div><div className="fval"><select aria-label={tr("Loại kiến thức", "Knowledge type")} disabled={!canEdit || busy} value={meta.type} onChange={e => void setMeta({ type: e.target.value as KnowledgeMetadata["type"] })}>{KNOWLEDGE_TYPES.map(t => <option key={t} value={t}>{t.replace("_", " ")}{BRAND_CONTEXT_TYPES.has(t) ? " · Brand context" : " · Evidence"}</option>)}</select><div className="s">{BRAND_CONTEXT_TYPES.has(meta.type) ? tr("Brand context: luôn gửi nguyên văn cho AI, dùng để thể hiện góc nhìn và giọng thương hiệu.", "Brand context: always sent whole; used for the brand's point of view and voice.") : tr("Evidence: chỉ gửi đoạn liên quan đến bài; là nguồn duy nhất cho số liệu và dẫn chứng.", "Evidence: only the parts relevant to the article are sent; the only source of facts.")}</div></div></div>
         <div className="frow"><div className="flabel"><I n="tags" />Topics</div><div className="fval"><input aria-label="Topics" disabled={!canEdit || busy} value={topics} placeholder="healthcare, animation" onChange={e => setTopics(e.target.value)} onBlur={() => { const next = topics.split(",").map(t => t.trim()).filter(Boolean); if (next.join(",") !== meta.topics.join(",")) void setMeta({ topics: next }) }} /></div></div>
         <div className="frow"><div className="flabel"><I n="world" />{tr("Công khai", "Public")}</div><div className="fval"><button role="switch" aria-checked={meta.approvedForExternalUse} aria-label={tr("Cho phép xuất hiện trong nội dung công khai", "Allow use in public content")} disabled={!canEdit || busy} className={`toggle${meta.approvedForExternalUse ? " on" : ""}`} onClick={() => void setMeta({ approvedForExternalUse: !meta.approvedForExternalUse, visibility: meta.approvedForExternalUse ? "internal" : "public" })} /></div></div>
       </div>

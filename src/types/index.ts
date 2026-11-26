@@ -88,8 +88,22 @@ export interface DocumentFile {
   storageGroup?: string
 }
 
+export interface GateReviewItem { item: string; status: "pass" | "warning" | "fail"; reason: string; location?: string; fixable?: boolean }
+export interface GateReview {
+  status: "pass" | "warning" | "fail" | "error"
+  checks: GateReviewItem[]
+  /** Fix rounds actually run. */
+  rounds: number
+  /** Hash of the reviewed output; a different current output means the review is stale. */
+  outputHash: string
+  standards: string[]
+  reviewedAt: string
+  error?: string
+}
+
 export interface KnowledgeMetadata {
-  type: "usp" | "positioning" | "client_insight" | "case_study" | "framework" | "approved_claim" | "production_insight" | "reference"
+  /** positioning, usp and brand_voice are Brand context (sent whole); the rest are Evidence (excerpted). */
+  type: "usp" | "positioning" | "brand_voice" | "client_insight" | "case_study" | "framework" | "approved_claim" | "production_insight" | "reference"
   topics: string[]
   service?: string
   audience?: string
@@ -175,6 +189,10 @@ export type WorkflowRuleSettings = Partial<Record<WorkflowRuleId, WorkflowRuleSe
 export interface AppConfig {
   /** Server-side save counter; a save built on an older revision is rejected (409). */
   revision?: number
+  /** Every number and switch of the AI workflow, by setting id (shared/gateSettings.ts). */
+  gateSettings?: Record<string, number | boolean | string>
+  /** 2 once the Gate documents v2 migration has run. */
+  gateDocumentsVersion?: number
   railwayUrl: string
   stepConfigs: Record<number, StepConfig>
   models: AIModel[]
@@ -416,8 +434,12 @@ export interface Article {
   step3ProcessTrace?: AIProcessTraceEvent[]
   step3SuggestedKeywords?: string[]
   outlineStructure?: OutlineStructureSnapshot | null
-  /** Introduction word range from the G3 Playbook, frozen when the draft is written; QC measures against it. */
-  introductionBudget?: { min: number; max: number }
+  /** Introduction range from Settings › Workflow rules (G3), frozen when the draft is written; QC measures against it. */
+  introductionBudget?: { min: number; max: number; paragraphs?: number }
+  /** Conclusion heading and H1 keyword rule, frozen when the draft is written. Absent = "Conclusion", keyword required. */
+  draftFormat?: { conclusionHeading?: string; titleKeyword?: boolean }
+  /** G1 (2) and G2 (3) AI self-review against that Gate's Standards. */
+  gateReviews?: Partial<Record<2 | 3, GateReview>>
   outlineNeedsRegeneration?: boolean
   draftNeedsRegeneration?: boolean
   /** Legacy storage only; layout comes from outlineStructure. */

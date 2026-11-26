@@ -16,6 +16,10 @@ export interface GenerateRequest {
   jsonSchema?: Record<string, unknown>;
   /** OpenAI GPT-5+ reasoning effort; other providers ignore it. */
   reasoningEffort?: 'low' | 'medium' | 'high';
+  /** Leading contextDocs that are the same for every article of a Gate; Anthropic caches the system prompt up to them. */
+  cacheableContextDocs?: number;
+  /** Settings › Workflow rules "Use prompt cache". OpenAI and DeepSeek cache identical prefixes automatically. */
+  promptCache?: boolean;
 }
 
 export interface GenerateResponse {
@@ -26,15 +30,28 @@ export interface GenerateResponse {
 
 // ── Anthropic ────────────────────────────────────────────────────────────────
 
+/**
+ * Anthropic system prompt. With prompt cache on, it is two text blocks whose joined text is exactly the
+ * uncached prompt: the stable part (system rules + shared documents) carries the cache breakpoint.
+ */
+export function anthropicSystem(req: Pick<GenerateRequest, 'systemPrompt' | 'contextDocs' | 'cacheableContextDocs' | 'promptCache'>) {
+  const docs = req.contextDocs ?? [];
+  const head = '\n\n=== TÀI LIỆU THAM KHẢO ===\n';
+  const text = [req.systemPrompt ?? '', docs.length ? head + docs.join('\n\n---\n\n') : ''].filter(Boolean).join('\n');
+  const stable = Math.min(docs.length, Math.max(0, req.cacheableContextDocs ?? 0));
+  if (!req.promptCache || !text) return text || undefined;
+  const stableText = [req.systemPrompt ?? '', stable ? head + docs.slice(0, stable).join('\n\n---\n\n') : ''].filter(Boolean).join('\n');
+  if (!stableText) return text;
+  const rest = text.slice(stableText.length);
+  return [
+    { type: 'text' as const, text: stableText, cache_control: { type: 'ephemeral' as const } },
+    ...(rest ? [{ type: 'text' as const, text: rest }] : []),
+  ];
+}
+
 async function callAnthropic(req: GenerateRequest): Promise<GenerateResponse> {
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-  const systemParts: string[] = [];
-  if (req.systemPrompt) systemParts.push(req.systemPrompt);
-  if (req.contextDocs?.length) {
-    systemParts.push('\n\n=== TÀI LIỆU THAM KHẢO ===\n' + req.contextDocs.join('\n\n---\n\n'));
-  }
 
   // Claude 5.x thinks on every request and thinking counts toward max_tokens, so leave room above the answer budget.
   // Forced tool_choice is rejected (400) on Opus 5.5 / Sonnet 5.5 / Fable 5.2, so JSON comes from structured outputs.
@@ -42,7 +59,7 @@ async function callAnthropic(req: GenerateRequest): Promise<GenerateResponse> {
   const params = {
     model: req.modelId,
     max_tokens: Math.max(req.maxTokens ?? 4096, 16000),
-    system: systemParts.join('\n') || undefined,
+    system: anthropicSystem(req),
     messages: [{ role: 'user' as const, content: req.prompt }],
     ...(req.jsonSchema ? { output_config: { format: { type: 'json_schema', schema: req.jsonSchema } } } : {}),
   };
@@ -52,7 +69,12 @@ async function callAnthropic(req: GenerateRequest): Promise<GenerateResponse> {
   return {
     content,
     model: msg.model,
-    usage: { inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens },
+    // input_tokens excludes cache reads and writes; count them as input, with reads reported as cached.
+    usage: {
+      inputTokens: msg.usage.input_tokens + Number((msg.usage as any).cache_read_input_tokens ?? 0) + Number((msg.usage as any).cache_creation_input_tokens ?? 0),
+      outputTokens: msg.usage.output_tokens,
+      cachedInputTokens: Number((msg.usage as any).cache_read_input_tokens ?? 0),
+    },
   };
 }
 

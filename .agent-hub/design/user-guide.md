@@ -43,7 +43,7 @@ Hướng dẫn đối chiếu source ở commit ghi trên; không mô tả các 
 3. Dùng kiểm tra lại hoặc sửa có chủ đích sau khi bổ sung nguồn/sửa nội dung. Mỗi lần tạo hoặc sửa bằng AI có thể phát sinh chi phí; tránh gửi lại liên tục khi một lượt đang chạy.
 4. Chỉ đánh dấu hoàn tất khi các kiểm tra bắt buộc của bản hiện tại đã đạt và trạng thái đã được lưu. Cảnh báo tham khảo không mặc định đồng nghĩa chặn hoàn tất; xem loại và thông báo thực tế.
 
-Phần mở đầu được hiển thị đầy đủ. Quy tắc viết hướng đến một đoạn 60–85 từ tiếng Anh (mặc định; đổi bằng `introMinWords`/`introMaxWords` ở đầu Playbook chính của G3), thường khoảng 5–6 dòng desktop; số dòng thay đổi theo chiều rộng màn hình, không phải cơ chế cắt dữ liệu. Việc đổi dấu “—” thành “-” khi hiển thị/copy/TXT không tự ghi đè text gốc đã lưu.
+Phần mở đầu được hiển thị đầy đủ. Quy tắc viết hướng đến một đoạn 60–85 từ tiếng Anh (mặc định; đổi ở Settings › Workflow rules › G3), thường khoảng 5–6 dòng desktop; số dòng thay đổi theo chiều rộng màn hình, không phải cơ chế cắt dữ liệu. Việc đổi dấu “—” thành “-” khi hiển thị/copy/TXT không tự ghi đè text gốc đã lưu.
 
 ## 6. Copy, xuất và mở lại bài
 - **Copy nội dung** sao chép bài; **Copy bài + SEO brief** kèm phần brief; **Tải .txt** tải nội dung text. Thao tác copy không tự xuất bản lên website hay tạo Google Doc.
@@ -58,6 +58,8 @@ Phần mở đầu được hiển thị đầy đủ. Quy tắc viết hướng
 - Retry mục lỗi thay vì chạy lại toàn bộ mục đã xong. Mở pipeline của từng bài để đọc/sửa khi trạng thái cho phép; tải draft khi đã có kết quả.
 
 ## 8. Quản lý tài liệu trong Storage
+
+Storage có 4 nhóm. **Domain Knowledge** gồm Brand context (loại positioning, usp, brand voice: luôn gửi nguyên văn cho AI) và Evidence (các loại còn lại: chỉ gửi đoạn liên quan, là nguồn duy nhất cho số liệu). **Playbooks** nói cách AI tạo output của từng Gate. **Standards** là checklist AI tự duyệt và sửa trước khi bạn duyệt. **Source data** là Content Plan. File Rules chưa được chọn nhóm hiện chữ "đoán": mở file và bấm Xác nhận hoặc chọn nhóm khác. Mọi con số (số ý tưởng, số section, mở bài, kết luận, số lượt sửa) và công tắc tự duyệt G1/G2 nằm ở **Settings › Workflow rules**, theo từng Gate. Kết quả tự duyệt G1/G2 hiện dưới mỗi bước trong tab thủ công; nhãn "Đã cũ" nghĩa là nội dung đã đổi sau lần duyệt.
 - Đưa tài liệu factual vào Knowledge Base; hướng dẫn giọng văn, cấu trúc và quy tắc vào Skills & Rules theo mục nhập của giao diện. Website Inventory cung cấp nguồn liên kết nội bộ hợp lệ.
 - Chọn file/nguồn thuộc định dạng app hỗ trợ. Nhiều file được xử lý theo từng file; kiểm tra trạng thái thành công/thất bại riêng và thử lại file lỗi.
 - Bấm **Thêm tài liệu** trong Storage, chọn thư viện và cách nhập. Tài liệu được lưu trên server ngay và hiện trong danh sách; tài liệu mới chưa được cấp cho gate nào — bật trong **Shipper** hoặc panel tài liệu. Bấm vào một tài liệu để xem nội dung AI đọc, chỉnh quyền sử dụng, tải về hoặc xoá.

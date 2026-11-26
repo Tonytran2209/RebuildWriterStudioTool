@@ -1,12 +1,15 @@
 // Sub-jobs of one batch article, from taking it from the Content Plan to a checked draft.
 // Shared by the batch runner (step timings) and the AI Agent Lab report (declared pipeline).
-export type BatchStepKey = "plan" | "seo" | "spec" | "outline" | "draft" | "quality"
+export type BatchStepKey = "plan" | "seo" | "spec" | "specReview" | "outline" | "outlineReview" | "draft" | "quality"
 export type BatchStepRun = { key: BatchStepKey; label: string; startedAt: string; endedAt: string | null; status: "running" | "completed" | "failed" }
 export const batchStepLabels: Record<BatchStepKey, string> = {
   plan: "Nhận bài từ Content Plan",
   seo: "Nghiên cứu từ khóa SEO",
   spec: "Article Spec & Core Idea",
+  // Run only when Settings turns on G1/G2 self-review and the Gate has Standards ticked; skipped runs are not recorded.
+  specReview: "Kiểm tra Core Idea",
   outline: "Lập outline",
+  outlineReview: "Kiểm tra outline",
   draft: "Viết draft",
   quality: "Kiểm tra chất lượng",
 }

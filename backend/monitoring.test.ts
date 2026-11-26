@@ -88,7 +88,7 @@ test("AI instrumentation preserves results, errors and restart-safe aggregate to
     const report = await m.snapshot(7)
     assert.equal(report.profile.version, "profile-v1")
     assert.deepEqual(report.profile.mainJob, { job: "Writer article", steps: [
-      "Phân loại Content Plan", "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Article Spec & Core Idea", "Lập outline", "Viết draft",
+      "Phân loại Content Plan", "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Article Spec & Core Idea", "Kiểm tra Core Idea", "Lập outline", "Kiểm tra outline", "Viết draft",
       "Kiểm tra chất lượng",
     ] })
     assert.deepEqual(report.profile.jobTargets, { "Writer article": 10 })

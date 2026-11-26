@@ -21,7 +21,7 @@ test('checklist uses only Rules granted to Step 4, excluding the MD outline stru
   const docs = step4ChecklistDocs(files, config, { outlineStructure: { sourceId: 'md' } as any })
   assert.deepEqual(docs.map(doc => doc.name), ['SEO checklist.md'])
   assert.match(checklistReviewInstruction(docs), /Answer the query in the first paragraph/)
-  assert.match(checklistReviewInstruction([]), /No checklist assigned to Step 4/)
+  assert.match(checklistReviewInstruction([]), /No Standards assigned to this Gate/)
   assert.match(checklistReviewInstruction([{ name: 'big', content: 'x'.repeat(CHECKLIST_MAX_CHARS + 10) }]), /\[checklist truncated\]/)
 })
 

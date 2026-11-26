@@ -39,7 +39,9 @@ export const STAGE_CONFIG: Record<BatchStepKey, { nameEn: string; stepType: "AI"
   plan: { nameEn: "Article Selection", stepType: "NON_AI", description: "Tiếp nhận bài viết và metadata từ Content Plan." },
   seo: { nameEn: "SEO Research", stepType: "AI", description: "AI nghiên cứu từ khóa chính/phụ và search intent SEO." },
   spec: { nameEn: "Article Spec & Core Idea", stepType: "AI", description: "AI xây dựng thông số bài viết (Article Spec) và ý tưởng cốt lõi." },
+  specReview: { nameEn: "Core Idea Self-Review", stepType: "AI", description: "AI chấm Core Idea theo Standards của G1 và sửa lỗi." },
   outline: { nameEn: "Outline Generation", stepType: "AI", description: "AI lập dàn ý H2/H3 chuẩn cấu trúc SEO." },
+  outlineReview: { nameEn: "Outline Self-Review", stepType: "AI", description: "AI chấm outline theo Standards của G2 và sửa lỗi." },
   draft: { nameEn: "Draft Writing", stepType: "AI", description: "AI viết bản thảo bài viết hoàn chỉnh theo outline và nguồn dẫn chứng." },
   quality: { nameEn: "Quality Check", stepType: "AI", description: "AI kiểm tra chất lượng, internal links và tính xác thực." },
 };

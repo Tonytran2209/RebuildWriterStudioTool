@@ -1,5 +1,6 @@
 import type { Article, QualityGateCheck } from '../types/index.ts';
 import { outlineStructurePrompt, validateOutlineStructure } from '../../shared/outlineStructures.ts';
+import { conclusionHeadingOf } from './draftFormat.ts';
 
 export function outlineReviewInstruction(article: Partial<Article>): string {
   if (!article.outlineStructure) return 'Evaluate the approved outline and Article Spec; no selected MD structure is recorded. Do not assume a generic comparison format.';
@@ -30,7 +31,7 @@ export function outlineQualityChecks(article: Partial<Article>, draft: string): 
     else cursor += offset + 1;
   }
   const approved = new Set((article.outline ?? []).map(s => `${s.level}:${normalize(s.heading)}`));
-  for (const h of headings) if (!approved.has(`${h.level}:${normalize(h.heading)}`) && !(h.level === 'h2' && normalize(h.heading) === 'conclusion')) fidelity.push(`Unplanned heading: ${h.heading}`);
+  for (const h of headings) if (!approved.has(`${h.level}:${normalize(h.heading)}`) && !(h.level === 'h2' && normalize(h.heading) === normalize(conclusionHeadingOf(article)))) fidelity.push(`Unplanned heading: ${h.heading}`);
   return [
     { id: 'outline-structure', label: 'Selected MD structure requirements', kind: 'deterministic', status: errors.length ? 'fail' : 'pass', reason: errors.join('; ') || `Approved outline satisfies explicit required headings for ${article.outlineStructure.name}. Narrative layout is evaluated in reader-outcome.`, recommendedAction: errors.length ? 'Correct or regenerate the outline for the selected MD structure before rewriting the draft.' : undefined, autoFixAllowed: false },
     { id: 'outline-fidelity', label: 'Draft follows approved heading hierarchy', kind: 'deterministic', status: fidelity.length ? 'fail' : 'pass', reason: fidelity.join('; ') || 'Draft preserves approved headings, levels and order.', recommendedAction: fidelity.length ? 'Restore the approved heading hierarchy; preserve the selected structure and supported prose.' : undefined, autoFixAllowed: true },

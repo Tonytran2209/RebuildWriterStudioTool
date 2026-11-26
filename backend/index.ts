@@ -53,12 +53,17 @@ import { compileBackendWorkflowRules } from "./workflowRules.ts"
 import { researchSeoKeywords, seoResearchConfigured } from "./seoResearch.ts"
 import { jsonrepair } from "jsonrepair"
 import { resolveArticleProjection } from "./articleProjection.ts"
+import { runGateDocumentsMigration } from "./gateMigration.ts"
 import { internalLinkInstruction, addMissingInternalLinks } from "../src/lib/internalLinkPolicy.ts"
 import { canonicalSpecFingerprint, qualityInputFingerprint, outlineContentChanged, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, EVIDENCE_ATTRIBUTION_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS, primaryKeyword, step4ChecklistDocs, checklistReviewInstruction } from "../src/lib/qualityPolicy.ts"
 import { deterministicQualityChecks } from "../src/lib/universalQuality.ts"
 import { isClaimEvidence, sectionEvidence, knowledgeExcerpts, declaredEvidenceUsage, remapEvidenceUsage, hasRequiredEvidence, quoteSupportedBySource } from "../src/lib/evidencePolicy.ts"
 import { introductionBudget, introductionInstruction, introductionReviewInstruction, type IntroductionBudget } from "../src/lib/introductionPolicy.ts"
-import { RULE_ROLES, gateParameterValues } from "../shared/gateDocuments.ts"
+import { gateReviewHash, gateReviewOutput, gateReviewStatus } from "../src/lib/gateReview.ts"
+import { applyOutlineFix, applySpecFix, gateReviewJsonSchema, outlineFixJsonSchema, sanitizeBatchArticleSpec, specFixJsonSchema } from "./gateReviewFix.ts"
+import { RULE_ROLES, gateStandardsDocs, gateBrandContextDocs } from "../shared/gateDocuments.ts"
+import { resolveGateSettings, sanitizeGateSettings } from "../shared/gateSettings.ts"
+import { DEFAULT_CONCLUSION_HEADING, conclusionHeadingOf, conclusionHeadingPattern, titleKeywordRequired } from "../src/lib/draftFormat.ts"
 import { scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
 import {
   agentLibraryStatus,
@@ -1173,7 +1178,8 @@ async function runBatchModel(
     article.id,
   )
   const key = aiCacheKey({
-    kind: "batch-pipeline-v4",
+    // v5: Gate documents v2 (roles, contract text and Settings numbers changed; the system context is not part of the key).
+    kind: "batch-pipeline-v5",
     purpose,
     articleId: article.id,
     step,
@@ -1211,6 +1217,8 @@ async function runBatchModel(
     // again for source documents when a repair/review already receives the
     // frozen draft, Article Spec and approved evidence mapping.
     contextDocs: options.skipDocumentContext ? [] : context.contextDocs,
+    cacheableContextDocs: options.skipDocumentContext ? 0 : context.cacheableDocs,
+    promptCache: resolveGateSettings(config).promptCache,
     jsonMode,
     jsonSchema,
     maxTokens,
@@ -1680,6 +1688,7 @@ function batchDraftBudget(
   wordTarget: number,
   conclusionPercent = 7,
   introBudget?: IntroductionBudget,
+  conclusionHeading = DEFAULT_CONCLUSION_HEADING,
 ) {
   const targetMin = Math.ceil(wordTarget * 0.95)
   const targetMax = Math.floor(wordTarget * 1.03)
@@ -1724,6 +1733,7 @@ function batchDraftBudget(
       acceptedMin: conclusionAccepted.min,
       acceptedMax: conclusionAccepted.max,
     },
+    conclusionHeading,
     sections: outline.map((section) => {
       const weight = section.level === "h3" ? 0.65 : 1
       return {
@@ -1742,9 +1752,8 @@ function batchFieldBudgetChecks(
   budget: ReturnType<typeof batchDraftBudget>,
 ) {
   const lines = draft.split("\n")
-  const conclusionIndex = lines.findIndex((line) =>
-    /^##\s+conclusion\s*$/i.test(line.trim()),
-  )
+  const conclusionLine = conclusionHeadingPattern(budget.conclusionHeading, "i")
+  const conclusionIndex = lines.findIndex((line) => conclusionLine.test(line.trim()))
   const count = (value: string) =>
     value.trim().split(/\s+/).filter(Boolean).length
   const conclusionWords =
@@ -1812,7 +1821,7 @@ const batchFieldLengthRepairJsonSchema: Record<string, unknown> = {
   },
 }
 
-function applyBatchDraftRepair(draft: string, raw: string) {
+function applyBatchDraftRepair(draft: string, raw: string, conclusionHeading = DEFAULT_CONCLUSION_HEADING) {
   const repair = parseJsonObject(raw)
   let next = draft
   for (const edit of Array.isArray(repair.edits) ? repair.edits : []) {
@@ -1821,7 +1830,7 @@ function applyBatchDraftRepair(draft: string, raw: string) {
   }
   const addition = String(repair.appendBeforeConclusion ?? "").trim()
   if (addition) {
-    const index = next.search(/^##\s+Conclusion\s*$/mi)
+    const index = next.search(conclusionHeadingPattern(conclusionHeading))
     next = index >= 0
       ? `${next.slice(0, index).trimEnd()}\n\n${addition}\n\n${next.slice(index)}`
       : `${next.trimEnd()}\n\n${addition}`
@@ -1829,9 +1838,9 @@ function applyBatchDraftRepair(draft: string, raw: string) {
   return next
 }
 
-function batchDraftFieldParts(draft: string) {
+function batchDraftFieldParts(draft: string, heading = DEFAULT_CONCLUSION_HEADING) {
   const firstHeading = /^##\s+\S.*$/m.exec(draft)
-  const conclusionHeading = /^##\s+Conclusion\s*$/im.exec(draft)
+  const conclusionHeading = conclusionHeadingPattern(heading).exec(draft)
   const h1 = /^#\s+.*$/m.exec(draft)
   const introductionStart = h1 ? h1.index + h1[0].length : 0
   const introductionEnd = firstHeading?.index ?? draft.length
@@ -1848,6 +1857,7 @@ function applyBatchFieldLengthRepair(
   draft: string,
   raw: string,
   failureIds: Set<string>,
+  conclusionHeading = DEFAULT_CONCLUSION_HEADING,
 ) {
   const repair = parseJsonObject(raw)
   let next = draft
@@ -1861,21 +1871,12 @@ function applyBatchFieldLengthRepair(
     }
   }
   if (failureIds.has("conclusion-word-budget")) {
-    const conclusion = /^##\s+Conclusion\s*$/im.exec(next)
-    const replacement = sanitizeBatchStructuredField(repair.conclusion, "Conclusion")
+    const conclusion = conclusionHeadingPattern(conclusionHeading).exec(next)
+    const replacement = sanitizeBatchStructuredField(repair.conclusion, conclusionHeading)
     if (conclusion && replacement)
       next = `${next.slice(0, conclusion.index + conclusion[0].length).trimEnd()}\n\n${replacement}`
   }
   return next
-}
-
-function sanitizeBatchArticleSpec(spec: any) {
-  const instructionPattern = /\b(exact primary keyword|title|introduction|heading|body copy|conclusion|keyword density|use the exact|include the keyword)\b/i
-  const mustCover = (Array.isArray(spec?.mustCover) ? spec.mustCover : [])
-    .map(String)
-    .map((item: string) => item.trim())
-    .filter((item: string) => item && !instructionPattern.test(item))
-  return { ...spec, mustCover }
 }
 
 const structuredDraftJsonSchema: Record<string, unknown> = {
@@ -2037,11 +2038,12 @@ function assembleBatchDraft(raw: string, article: any) {
       "",
   ).trim()
   const parsedTitle = sanitizeBatchStructuredField(parsed.title)
-  const title = parsedTitle
+  const title = !titleKeywordRequired(article) || parsedTitle
     .toLocaleLowerCase()
     .includes(keyword.toLocaleLowerCase())
     ? parsedTitle
     : `${parsedTitle}: ${keyword}`
+  const conclusionHeading = conclusionHeadingOf(article)
   const draft = [
     `# ${title}`,
     sanitizeBatchStructuredField(parsed.introduction),
@@ -2051,8 +2053,8 @@ function assembleBatchDraft(raw: string, article: any) {
       } ${expected[index].heading}`,
       String(section.content).trim(),
     ]),
-    "## Conclusion",
-    sanitizeBatchStructuredField(parsed.conclusion, "Conclusion"),
+    `## ${conclusionHeading}`,
+    sanitizeBatchStructuredField(parsed.conclusion, conclusionHeading),
   ].join("\n\n")
   const declaredEvidenceUsage = Object.fromEntries(expected.map((section: any, index: number) => [
     section.id,
@@ -2105,8 +2107,8 @@ async function runBatchArticle(
       ),
     ),
   )
-  // Pipeline numbers come from the Gate Playbook/Standards front matter, else old Settings values, else defaults.
-  const gateParams = gateParameterValues((await kvGet<any[]>("writer:files")) ?? [], runtimeConfig)
+  // Every number and switch of the run comes from Settings › Workflow rules (writer:config.gateSettings).
+  const gateParams = resolveGateSettings(runtimeConfig)
   const minimumOutlineSections = gateParams.minimumSections
   const desiredOutlineSections = Math.max(
     article.outlineStructure?.requiredHeadings?.length ?? 0,
@@ -2117,7 +2119,69 @@ async function runBatchArticle(
   const batchIdeaCount = gateParams.ideaCount
   const conclusionPercent = gateParams.conclusionPercent
   const maxSentencesPerParagraph = gateParams.maxSentencesPerParagraph
-  const introBudget = { min: gateParams.introMinWords, max: gateParams.introMaxWords }
+  const introBudget = { min: gateParams.introMinWords, max: gateParams.introMaxWords, paragraphs: gateParams.introParagraphs }
+  const draftFormat = { conclusionHeading: gateParams.conclusionHeading, titleKeyword: gateParams.titleKeyword }
+  /**
+   * G1/G2 self-review against the Gate's Standards, with up to N fix rounds (Settings › Workflow rules).
+   * Off, or no Standards ticked: no AI call and no sub-job run. A failed review never stops the article.
+   */
+  const runGateSelfReview = async (step: 2 | 3) => {
+    const enabled = step === 2 ? gateParams.specSelfReview : gateParams.outlineSelfReview
+    const files = (await kvGet<any[]>("writer:files")) ?? []
+    const standards = gateStandardsDocs(files, runtimeConfig, step, step === 3 ? article.outlineStructure?.sourceId : undefined)
+    if (!enabled || !standards.length) return
+    beginStep(step === 2 ? "specReview" : "outlineReview")
+    const maxRounds = step === 2 ? gateParams.specFixRounds : gateParams.outlineFixRounds
+    const criteria = checklistReviewInstruction(standards, gateBrandContextDocs(files, runtimeConfig, step))
+    const what = step === 2 ? "Article Spec and selected Core Idea (G1)" : "outline (G2)"
+    const responses: any[] = []
+    const review = async () => {
+      const response = await runBatchModel(article, step, [
+        `Act only as a strict reviewer of this ${what}. Do not rewrite it.`,
+        criteria.replace("Measurable numeric limits", "Items about later stages (for example draft prose when reviewing an outline) do not apply: skip them. Measurable numeric limits"),
+        `OUTPUT TO REVIEW: ${JSON.stringify(gateReviewOutput(article, step))}`,
+        'Return {"checks":[{"item","status","reason","location","fixable"}]} with one entry per applicable Standards item. location names the field or section ID. fixable is true only when editing the wording of the listed fields fixes it, without new facts.',
+      ].join("\n\n"), true, 3000, gateReviewJsonSchema, "recovery", { skipDocumentContext: true, modelTask: "review" })
+      responses.push(response)
+      const checks = (parseJsonObject(response.content)?.checks ?? []).filter((check: any) => check && ["pass", "warning", "fail"].includes(check.status)).map((check: any) => ({
+        item: String(check.item ?? "").slice(0, 300), status: check.status, reason: String(check.reason ?? "").slice(0, 1000), location: String(check.location ?? "").slice(0, 200), fixable: Boolean(check.fixable),
+      }))
+      if (!checks.length) throw new Error("Self-review returned no checks.")
+      return checks
+    }
+    const save = (patch: Record<string, unknown>, result: Record<string, unknown>) => saveStepCheckpoint(article, {
+      ...patch,
+      gateReviews: { ...article.gateReviews, [step]: { standards: standards.map((doc) => doc.name), reviewedAt: new Date().toISOString(), ...result } },
+      aiUsageByStep: { ...article.aiUsageByStep, [step]: [...(article.aiUsageByStep?.[step] ?? []), ...responses.map((item) => batchUsage(step, item.provider ?? "unknown", item))].slice(-50) },
+    })
+    let rounds = 0
+    try {
+      let checks = await review()
+      while (rounds < maxRounds && checks.some((check: any) => check.status === "fail" && check.fixable)) {
+        const failures = checks.filter((check: any) => check.status === "fail" && check.fixable)
+        const response = await runBatchModel(article, step, [
+          `Revise this ${what} only as far as needed to resolve the FAIL items below. Keep everything that passed.`,
+          step === 2 ? "Keep the primary and secondary keywords and every fact unchanged; only wording may change." : "Keep every section ID, level and order. Do not add or remove sections; change only heading, notes, keywords, searchIntent and rationale.",
+          `FAIL ITEMS: ${JSON.stringify(failures)}`,
+          `CURRENT OUTPUT: ${JSON.stringify(gateReviewOutput(article, step))}`,
+          criteria,
+        ].join("\n\n"), true, step === 2 ? 2500 : 5000, step === 2 ? specFixJsonSchema : outlineFixJsonSchema, "recovery")
+        responses.push(response)
+        const fix = parseJsonObject(response.content)
+        const patch = step === 2 ? applySpecFix(article, fix) : (() => { const outline = applyOutlineFix(article, fix); return outline ? { outline } : null })()
+        if (!patch) break
+        article = { ...article, ...patch }
+        rounds += 1
+        checks = await review()
+      }
+      const fixedPatch = rounds ? (step === 2 ? { coreIdeaSuggestions: article.coreIdeaSuggestions, articleSpec: article.articleSpec, articleSpecFingerprint: article.articleSpecFingerprint, title: article.title, topic: article.topic, angle: article.angle, targetAudience: article.targetAudience, tone: article.tone } : { outline: article.outline }) : {}
+      endStep("completed")
+      article = await save(fixedPatch, { status: gateReviewStatus(checks), checks, rounds, outputHash: gateReviewHash(article, step) })
+    } catch (error: any) {
+      endStep("failed")
+      article = await save({}, { status: "error", checks: [], rounds, outputHash: gateReviewHash(article, step), error: String(error?.message ?? error).slice(0, 300) })
+    }
+  }
   const appendUsage = (step: 2 | 3 | 4, response: any) => ({
     ...article.aiUsageByStep,
     [step]: [
@@ -2342,6 +2406,7 @@ async function runBatchArticle(
           2: response.workflowRuleSnapshot,
         },
       })
+      await runGateSelfReview(2)
     }
     if (controller.paused) {
       await saveStepCheckpoint(article, { batchStatus: "paused" })
@@ -2496,6 +2561,7 @@ async function runBatchArticle(
           3: response.workflowRuleSnapshot,
         },
       })
+      await runGateSelfReview(3)
     }
     if (controller.paused) {
       await saveStepCheckpoint(article, { batchStatus: "paused" })
@@ -2595,13 +2661,16 @@ async function runBatchArticle(
       const draftPrerequisite = articleStepPrerequisite(article, 4)
       if (draftPrerequisite) throw new Error(draftPrerequisite)
       const effectiveDraftWords = maxDraftWords
-      // Frozen on the article (saved with the next checkpoint) so QC measures the range the draft was written for.
-      article = { ...article, introductionBudget: introBudget }
+      // A new draft freezes the current settings on the article (saved with the next checkpoint), so QC measures
+      // what the draft was written for. An existing draft keeps the values it was written with.
+      if (article.draftNeedsRegeneration || !String(article.draft ?? "").trim())
+        article = { ...article, introductionBudget: introBudget, draftFormat }
       const budget = batchDraftBudget(
         article.outline ?? [],
         effectiveDraftWords,
         conclusionPercent,
-        introBudget,
+        article.introductionBudget,
+        conclusionHeadingOf(article),
       )
       const verifiedOutline = batchVerifiedOutline(article.outline ?? [])
       let response: any = null
@@ -2625,7 +2694,7 @@ async function runBatchArticle(
             `WORD BUDGET CONTRACT: ${JSON.stringify(budget)}`,
             `RELEVANT APPROVED INTERNAL LINK CANDIDATES: ${JSON.stringify(approvedInternalLinkCandidates)}`,
             internalLinkInstruction(effectiveDraftWords, approvedInternalLinkCandidates.length),
-            introductionInstruction(introBudget),
+            introductionInstruction(article.introductionBudget),
             outlineStructurePrompt(article.outlineStructure, "draft"),
             `Complete every section before expanding any section. Do not repeat definitions, benefits, comparisons, evidence, or conclusions. Each paragraph serves one claim and contains at most ${maxSentencesPerParagraph} sentences.`,
             "Knowledge Base is the only source for concrete facts, figures, evidence and product claims. If a concrete claim has no approved evidence, omit it or replace it with general explanatory prose.",
@@ -2699,7 +2768,7 @@ async function runBatchArticle(
       draftResponses.length = 0
       beginStep("quality")
       const qualityFiles = (await kvGet<any[]>("writer:files")) ?? []
-      const checklistInstruction = checklistReviewInstruction(step4ChecklistDocs(qualityFiles, runtimeConfig, article))
+      const checklistInstruction = checklistReviewInstruction(step4ChecklistDocs(qualityFiles, runtimeConfig, article), gateBrandContextDocs(qualityFiles, runtimeConfig, 4))
       const internalNames = qualityFiles
         .filter(
           (item) =>
@@ -2729,13 +2798,13 @@ async function runBatchArticle(
           )
           if (!fieldFailures.length) return
           const failureIds = new Set(fieldFailures.map((item) => item.id))
-          const currentFields = batchDraftFieldParts(assembledDraft)
+          const currentFields = batchDraftFieldParts(assembledDraft, budget.conclusionHeading)
           const repair = await runBatchModel(
             article,
             4,
             [
               "Repair only the failed introduction and/or conclusion: shorten over-length text, expand under-length text and fix paragraph structure. Preserve supported meaning. Do not return a title, headings, body sections, or any other article field.",
-              introductionInstruction(introBudget),
+              introductionInstruction(article.introductionBudget),
               `LENGTH FAILURES: ${JSON.stringify(fieldFailures)}`,
               `INTRODUCTION: preferred ${budget.introduction.min}-${budget.introduction.max}; mandatory accepted range ${budget.introduction.acceptedMin}-${budget.introduction.acceptedMax} English words.`,
               `CONCLUSION: preferred ${budget.conclusion.min}-${budget.conclusion.max}; mandatory accepted range ${budget.conclusion.acceptedMin}-${budget.conclusion.acceptedMax} English words.`,
@@ -2757,6 +2826,7 @@ async function runBatchArticle(
             assembledDraft,
             repair.content,
             failureIds,
+            budget.conclusionHeading,
           )
           if (nextDraft === assembledDraft) return
           assembledDraft = nextDraft
@@ -2818,7 +2888,7 @@ async function runBatchArticle(
             effectiveDraftWords,
           )
         } else {
-          assembledDraft = applyBatchDraftRepair(assembledDraft, repair.content)
+          assembledDraft = applyBatchDraftRepair(assembledDraft, repair.content, budget.conclusionHeading)
         }
         deterministic = [
           ...batchUniversalChecks(assembledDraft, article, effectiveDraftWords, runtimeConfig?.websiteInventory ?? [], internalNames),
@@ -2931,7 +3001,8 @@ async function runBatchArticle(
         checks,
       }
       const missingEvidence = Object.keys(verifiedOutline.evidenceRegistry).length === 0 && semantic.some((item: any) => item.id === "evidence-support" && item.status !== "pass")
-      if ((report.status === "fail" || report.checks.some(blocksPublication)) && !missingEvidence) {
+      // Settings › Workflow rules (G3) "Max fix rounds after AI Review"; each round is one fix and one re-check.
+      for (let round = 0; round < gateParams.draftFixRounds && (report.status === "fail" || report.checks.some(blocksPublication)) && !missingEvidence; round += 1) {
         const semanticFindings = semantic.filter(
           (item: any) => item.status !== "pass",
         )
@@ -3001,6 +3072,8 @@ async function runBatchArticle(
           inputFingerprint: qualityInputFingerprint(article, assembledDraft, effectiveDraftWords, qualityFiles, runtimeConfig.workflowRules),
           checks,
         }
+        // A fix that broke deterministic QC is not re-reviewed; another round would repeat stale findings.
+        if (deterministic.some((item) => item.status !== "pass")) break
       }
       // One approval rule for server and CRM: score ≥ Settings › Pipeline threshold and no hard block (src/lib/pipeline.ts).
       const approval = aiApproval({ ...article, qualityReport: report }, pipelineSettings(runtimeConfig))
@@ -4747,7 +4820,8 @@ app.post("/api/config", async (req, res) => {
       const currentRevision = Number(current.revision ?? 0)
       if (revision !== undefined && Number(revision) !== currentRevision)
         throw Object.assign(new Error("Cấu hình đã được người khác lưu trước đó. Tải lại để xem bản mới nhất rồi sửa lại."), { status: 409, code: "CONFIG_CONFLICT" })
-      const next = { ...config, revision: currentRevision + 1 }
+      // Gate settings are validated here too, not only in the form: unknown keys dropped, numbers clamped.
+      const next = { ...config, ...(config.gateSettings !== undefined ? { gateSettings: sanitizeGateSettings(config.gateSettings) } : {}), revision: currentRevision + 1 }
       await kvSet("writer:config", next)
       return next
     })
@@ -5376,7 +5450,7 @@ app.post("/api/files", async (req, res) => {
 })
 
 // Mirrors DOC_GROUPS in src/crm/model.ts: each Storage group lives in one library.
-const STORAGE_GROUP_CATEGORY: Record<string, string> = { "Domain Knowledge": "kb", Playbooks: "rules", Standards: "rules", "Voice & Style": "rules" }
+const STORAGE_GROUP_CATEGORY: Record<string, string> = { "Domain Knowledge": "kb", Playbooks: "rules", Standards: "rules" }
 // Per-file edits so one admin's stale list never overwrites documents another admin added.
 app.patch("/api/files/:id", async (req, res) => {
   try {
@@ -5638,6 +5712,18 @@ const server = app.listen(PORT, () => {
     await setPlanStatus(plan, "failed")
     await kvSet(`${PLAN_RUN_PREFIX}${plan.id}`, { error: "Server khởi động lại khi đang phân tích. Hãy bấm Phân loại lại.", endedAt: new Date().toISOString() })
   }))).catch(error => console.error("[content-plans] stale processing check failed:", error))
+  // Gate documents v2: one-time, non-destructive move (Voice & Style → Standards, numbers → gateSettings).
+  if (process.env.WRITER_MAINTENANCE_MODE !== "true")
+    void runGateDocumentsMigration({
+      kvGet, kvSet, withLock: withConfigLock,
+      onKnowledgeMetadata: async (file) => {
+        if (!(await tableAvailable("knowledge_items"))) return
+        const metadata = file.knowledgeMetadata ?? {}
+        await tableUpsert("knowledge_items", { id: file.id, source_name: file.name, knowledge_type: metadata.type ?? "reference", topics: metadata.topics ?? [], service: metadata.service ?? null, audience: metadata.audience ?? null, visibility: metadata.visibility ?? "internal", approved_for_external_use: Boolean(metadata.approvedForExternalUse), metadata, updated_at: new Date().toISOString() }, "id")
+      },
+    }).then(result => {
+      if (result) console.log(`[gate-documents-v2] migrated: ${result.changedFiles.length} file(s) regrouped; numbers kept: ${JSON.stringify(result.numbers)}`)
+    }).catch(error => console.error("[gate-documents-v2] migration failed:", error))
   console.log(`   Providers: ${JSON.stringify(getAvailableProviders())}`)
   console.log(`   Database provider: ${databaseProvider()} (connection checked at /health/dependencies); Auth: Supabase; Files: ${storageProvider()}`)
   if (process.env.WRITER_MAINTENANCE_MODE === "true" || process.env.RUN_LEGACY_PROJECTION_ON_START !== "true") return
