@@ -54,6 +54,7 @@ import { researchSeoKeywords, seoResearchConfigured } from "./seoResearch.ts"
 import { jsonrepair } from "jsonrepair"
 import { resolveArticleProjection } from "./articleProjection.ts"
 import { runGateDocumentsMigration } from "./gateMigration.ts"
+import { MAX_FILES_PER_DELETE, removeFilesFromLibrary } from "./fileDeletion.ts"
 import { internalLinkInstruction, addMissingInternalLinks } from "../src/lib/internalLinkPolicy.ts"
 import { canonicalSpecFingerprint, qualityInputFingerprint, outlineContentChanged, QUALITY_VERSION, blocksPublication, EVIDENCE_REVIEW_INSTRUCTION, EVIDENCE_ATTRIBUTION_INSTRUCTION, semanticReviewInputFingerprint, semanticReviewIncomplete, SEMANTIC_IDS, primaryKeyword, step4ChecklistDocs, checklistReviewInstruction } from "../src/lib/qualityPolicy.ts"
 import { deterministicQualityChecks } from "../src/lib/universalQuality.ts"
@@ -5475,21 +5476,43 @@ app.patch("/api/files/:id", async (req, res) => {
   }
 })
 
+/**
+ * Deletes Storage documents for good: the library record, every gate's access to it, its uploaded original
+ * and its knowledge_items row. The library and config are written first; cleanup failures are logged, never
+ * restored, so a deleted document never comes back.
+ */
+async function deleteStorageFiles(ids: string[]) {
+  const result = await withConfigLock(async () => {
+    const [files, config] = await Promise.all([kvGet<any[]>("writer:files"), kvGet<any>("writer:config")])
+    const next = removeFilesFromLibrary(files ?? [], config ?? {}, ids)
+    if (!next.removed.length) throw Object.assign(new Error("Tài liệu không tồn tại."), { status: 404 })
+    await kvSet("writer:files", next.files)
+    await kvSet("writer:config", next.config)
+    return next
+  })
+  await deleteDocumentBinaries(result.removed.map((file: any) => file.storagePath).filter(Boolean))
+    .catch((error) => console.warn("[file-delete] original file cleanup failed", error))
+  const knowledge = result.removed.filter((file: any) => file.category === "kb")
+  if (knowledge.length && await tableAvailable("knowledge_items").catch(() => false))
+    for (const file of knowledge) await tableDeleteWhere("knowledge_items", "id", file.id).catch((error) => console.warn(`[file-delete] knowledge_items ${file.id}`, error))
+  return { files: result.files, config: result.config, deletedIds: result.removed.map((file: any) => file.id), missingIds: result.missing }
+}
+
 app.delete("/api/files/:id", async (req, res) => {
   try {
-    const result = await withConfigLock(async () => {
-      const files = (await kvGet<any[]>("writer:files")) ?? []
-      if (!files.some((item) => item.id === req.params.id)) throw Object.assign(new Error("Tài liệu không tồn tại."), { status: 404 })
-      const nextFiles = files.filter((item) => item.id !== req.params.id)
-      await kvSet("writer:files", nextFiles)
-      // The deleted file also leaves every gate's Shipper access.
-      const config = (await kvGet<any>("writer:config")) ?? {}
-      const stepConfigs = Object.fromEntries(Object.entries(config.stepConfigs ?? {}).map(([step, stepConfig]: [string, any]) => [step, stepConfig?.fileAccess ? { ...stepConfig, fileAccess: { kb: (stepConfig.fileAccess.kb ?? []).filter((id: string) => id !== req.params.id), rules: (stepConfig.fileAccess.rules ?? []).filter((id: string) => id !== req.params.id) } } : stepConfig]))
-      const nextConfig = { ...config, stepConfigs, revision: Number(config.revision ?? 0) + 1 }
-      await kvSet("writer:config", nextConfig)
-      return { files: nextFiles, config: nextConfig }
-    })
-    res.json({ ok: true, ...result })
+    res.json({ ok: true, ...(await deleteStorageFiles([req.params.id])) })
+  } catch (err: any) {
+    res.status(err?.status ?? 500).json({ error: err.message })
+  }
+})
+
+// Bulk delete from the Storage table (admin). Ids that no longer exist are reported, not treated as an error.
+app.post("/api/files/delete", async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? [...new Set(req.body.ids.map(String).filter(Boolean))] as string[] : []
+    if (!ids.length) return res.status(400).json({ error: "ids is required." })
+    if (ids.length > MAX_FILES_PER_DELETE) return res.status(400).json({ error: `At most ${MAX_FILES_PER_DELETE} documents per delete.` })
+    res.json({ ok: true, ...(await deleteStorageFiles(ids)) })
   } catch (err: any) {
     res.status(err?.status ?? 500).json({ error: err.message })
   }

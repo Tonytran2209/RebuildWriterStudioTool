@@ -467,6 +467,11 @@ export async function deleteFile(id: string): Promise<{ files: DocumentFile[]; c
   return railwayRequest(`/api/files/${encodeURIComponent(id)}`, { method: "DELETE" })
 }
 
+/** Deletes several documents for good (library record, gate access, uploaded original, knowledge record). */
+export async function deleteFiles(ids: string[]): Promise<{ files: DocumentFile[]; config: AppConfig; deletedIds: string[]; missingIds: string[] }> {
+  return railwayRequest("/api/files/delete", jsonRequest("POST", { ids }))
+}
+
 export async function saveFiles(
   files: DocumentFile[],
   railwayUrl: string,

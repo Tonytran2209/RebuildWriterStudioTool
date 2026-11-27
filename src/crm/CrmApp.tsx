@@ -409,19 +409,32 @@ function StorageSubPage({ ctx, p }: { ctx: Ctx; p: "website" | "legacy" }) {
 function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o: Obj; rows: any[]; fields: Field[]; sort: { key: string; dir: string } | null; sortBy: (k: string) => void; onFoot: () => void }) {
   const { tr } = useI18n()
   const m = OBJ_META[o]
-  // Bulk delete: admins, on the Articles and Batches tables. Selection only counts rows still visible.
-  const selectable = ctx.isAdmin && (o === "articles" || o === "batches")
+  // Bulk delete: admins, on the Articles, Batches and Storage tables. Selection only counts rows still visible.
+  // In Storage only real documents can be picked (not Content Plans, missing placeholders or Approved Articles).
+  const selectable = ctx.isAdmin && (o === "articles" || o === "batches" || o === "storage")
+  const canPick = (r: any) => o !== "storage" || Boolean(r.file)
+  const pickable = rows.filter(canPick)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
-  const chosen = selectable ? rows.filter(r => picked.has(r.id)) : []
-  const all = chosen.length === rows.length && rows.length > 0
+  const chosen = selectable ? pickable.filter(r => picked.has(r.id)) : []
+  const all = chosen.length === pickable.length && pickable.length > 0
   const toggle = (id: string) => setPicked(prev => { const next = new Set(prev); if (!next.delete(id)) next.add(id); return next })
   const removeChosen = async () => {
     setDeleting(true)
-    try { await (o === "batches" ? ctx.onDeleteMany([], chosen.map(r => r.id)) : ctx.onDeleteMany(chosen.map(r => r.a), [])) }
+    try { await (o === "storage" ? deleteDocs(chosen) : o === "batches" ? ctx.onDeleteMany([], chosen.map(r => r.id)) : ctx.onDeleteMany(chosen.map(r => r.a), [])) }
     finally { setDeleting(false); setPicked(new Set()) }
   }
-  const box = (r: any) => <input type="checkbox" checked={picked.has(r.id)} aria-label={`${tr("Chọn", "Select")} ${nameOf(o, r)}`} onClick={e => e.stopPropagation()} onChange={() => toggle(r.id)} />
+  const deleteDocs = async (docs: StorageDoc[]) => {
+    const names = docs.slice(0, 8).map(d => `• ${d.name}`).join("\n") + (docs.length > 8 ? `\n• … ${docs.length - 8} ${tr("tài liệu khác", "more")}` : "")
+    if (!window.confirm(tr(`Xoá vĩnh viễn ${docs.length} tài liệu khỏi Storage?\n\n${names}\n\nAI sẽ không dùng các tài liệu này ở Gate nào nữa; file gốc đã upload cũng bị xoá. Thao tác này không thể hoàn tác.`, `Permanently delete ${docs.length} document(s) from Storage?\n\n${names}\n\nAI stops using them at every gate and the uploaded originals are deleted too. This cannot be undone.`))) return
+    try {
+      const result = await trackHandoff(performance.now(), () => db.deleteFiles(docs.map(d => d.id)))
+      ctx.onFilesSynced(result.files, result.config)
+      if (ctx.panel?.kind === "doc" && result.deletedIds.includes(ctx.panel.id)) ctx.setPanel(null)
+      toast(tr(`Đã xoá ${result.deletedIds.length} tài liệu`, `Deleted ${result.deletedIds.length} document(s)`))
+    } catch (err) { toastErr(err) }
+  }
+  const box = (r: any) => !canPick(r) ? null : <input type="checkbox" checked={picked.has(r.id)} aria-label={`${tr("Chọn", "Select")} ${nameOf(o, r)}`} onClick={e => e.stopPropagation()} onChange={() => toggle(r.id)} />
   if (!rows.length) return <div className="empty-state"><I n={m.icon} /><h3>{tr("Không có dữ liệu", "Nothing here")}</h3><span>{tr("Thử bộ lọc khác.", "Try another filter.")}</span></div>
   const groups: Array<{ label?: ReactNode; rows: any[] }> = o === "reviews" ? (Object.keys(HUMAN) as HumanStatus[]).map(k => ({ label: <HumanTag h={k} />, rows: rows.filter(r => r.human.status === k) }))
     : o === "storage" ? STORAGE_GROUPS.map(([g, c]) => ({ label: <Tag c={c}>{g}</Tag>, rows: rows.filter(r => r.g === g) }))
@@ -439,10 +452,10 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
     {chosen.length > 0 && <div className="bulk-bar" role="region" aria-label={tr("Thao tác hàng loạt", "Bulk actions")}>
       <b>{chosen.length}</b> {tr("đã chọn", "selected")}
       <button className="btn" onClick={() => setPicked(new Set())}>{tr("Bỏ chọn", "Clear")}</button>
-      <button className="btn danger" disabled={deleting} onClick={() => void removeChosen()}><I n={deleting ? "loader-2" : "trash"} />{o === "batches" ? tr(`Xoá ${chosen.length} batch`, `Delete ${chosen.length} batch${chosen.length > 1 ? "es" : ""}`) : tr(`Xoá ${chosen.length} bài`, `Delete ${chosen.length} article${chosen.length > 1 ? "s" : ""}`)}</button>
+      <button className="btn danger" disabled={deleting} onClick={() => void removeChosen()}><I n={deleting ? "loader-2" : "trash"} />{o === "storage" ? tr(`Xoá ${chosen.length} tài liệu`, `Delete ${chosen.length} document${chosen.length > 1 ? "s" : ""}`) : o === "batches" ? tr(`Xoá ${chosen.length} batch`, `Delete ${chosen.length} batch${chosen.length > 1 ? "es" : ""}`) : tr(`Xoá ${chosen.length} bài`, `Delete ${chosen.length} article${chosen.length > 1 ? "s" : ""}`)}</button>
     </div>}
     <div className="tbl-wrap"><table className="tbl">
-      <thead><tr>{selectable && <th className="cb"><input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = chosen.length > 0 && !all }} aria-label={tr("Chọn tất cả", "Select all")} onChange={() => setPicked(all ? new Set() : new Set(rows.map(r => r.id)))} /></th>}{fields.map((f, i) => <th key={f.key} className={i === 0 ? "first" : ""} aria-sort={sort?.key === f.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}><button className="th-btn" onClick={() => sortBy(f.key)}><I n={f.icon} />{f.label}{sort?.key === f.key && <> <I n={sort.dir === "asc" ? "arrow-up" : "arrow-down"} /></>}</button></th>)}</tr></thead>
+      <thead><tr>{selectable && <th className="cb"><input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = chosen.length > 0 && !all }} aria-label={tr("Chọn tất cả", "Select all")} onChange={() => setPicked(all ? new Set() : new Set(pickable.map(r => r.id)))} /></th>}{fields.map((f, i) => <th key={f.key} className={i === 0 ? "first" : ""} aria-sort={sort?.key === f.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}><button className="th-btn" onClick={() => sortBy(f.key)}><I n={f.icon} />{f.label}{sort?.key === f.key && <> <I n={sort.dir === "asc" ? "arrow-up" : "arrow-down"} /></>}</button></th>)}</tr></thead>
       <tbody>{groups.map((g, gi) => <GroupRows key={gi} label={g.label} count={g.rows.length} span={fields.length} cb={selectable}>
         {g.rows.map(r => <tr key={r.id} tabIndex={0} className={picked.has(r.id) ? "sel" : undefined} style={{ cursor: "pointer", animationDelay: `${Math.min(n++, 14) * 16}ms` }} onClick={() => click(r)} onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) click(r) }}>
           {selectable && <td className="cb">{box(r)}</td>}
