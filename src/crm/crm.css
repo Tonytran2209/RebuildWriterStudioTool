@@ -341,6 +341,9 @@
 .crm .crm-draft th,.crm .crm-draft td{border:1px solid var(--b2);padding:4px 8px;text-align:left}
 .crm .crm-draft a{color:var(--accent)}
 .crm .sp select.inp{height:32px}
+/* A form textarea (.inp) in a side panel keeps the input look; the bare .sp textarea rule is for full-page editors. */
+.crm .sp textarea.inp{min-height:0;height:auto;border:1px solid var(--b2);border-radius:4px;background:var(--bg1);padding:8px;line-height:1.5}
+.crm .sp textarea.inp:focus{border-color:var(--accent-b)}
 /* The app's dark theme forces backgrounds on every input with !important; give demo controls their own back. */
 .codex-dark .crm :is(input,textarea,select):not(.embed *):not(.crm-embedded *){background:transparent!important;color:var(--f1)!important}
 .codex-dark .crm :is(.inp,.fval input,.fval select):not(.embed *):not(.crm-embedded *){background:var(--bg1)!important;color:var(--f1)!important}
