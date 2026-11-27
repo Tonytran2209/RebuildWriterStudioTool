@@ -1,10 +1,13 @@
 // Sub-jobs of one batch article, from taking it from the Content Plan to a checked draft.
 // Shared by the batch runner (step timings) and the AI Agent Lab report (declared pipeline).
-export type BatchStepKey = "plan" | "seo" | "spec" | "specReview" | "outline" | "outlineReview" | "draft" | "quality"
-export type BatchStepRun = { key: BatchStepKey; label: string; startedAt: string; endedAt: string | null; status: "running" | "completed" | "failed" }
+export type BatchStepKey = "plan" | "seo" | "competitors" | "spec" | "specReview" | "outline" | "outlineReview" | "draft" | "quality"
+// items: units a step handled (competitor pages analysed), only on steps that handle many.
+export type BatchStepRun = { key: BatchStepKey; label: string; startedAt: string; endedAt: string | null; status: "running" | "completed" | "failed"; items?: { total: number; succeeded: number } }
 export const batchStepLabels: Record<BatchStepKey, string> = {
   plan: "Nhận bài từ Content Plan",
   seo: "Nghiên cứu từ khóa SEO",
+  // Runs only when Settings turns on competitor analysis and keyword research found other sites' pages.
+  competitors: "Phân tích đối thủ",
   spec: "Article Spec & Core Idea",
   // Run only when Settings turns on G1/G2 self-review and the Gate has Standards ticked; skipped runs are not recorded.
   specReview: "Kiểm tra Core Idea",
@@ -19,6 +22,8 @@ export const ARTICLE_JOB = "Writer article"
 export const BATCH_ARTICLE_JOB = ARTICLE_JOB
 // Runs once per Content Plan before its articles exist, so its runs name the Main Job but no parent run.
 export const CLASSIFY_PLAN_JOB = "Phân loại Content Plan"
+// Website Inventory sitemap / llms.txt import: a job of its own (not an article step), counted in jobHistory.
+export const SITEMAP_IMPORT_JOB = "Nhập sitemap Website Inventory"
 
 // app-monitoring profile-v1: the Main Job and its sub-jobs in pipeline order. No title, so AI Agent
 // Lab keeps showing the content-workload card in its technical report.
@@ -29,7 +34,7 @@ export const labProfile = {
   jobTargets: { [ARTICLE_JOB]: 10 },
   // What the browser KPIs measure (ui-kpi-v2: src/crm/ui.tsx trackHandoff).
   kpiDescriptions: {
-    responseTime: "Bấm Generate (Add Plan), Retry, Tạo lại G1/G2/Draft hoặc Chấm lại AI trong CRM (tính từ sự kiện bấm) → khung hình thứ hai sau khi giao diện xác nhận máy chủ đã nhận việc (batch đã tạo và chạy, bài đã vào hàng đợi)",
-    clickLatency: "Bấm Generate (Add Plan), Retry, Tạo lại G1/G2/Draft hoặc Chấm lại AI trong CRM (tính từ sự kiện bấm) → khung hình thứ hai sau khi trạng thái đang xử lý được hiển thị",
+    responseTime: "Bấm Generate (Add Plan), Retry, Tạo lại G1/G2/Draft, Chấm lại AI hoặc Nhập từ sitemap trong CRM (tính từ sự kiện bấm) → khung hình thứ hai sau khi giao diện xác nhận máy chủ đã nhận việc (batch đã tạo và chạy, bài đã vào hàng đợi)",
+    clickLatency: "Bấm Generate (Add Plan), Retry, Tạo lại G1/G2/Draft, Chấm lại AI hoặc Nhập từ sitemap trong CRM (tính từ sự kiện bấm) → khung hình thứ hai sau khi trạng thái đang xử lý được hiển thị",
   },
 }

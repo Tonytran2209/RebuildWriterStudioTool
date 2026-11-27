@@ -31,6 +31,12 @@ Design and rationale: `gate-documents-v2.md`. `shared/gateDocuments.ts` owns rol
 - A Gate with a primary Playbook no longer sends the Settings team note (`customInstruction`).
 - **Migration** (`backend/gateMigration.ts`, at startup, once: `gateDocumentsVersion = 2`): Voice & Style files become Standards, KB files named *vocab* without metadata become `brand_voice`, and the numbers v1 used (front matter, then old stage parameters) are written into `gateSettings` unless the admin already saved one. Nothing is deleted.
 
+## G1 research: competitor analysis, information gain, overlap
+
+- **Competitor analysis** (sub-job "Phân tích đối thủ", between keyword research and the Spec; Settings G1 `competitorAnalysis`, off by default, `competitorCount` 2–10): takes the source URLs keyword research returned (`competitorUrls`: research order, unique pages, Website Inventory hosts excluded), reads each with `fetchPublicPage` (same private-network, redirect, size and 12 s limits as the inventory scan; three at a time), then one AI call summarises each page (page type, strengths, weaknesses, entities) and the set (common sections, gaps, entities, questions, formats). Saved as `article.competitorAnalysis`, keyed by the keyword research's `researchedAt`, so a rerun with the same research reuses it. The step run carries `items {total, succeeded}` (pages analysed). A failure is saved as status `error`, marks the sub-job failed and never stops the article. The full SERP source (top results, PAA, AI Overview) is a separate, later change.
+- **Information-gain Spec fields** (G1): `pageType`, `entities`, `questions`, `contentGaps`, `informationGain`, `citationTargets` (short capped lists). G1 fills them using the competitor analysis when it ran; G2 must place each item in a section within the selected structure and name it in the notes; the G3 review warns (never fails) for each item the draft does not deliver.
+- **Overlap (cannibalisation) warning** (Settings G1 `cannibalisationCheck`, on by default, no AI): after the Spec, `findCannibalisation` compares the primary keyword and title with Website Inventory pages (not broken/redirected) and other articles by word overlap (Jaccard ≥ 0.6, at least two shared content words). Saved as `article.cannibalisation` and shown under G1. It does not enter QC or the approval score.
+
 ## Safety invariants
 
 - Serialize article mutations by article ID.

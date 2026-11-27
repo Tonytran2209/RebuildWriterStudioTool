@@ -359,6 +359,8 @@ export async function scanWebsiteUrl(
 export interface WebsiteInventoryBatchJob {
   id: string
   status: "queued" | "running" | "complete" | "failed" | "cancelled"
+  /** URLs the batch crawls (returned by the server). */
+  urls?: string[]
   total: number
   done: number
   failed: number
@@ -378,6 +380,22 @@ export async function startWebsiteInventoryBatch(
     railwayUrl,
   )
   return result.job
+}
+
+export interface SitemapImportResult {
+  job: WebsiteInventoryBatchJob | null
+  origin: string
+  discovered: number
+  queued: number
+  llmsDescriptions: number
+  llmsUsed: number
+  sitemapsRead: number
+  missing: Array<{ id: string; url: string; title: string }>
+  errors: string[]
+}
+/** Finds the site's URLs in its sitemap(s) and llms.txt and queues them for the inventory crawl. */
+export async function importWebsiteSitemap(siteUrl: string, railwayUrl?: string, aiSummary = true, onlyNew = true): Promise<SitemapImportResult> {
+  return railwayRequest<SitemapImportResult>("/api/website-inventory/sitemap-import", jsonRequest("POST", { siteUrl, aiSummary, onlyNew }), railwayUrl)
 }
 
 export async function fetchWebsiteInventoryBatch(

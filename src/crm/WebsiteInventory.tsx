@@ -5,7 +5,9 @@ import {
   deleteWebsiteInventoryRecord,
   fetchWebsiteInventory,
   fetchWebsiteInventoryBatch,
+  importWebsiteSitemap,
   scanWebsiteUrl,
+  type SitemapImportResult,
   startWebsiteInventoryBatch,
   updateWebsiteInventoryRecord,
 } from "../lib/db"
@@ -24,6 +26,10 @@ export default function WebsiteInventory({
 }) {
   const { tr } = useI18n()
   const [input, setInput] = useState("")
+  const [siteUrl, setSiteUrl] = useState("")
+  const [onlyNew, setOnlyNew] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [sitemapResult, setSitemapResult] = useState<SitemapImportResult | null>(null)
   const [scanning, setScanning] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
@@ -167,6 +173,33 @@ export default function WebsiteInventory({
       setScanning(false)
     }
   }
+  const importSitemap = async (eventTimeStamp: number) => {
+    const target = siteUrl.trim()
+    if (!target || scanning || importing) return
+    setImporting(true)
+    setSitemapResult(null)
+    try {
+      const result = await trackHandoff(eventTimeStamp, () => importWebsiteSitemap(/^https?:\/\//i.test(target) ? target : `https://${target}`, railwayUrl, includeAiSummary, onlyNew))
+      setSitemapResult(result)
+      if (!result.job) return
+      const existing = new Set(records.map((item) => item.url))
+      const pending = (result.job.urls ?? []).filter((url) => !existing.has(url)).map((url, index): WebsiteContentRecord => ({
+        id: `pending-${Date.now()}-${index}`, url, title: new URL(url).hostname, contentType: "blog", topics: [], services: [], status: "queued", crawlStatus: "queued", eligibleForInternalLink: false,
+      }))
+      const current = [...pending, ...records]
+      onChange(current)
+      setSummaryLimitReached(false)
+      setScanning(true)
+      setScanProgress({ done: 0, total: result.job.total })
+      localStorage.setItem("writer:website-inventory-active-job", result.job.id)
+      setActiveJobId(result.job.id)
+      await monitorBatch(result.job.id, current).catch(() => setScanning(false))
+    } catch (error) {
+      toastErr(error)
+    } finally {
+      setImporting(false)
+    }
+  }
   const recheck = async (record: WebsiteContentRecord) => {
     update(record.id, { status: "checking", crawlStatus: "checking" })
     try {
@@ -247,7 +280,35 @@ export default function WebsiteInventory({
     <>
       <section>
         <h2>Website inventory</h2>
-        <p className="desc">Paste one URL per line. Railway checks each page and extracts its metadata automatically.</p>
+        <p className="desc">{tr("Nhập từ sitemap của site, hoặc dán từng URL. Railway kiểm tra từng trang và lấy thông tin tự động.", "Import from the site's sitemap, or paste URLs. Railway checks each page and extracts its metadata automatically.")}</p>
+        <div className="box" style={{ marginBottom: 12 }}>
+          <div className="box-row" style={{ flexWrap: "wrap" }}>
+            <I n="sitemap" />
+            <div className="grow" style={{ minWidth: 200 }}>
+              {tr("Nhập từ sitemap / llms.txt", "Import from sitemap / llms.txt")}
+              <div className="s">{tr("Đọc sitemap (khai báo trong robots.txt, hoặc /sitemap.xml) và llms.txt. Trang có mô tả trong llms.txt dùng mô tả đó thay cho AI summary.", "Reads the sitemap (declared in robots.txt, or /sitemap.xml) and llms.txt. Pages described in llms.txt use that description instead of an AI summary.")}</div>
+            </div>
+          </div>
+          <div className="box-row" style={{ flexWrap: "wrap" }}>
+            <input className="inp" style={{ flex: "1 1 240px", width: "auto" }} aria-label={tr("Địa chỉ site", "Site address")} placeholder="https://example.com" value={siteUrl} onChange={(event) => setSiteUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void importSitemap(event.timeStamp) }} />
+            <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--f2)" }}>
+              <input type="checkbox" checked={onlyNew} onChange={(event) => setOnlyNew(event.target.checked)} />
+              {tr("Chỉ trang chưa có", "New pages only")}
+            </label>
+            <button type="button" className="btn primary" disabled={scanning || importing || !siteUrl.trim()} onClick={(event) => void importSitemap(event.timeStamp)}>
+              <I n={importing ? "loader-2" : "download"} />{importing ? tr("Đang đọc sitemap…", "Reading sitemap…") : tr("Nhập từ sitemap", "Import from sitemap")}
+            </button>
+          </div>
+          {sitemapResult && <div className="box-row" style={{ display: "block" }} aria-live="polite">
+            <div>{tr(`Tìm thấy ${sitemapResult.discovered} URL trong ${sitemapResult.sitemapsRead} sitemap · ${sitemapResult.queued} trang đưa vào quét`, `Found ${sitemapResult.discovered} URLs in ${sitemapResult.sitemapsRead} sitemap(s) · ${sitemapResult.queued} pages queued`)}{sitemapResult.llmsDescriptions ? tr(` · llms.txt: ${sitemapResult.llmsUsed}/${sitemapResult.llmsDescriptions} mô tả được dùng`, ` · llms.txt: ${sitemapResult.llmsUsed}/${sitemapResult.llmsDescriptions} descriptions used`) : tr(" · không có llms.txt", " · no llms.txt")}</div>
+            {sitemapResult.errors.map((error) => <div key={error} className="s">{error}</div>)}
+            {sitemapResult.missing.length > 0 && <details style={{ marginTop: 6 }}>
+              <summary className="s" style={{ cursor: "pointer" }}>{tr(`${sitemapResult.missing.length} trang trong Inventory không còn trong sitemap`, `${sitemapResult.missing.length} inventory pages are no longer in the sitemap`)}</summary>
+              <div className="s" style={{ marginTop: 4 }}>{tr("Kiểm tra rồi tự xoá hoặc bỏ duyệt nếu trang đã gỡ; tool không tự xoá.", "Review them and delete or unapprove pages that were removed; nothing is deleted automatically.")}</div>
+              {sitemapResult.missing.slice(0, 50).map((page) => <div key={page.id} className="s"><a href={page.url} target="_blank" rel="noreferrer">{page.title || page.url}</a></div>)}
+            </details>}
+          </div>}
+        </div>
         <div className="box">
           <div className="box-row" style={{ display: "block" }}>
             <textarea

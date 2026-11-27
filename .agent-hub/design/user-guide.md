@@ -57,6 +57,10 @@ Phần mở đầu được hiển thị đầy đủ. Quy tắc viết hướng
 - **Pause / Resume** cần chờ server xác nhận. Trong lúc batch đang sở hữu bài, app hạn chế thao tác AI thủ công trùng để tránh ghi đè.
 - Retry mục lỗi thay vì chạy lại toàn bộ mục đã xong. Mở pipeline của từng bài để đọc/sửa khi trạng thái cho phép; tải draft khi đã có kết quả.
 
+**Website Inventory › Nhập từ sitemap / llms.txt:** nhập địa chỉ site (ví dụ https://example.com) rồi bấm **Nhập từ sitemap**. Tool đọc sitemap (khai báo trong robots.txt hoặc /sitemap.xml) và llms.txt, rồi đưa các URL vào bước quét như khi dán tay. Trang có mô tả trong llms.txt dùng mô tả đó thay cho AI summary. Mặc định chỉ quét trang chưa có; bỏ chọn **Chỉ trang chưa có** để quét lại toàn bộ. Kết quả liệt kê các trang trong Inventory không còn trong sitemap để bạn tự kiểm tra; tool không tự xoá.
+
+Dưới G1 trong tab thủ công có thêm khung nghiên cứu: **cảnh báo trùng keyword** với trang trong Website Inventory hoặc bài khác (chỉ cảnh báo), **phân tích đối thủ** (số trang đã đọc, phần đối thủ đều có, khoảng trống, từng trang) và các mục **information gain** của Article Spec (câu hỏi người đọc, khoảng trống, điểm khác biệt, câu đáng được trích dẫn, entities). Bật phân tích đối thủ và cảnh báo trùng keyword ở Settings › Workflow rules › G1.
+
 ## 8. Quản lý tài liệu trong Storage
 
 Storage có 4 nhóm. **Domain Knowledge** gồm Brand context (loại positioning, usp, brand voice: luôn gửi nguyên văn cho AI) và Evidence (các loại còn lại: chỉ gửi đoạn liên quan, là nguồn duy nhất cho số liệu). **Playbooks** nói cách AI tạo output của từng Gate. **Standards** là checklist AI tự duyệt và sửa trước khi bạn duyệt. **Source data** là Content Plan. File Rules chưa được chọn nhóm hiện chữ "đoán": mở file và bấm Xác nhận hoặc chọn nhóm khác. Mọi con số (số ý tưởng, số section, mở bài, kết luận, số lượt sửa) và công tắc tự duyệt G1/G2 nằm ở **Settings › Workflow rules**, theo từng Gate. Kết quả tự duyệt G1/G2 hiện dưới mỗi bước trong tab thủ công; nhãn "Đã cũ" nghĩa là nội dung đã đổi sau lần duyệt.

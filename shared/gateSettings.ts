@@ -23,6 +23,9 @@ export interface GateSetting {
 export const GATE_SETTINGS: GateSetting[] = [
   { id: 'specSelfReview', step: 2, level: 'basic', kind: 'boolean', def: false, vi: 'Tự duyệt bằng AI theo Standards', en: 'AI self-review against Standards', hintVi: 'Sau khi tạo Core Idea, AI chấm theo các file Standards đã tick ở G1 và sửa lỗi. Tốn thêm lượt gọi AI.', hintEn: 'After the Core Idea, AI checks it against the Standards ticked for G1 and fixes issues. Costs extra AI calls.' },
   { id: 'specFixRounds', step: 2, level: 'advanced', kind: 'number', def: 1, min: 0, max: 2, vi: 'Số lượt sửa tối đa', en: 'Max fix rounds', hintVi: 'Mỗi lượt gồm một lần sửa và một lần chấm lại.', hintEn: 'Each round is one fix and one re-check.' },
+  { id: 'competitorAnalysis', step: 2, level: 'basic', kind: 'boolean', def: false, vi: 'Phân tích nội dung đối thủ', en: 'Competitor content analysis', hintVi: 'Đọc các trang đối thủ tìm được khi nghiên cứu keyword (không gồm trang của bạn trong Website Inventory) và tóm tắt cấu trúc, điểm mạnh, điểm yếu, khoảng trống. Tốn thêm một lượt gọi AI mỗi bài.', hintEn: 'Reads competitor pages found during keyword research (not your Website Inventory pages) and summarises structure, strengths, weaknesses and gaps. One extra AI call per article.' },
+  { id: 'competitorCount', step: 2, level: 'advanced', kind: 'number', def: 5, min: 2, max: 10, vi: 'Số trang đối thủ tối đa', en: 'Max competitor pages', hintVi: 'Trang nào không đọc được thì bỏ qua.', hintEn: 'Pages that cannot be read are skipped.' },
+  { id: 'cannibalisationCheck', step: 2, level: 'basic', kind: 'boolean', def: true, vi: 'Cảnh báo trùng keyword (cannibalisation)', en: 'Keyword overlap warning (cannibalisation)', hintVi: 'Sau G1, so keyword chính và tiêu đề với Website Inventory và các bài khác; chỉ cảnh báo, không chặn. Không gọi AI.', hintEn: 'After G1, compares the primary keyword and title with Website Inventory and other articles; warns only. No AI call.' },
   { id: 'keywordCount', step: 2, level: 'basic', kind: 'number', def: 10, min: 5, max: 20, legacy: ['core-idea', 'market-research'], vi: 'Số keyword nghiên cứu', en: 'Keywords to research', hintVi: 'Số keyword SEO tra trên web cho mỗi bài.', hintEn: 'SEO keywords looked up on the web per article.' },
   { id: 'ideaCount', step: 2, level: 'basic', kind: 'number', def: 3, min: 2, max: 6, legacy: ['core-idea', 'idea-generation'], vi: 'Số ý tưởng', en: 'Ideas', hintVi: 'Số ý tưởng AI tạo ra để chọn một ý viết bài.', hintEn: 'Ideas generated before one is chosen.' },
   { id: 'outlineSelfReview', step: 3, level: 'basic', kind: 'boolean', def: false, vi: 'Tự duyệt bằng AI theo Standards', en: 'AI self-review against Standards', hintVi: 'Sau khi lập outline, AI chấm theo các file Standards đã tick ở G2 và sửa lỗi. Tốn thêm lượt gọi AI.', hintEn: 'After the outline, AI checks it against the Standards ticked for G2 and fixes issues. Costs extra AI calls.' },
@@ -40,7 +43,7 @@ export const GATE_SETTINGS: GateSetting[] = [
 ];
 
 export type GateSettingValues = {
-  specSelfReview: boolean; specFixRounds: number; keywordCount: number; ideaCount: number;
+  specSelfReview: boolean; specFixRounds: number; competitorAnalysis: boolean; competitorCount: number; cannibalisationCheck: boolean; keywordCount: number; ideaCount: number;
   outlineSelfReview: boolean; outlineFixRounds: number; minimumSections: number;
   draftFixRounds: number; introMinWords: number; introMaxWords: number; introParagraphs: number; conclusionPercent: number;
   conclusionHeading: string; maxSentencesPerParagraph: number; titleKeyword: boolean; promptCache: boolean;

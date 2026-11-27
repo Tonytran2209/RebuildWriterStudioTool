@@ -182,7 +182,8 @@ function classify(
   }
 }
 
-export async function scanWebsiteUrl(raw: string) {
+/** GET a public URL, following redirects manually so every hop is checked against private networks. */
+async function fetchPublic(raw: string, userAgent: string) {
   let current = await assertPublicUrl(raw.trim())
   const original = current.toString()
   let redirected = false
@@ -191,11 +192,7 @@ export async function scanWebsiteUrl(raw: string) {
     response = await fetch(current, {
       redirect: "manual",
       signal: AbortSignal.timeout(12_000),
-      headers: {
-        "user-agent":
-          "WriterStudioInventoryBot/1.0 (+website inventory verification)",
-        accept: "text/html,application/xhtml+xml",
-      },
+      headers: { "user-agent": userAgent, accept: "text/html,application/xhtml+xml" },
     })
     if (![301, 302, 303, 307, 308].includes(response.status)) break
     const location = response.headers.get("location")
@@ -205,6 +202,35 @@ export async function scanWebsiteUrl(raw: string) {
     if (hop === MAX_REDIRECTS) throw new Error("Too many redirects.")
   }
   if (!response) throw new Error("Website did not return a response.")
+  return { response, current, original, redirected }
+}
+
+/**
+ * Reads a competitor page for G1 competitor analysis: title, H1–H3 headings (in order, with level) and
+ * main text (capped). Same network safeguards as the inventory scan. Throws when the page is not readable HTML.
+ */
+export async function fetchPublicPage(raw: string, maxTextChars = 6_000) {
+  const { response, current } = await fetchPublic(raw, "WriterStudioResearchBot/1.0 (+content research)")
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  if (!(response.headers.get("content-type") ?? "").includes("text/html")) throw new Error("Not an HTML page.")
+  if (Number(response.headers.get("content-length") ?? 0) > MAX_HTML_BYTES) throw new Error("HTML response is too large.")
+  const html = await readLimitedHtml(response)
+  const text = mainContent(html)
+  const headings = [...html.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/gi)]
+    .map((match) => `H${match[1]} ${decode(match[2].replace(/<[^>]+>/g, " "))}`)
+    .filter((heading) => heading.length > 3)
+    .slice(0, 40)
+  return {
+    url: current.toString(),
+    title: (textOf(html, "title") || meta(html, "og:title") || textOf(html, "h1") || current.hostname).slice(0, 200),
+    headings,
+    wordCount: text.split(/\s+/).filter(Boolean).length,
+    text: text.slice(0, maxTextChars),
+  }
+}
+
+export async function scanWebsiteUrl(raw: string) {
+  const { response, current, original, redirected } = await fetchPublic(raw, "WriterStudioInventoryBot/1.0 (+website inventory verification)")
   const checkedAt = new Date().toISOString()
   if (!response.ok)
     return {
@@ -270,3 +296,83 @@ export async function scanWebsiteUrl(raw: string) {
 }
 
 export { selectInternalLinkCandidates as selectWebsiteCandidates } from "../src/lib/internalLinkInventory.ts"
+
+/* ─── Sitemap / llms.txt import (URL source for the inventory crawl) ─── */
+
+export const MAX_SITEMAP_URLS = 2000
+const MAX_SITEMAP_FILES = 50
+const sameSite = (a: string, b: string) => a.replace(/^www\./, "").toLowerCase() === b.replace(/^www\./, "").toLowerCase()
+
+/** <loc> values of a sitemap: page URLs from a urlset, child sitemaps from a sitemapindex. */
+export function parseSitemap(xml: string): { urls: string[]; sitemaps: string[] } {
+  const locs = (block: string) => [...block.matchAll(/<loc>\s*(?:<!\[CDATA\[)?\s*([^<\]]+?)\s*(?:\]\]>)?\s*<\/loc>/gi)].map((match) => decode(match[1]))
+  const sitemaps = [...xml.matchAll(/<sitemap\b[^>]*>([\s\S]*?)<\/sitemap>/gi)].flatMap((match) => locs(match[1]))
+  const urls = [...xml.matchAll(/<url\b[^>]*>([\s\S]*?)<\/url>/gi)].flatMap((match) => locs(match[1]))
+  return { urls, sitemaps }
+}
+
+/** Links of an llms.txt (markdown "- [title](url): description"), resolved against the site. */
+export function parseLlmsTxt(text: string, base: string): Array<{ url: string; title: string; description: string }> {
+  return text.split(/\r?\n/).flatMap((line) => {
+    const match = /^\s*[-*]\s*\[([^\]]+)\]\(([^)\s]+)\)\s*(?::\s*(.*))?$/.exec(line)
+    if (!match) return []
+    try {
+      return [{ url: new URL(match[2], base).toString(), title: match[1].trim().slice(0, 200), description: (match[3] ?? "").trim().slice(0, 600) }]
+    } catch { return [] }
+  })
+}
+
+/** Sitemap URLs listed in robots.txt ("Sitemap: …" lines). */
+export function robotsSitemaps(text: string, base: string) {
+  return text.split(/\r?\n/).flatMap((line) => {
+    const match = /^\s*sitemap\s*:\s*(\S+)/i.exec(line)
+    if (!match) return []
+    try { return [new URL(match[1], base).toString()] } catch { return [] }
+  })
+}
+
+async function fetchPublicText(raw: string) {
+  const { response } = await fetchPublic(raw, "WriterStudioInventoryBot/1.0 (+sitemap import)")
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  if (Number(response.headers.get("content-length") ?? 0) > MAX_HTML_BYTES) throw new Error("Response is too large.")
+  return readLimitedHtml(response)
+}
+
+/**
+ * The site's page URLs from its sitemaps (robots.txt Sitemap lines, else /sitemap.xml and /sitemap_index.xml,
+ * following sitemap indexes) and the descriptions of its llms.txt. Same-site URLs only, at most 2000.
+ * A missing llms.txt is normal; no readable sitemap is an error.
+ */
+export async function discoverSiteUrls(siteUrl: string) {
+  const origin = (await assertPublicUrl(siteUrl.trim())).origin
+  const host = new URL(origin).hostname
+  const errors: string[] = []
+  const robots = await fetchPublicText(`${origin}/robots.txt`).catch(() => "")
+  const queue = [...new Set([...robotsSitemaps(robots, origin), `${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`])]
+  const visited = new Set<string>()
+  const urls = new Set<string>()
+  let read = 0
+  while (queue.length && visited.size < MAX_SITEMAP_FILES && urls.size < MAX_SITEMAP_URLS) {
+    const sitemap = queue.shift()!
+    if (visited.has(sitemap)) continue
+    visited.add(sitemap)
+    try {
+      if (!sameSite(new URL(sitemap).hostname, host)) continue
+      if (/\.gz($|\?)/i.test(sitemap)) { errors.push(`${sitemap}: compressed sitemaps are not supported`); continue }
+      const parsed = parseSitemap(await fetchPublicText(sitemap))
+      if (!parsed.urls.length && !parsed.sitemaps.length) continue
+      read += 1
+      queue.push(...parsed.sitemaps.filter((child) => !visited.has(child)))
+      for (const url of parsed.urls) {
+        try { if (["http:", "https:"].includes(new URL(url).protocol) && sameSite(new URL(url).hostname, host)) urls.add(url) } catch { /* skip */ }
+        if (urls.size >= MAX_SITEMAP_URLS) break
+      }
+    } catch (error) {
+      // The two default locations are guesses; only report sitemaps the site declared or linked.
+      if (!/\/sitemap(_index)?\.xml$/.test(sitemap) || robots.includes(sitemap)) errors.push(`${sitemap}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  const llmsText = await fetchPublicText(`${origin}/llms.txt`).catch(() => "")
+  const llms = parseLlmsTxt(llmsText, origin).filter((item) => { try { return sameSite(new URL(item.url).hostname, host) } catch { return false } })
+  return { origin, urls: [...urls], sitemapsRead: read, sitemapsTried: visited.size, llms, errors: errors.slice(0, 10) }
+}

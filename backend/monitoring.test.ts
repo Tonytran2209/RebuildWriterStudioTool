@@ -88,11 +88,11 @@ test("AI instrumentation preserves results, errors and restart-safe aggregate to
     const report = await m.snapshot(7)
     assert.equal(report.profile.version, "profile-v1")
     assert.deepEqual(report.profile.mainJob, { job: "Writer article", steps: [
-      "Phân loại Content Plan", "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Article Spec & Core Idea", "Kiểm tra Core Idea", "Lập outline", "Kiểm tra outline", "Viết draft",
+      "Phân loại Content Plan", "Nhận bài từ Content Plan", "Nghiên cứu từ khóa SEO", "Phân tích đối thủ", "Article Spec & Core Idea", "Kiểm tra Core Idea", "Lập outline", "Kiểm tra outline", "Viết draft",
       "Kiểm tra chất lượng",
     ] })
     assert.deepEqual(report.profile.jobTargets, { "Writer article": 10 })
-    assert.match(report.profile.kpiDescriptions.responseTime, /Generate \(Add Plan\), Retry, Tạo lại G1\/G2\/Draft hoặc Chấm lại AI/)
+    assert.match(report.profile.kpiDescriptions.responseTime, /Generate \(Add Plan\), Retry, Tạo lại G1\/G2\/Draft, Chấm lại AI hoặc Nhập từ sitemap/)
     assert.match(report.profile.kpiDescriptions.clickLatency, /khung hình thứ hai/)
     assert.equal(report.ai.calls, 3)
     assert.equal(report.ai.failed, 1)

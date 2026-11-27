@@ -164,7 +164,7 @@ export async function readMonitoringData(
       runId: "single:" + row.id, job: ARTICLE_JOB, usage: row.usage, endedAt: row.endedAt,
       workload: row.title?.trim() ? (row.workload + " · " + row.title.trim()).slice(0, 200) : row.workload,
     }))
-    // Content Plan classification runs (lab-run:v1), last 61 days, newest first.
+    // Lab runs (lab-run:v1: Content Plan classification, Website Inventory sitemap import), last 61 days, newest first.
     const labRuns = storedLabRuns((await client.query(
       "SELECT value FROM writer_studio.kv_store WHERE key LIKE 'lab-run:v1:%' AND COALESCE(value->>'endedAt',value->>'startedAt') >= $1 ORDER BY COALESCE(value->>'endedAt',value->>'startedAt') DESC LIMIT 5000",
       [new Date(Date.now() - 61 * 86400000).toISOString()],

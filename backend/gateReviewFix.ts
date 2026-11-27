@@ -20,6 +20,14 @@ export const gateReviewJsonSchema: Record<string, unknown> = {
     item: { type: "string" }, status: { type: "string", enum: ["pass", "warning", "fail"] }, reason: { type: "string" }, location: { type: "string" }, fixable: { type: "boolean" },
   } } } },
 }
+// G1 competitor analysis: per page, then across pages.
+export const competitorAnalysisJsonSchema: Record<string, unknown> = {
+  type: "object", additionalProperties: false, required: ["pages", "commonSections", "contentGaps", "entities", "questions", "formats"],
+  properties: {
+    pages: { type: "array", items: { type: "object", additionalProperties: false, required: ["url", "pageType", "strengths", "weaknesses", "entities"], properties: { url: { type: "string" }, pageType: { type: "string" }, strengths: stringArray, weaknesses: stringArray, entities: stringArray } } },
+    commonSections: stringArray, contentGaps: stringArray, entities: stringArray, questions: stringArray, formats: stringArray,
+  },
+}
 // A G1 fix may change only the wording of the selected idea and the Spec's reader-facing fields.
 export const specFixJsonSchema: Record<string, unknown> = {
   type: "object", additionalProperties: false, required: ["idea", "articleSpec"],

@@ -364,8 +364,42 @@ export interface ArticleSpec {
   evidence: EvidenceRef[]
   ctaObjective: string
   internalLinkRequirements: string[]
+  /** Information-gain fields (G1). Absent on Specs built before they existed. */
+  pageType?: string
+  entities?: string[]
+  /** Questions readers ask (People Also Ask style), to be answered in the article. */
+  questions?: string[]
+  /** What competing pages miss (from the competitor analysis when it ran). */
+  contentGaps?: string[]
+  /** What this brand can add that generic pages cannot, grounded in Brand context and Evidence. */
+  informationGain?: string[]
+  /** Short self-contained statements worth being quoted by search and AI answers. */
+  citationTargets?: string[]
   createdAt: string
 }
+
+export interface CompetitorPage {
+  url: string
+  status: "analyzed" | "failed"
+  title?: string
+  headings?: string[]
+  wordCount?: number
+  pageType?: string
+  strengths?: string[]
+  weaknesses?: string[]
+  entities?: string[]
+  error?: string
+}
+export interface CompetitorAnalysis {
+  status: "done" | "error"
+  analyzedAt: string
+  /** researchedAt of the keyword research the URLs came from; a new research means a new analysis. */
+  seoResearchedAt: string
+  pages: CompetitorPage[]
+  summary?: { commonSections: string[]; contentGaps: string[]; entities: string[]; questions: string[]; formats: string[] }
+  error?: string
+}
+export interface CannibalisationMatch { kind: "page" | "article"; id: string; title: string; url?: string; keyword: string; score: number }
 
 export interface QualityGateCheck {
   blocking?: boolean
@@ -438,6 +472,9 @@ export interface Article {
   introductionBudget?: { min: number; max: number; paragraphs?: number }
   /** Conclusion heading and H1 keyword rule, frozen when the draft is written. Absent = "Conclusion", keyword required. */
   draftFormat?: { conclusionHeading?: string; titleKeyword?: boolean }
+  competitorAnalysis?: CompetitorAnalysis | null
+  /** Overlap of this article's primary keyword/title with existing pages and articles, checked after G1. */
+  cannibalisation?: { checkedAt: string; matches: CannibalisationMatch[] } | null
   /** G1 (2) and G2 (3) AI self-review against that Gate's Standards. */
   gateReviews?: Partial<Record<2 | 3, GateReview>>
   outlineNeedsRegeneration?: boolean

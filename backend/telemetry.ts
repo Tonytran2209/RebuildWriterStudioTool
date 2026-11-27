@@ -38,6 +38,7 @@ export interface SendArticleTelemetryOptions {
 export const STAGE_CONFIG: Record<BatchStepKey, { nameEn: string; stepType: "AI" | "NON_AI"; description: string }> = {
   plan: { nameEn: "Article Selection", stepType: "NON_AI", description: "Tiếp nhận bài viết và metadata từ Content Plan." },
   seo: { nameEn: "SEO Research", stepType: "AI", description: "AI nghiên cứu từ khóa chính/phụ và search intent SEO." },
+  competitors: { nameEn: "Competitor Analysis", stepType: "AI", description: "Đọc trang đối thủ từ kết quả nghiên cứu keyword và tóm tắt cấu trúc, điểm mạnh, điểm yếu, khoảng trống." },
   spec: { nameEn: "Article Spec & Core Idea", stepType: "AI", description: "AI xây dựng thông số bài viết (Article Spec) và ý tưởng cốt lõi." },
   specReview: { nameEn: "Core Idea Self-Review", stepType: "AI", description: "AI chấm Core Idea theo Standards của G1 và sửa lỗi." },
   outline: { nameEn: "Outline Generation", stepType: "AI", description: "AI lập dàn ý H2/H3 chuẩn cấu trúc SEO." },

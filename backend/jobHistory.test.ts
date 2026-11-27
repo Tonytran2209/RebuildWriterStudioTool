@@ -167,7 +167,7 @@ test("stored Content Plan classification runs report success, failure, running a
 test("G1/G2 self-review sub-jobs are reported in pipeline order with their parent run", async () => {
   const { articleStepRuns } = await import("./jobHistory.ts")
   const { batchStepLabels, labProfile } = await import("./batchSteps.ts")
-  assert.deepEqual(labProfile.mainJob.steps.slice(3, 7), ["Article Spec & Core Idea", "Kiểm tra Core Idea", "Lập outline", "Kiểm tra outline"])
+  assert.deepEqual(labProfile.mainJob.steps.slice(4, 8), ["Article Spec & Core Idea", "Kiểm tra Core Idea", "Lập outline", "Kiểm tra outline"])
   const article = { runId: "a1", job: "Writer article", workload: "1 SEO article · Review" }
   const runs = articleStepRuns([
     { key: "specReview", label: batchStepLabels.specReview, startedAt: "2026-11-26T00:00:00Z", endedAt: "2026-11-26T00:00:09Z", status: "completed" },
@@ -179,5 +179,20 @@ test("G1/G2 self-review sub-jobs are reported in pipeline order with their paren
   assert.deepEqual(runs.map((r) => [r.job, r.runId, r.status, r.parentRunId, r.parent]), [
     ["Kiểm tra Core Idea", "a1:specReview", "success", "a1", "Writer article"],
     ["Kiểm tra outline", "a1:outlineReview", "failed", "a1", "Writer article"],
+  ])
+})
+
+test("competitor analysis sub-job reports pages handled as items, and only valid counts", async () => {
+  const { articleStepRuns } = await import("./jobHistory.ts")
+  const { batchStepLabels, labProfile } = await import("./batchSteps.ts")
+  assert.deepEqual(labProfile.mainJob.steps.slice(2, 5), ["Nghiên cứu từ khóa SEO", "Phân tích đối thủ", "Article Spec & Core Idea"])
+  const article = { runId: "a9", job: "Writer article", workload: "1 SEO article · Rivals" }
+  const runs = articleStepRuns([
+    { key: "competitors", label: batchStepLabels.competitors, startedAt: "2026-11-27T00:00:00Z", endedAt: "2026-11-27T00:00:30Z", status: "completed", items: { total: 5, succeeded: 4 } },
+    { key: "competitors", label: batchStepLabels.competitors, startedAt: "2026-11-27T00:01:00Z", endedAt: "2026-11-27T00:01:10Z", status: "failed", items: { total: 2, succeeded: 3 } },
+  ], article)
+  assert.deepEqual(runs.map((r) => [r.job, r.status, r.items ?? null]), [
+    ["Phân tích đối thủ", "success", { total: 5, succeeded: 4 }],
+    ["Phân tích đối thủ", "failed", null],
   ])
 })

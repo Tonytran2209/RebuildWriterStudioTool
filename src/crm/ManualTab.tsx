@@ -21,6 +21,45 @@ type Props = {
   onMigrateLegacy: (article: Article) => void
 }
 
+/** G1 research shown under the Gate: overlap warning, competitor analysis and the Spec's information-gain fields. */
+function ResearchBox({ article }: { article: Article }) {
+  const { tr } = useI18n()
+  const spec = article.articleSpec
+  const matches = article.cannibalisation?.matches ?? []
+  const analysis = article.competitorAnalysis
+  const gain: Array<[string, string[] | undefined]> = [
+    [tr("Câu hỏi người đọc", "Reader questions"), spec?.questions],
+    [tr("Khoảng trống của đối thủ", "Competitor gaps"), spec?.contentGaps],
+    [tr("Điểm khác biệt của thương hiệu", "Brand information gain"), spec?.informationGain],
+    [tr("Câu đáng được trích dẫn", "Citation targets"), spec?.citationTargets],
+    ["Entities", spec?.entities],
+  ]
+  const shown = gain.filter(([, items]) => items?.length)
+  if (!matches.length && !analysis && !shown.length && !spec?.pageType) return null
+  return <div className="box" style={{ margin: "8px 0" }}>
+    {matches.length > 0 && <div className="box-row" style={{ alignItems: "flex-start" }}>
+      <I n="alert-triangle" /><div className="grow">{tr("Có thể trùng keyword với nội dung đã có", "May overlap existing content")}
+        {matches.map(m => <div key={`${m.kind}-${m.id}`} className="s">{m.kind === "page" ? "Website" : tr("Bài", "Article")}: {m.url ? <a href={m.url} target="_blank" rel="noreferrer">{m.title}</a> : m.title} · “{m.keyword}” · {Math.round(m.score * 100)}%</div>)}
+      </div><span className="tag t-orange">{tr("Cảnh báo", "Warning")}</span>
+    </div>}
+    {analysis && <div className="box-row" style={{ alignItems: "flex-start" }}>
+      <I n="users" /><div className="grow">{tr("Phân tích đối thủ", "Competitor analysis")}
+        <div className="s">{analysis.status === "error" ? analysis.error : `${analysis.pages.filter(p => p.status === "analyzed").length}/${analysis.pages.length} ${tr("trang đã phân tích", "pages analysed")}`}</div>
+        {analysis.status === "done" && <details style={{ marginTop: 4 }}><summary className="s" style={{ cursor: "pointer" }}>{tr("Xem chi tiết", "Details")}</summary>
+          {analysis.summary?.commonSections.length ? <div className="s" style={{ marginTop: 4 }}><b>{tr("Đối thủ đều có", "Most pages cover")}:</b> {analysis.summary.commonSections.join(" · ")}</div> : null}
+          {analysis.summary?.contentGaps.length ? <div className="s"><b>{tr("Khoảng trống", "Gaps")}:</b> {analysis.summary.contentGaps.join(" · ")}</div> : null}
+          {analysis.pages.map(p => <div key={p.url} className="s" style={{ marginTop: 4 }}><a href={p.url} target="_blank" rel="noreferrer">{p.title || p.url}</a>{p.status === "analyzed" ? ` · ${p.pageType ?? ""}${p.wordCount ? ` · ${p.wordCount} ${tr("từ", "words")}` : ""}` : ` · ${tr("không đọc được", "not readable")}${p.error ? `: ${p.error}` : ""}`}</div>)}
+        </details>}
+      </div><span className={`tag t-${analysis.status === "done" ? "green" : "red"}`}>{analysis.status === "done" ? tr("Xong", "Done") : tr("Lỗi", "Failed")}</span>
+    </div>}
+    {(spec?.pageType || shown.length > 0) && <div className="box-row" style={{ alignItems: "flex-start" }}>
+      <I n="bulb" /><div className="grow">{tr("Information gain trong Article Spec", "Information gain in the Article Spec")}{spec?.pageType && <span className="s"> · {tr("Page type", "Page type")}: {spec.pageType}</span>}
+        {shown.map(([label, items]) => <div key={label} className="s"><b>{label}:</b> {items!.join(" · ")}</div>)}
+      </div>
+    </div>}
+  </div>
+}
+
 /** G1/G2 AI self-review result (Settings › Workflow rules): shown under the Gate, never blocks it. */
 function GateReviewBox({ article, step }: { article: Article; step: 2 | 3 }) {
   const { tr } = useI18n()
@@ -113,6 +152,7 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
       <span className={`tag t-${(o.rating?.overall ?? 0) * 10 >= settings.threshold ? "green" : "gray"}`}>{(o.rating?.overall ?? 0).toFixed(1)}</span>
     </div>) : <p className="muted" style={{ color: "var(--f3)" }}>{running ? <><I n="loader-2" /> {tr("AI đang tạo ý tưởng…", "AI is generating ideas…")}</> : tr("Chưa có ý tưởng. Bấm Tạo lại G1.", "No ideas yet. Use Regenerate G1.")}</p>}
     <StepLog article={a} step={2} />
+    <ResearchBox article={a} />
     <GateReviewBox article={a} step={2} />
 
     <div className="fsec"><I n="list-tree" />&nbsp;{tr("Bước 2 — Dàn bài nháp", "Step 2 — Draft outline")}{a.outlineStructure && <span className="tag t-gray" style={{ marginLeft: 8 }}>{a.outlineStructure.name}</span>}{btn(2, tr("Tạo lại G2", "Regenerate G2"), outline.length ? tr("Tạo lại G2 sẽ xoá outline và draft hiện tại. Tiếp tục?", "Regenerating G2 clears the outline and draft. Continue?") : undefined, !a.selectedCoreIdeaId || !a.outlineStructure)}</div>

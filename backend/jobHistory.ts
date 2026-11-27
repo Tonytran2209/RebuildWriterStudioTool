@@ -66,7 +66,7 @@ export function labJobRecords(runs: ParentRun[]): JobRecord[] {
   }])
 }
 
-type StepRecord = { key?: unknown; label?: unknown; startedAt?: unknown; endedAt?: unknown; status?: unknown }
+type StepRecord = { key?: unknown; label?: unknown; startedAt?: unknown; endedAt?: unknown; status?: unknown; items?: { total?: unknown; succeeded?: unknown } }
 
 // Last AI call of each step inside one article run (writer_ai_usage.called_at).
 export type CallMarks = { seo?: unknown; spec?: unknown; outline?: unknown }
@@ -109,8 +109,14 @@ export function articleStepRuns(steps: unknown, article: { runId: string; job: s
       job: step.label.trim().slice(0, 80), runId: article.runId + ":" + String(step.key ?? step.label).slice(0, 40),
       workload: article.workload, status: step.status === "completed" ? "success" as const : "failed" as const,
       startedAt, endedAt, parentRunId: article.runId, parent: article.job,
+      ...stepItems(step.items),
     }]
   })
+}
+// Only counts that are whole numbers with succeeded ≤ total are reported.
+function stepItems(items: StepRecord["items"]) {
+  const total = Number(items?.total), succeeded = Number(items?.succeeded)
+  return Number.isInteger(total) && Number.isInteger(succeeded) && total >= 0 && succeeded >= 0 && succeeded <= total ? { items: { total, succeeded } } : {}
 }
 
 export function summarizeJobHistory(rows: JobRecord[], limit: number) {
