@@ -17,7 +17,7 @@ import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../lib/qcGroups"
 import StructureSelect from "./StructureSelect"
 import { ModelsSettings, SystemStatus, WorkflowAiSettings } from "./AiSettings"
 import { AddDocForm, DocDetails, LegacyArchive } from "./StorageDocs"
-import WebsiteInventory, { PageDetails } from "./WebsiteInventory"
+import WebsiteInventory, { PageDetails, ScanProgress, useInventoryScan, type InventoryScan } from "./WebsiteInventory"
 import WorkflowRules from "./WorkflowRules"
 import ContentPlanRules from "./ContentPlanRules"
 import { isLegacyActionPlan } from "../lib/legacyCompatibility"
@@ -112,6 +112,8 @@ type Ctx = CrmProps & {
   /** Website Inventory pages; the server saves each record, this is the live list for the CRM. */
   inventory: WebsiteContentRecord[]
   setInventory: (records: WebsiteContentRecord[]) => void
+  /** The running inventory batch, followed app-wide so the table updates with the panel closed. */
+  inventoryScan: InventoryScan
 }
 
 const roleKey = (role: string) => role === "admin" ? "admin" : role === "reviewer" ? "reviewer" : "operator"
@@ -133,6 +135,7 @@ export default function CrmApp(props: CrmProps) {
   const [panel, setPanel] = useState<Panel>(null)
   const [inventory, setInventory] = useState<WebsiteContentRecord[]>(props.config.websiteInventory ?? [])
   useEffect(() => { setInventory(props.config.websiteInventory ?? []) }, [props.config.websiteInventory])
+  const inventoryScan = useInventoryScan(props.config.railwayUrl, setInventory)
   const [navOpen, setNavOpen] = useState(false)
   useEffect(() => {
     let current = window.location.hash, reverting = false
@@ -166,7 +169,7 @@ export default function CrmApp(props: CrmProps) {
   const isAdmin = props.user.role === "admin"
   // Operator runs the pipeline; Reviewer reviews and picks Approved Articles; Admin does everything.
   const can = (what: string) => isAdmin || (props.user.role === "reviewer" ? ["review", "approveArticles", "copy"] : ["plans", "retry", "copy", "manual"]).includes(what)
-  const ctx: Ctx = { ...props, settings, list, plans, batches, docs, can, isAdmin, panel, setPanel, route, inventory, setInventory }
+  const ctx: Ctx = { ...props, settings, list, plans, batches, docs, can, isAdmin, panel, setPanel, route, inventory, setInventory, inventoryScan }
 
   let page: ReactNode
   if (a === "objects" && b in OBJ_META) page = <ObjectIndex ctx={ctx} o={b as Obj} />
@@ -404,6 +407,7 @@ function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
         
         {o === "articles" && <button className="btn ghost" onClick={() => setKanban(k => !k)}><I n={isKanban ? "table" : "layout-kanban"} /><span>{isKanban ? "Table" : "Kanban"}</span></button>}
       </div>
+      {o === "website" && <ScanProgress scan={ctx.inventoryScan} />}
       {gaps.length > 0 && <div style={{ margin: 8, border: "1px solid var(--c-orange-bg)", background: "var(--c-orange-bg)", borderRadius: 6, padding: "10px 12px", color: "var(--c-orange)" }}>
         <b style={{ fontWeight: 600 }}><I n="alert-triangle" /> Open gaps · {gaps.length}</b>
         <div style={{ color: "var(--f2)", marginTop: 4 }}>{gaps.map(d => <span key={d.id} className="rchip" style={{ margin: "2px 4px 2px 0", background: "var(--bg1)" }}>{d.name}</span>)}</div>
@@ -1168,7 +1172,7 @@ function AddPagePanel({ ctx }: { ctx: Ctx }) {
   const { tr } = useI18n()
   if (!ctx.isAdmin) return null
   return <SidePanel ctx={ctx} title={tr("Thêm trang", "Add pages")} icon={<I n="download" />}>
-    <WebsiteInventory records={ctx.inventory} railwayUrl={ctx.config.railwayUrl} onChange={ctx.setInventory} />
+    <WebsiteInventory records={ctx.inventory} railwayUrl={ctx.config.railwayUrl} onChange={ctx.setInventory} scan={ctx.inventoryScan} />
   </SidePanel>
 }
 

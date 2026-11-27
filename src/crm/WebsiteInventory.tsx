@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
 import type { WebsiteContentRecord } from "../types"
 import {
   cancelAllWebsiteInventoryBatches,
@@ -10,309 +10,202 @@ import {
   type SitemapImportResult,
   startWebsiteInventoryBatch,
   updateWebsiteInventoryRecord,
+  type WebsiteInventoryBatchJob,
 } from "../lib/db"
 import { useI18n } from "../lib/i18n"
-import { I, toastErr, trackHandoff } from "./ui"
+import { I, toast, toastErr, trackHandoff } from "./ui"
+
+const ACTIVE_JOB_KEY = "writer:website-inventory-active-job"
+const readJobId = () => { try { return localStorage.getItem(ACTIVE_JOB_KEY) } catch { return null } }
+const writeJobId = (id: string | null) => { try { if (id) localStorage.setItem(ACTIVE_JOB_KEY, id); else localStorage.removeItem(ACTIVE_JOB_KEY) } catch { /* per-viewer convenience */ } }
+
+/** Crawled records replace their queued placeholders (by URL); new URLs go on top. */
+function mergeBatchRecords(base: WebsiteContentRecord[], completed: WebsiteContentRecord[]) {
+  const byUrl = new Map(completed.map((record) => [record.url, record]))
+  const merged = base.map((record) => byUrl.get(record.url) ?? record)
+  const known = new Set(merged.map((record) => record.url))
+  return [...completed.filter((record) => !known.has(record.url)), ...merged]
+}
+const placeholder = (url: string, index: number): WebsiteContentRecord => ({
+  id: `pending-${Date.now()}-${index}`, url, title: new URL(url).hostname, contentType: "blog", topics: [], services: [], status: "queued", crawlStatus: "queued", eligibleForInternalLink: false,
+})
+
+export type InventoryScan = {
+  job: WebsiteInventoryBatchJob | null
+  running: boolean
+  cancelling: boolean
+  start: (jobId: string) => void
+  cancel: () => Promise<void>
+}
 
 /**
- * Website Inventory import: sitemap / llms.txt, pasted URLs, rescan and summarise, with live progress.
- * Shown in the "Add pages" side panel of the Website Inventory object; the page list is the CRM table.
+ * Follows the running inventory batch for the whole CRM (not only while the "Add pages" panel is open):
+ * merges finished pages into the list every 1.5 s and reloads the full list when the batch ends.
+ * The job id survives a reload in localStorage, so a scan started earlier is picked up again.
  */
-export default function WebsiteInventory({
-  records,
-  railwayUrl,
-  onChange,
-}: {
+export function useInventoryScan(railwayUrl: string, setInventory: Dispatch<SetStateAction<WebsiteContentRecord[]>>): InventoryScan {
+  const [jobId, setJobId] = useState<string | null>(readJobId)
+  const [job, setJob] = useState<WebsiteInventoryBatchJob | null>(null)
+  const [cancelling, setCancelling] = useState(false)
+  useEffect(() => {
+    if (!jobId) return
+    let stopped = false
+    const finish = async () => {
+      writeJobId(null)
+      setJobId(null)
+      setJob(null)
+      try { setInventory(await fetchWebsiteInventory(railwayUrl)) } catch { /* the merged list stays */ }
+    }
+    void (async () => {
+      while (!stopped) {
+        try {
+          const next = await fetchWebsiteInventoryBatch(jobId, railwayUrl)
+          if (stopped) return
+          setJob(next)
+          setInventory((current) => mergeBatchRecords(current, next.recentRecords))
+          if (next.status === "complete" || next.status === "cancelled") return void await finish()
+          if (next.status === "failed" && next.done >= next.total) { toastErr(new Error(next.error || "Website inventory batch failed.")); return void await finish() }
+        } catch (error) {
+          if (stopped) return
+          // A batch the server no longer knows ends here; other errors retry on the next tick.
+          if (/not found/i.test(error instanceof Error ? error.message : String(error))) return void await finish()
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+      }
+    })()
+    return () => { stopped = true }
+  }, [jobId, railwayUrl])
+  return {
+    job, running: Boolean(jobId), cancelling,
+    start: (id) => { writeJobId(id); setJob(null); setJobId(id) },
+    cancel: async () => {
+      if (!jobId || cancelling) return
+      setCancelling(true)
+      try { await cancelAllWebsiteInventoryBatches(railwayUrl); writeJobId(null); setJobId(null); setJob(null); setInventory(await fetchWebsiteInventory(railwayUrl)) }
+      catch (error) { toastErr(error) }
+      finally { setCancelling(false) }
+    },
+  }
+}
+
+/** One-line scan progress, shared by the table and the "Add pages" panel. */
+export function ScanProgress({ scan }: { scan: InventoryScan }) {
+  const { tr } = useI18n()
+  if (!scan.running) return null
+  const done = scan.job?.done ?? 0, total = scan.job?.total ?? 0
+  return <div role="status" aria-live="polite" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", margin: 8, padding: "8px 12px", borderRadius: 6, background: "var(--accent-bg)" }}>
+    <I n="loader-2" />
+    <span className="grow">{total ? tr(`Đang quét ${done}/${total} trang`, `Scanning ${done}/${total} pages`) : tr("Đang bắt đầu quét…", "Starting the scan…")}{scan.job?.summaryLimitReached ? tr(" · hết lượt AI summary hôm nay, vẫn lấy thông tin trang", " · AI summary limit reached today, metadata continues") : ""}</span>
+    <span style={{ width: 120, height: 6, borderRadius: 3, background: "var(--bg4)", overflow: "hidden", display: "inline-block" }}><span style={{ display: "block", height: "100%", width: `${total ? Math.round((done / total) * 100) : 0}%`, background: "var(--accent)" }} /></span>
+    <button type="button" className="btn" disabled={scan.cancelling} onClick={() => void scan.cancel()}><I n="player-stop" />{scan.cancelling ? tr("Đang dừng…", "Stopping…") : tr("Dừng", "Stop")}</button>
+  </div>
+}
+
+/**
+ * "Add pages" side panel: sitemap / llms.txt, pasted URLs, recheck and summarise. Starting work hands the batch
+ * to useInventoryScan, so the panel can be closed while the server keeps scanning and the table keeps updating.
+ */
+export default function WebsiteInventory({ records, railwayUrl, onChange, scan }: {
   records: WebsiteContentRecord[]
   railwayUrl: string
   onChange: (records: WebsiteContentRecord[]) => void
+  scan: InventoryScan
 }) {
   const { tr } = useI18n()
   const [input, setInput] = useState("")
   const [siteUrl, setSiteUrl] = useState("")
   const [onlyNew, setOnlyNew] = useState(true)
+  const [aiSummary, setAiSummary] = useState(true)
   const [importing, setImporting] = useState(false)
   const [sitemapResult, setSitemapResult] = useState<SitemapImportResult | null>(null)
-  const [scanning, setScanning] = useState(false)
-  const [cancelling, setCancelling] = useState(false)
-  const [activeJobId, setActiveJobId] = useState<string | null>(null)
-  const [includeAiSummary, setIncludeAiSummary] = useState(true)
-  const [scanProgress, setScanProgress] = useState({ done: 0, total: 0 })
-  const [summaryLimitReached, setSummaryLimitReached] = useState(false)
-  const resumeStarted = useRef(false)
-  const mergeBatchRecords = (
-    baseRecords: WebsiteContentRecord[],
-    completed: WebsiteContentRecord[],
-  ) => {
-    const byUrl = new Map(completed.map((record) => [record.url, record]))
-    const merged = baseRecords.map((record) => byUrl.get(record.url) ?? record)
-    const known = new Set(merged.map((record) => record.url))
-    return [...completed.filter((record) => !known.has(record.url)), ...merged]
-  }
-  const monitorBatch = async (
-    jobId: string,
-    baseRecords: WebsiteContentRecord[],
-    cancelled: () => boolean = () => false,
-  ) => {
-    let mergedRecords = baseRecords
-    while (!cancelled()) {
-      const job = await fetchWebsiteInventoryBatch(jobId, railwayUrl)
-      if (cancelled()) return
-      setScanProgress({ done: job.done, total: job.total })
-      if (job.summaryLimitReached) setSummaryLimitReached(true)
-      mergedRecords = mergeBatchRecords(mergedRecords, job.recentRecords)
-      onChange(mergedRecords)
-      if (job.status === "complete") {
-        onChange(await fetchWebsiteInventory(railwayUrl))
-        localStorage.removeItem("writer:website-inventory-active-job")
-        setActiveJobId(null)
-        setScanning(false)
-        return
-      }
-      if (job.status === "cancelled") {
-        onChange(await fetchWebsiteInventory(railwayUrl))
-        localStorage.removeItem("writer:website-inventory-active-job")
-        setActiveJobId(null)
-        setScanning(false)
-        return
-      }
-      if (job.status === "failed" && job.done >= job.total) {
-        localStorage.removeItem("writer:website-inventory-active-job")
-        setScanning(false)
-        throw new Error(job.error || "Website inventory batch failed.")
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-    }
-  }
-  useEffect(() => {
-    if (resumeStarted.current) return
-    resumeStarted.current = true
-    const jobId = localStorage.getItem("writer:website-inventory-active-job")
-    if (!jobId) return
-    let cancelled = false
-    setActiveJobId(jobId)
-    setScanning(true)
-    setSummaryLimitReached(false)
-    void monitorBatch(jobId, records, () => cancelled).catch(() => setScanning(false))
-    return () => { cancelled = true }
-  }, [])
-  const scan = async () => {
-    const started = performance.now()
-    const urls = [...new Set(input.split(/[\n,]+/).flatMap((value) => {
-          try {
-            const parsed = new URL(value.trim())
-            return ["http:", "https:"].includes(parsed.protocol)
-              ? [parsed.toString()]
-              : []
-          } catch {
-            return []
-          }
-        }))]
-    if (!urls.length || scanning) return
+  const busy = scan.running || importing
+  const queue = (urls: string[]) => {
     const existing = new Set(records.map((item) => item.url))
-    const pending = urls
-      .filter((url) => !existing.has(url))
-      .map(
-        (url, index): WebsiteContentRecord => ({
-          id: `pending-${Date.now()}-${index}`,
-          url,
-          title: new URL(url).hostname,
-          contentType: "blog",
-          topics: [],
-          services: [],
-          status: "queued",
-          crawlStatus: "queued",
-          eligibleForInternalLink: false,
-        }),
-      )
-    const current = [...pending, ...records]
-    onChange(current)
-    setInput("")
-    setSummaryLimitReached(false)
-    setScanning(true)
-    setScanProgress({ done: 0, total: pending.length })
+    onChange([...urls.filter((url) => !existing.has(url)).map(placeholder), ...records])
+  }
+  const startBatch = async (eventTimeStamp: number, urls: string[], summarize: boolean, mark: (records: WebsiteContentRecord[]) => WebsiteContentRecord[]) => {
+    if (!urls.length || busy) return
+    onChange(mark(records))
     try {
-      const job = await trackHandoff(started, () => startWebsiteInventoryBatch(
-        pending.map((item) => item.url),
-        railwayUrl,
-        includeAiSummary,
-      ))
-      localStorage.setItem("writer:website-inventory-active-job", job.id)
-      setActiveJobId(job.id)
-      await monitorBatch(job.id, current)
-    } catch {
-      setScanning(false)
+      const job = await trackHandoff(eventTimeStamp, () => startWebsiteInventoryBatch(urls, railwayUrl, summarize))
+      scan.start(job.id)
+      toast(tr(`Đã bắt đầu quét ${urls.length} trang. Có thể đóng panel, bảng vẫn cập nhật.`, `Scanning ${urls.length} pages. You can close the panel; the table keeps updating.`))
+    } catch (error) {
+      toastErr(error)
+      try { onChange(await fetchWebsiteInventory(railwayUrl)) } catch { /* keep the list */ }
     }
+  }
+  const importPasted = (eventTimeStamp: number) => {
+    const urls = [...new Set(input.split(/[\n,]+/).flatMap((value) => {
+      try { const parsed = new URL(value.trim()); return ["http:", "https:"].includes(parsed.protocol) ? [parsed.toString()] : [] } catch { return [] }
+    }))]
+    const fresh = urls.filter((url) => !records.some((item) => item.url === url))
+    if (!fresh.length) return toast(tr("Không có URL mới hợp lệ.", "No new valid URL."))
+    setInput("")
+    void startBatch(eventTimeStamp, fresh, aiSummary, (current) => { const existing = new Set(current.map((item) => item.url)); return [...fresh.filter((url) => !existing.has(url)).map(placeholder), ...current] })
   }
   const importSitemap = async (eventTimeStamp: number) => {
     const target = siteUrl.trim()
-    if (!target || scanning || importing) return
+    if (!target || busy) return
     setImporting(true)
     setSitemapResult(null)
     try {
-      const result = await trackHandoff(eventTimeStamp, () => importWebsiteSitemap(/^https?:\/\//i.test(target) ? target : `https://${target}`, railwayUrl, includeAiSummary, onlyNew))
+      const result = await trackHandoff(eventTimeStamp, () => importWebsiteSitemap(/^https?:\/\//i.test(target) ? target : `https://${target}`, railwayUrl, aiSummary, onlyNew))
       setSitemapResult(result)
-      if (!result.job) return
-      const existing = new Set(records.map((item) => item.url))
-      const pending = (result.job.urls ?? []).filter((url) => !existing.has(url)).map((url, index): WebsiteContentRecord => ({
-        id: `pending-${Date.now()}-${index}`, url, title: new URL(url).hostname, contentType: "blog", topics: [], services: [], status: "queued", crawlStatus: "queued", eligibleForInternalLink: false,
-      }))
-      const current = [...pending, ...records]
-      onChange(current)
-      setSummaryLimitReached(false)
-      setScanning(true)
-      setScanProgress({ done: 0, total: result.job.total })
-      localStorage.setItem("writer:website-inventory-active-job", result.job.id)
-      setActiveJobId(result.job.id)
-      await monitorBatch(result.job.id, current).catch(() => setScanning(false))
+      if (result.job) { queue(result.job.urls ?? []); scan.start(result.job.id) }
     } catch (error) {
       toastErr(error)
     } finally {
       setImporting(false)
     }
   }
-  const recheckAll = async () => {
-    const started = performance.now()
-    if (scanning || !records.length) return
-    setSummaryLimitReached(false)
-    setScanning(true)
-    setScanProgress({ done: 0, total: records.length })
-    const current: WebsiteContentRecord[] = records.map((item) => ({
-      ...item,
-      status: "queued" as const,
-      crawlStatus: "queued" as const,
-    }))
-    onChange(current)
-    try {
-      const job = await trackHandoff(started, () => startWebsiteInventoryBatch(records.map((item) => item.url), railwayUrl, true))
-      localStorage.setItem("writer:website-inventory-active-job", job.id)
-      setActiveJobId(job.id)
-      await monitorBatch(job.id, current)
-    } catch {
-      setScanning(false)
-    }
-  }
-  const summarizeMissing = async () => {
-    const started = performance.now()
-    const pending = records.filter((record) => !record.summary && record.status !== "broken")
-    if (scanning || !pending.length) return
-    setSummaryLimitReached(false)
-    setScanning(true)
-    setScanProgress({ done: 0, total: pending.length })
-    const current = records.map((item) => pending.some((record) => record.id === item.id)
-      ? { ...item, crawlStatus: "summarizing" as const }
-      : item)
-    onChange(current)
-    try {
-      const job = await trackHandoff(started, () => startWebsiteInventoryBatch(pending.map((item) => item.url), railwayUrl, true))
-      localStorage.setItem("writer:website-inventory-active-job", job.id)
-      setActiveJobId(job.id)
-      await monitorBatch(job.id, current)
-    } catch {
-      setScanning(false)
-    }
-  }
-  const cancelScan = async () => {
-    if (!activeJobId || cancelling) return
-    setCancelling(true)
-    try {
-      await cancelAllWebsiteInventoryBatches(railwayUrl)
-      localStorage.removeItem("writer:website-inventory-active-job")
-      setActiveJobId(null)
-      setScanning(false)
-      onChange(await fetchWebsiteInventory(railwayUrl))
-    } finally {
-      setCancelling(false)
-    }
-  }
-  return (
-    <>
-      <div>
-        <div className="fsec" style={{ paddingTop: 0 }}><I n="download" />&nbsp;{tr("Nhập trang", "Import pages")}</div>
-        <p style={{ color: "var(--f3)", fontSize: 12, margin: "0 0 8px" }}>{tr("Nhập từ sitemap của site, hoặc dán từng URL. Railway kiểm tra từng trang và lấy thông tin tự động.", "Import from the site's sitemap, or paste URLs. Railway checks each page and extracts its metadata automatically.")}</p>
-        <div className="box" style={{ marginBottom: 12 }}>
-          <div className="box-row" style={{ flexWrap: "wrap" }}>
-            <I n="sitemap" />
-            <div className="grow" style={{ minWidth: 200 }}>
-              {tr("Nhập từ sitemap / llms.txt", "Import from sitemap / llms.txt")}
-              <div className="s">{tr("Đọc sitemap (khai báo trong robots.txt, hoặc /sitemap.xml) và llms.txt. Trang có mô tả trong llms.txt dùng mô tả đó thay cho AI summary.", "Reads the sitemap (declared in robots.txt, or /sitemap.xml) and llms.txt. Pages described in llms.txt use that description instead of an AI summary.")}</div>
-            </div>
-          </div>
-          <div className="box-row" style={{ flexWrap: "wrap" }}>
-            <input className="inp" style={{ flex: "1 1 240px", width: "auto" }} aria-label={tr("Địa chỉ site", "Site address")} placeholder="https://example.com" value={siteUrl} onChange={(event) => setSiteUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void importSitemap(event.timeStamp) }} />
-            <label style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--f2)" }}>
-              <input type="checkbox" checked={onlyNew} onChange={(event) => setOnlyNew(event.target.checked)} />
-              {tr("Chỉ trang chưa có", "New pages only")}
-            </label>
-            <button type="button" className="btn primary" disabled={scanning || importing || !siteUrl.trim()} onClick={(event) => void importSitemap(event.timeStamp)}>
-              <I n={importing ? "loader-2" : "download"} />{importing ? tr("Đang đọc sitemap…", "Reading sitemap…") : tr("Nhập từ sitemap", "Import from sitemap")}
-            </button>
-          </div>
-          {sitemapResult && <div className="box-row" style={{ display: "block" }} aria-live="polite">
-            <div>{tr(`Tìm thấy ${sitemapResult.discovered} URL trong ${sitemapResult.sitemapsRead} sitemap · ${sitemapResult.queued} trang đưa vào quét`, `Found ${sitemapResult.discovered} URLs in ${sitemapResult.sitemapsRead} sitemap(s) · ${sitemapResult.queued} pages queued`)}{sitemapResult.llmsDescriptions ? tr(` · llms.txt: ${sitemapResult.llmsUsed}/${sitemapResult.llmsDescriptions} mô tả được dùng`, ` · llms.txt: ${sitemapResult.llmsUsed}/${sitemapResult.llmsDescriptions} descriptions used`) : tr(" · không có llms.txt", " · no llms.txt")}</div>
-            {sitemapResult.errors.map((error) => <div key={error} className="s">{error}</div>)}
-            {sitemapResult.missing.length > 0 && <details style={{ marginTop: 6 }}>
-              <summary className="s" style={{ cursor: "pointer" }}>{tr(`${sitemapResult.missing.length} trang trong Inventory không còn trong sitemap`, `${sitemapResult.missing.length} inventory pages are no longer in the sitemap`)}</summary>
-              <div className="s" style={{ marginTop: 4 }}>{tr("Kiểm tra rồi tự xoá hoặc bỏ duyệt nếu trang đã gỡ; tool không tự xoá.", "Review them and delete or unapprove pages that were removed; nothing is deleted automatically.")}</div>
-              {sitemapResult.missing.slice(0, 50).map((page) => <div key={page.id} className="s"><a href={page.url} target="_blank" rel="noreferrer">{page.title || page.url}</a></div>)}
-            </details>}
-          </div>}
-        </div>
-        <div className="box">
-          <div className="box-row" style={{ display: "block" }}>
-            <textarea
-              rows={4}
-              className="inp"
-              style={{ height: "auto", padding: 8, resize: "vertical" }}
-              aria-label="Website URLs"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder={"https://flearningstudio.com/page-one\nhttps://flearningstudio.com/page-two"}
-            />
-          </div>
-          <div className="box-row" style={{ flexWrap: "wrap" }}>
-            <div className="grow" style={{ minWidth: 200 }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input type="checkbox" checked={includeAiSummary} onChange={(event) => setIncludeAiSummary(event.target.checked)} />
-                {tr("AI summary và semantic classification", "AI summary and semantic classification")}
-              </label>
-              <div className="s" aria-live="polite">
-                {summaryLimitReached
-                  ? tr(`Đã hết lượt AI summary hôm nay. Metadata vẫn tiếp tục scan (${scanProgress.done}/${scanProgress.total}).`, `AI summary limit reached for today. Metadata scan continues (${scanProgress.done}/${scanProgress.total}).`)
-                  : scanning
-                    ? `Scanning ${scanProgress.done}/${scanProgress.total} pages…`
-                    : "Private-network URLs and non-HTML files are blocked."}
-              </div>
-            </div>
-            {scanning && activeJobId && (
-              <button type="button" className="btn danger" disabled={cancelling} onClick={() => void cancelScan()}>
-                <I n="player-stop" />
-                {cancelling ? tr("Đang dừng…", "Stopping…") : tr("Dừng scan", "Stop scan")}
-              </button>
-            )}
-            <button type="button" className="btn primary" disabled={scanning || !input.trim()} onClick={() => void scan()}>
-              <I n={includeAiSummary ? "sparkles" : "world"} />
-              {includeAiSummary ? "Import, scan & summarize" : "Import metadata only"}
-            </button>
-          </div>
-        </div>
+  const recheckAll = (eventTimeStamp: number) =>
+    void startBatch(eventTimeStamp, records.map((item) => item.url), true, (current) => current.map((item) => ({ ...item, status: "queued" as const, crawlStatus: "queued" as const })))
+  const missingSummary = records.filter((record) => !record.summary && record.status !== "broken")
+  const summarizeMissing = (eventTimeStamp: number) =>
+    void startBatch(eventTimeStamp, missingSummary.map((item) => item.url), true, (current) => current.map((item) => missingSummary.some((record) => record.id === item.id) ? { ...item, crawlStatus: "summarizing" as const } : item))
+  const usable = records.filter((item) => item.eligibleForInternalLink && ["active", "redirected"].includes(item.status)).length
+  const hint = { color: "var(--f3)", fontSize: 12 } as const
+  return <>
+    <ScanProgress scan={scan} />
+
+    <div className="fsec" style={{ paddingTop: 4 }}><I n="sitemap" />&nbsp;{tr("Từ sitemap / llms.txt", "From sitemap / llms.txt")}</div>
+    <div className="fields" style={{ paddingTop: 0 }}>
+      <div className="frow"><div className="flabel"><I n="world" />Site</div><div className="fval"><input aria-label={tr("Địa chỉ site", "Site address")} placeholder="https://example.com" value={siteUrl} disabled={busy} onChange={(event) => setSiteUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void importSitemap(event.timeStamp) }} /></div></div>
+      <div className="frow"><div className="flabel"><I n="filter" />{tr("Chỉ trang mới", "New pages only")}</div><div className="fval"><button role="switch" aria-checked={onlyNew} aria-label={tr("Chỉ quét trang chưa có trong Inventory", "Only scan pages not yet in the inventory")} className={`toggle${onlyNew ? " on" : ""}`} onClick={() => setOnlyNew((value) => !value)} /></div></div>
+      <div className="frow"><div className="flabel"><I n="sparkles" />AI summary</div><div className="fval"><button role="switch" aria-checked={aiSummary} aria-label={tr("AI tóm tắt và phân loại trang", "AI summary and classification")} className={`toggle${aiSummary ? " on" : ""}`} onClick={() => setAiSummary((value) => !value)} /><span className="s" style={{ marginLeft: 6 }}>{tr("trang có mô tả trong llms.txt không cần AI", "pages described in llms.txt skip AI")}</span></div></div>
+    </div>
+    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+      <button type="button" className="btn primary" disabled={busy || !siteUrl.trim()} onClick={(event) => void importSitemap(event.timeStamp)}><I n={importing ? "loader-2" : "download"} />{importing ? tr("Đang đọc sitemap…", "Reading sitemap…") : tr("Nhập từ sitemap", "Import from sitemap")}</button>
+    </div>
+    {sitemapResult && <div className="box" style={{ marginTop: 8 }} aria-live="polite">
+      <div className="box-row" style={{ display: "block" }}>
+        <div>{tr(`${sitemapResult.discovered} URL trong ${sitemapResult.sitemapsRead} sitemap · ${sitemapResult.queued} trang đưa vào quét`, `${sitemapResult.discovered} URLs in ${sitemapResult.sitemapsRead} sitemap(s) · ${sitemapResult.queued} pages queued`)}</div>
+        <div className="s">{sitemapResult.llmsDescriptions ? tr(`llms.txt: ${sitemapResult.llmsUsed}/${sitemapResult.llmsDescriptions} mô tả được dùng`, `llms.txt: ${sitemapResult.llmsUsed}/${sitemapResult.llmsDescriptions} descriptions used`) : tr("Không có llms.txt", "No llms.txt")}</div>
+        {sitemapResult.errors.map((error) => <div key={error} className="s" style={{ color: "var(--danger)" }}>{error}</div>)}
       </div>
-      <div>
-        <div className="fsec"><I n="refresh" />&nbsp;{tr("Cập nhật trang đã có", "Update existing pages")}</div>
-        <p style={{ color: "var(--f3)", fontSize: 12, margin: "0 0 8px" }}>{tr(`${records.length} trang · ${records.filter((item) => item.eligibleForInternalLink && ["active", "redirected"].includes(item.status)).length} được dùng làm internal link`, `${records.length} pages · ${records.filter((item) => item.eligibleForInternalLink && ["active", "redirected"].includes(item.status)).length} usable as internal links`)}</p>
-        <div className="box">
-          <div className="box-row" style={{ flexWrap: "wrap" }}>
-            <div className="grow" style={{ minWidth: 200 }}>{tr("Quét lại tất cả", "Recheck all")}<div className="s">{tr("Kiểm tra lại trạng thái và nội dung mọi trang.", "Checks the status and content of every page again.")}</div></div>
-            <button type="button" className="btn" disabled={scanning || !records.length} onClick={() => void recheckAll()}><I n="refresh" />{tr("Quét lại", "Recheck")}</button>
-          </div>
-          <div className="box-row" style={{ flexWrap: "wrap" }}>
-            <div className="grow" style={{ minWidth: 200 }}>{tr("Tóm tắt trang còn thiếu", "Summarise missing pages")}<div className="s">{tr("AI tóm tắt các trang chưa có summary.", "AI summarises pages that have no summary yet.")}</div></div>
-            <button type="button" className="btn" disabled={scanning || !records.some((item) => !item.summary && item.status !== "broken")} onClick={() => void summarizeMissing()}><I n="sparkles" />{tr("Tóm tắt", "Summarise")}</button>
-          </div>
-        </div>
-      </div>
-    </>
-  )
+      {sitemapResult.missing.length > 0 && <div className="box-row" style={{ display: "block" }}>
+        <details>
+          <summary className="s" style={{ cursor: "pointer" }}>{tr(`${sitemapResult.missing.length} trang trong Inventory không còn trong sitemap`, `${sitemapResult.missing.length} inventory pages are no longer in the sitemap`)}</summary>
+          <div className="s" style={{ margin: "4px 0" }}>{tr("Kiểm tra rồi tự xoá hoặc tắt Internal link nếu trang đã gỡ; tool không tự xoá.", "Review them and delete or turn off Internal link for removed pages; nothing is deleted automatically.")}</div>
+          {sitemapResult.missing.slice(0, 50).map((page) => <div key={page.id} className="s" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><a href={page.url} target="_blank" rel="noreferrer">{page.title || page.url}</a></div>)}
+        </details>
+      </div>}
+    </div>}
+
+    <div className="fsec"><I n="clipboard-text" />&nbsp;{tr("Dán URL", "Paste URLs")}</div>
+    <textarea rows={3} className="inp" style={{ height: 76, padding: 8, resize: "vertical", width: "100%" }} aria-label="Website URLs" value={input} disabled={busy} onChange={(event) => setInput(event.target.value)} placeholder={tr("Mỗi dòng một URL", "One URL per line")} />
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+      <span className="grow" style={hint}>{tr("Chặn địa chỉ mạng nội bộ và file không phải HTML.", "Private-network addresses and non-HTML files are blocked.")}</span>
+      <button type="button" className="btn primary" disabled={busy || !input.trim()} onClick={(event) => importPasted(event.timeStamp)}><I n={aiSummary ? "sparkles" : "world"} />{tr("Nhập URL", "Import URLs")}</button>
+    </div>
+
+    <div className="fsec"><I n="refresh" />&nbsp;{tr("Trang đã có", "Existing pages")}<span className="muted" style={{ fontWeight: 400 }}>&nbsp;· {tr(`${records.length} trang, ${usable} dùng làm internal link`, `${records.length} pages, ${usable} usable as internal links`)}</span></div>
+    <div className="box">
+      <div className="box-row"><div className="grow">{tr("Quét lại tất cả", "Recheck all")}<div className="s">{tr("Kiểm tra lại trạng thái và nội dung mọi trang.", "Checks every page's status and content again.")}</div></div><button type="button" className="btn" disabled={busy || !records.length} onClick={(event) => recheckAll(event.timeStamp)}><I n="refresh" />{tr("Quét lại", "Recheck")}</button></div>
+      <div className="box-row"><div className="grow">{tr("Tóm tắt trang còn thiếu", "Summarise missing")}<div className="s">{tr(`${missingSummary.length} trang chưa có summary.`, `${missingSummary.length} pages have no summary.`)}</div></div><button type="button" className="btn" disabled={busy || !missingSummary.length} onClick={(event) => summarizeMissing(event.timeStamp)}><I n="sparkles" />{tr("Tóm tắt", "Summarise")}</button></div>
+    </div>
+  </>
 }
 
 const PAGE_TYPES: WebsiteContentRecord["contentType"][] = ["blog", "service", "portfolio", "landing", "about", "commercial"]
