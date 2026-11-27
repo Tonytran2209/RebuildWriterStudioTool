@@ -139,6 +139,8 @@ export default function CrmApp(props: CrmProps) {
   const inventoryList = useInventoryList(props.config.railwayUrl)
   const { inventory, setInventory } = inventoryList
   const inventoryScan = useInventoryScan(props.config.railwayUrl, setInventory, inventoryList.refresh)
+  // Admins get the inventory list in the background right after sign-in, so opening Website Inventory shows it at once.
+  useEffect(() => { if (props.user.role === "admin") void inventoryList.refresh() }, [inventoryList.refresh, props.user.role])
   const [navOpen, setNavOpen] = useState(false)
   useEffect(() => {
     let current = window.location.hash, reverting = false
@@ -358,6 +360,8 @@ function fieldsFor(ctx: Ctx, o: Obj, ago: (d?: string | null) => string, tr: (vi
 }
 
 const VIEW_KEY = "writer:crm-view"
+/** Rows a table draws before "Show more". */
+const ROW_PAGE = 150
 /** Article ids in the order last shown on the Articles page (filter + sort), for Prev/Next on the record. */
 let lastArticleOrder: string[] = []
 function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
@@ -449,6 +453,8 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
   const pickable = rows.filter(canPick)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
+  // Long tables (Website Inventory can hold 2000 pages) draw the first rows and add more on request.
+  const [limit, setLimit] = useState(ROW_PAGE)
   const chosen = selectable ? pickable.filter(r => picked.has(r.id)) : []
   const all = chosen.length === pickable.length && pickable.length > 0
   const toggle = (id: string) => setPicked(prev => { const next = new Set(prev); if (!next.delete(id)) next.add(id); return next })
@@ -495,7 +501,9 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
     if (o === "batches") return <a className="rchip" href={`#/object/batches/${enc(r.id)}`}><I n="stack-2" />Batch {r.idx}</a>
     return <a className="rchip" href={`#/object/${o}/${enc(r.id)}`}><Av name={nameOf(o, r)} />{nameOf(o, r)}</a>
   }
-  let n = 0
+  let n = 0, left = limit
+  const visible = groups.map(g => { const shown = g.rows.slice(0, Math.max(0, left)); left -= shown.length; return { ...g, shown } }).filter(g => g.shown.length)
+  const hidden = rows.length - Math.min(rows.length, limit)
   return <>
     {chosen.length > 0 && <div className="bulk-bar" role="region" aria-label={tr("Thao tác hàng loạt", "Bulk actions")}>
       <b>{chosen.length}</b> {tr("đã chọn", "selected")}
@@ -504,13 +512,14 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
     </div>}
     <div className="tbl-wrap"><table className="tbl">
       <thead><tr>{selectable && <th className="cb"><input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = chosen.length > 0 && !all }} aria-label={tr("Chọn tất cả", "Select all")} onChange={() => setPicked(all ? new Set() : new Set(pickable.map(r => r.id)))} /></th>}{fields.map((f, i) => <th key={f.key} className={i === 0 ? "first" : ""} aria-sort={sort?.key === f.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}><button className="th-btn" onClick={() => sortBy(f.key)}><I n={f.icon} />{f.label}{sort?.key === f.key && <> <I n={sort.dir === "asc" ? "arrow-up" : "arrow-down"} /></>}</button></th>)}</tr></thead>
-      <tbody>{groups.map((g, gi) => <GroupRows key={gi} label={g.label} count={g.rows.length} span={fields.length} cb={selectable}>
-        {g.rows.map(r => <tr key={r.id} tabIndex={0} className={picked.has(r.id) ? "sel" : undefined} style={{ cursor: "pointer", animationDelay: `${Math.min(n++, 14) * 16}ms` }} onClick={() => click(r)} onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) click(r) }}>
+      <tbody>{visible.map((g, gi) => <GroupRows key={gi} label={g.label} count={g.rows.length} span={fields.length} cb={selectable}>
+        {g.shown.map(r => <tr key={r.id} tabIndex={0} className={picked.has(r.id) ? "sel" : undefined} style={{ cursor: "pointer", animationDelay: `${Math.min(n++, 14) * 16}ms` }} onClick={() => click(r)} onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) click(r) }}>
           {selectable && <td className="cb">{box(r)}</td>}
           {fields.map((f, i) => <td key={f.key} className={`${i === 0 ? "first" : ""}${f.num ? " num" : ""}`}>{f.key === "name" ? name(r) : f.render ? f.render(r) : f.text ? f.text(r) : r[f.key]}</td>)}
         </tr>)}
       </GroupRows>)}</tbody>
     </table></div>
+    {hidden > 0 && <button type="button" className="foot" style={{ width: "100%", textAlign: "left", border: 0, background: "none", font: "inherit" }} onClick={() => setLimit(l => l + ROW_PAGE)}><I n="chevron-down" /> {tr(`Hiện thêm ${Math.min(hidden, ROW_PAGE)} · còn ${hidden}`, `Show ${Math.min(hidden, ROW_PAGE)} more · ${hidden} left`)}</button>}
     {(!["storage", "website"].includes(o) || ctx.isAdmin) && o !== "batches" && <button type="button" className="foot" style={{ width: "100%", textAlign: "left", border: 0, background: "none", font: "inherit" }} onClick={onFoot}><I n={o === "reviews" ? "dice-5" : "plus"} /> {o === "website" ? tr("Thêm trang", "Add pages") : o === "storage" ? tr("Thêm tài liệu", "Add document") : o === "reviews" ? tr("Chọn ngẫu nhiên 1 bài", "Pick a random article") : "Add Plan"}</button>}
   </>
 }
