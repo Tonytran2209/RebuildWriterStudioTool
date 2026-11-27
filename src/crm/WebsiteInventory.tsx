@@ -1,10 +1,11 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react"
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react"
 import type { WebsiteContentRecord } from "../types"
 import {
   cancelAllWebsiteInventoryBatches,
   deleteWebsiteInventoryRecord,
   fetchWebsiteInventory,
   fetchWebsiteInventoryBatch,
+  fetchWebsiteInventoryRecord,
   importWebsiteSitemap,
   scanWebsiteUrl,
   type SitemapImportResult,
@@ -14,6 +15,7 @@ import {
 } from "../lib/db"
 import { useI18n } from "../lib/i18n"
 import { I, toast, toastErr, trackHandoff } from "./ui"
+import { readInventoryCache, writeInventoryCache } from "../lib/inventoryCache"
 
 const ACTIVE_JOB_KEY = "writer:website-inventory-active-job"
 const readJobId = () => { try { return localStorage.getItem(ACTIVE_JOB_KEY) } catch { return null } }
@@ -30,6 +32,50 @@ const placeholder = (url: string, index: number): WebsiteContentRecord => ({
   id: `pending-${Date.now()}-${index}`, url, title: new URL(url).hostname, contentType: "blog", topics: [], services: [], status: "queued", crawlStatus: "queued", eligibleForInternalLink: false,
 })
 
+export type InventoryList = {
+  inventory: WebsiteContentRecord[]
+  setInventory: Dispatch<SetStateAction<WebsiteContentRecord[]>>
+  /** True once the browser cache or the server answered. */
+  loaded: boolean
+  /** Shows the browser cache first (once), then asks the server with the cached revision; unchanged = no download. */
+  refresh: () => Promise<void>
+}
+
+/** The inventory table list for the CRM: loaded on demand (not with the app config), cached in IndexedDB by revision. */
+export function useInventoryList(railwayUrl: string): InventoryList {
+  const [inventory, setInventory] = useState<WebsiteContentRecord[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const revision = useRef<string | null>(null)
+  const cacheRead = useRef(false)
+  const inflight = useRef<Promise<void> | null>(null)
+  const refresh = useCallback(() => {
+    if (inflight.current) return inflight.current
+    const run = (async () => {
+      if (!cacheRead.current) {
+        cacheRead.current = true
+        const cached = await readInventoryCache(railwayUrl)
+        if (cached && revision.current === null) { revision.current = cached.revision; setInventory(cached.records); setLoaded(true) }
+      }
+      try {
+        const result = await fetchWebsiteInventory(railwayUrl, revision.current ?? undefined)
+        if (!result.unchanged && result.records) {
+          setInventory(result.records)
+          void writeInventoryCache(railwayUrl, { revision: result.revision, records: result.records })
+        }
+        revision.current = result.revision
+      } catch (error) {
+        // With a cached list on screen, a failed refresh keeps it; with nothing to show, say why.
+        if (revision.current === null) toastErr(error)
+      } finally {
+        setLoaded(true)
+      }
+    })().finally(() => { inflight.current = null })
+    inflight.current = run
+    return run
+  }, [railwayUrl])
+  return { inventory, setInventory, loaded, refresh }
+}
+
 export type InventoryScan = {
   job: WebsiteInventoryBatchJob | null
   running: boolean
@@ -43,7 +89,7 @@ export type InventoryScan = {
  * merges finished pages into the list every 1.5 s and reloads the full list when the batch ends.
  * The job id survives a reload in localStorage, so a scan started earlier is picked up again.
  */
-export function useInventoryScan(railwayUrl: string, setInventory: Dispatch<SetStateAction<WebsiteContentRecord[]>>): InventoryScan {
+export function useInventoryScan(railwayUrl: string, setInventory: Dispatch<SetStateAction<WebsiteContentRecord[]>>, reload: () => Promise<void>): InventoryScan {
   const [jobId, setJobId] = useState<string | null>(readJobId)
   const [job, setJob] = useState<WebsiteInventoryBatchJob | null>(null)
   const [cancelling, setCancelling] = useState(false)
@@ -54,7 +100,7 @@ export function useInventoryScan(railwayUrl: string, setInventory: Dispatch<SetS
       writeJobId(null)
       setJobId(null)
       setJob(null)
-      try { setInventory(await fetchWebsiteInventory(railwayUrl)) } catch { /* the merged list stays */ }
+      await reload()
     }
     void (async () => {
       while (!stopped) {
@@ -81,7 +127,7 @@ export function useInventoryScan(railwayUrl: string, setInventory: Dispatch<SetS
     cancel: async () => {
       if (!jobId || cancelling) return
       setCancelling(true)
-      try { await cancelAllWebsiteInventoryBatches(railwayUrl); writeJobId(null); setJobId(null); setJob(null); setInventory(await fetchWebsiteInventory(railwayUrl)) }
+      try { await cancelAllWebsiteInventoryBatches(railwayUrl); writeJobId(null); setJobId(null); setJob(null); await reload() }
       catch (error) { toastErr(error) }
       finally { setCancelling(false) }
     },
@@ -105,11 +151,12 @@ export function ScanProgress({ scan }: { scan: InventoryScan }) {
  * "Add pages" side panel: sitemap / llms.txt, pasted URLs, recheck and summarise. Starting work hands the batch
  * to useInventoryScan, so the panel can be closed while the server keeps scanning and the table keeps updating.
  */
-export default function WebsiteInventory({ records, railwayUrl, onChange, scan }: {
+export default function WebsiteInventory({ records, railwayUrl, onChange, scan, reload }: {
   records: WebsiteContentRecord[]
   railwayUrl: string
   onChange: (records: WebsiteContentRecord[]) => void
   scan: InventoryScan
+  reload: () => Promise<void>
 }) {
   const { tr } = useI18n()
   const [input, setInput] = useState("")
@@ -132,7 +179,7 @@ export default function WebsiteInventory({ records, railwayUrl, onChange, scan }
       toast(tr(`Đã bắt đầu quét ${urls.length} trang. Có thể đóng panel, bảng vẫn cập nhật.`, `Scanning ${urls.length} pages. You can close the panel; the table keeps updating.`))
     } catch (error) {
       toastErr(error)
-      try { onChange(await fetchWebsiteInventory(railwayUrl)) } catch { /* keep the list */ }
+      await reload()
     }
   }
   const importPasted = (eventTimeStamp: number) => {
@@ -161,7 +208,7 @@ export default function WebsiteInventory({ records, railwayUrl, onChange, scan }
   }
   const recheckAll = (eventTimeStamp: number) =>
     void startBatch(eventTimeStamp, records.map((item) => item.url), true, (current) => current.map((item) => ({ ...item, status: "queued" as const, crawlStatus: "queued" as const })))
-  const missingSummary = records.filter((record) => !record.summary && record.status !== "broken")
+  const missingSummary = records.filter((record) => !record.summary && !record.hasSummary && record.status !== "broken")
   const summarizeMissing = (eventTimeStamp: number) =>
     void startBatch(eventTimeStamp, missingSummary.map((item) => item.url), true, (current) => current.map((item) => missingSummary.some((record) => record.id === item.id) ? { ...item, crawlStatus: "summarizing" as const } : item))
   const usable = records.filter((item) => item.eligibleForInternalLink && ["active", "redirected"].includes(item.status)).length
@@ -213,7 +260,7 @@ const EDITABLE_STATUSES: WebsiteContentRecord["status"][] = ["active", "redirect
 const splitList = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean)
 
 /** One inventory page in the Website Inventory side panel: what AI knows about it, edits, recheck and delete. */
-export function PageDetails({ record, railwayUrl, canEdit, onChange, onDelete }: {
+export function PageDetails({ record: listRecord, railwayUrl, canEdit, onChange, onDelete }: {
   record: WebsiteContentRecord
   railwayUrl: string
   canEdit: boolean
@@ -222,6 +269,16 @@ export function PageDetails({ record, railwayUrl, canEdit, onChange, onDelete }:
 }) {
   const { tr } = useI18n()
   const [busy, setBusy] = useState(false)
+  // The table list is light; the summary, anchors and claims come with the full record, fetched once per open.
+  const [full, setFull] = useState<WebsiteContentRecord | null>(null)
+  useEffect(() => {
+    let stale = false
+    setFull(null)
+    fetchWebsiteInventoryRecord(listRecord.id, railwayUrl).then((next) => { if (!stale) setFull(next) }, () => { /* the light record still shows */ })
+    return () => { stale = true }
+  }, [listRecord.id, railwayUrl])
+  // List fields (kept current by edits and rechecks) over the full record's summary, anchors and claims.
+  const record: WebsiteContentRecord = full ? { ...full, ...listRecord } : listRecord
   const [topics, setTopics] = useState(record.topics.join(", "))
   const [services, setServices] = useState((record.services ?? []).join(", "))
   useEffect(() => { setTopics(record.topics.join(", ")); setServices((record.services ?? []).join(", ")) }, [record.id, record.topics, record.services])

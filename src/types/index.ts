@@ -141,6 +141,8 @@ export interface WebsiteContentRecord {
   aiSummaryVersion?: string
   summarizedAt?: string
   summaryCacheHit?: boolean
+  /** Light table list only: the page has a summary (the text is fetched with the full record). */
+  hasSummary?: boolean
   /** "llms.txt" when the summary is the site's own llms.txt description (no AI call). */
   summarySource?: string
   aiSummarySkippedReason?: "daily-limit"

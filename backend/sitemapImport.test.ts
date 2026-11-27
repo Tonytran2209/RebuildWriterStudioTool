@@ -42,3 +42,14 @@ test('sitemap import runs are reported as their own job: success, failure with c
   ])
   assert.deepEqual(labJobRecords(runs).map(r => [r.job, r.status, r.valid]), [[SITEMAP_IMPORT_JOB, 'completed', true], [SITEMAP_IMPORT_JOB, 'failed', false], [SITEMAP_IMPORT_JOB, 'completed', true]], 'running runs are not counted')
 })
+
+test('inventory table list drops the heavy text and keeps whether a summary exists', async () => {
+  const { inventoryListRecord, INVENTORY_LIST_COLUMNS } = await import('./websiteInventory.ts')
+  const full = { id: 'p1', url: 'https://x.com/a', title: 'A', status: 'active', topics: ['t'], eligibleForInternalLink: true, summary: 'Long summary', description: 'd', internalLinkAnchors: ['a'], keyClaims: ['c'], contentFingerprint: 'f', aiModel: 'llms.txt', summarizedAt: '2026-11-27T00:00:00Z' }
+  const light = inventoryListRecord(full)
+  assert.deepEqual(Object.keys(light).sort(), ['aiModel', 'eligibleForInternalLink', 'hasSummary', 'id', 'status', 'summarizedAt', 'title', 'topics', 'url'])
+  assert.equal(light.hasSummary, true)
+  assert.equal(inventoryListRecord({ id: 'p2', url: 'u' }).hasSummary, false)
+  assert.equal(inventoryListRecord({ id: 'p3', url: 'u', summarizedAt: 'x' }).hasSummary, true, 'a list row from the light columns has summarized_at, not the text')
+  for (const column of ['summary', 'key_claims', 'internal_link_anchors', 'description']) assert.ok(!INVENTORY_LIST_COLUMNS.split(', ').includes(column))
+})

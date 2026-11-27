@@ -66,7 +66,7 @@ import { applyOutlineFix, applySpecFix, competitorAnalysisJsonSchema, gateReview
 import { RULE_ROLES, gateStandardsDocs, gateBrandContextDocs } from "../shared/gateDocuments.ts"
 import { resolveGateSettings, sanitizeGateSettings } from "../shared/gateSettings.ts"
 import { DEFAULT_CONCLUSION_HEADING, conclusionHeadingOf, conclusionHeadingPattern, titleKeywordRequired } from "../src/lib/draftFormat.ts"
-import { discoverSiteUrls, fetchPublicPage, scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
+import { INVENTORY_LIST_COLUMNS, discoverSiteUrls, fetchPublicPage, inventoryListRecord, scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
 import {
   agentLibraryStatus,
   retrieveAgentLibraryContext,
@@ -4870,9 +4870,8 @@ app.delete("/api/articles/:id", async (req, res) => {
 
 app.get("/api/config", async (_req, res) => {
   try {
-    const config = (await kvGet<any>("writer:config")) ?? {}
-    const websiteInventory = await loadWebsiteInventory()
-    res.json({ ...config, websiteInventory })
+    // Website Inventory is loaded by its own page (GET /api/website-inventory), not with every config read.
+    res.json((await kvGet<any>("writer:config")) ?? {})
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
@@ -5003,6 +5002,35 @@ async function loadWebsiteInventory(): Promise<any[]> {
   return (await kvGet<any[]>("writer:website-inventory:fallback")) ?? []
 }
 
+/** Light table list: only the columns the table shows (see INVENTORY_LIST_COLUMNS). */
+async function loadWebsiteInventoryList(): Promise<any[]> {
+  if (await hasWebsiteInventoryTable()) {
+    const rows = await tableSelect<any>("website_content_inventory", (query) =>
+      query.select(INVENTORY_LIST_COLUMNS).order("last_checked", { ascending: false }).limit(2000),
+    )
+    return rows.map(websiteRowToRecord).map(inventoryListRecord)
+  }
+  return ((await kvGet<any[]>("writer:website-inventory:fallback")) ?? []).map(inventoryListRecord)
+}
+
+/**
+ * Inventory revision: a token replaced on every inventory write, so a client that sends the token it has gets
+ * "unchanged" instead of the list. A token, not a counter: concurrent writes can never leave two lists with one value.
+ * Read it before the list, so a write in between only causes one extra reload later.
+ */
+const INVENTORY_REVISION_KEY = "writer:website-inventory:revision"
+const newInventoryRevision = () => `${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}`
+async function bumpInventoryRevision() {
+  try { await kvSet(INVENTORY_REVISION_KEY, newInventoryRevision()) } catch (error) { console.warn("[website-inventory] revision not updated", error) }
+}
+async function inventoryRevision() {
+  const current = await kvGet<string>(INVENTORY_REVISION_KEY)
+  if (current) return current
+  const created = newInventoryRevision()
+  await kvSet(INVENTORY_REVISION_KEY, created)
+  return created
+}
+
 async function reserveWebsiteSummaryBudget() {
   const date = new Date().toISOString().slice(0, 10)
   const key = `writer:website-summary-budget:${date}`
@@ -5022,6 +5050,9 @@ async function reserveWebsiteSummaryBudget() {
 }
 
 async function persistWebsiteInventoryRecord(record: any) {
+  try { await writeWebsiteInventoryRecord(record) } finally { await bumpInventoryRevision() }
+}
+async function writeWebsiteInventoryRecord(record: any) {
   if (!(await hasWebsiteInventoryTable())) {
     await serializeByKey(websiteJobQueues, "fallback-inventory", async () => {
       const inventory = (await kvGet<any[]>("writer:website-inventory:fallback")) ?? []
@@ -5459,9 +5490,25 @@ app.delete("/api/website-inventory/batches/:id", async (req, res) => {
   }
 })
 
-app.get("/api/website-inventory", async (_req, res) => {
+// Table list. ?revision=<token the client has> returns { unchanged: true } when nothing changed since.
+app.get("/api/website-inventory", async (req, res) => {
   try {
-    res.json({ records: await loadWebsiteInventory() })
+    const revision = await inventoryRevision()
+    if (typeof req.query.revision === "string" && req.query.revision === revision) return res.json({ unchanged: true, revision })
+    res.json({ revision, records: await loadWebsiteInventoryList() })
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
+  }
+})
+
+// One full record (summary, anchors, key claims) for the page side panel.
+app.get("/api/website-inventory/:id", async (req, res) => {
+  try {
+    const record = await hasWebsiteInventoryTable()
+      ? (await tableSelect<any>("website_content_inventory", (query) => query.eq("id", req.params.id).limit(1))).map(websiteRowToRecord)[0]
+      : ((await kvGet<any[]>("writer:website-inventory:fallback")) ?? []).find((item: any) => item.id === req.params.id)
+    if (!record) return res.status(404).json({ error: "Website inventory page not found." })
+    res.json({ record })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
   }
@@ -5486,11 +5533,13 @@ app.patch("/api/website-inventory/:id", async (req, res) => {
         ...updates,
         updated_at: new Date().toISOString(),
       })
+      await bumpInventoryRevision()
       return res.json({ record: websiteRowToRecord(row) })
     }
     const inventory = await loadWebsiteInventory()
     const next = inventory.map((item) => item.id === req.params.id ? { ...item, ...req.body } : item)
     await kvSet("writer:website-inventory:fallback", next)
+    await bumpInventoryRevision()
     res.json({ record: next.find((item) => item.id === req.params.id) })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) })
@@ -5503,6 +5552,7 @@ app.delete("/api/website-inventory/:id", async (req, res) => {
       await tableDeleteWhere("website_content_inventory", "id", req.params.id)
     else
       await kvSet("writer:website-inventory:fallback", (await loadWebsiteInventory()).filter((item) => item.id !== req.params.id))
+    await bumpInventoryRevision()
     res.json({ ok: true })
   } catch (error) {
     res.status(500).json({ error: error instanceof Error ? error.message : String(error) })

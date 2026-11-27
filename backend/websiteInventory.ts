@@ -376,3 +376,14 @@ export async function discoverSiteUrls(siteUrl: string) {
   const llms = parseLlmsTxt(llmsText, origin).filter((item) => { try { return sameSite(new URL(item.url).hostname, host) } catch { return false } })
   return { origin, urls: [...urls], sitemapsRead: read, sitemapsTried: visited.size, llms, errors: errors.slice(0, 10) }
 }
+
+/* ─── Light list for the Website Inventory table ─── */
+
+/** Columns the inventory table needs; summary text, anchors and claims are fetched per page when its panel opens. */
+export const INVENTORY_LIST_COLUMNS = "id, url, canonical_url, title, content_type, topics, services, status, redirect_target, eligible_for_internal_link, last_checked, http_status, crawl_status, last_error, primary_topic, search_intent, ai_model, summarized_at"
+
+/** A full inventory record reduced to the table fields; hasSummary replaces the summary text. */
+export function inventoryListRecord(record: any) {
+  const { summary, description, internalLinkAnchors, keyClaims, contentFingerprint, classificationConfidence, audience, language, aiSummaryVersion, extractedContent, ...light } = record ?? {}
+  return { ...light, hasSummary: Boolean(summary || record?.summarizedAt) }
+}

@@ -433,15 +433,21 @@ export async function cancelAllWebsiteInventoryBatches(
   return result.cancelled
 }
 
+/** Inventory table list. With the revision the client has, the server answers { unchanged: true } when nothing changed. */
 export async function fetchWebsiteInventory(
   railwayUrl?: string,
-): Promise<WebsiteContentRecord[]> {
-  const result = await railwayRequest<{ records: WebsiteContentRecord[] }>(
-    "/api/website-inventory",
+  revision?: string,
+): Promise<{ revision: string; unchanged?: boolean; records?: WebsiteContentRecord[] }> {
+  return railwayRequest<{ revision: string; unchanged?: boolean; records?: WebsiteContentRecord[] }>(
+    `/api/website-inventory${revision ? `?revision=${encodeURIComponent(revision)}` : ""}`,
     undefined,
     railwayUrl,
   )
-  return result.records
+}
+
+/** One full inventory record (summary, anchors, key claims) for the page panel. */
+export async function fetchWebsiteInventoryRecord(id: string, railwayUrl?: string): Promise<WebsiteContentRecord> {
+  return (await railwayRequest<{ record: WebsiteContentRecord }>(`/api/website-inventory/${encodeURIComponent(id)}`, undefined, railwayUrl)).record
 }
 
 export async function updateWebsiteInventoryRecord(
