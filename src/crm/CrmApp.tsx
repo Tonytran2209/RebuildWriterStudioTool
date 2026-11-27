@@ -156,7 +156,7 @@ export default function CrmApp(props: CrmProps) {
   const list = useMemo(() => props.articles.map(x => toCrmArticle(x, settings)), [props.articles, settingsKey])
   const plans = useMemo(() => plansOf(props.contentPlans, list, settings), [props.contentPlans, list, settingsKey])
   const batches = useMemo(() => batchesOf(list), [list])
-  const docs = useMemo(() => storageDocs(props.files, props.config, props.articles.filter(x => x.approvedArticle).length, props.contentPlans), [props.files, props.config, props.articles, props.contentPlans])
+  const docs = useMemo(() => storageDocs(props.files, props.config, props.contentPlans), [props.files, props.config, props.contentPlans])
   const isAdmin = props.user.role === "admin"
   // Operator runs the pipeline; Reviewer reviews and picks Approved Articles; Admin does everything.
   const can = (what: string) => isAdmin || (props.user.role === "reviewer" ? ["review", "approveArticles", "copy"] : ["plans", "retry", "copy", "manual"]).includes(what)
@@ -410,7 +410,7 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
   const { tr } = useI18n()
   const m = OBJ_META[o]
   // Bulk delete: admins, on the Articles, Batches and Storage tables. Selection only counts rows still visible.
-  // In Storage only real documents can be picked (not Content Plans, missing placeholders or Approved Articles).
+  // In Storage only real documents can be picked, not Content Plans.
   const selectable = ctx.isAdmin && (o === "articles" || o === "batches" || o === "storage")
   const canPick = (r: any) => o !== "storage" || Boolean(r.file)
   const pickable = rows.filter(canPick)

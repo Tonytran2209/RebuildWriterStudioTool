@@ -130,20 +130,19 @@ export function usedAt(file: DocumentFile, config: AppConfig): number[] {
   const key = file.category === "kb" ? "kb" : "rules"
   return SHIP_STEPS.filter(step => config.stepConfigs[step]?.fileAccess?.[key]?.includes(file.id)).map(step => step - 1)
 }
-export function storageDocs(files: DocumentFile[], config: AppConfig, approvedArticles: number, contentPlans: ContentPlan[] = []): StorageDoc[] {
+export function storageDocs(files: DocumentFile[], config: AppConfig, contentPlans: ContentPlan[] = []): StorageDoc[] {
   const real: StorageDoc[] = files.filter(f => f.category === "kb" || f.category === "rules").map(file => ({
     id: file.id, g: groupOf(file), guessed: file.category === "rules" && storageGroupInfo(file).guessed, name: file.name, st: file.scanStatus === "error" ? "partial" : groupOf(file) === "Source data" ? "draft" : "ok", used: usedAt(file, config),
     // A plan-like reference file is not a Content Plan until it is imported through Add Plan.
     types: ["A", "B", "C", "ED"], note: file.scanStatus === "error" ? "Không đọc được nội dung" : groupOf(file) === "Source data" ? "Tài liệu tham khảo · chưa tạo Content Plan" : "", updatedAt: file.contentUpdatedAt || file.uploadedAt, file,
   }))
-  const approved: StorageDoc = { id: "approved-articles", g: "Playbooks", name: "Approved Articles", st: approvedArticles ? "ok" : "missing", used: [2, 3], types: ["A", "B", "C", "ED"], note: `${approvedArticles ? `${approvedArticles} bài đã xác nhận` : "Chưa có bài nào được người xác nhận"} · chưa nạp làm ví dụ cho G2/G3` }
   // Imported Content Plans are the topic source for G1; they are added through Add Plan, not Storage.
   // totalArticles counts created articles, so the topic count comes from the plan's classified items.
   const plans: StorageDoc[] = contentPlans.map(plan => { const topics = (plan.items ?? []).filter(i => i.status !== "archived").length
     const st = plan.status === "processing" ? "running" : plan.status === "failed" ? "partial" : topics ? "ok" : "draft"
     const state = plan.status === "processing" ? "AI đang phân tích topic" : plan.status === "failed" ? `phân tích lỗi${plan.classificationError ? `: ${plan.classificationError}` : ""}` : topics ? `${topics} topic` : "chưa phân loại topic"
     return { id: `plan-${plan.id}`, planId: plan.id, g: "Source data", name: plan.name, st, used: [1], types: ["A", "B", "C", "ED"], note: `Content Plan · ${state}${plan.status === "archived" ? " · archived" : ""}`, updatedAt: plan.updatedAt } })
-  return [...real, ...plans, approved]
+  return [...real, ...plans]
 }
 
 /** Toggle a file's Shipper access for one gate (1–3 → steps 2–4). */
