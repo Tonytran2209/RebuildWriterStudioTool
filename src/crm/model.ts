@@ -130,20 +130,12 @@ export function usedAt(file: DocumentFile, config: AppConfig): number[] {
   const key = file.category === "kb" ? "kb" : "rules"
   return SHIP_STEPS.filter(step => config.stepConfigs[step]?.fileAccess?.[key]?.includes(file.id)).map(step => step - 1)
 }
-/** Spec §4 documents still missing from Storage; shown as Missing until a matching file exists. */
-const REQUIRED: Array<[string, string, RegExp, number[]]> = [
-  ["Standards", "Checklist Gate 1–2", /gate ?1|gate 1.?2|checklist g1/i, [1, 2]],
-  ["Standards", "Quy tắc chỉnh sửa", /chỉnh sửa|edit(ing)? rule/i, [4]],
-  ["Domain Knowledge", "Vocabulary Library", /vocab/i, [3]],
-  ["Playbooks", "Writing Patterns", /writing pattern/i, [2, 3]],
-]
 export function storageDocs(files: DocumentFile[], config: AppConfig, approvedArticles: number, contentPlans: ContentPlan[] = []): StorageDoc[] {
   const real: StorageDoc[] = files.filter(f => f.category === "kb" || f.category === "rules").map(file => ({
     id: file.id, g: groupOf(file), guessed: file.category === "rules" && storageGroupInfo(file).guessed, name: file.name, st: file.scanStatus === "error" ? "partial" : groupOf(file) === "Source data" ? "draft" : "ok", used: usedAt(file, config),
     // A plan-like reference file is not a Content Plan until it is imported through Add Plan.
     types: ["A", "B", "C", "ED"], note: file.scanStatus === "error" ? "Không đọc được nội dung" : groupOf(file) === "Source data" ? "Tài liệu tham khảo · chưa tạo Content Plan" : "", updatedAt: file.contentUpdatedAt || file.uploadedAt, file,
   }))
-  const missing: StorageDoc[] = REQUIRED.filter(([, , test]) => !files.some(f => test.test(f.name))).map(([g, name, , used], i) => ({ id: `missing-${i}`, g, name, st: "missing", used, types: ["A", "B", "C", "ED"], note: "Chưa có trong Storage" }))
   const approved: StorageDoc = { id: "approved-articles", g: "Playbooks", name: "Approved Articles", st: approvedArticles ? "ok" : "missing", used: [2, 3], types: ["A", "B", "C", "ED"], note: `${approvedArticles ? `${approvedArticles} bài đã xác nhận` : "Chưa có bài nào được người xác nhận"} · chưa nạp làm ví dụ cho G2/G3` }
   // Imported Content Plans are the topic source for G1; they are added through Add Plan, not Storage.
   // totalArticles counts created articles, so the topic count comes from the plan's classified items.
@@ -151,7 +143,7 @@ export function storageDocs(files: DocumentFile[], config: AppConfig, approvedAr
     const st = plan.status === "processing" ? "running" : plan.status === "failed" ? "partial" : topics ? "ok" : "draft"
     const state = plan.status === "processing" ? "AI đang phân tích topic" : plan.status === "failed" ? `phân tích lỗi${plan.classificationError ? `: ${plan.classificationError}` : ""}` : topics ? `${topics} topic` : "chưa phân loại topic"
     return { id: `plan-${plan.id}`, planId: plan.id, g: "Source data", name: plan.name, st, used: [1], types: ["A", "B", "C", "ED"], note: `Content Plan · ${state}${plan.status === "archived" ? " · archived" : ""}`, updatedAt: plan.updatedAt } })
-  return [...real, ...plans, ...missing, approved]
+  return [...real, ...plans, approved]
 }
 
 /** Toggle a file's Shipper access for one gate (1–3 → steps 2–4). */

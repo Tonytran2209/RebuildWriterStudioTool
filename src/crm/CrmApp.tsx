@@ -982,8 +982,7 @@ function DocPanel({ ctx, id }: { ctx: Ctx; id: string }) {
     <div className="box">{[1, 2, 3].map(g => <div key={g} className="box-row"><div className="grow">{GATES[g - 1].label}</div><button role="switch" aria-checked={d.used.includes(g)} aria-label={GATES[g - 1].label} className={`toggle${d.used.includes(g) ? " on" : ""}`} onClick={e => void flip(g, e.timeStamp)} /></div>)}</div>
     <div className="fsec"><I n="category" />&nbsp;Applies to types</div><div>{d.types.map(t => <span key={t}><TypeTag t={t} /> </span>)}</div>
     {d.file && d.g === "Source data" && ctx.can("plans") && <PlanFromDoc ctx={ctx} file={d.file} />}
-    {d.file ? <DocDetails key={d.file.id} file={d.file} railwayUrl={ctx.config.railwayUrl} canEdit={ctx.isAdmin} onSave={saveFile} onGroup={saveGroup} onDelete={deleteFile} />
-      : d.st === "missing" && ctx.isAdmin && d.id !== "approved-articles" && <button className="btn primary" style={{ marginTop: 14 }} onClick={() => ctx.setPanel({ kind: "add-doc" })}><I n="upload" />{tr("Thêm tài liệu này", "Add this document")}</button>}
+    {d.file && <DocDetails key={d.file.id} file={d.file} railwayUrl={ctx.config.railwayUrl} canEdit={ctx.isAdmin} onSave={saveFile} onGroup={saveGroup} onDelete={deleteFile} />}
   </SidePanel>
 }
 
