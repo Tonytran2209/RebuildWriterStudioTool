@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { WebsiteContentRecord } from "../types"
 import {
   cancelAllWebsiteInventoryBatches,
@@ -14,7 +14,10 @@ import {
 import { useI18n } from "../lib/i18n"
 import { I, toastErr, trackHandoff } from "./ui"
 
-/** Settings › Website inventory (port of the old WebsiteInventoryPanel, CRM markup). */
+/**
+ * Website Inventory import: sitemap / llms.txt, pasted URLs, rescan and summarise, with live progress.
+ * Shown in the "Add pages" side panel of the Website Inventory object; the page list is the CRM table.
+ */
 export default function WebsiteInventory({
   records,
   railwayUrl,
@@ -36,33 +39,7 @@ export default function WebsiteInventory({
   const [includeAiSummary, setIncludeAiSummary] = useState(true)
   const [scanProgress, setScanProgress] = useState({ done: 0, total: 0 })
   const [summaryLimitReached, setSummaryLimitReached] = useState(false)
-  const [inventoryQuery, setInventoryQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [typeFilter, setTypeFilter] = useState("all")
-  const [page, setPage] = useState(1)
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set())
   const resumeStarted = useRef(false)
-  const pageSize = 25
-  const filteredRecords = useMemo(() => {
-    const query = inventoryQuery.trim().toLocaleLowerCase()
-    return records
-      .filter((record) => statusFilter === "all" || record.status === statusFilter)
-      .filter((record) => typeFilter === "all" || record.contentType === typeFilter)
-      .filter((record) => !query || [
-        record.url, record.title, record.summary, record.primaryTopic,
-        ...(record.topics ?? []), ...(record.services ?? []), ...(record.internalLinkAnchors ?? []),
-      ].some((value) => String(value ?? "").toLocaleLowerCase().includes(query)))
-      .sort((left, right) => String(right.lastChecked ?? "").localeCompare(String(left.lastChecked ?? "")))
-  }, [inventoryQuery, records, statusFilter, typeFilter])
-  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize))
-  const visibleRecords = filteredRecords.slice((page - 1) * pageSize, page * pageSize)
-  useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages])
-  const toggleExpanded = (id: string) => setExpandedIds((current) => {
-    const next = new Set(current)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    return next
-  })
   const mergeBatchRecords = (
     baseRecords: WebsiteContentRecord[],
     completed: WebsiteContentRecord[],
@@ -119,12 +96,6 @@ export default function WebsiteInventory({
     void monitorBatch(jobId, records, () => cancelled).catch(() => setScanning(false))
     return () => { cancelled = true }
   }, [])
-  const update = (id: string, patch: Partial<WebsiteContentRecord>) =>
-    onChange(
-      records.map((item) => (item.id === id ? { ...item, ...patch } : item)),
-    )
-  const persistUpdate = (id: string, patch: Partial<WebsiteContentRecord>) =>
-    updateWebsiteInventoryRecord(id, patch, railwayUrl).catch((error) => toastErr(error))
   const scan = async () => {
     const started = performance.now()
     const urls = [...new Set(input.split(/[\n,]+/).flatMap((value) => {
@@ -200,24 +171,6 @@ export default function WebsiteInventory({
       setImporting(false)
     }
   }
-  const recheck = async (record: WebsiteContentRecord) => {
-    update(record.id, { status: "checking", crawlStatus: "checking" })
-    try {
-      const result = await scanWebsiteUrl(record.url, railwayUrl, true)
-      onChange(
-        records.map((item) =>
-          item.id === record.id ? { ...result, id: record.id } : item,
-        ),
-      )
-    } catch (error) {
-      update(record.id, {
-        status: "broken",
-        crawlStatus: "failed",
-        lastChecked: new Date().toISOString(),
-        lastError: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
   const recheckAll = async () => {
     const started = performance.now()
     if (scanning || !records.length) return
@@ -272,15 +225,11 @@ export default function WebsiteInventory({
       setCancelling(false)
     }
   }
-  const splitList = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean)
-  const statusColor: Record<string, string> = { active: "green", redirected: "blue", broken: "red", queued: "orange", checking: "orange", unchecked: "gray" }
-  const muted = { color: "var(--f3)", fontSize: 12 } as const
-  const field = { display: "flex", flexDirection: "column", gap: 4, color: "var(--f3)", fontSize: 12, flex: "1 1 160px", minWidth: 0 } as const
   return (
     <>
-      <section>
-        <h2>Website inventory</h2>
-        <p className="desc">{tr("Nhập từ sitemap của site, hoặc dán từng URL. Railway kiểm tra từng trang và lấy thông tin tự động.", "Import from the site's sitemap, or paste URLs. Railway checks each page and extracts its metadata automatically.")}</p>
+      <div>
+        <div className="fsec" style={{ paddingTop: 0 }}><I n="download" />&nbsp;{tr("Nhập trang", "Import pages")}</div>
+        <p style={{ color: "var(--f3)", fontSize: 12, margin: "0 0 8px" }}>{tr("Nhập từ sitemap của site, hoặc dán từng URL. Railway kiểm tra từng trang và lấy thông tin tự động.", "Import from the site's sitemap, or paste URLs. Railway checks each page and extracts its metadata automatically.")}</p>
         <div className="box" style={{ marginBottom: 12 }}>
           <div className="box-row" style={{ flexWrap: "wrap" }}>
             <I n="sitemap" />
@@ -347,195 +296,84 @@ export default function WebsiteInventory({
             </button>
           </div>
         </div>
-      </section>
-      <section>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <h2 style={{ flex: 1 }}>Indexed pages <span style={{ color: "var(--f3)", fontWeight: 400 }}>{records.length}</span></h2>
-          <span style={muted}>
-            {records.filter((item) => item.eligibleForInternalLink && ["active", "redirected"].includes(item.status)).length} approved
-          </span>
-          <button type="button" className="btn" disabled={scanning || !records.some((item) => !item.summary && item.status !== "broken")} onClick={() => void summarizeMissing()}>
-            <I n="sparkles" />Summarize missing
-          </button>
-          <button type="button" className="btn" disabled={scanning || !records.length} onClick={() => void recheckAll()}>
-            <I n="refresh" />Recheck all
-          </button>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <input
-            className="inp"
-            style={{ flex: "1 1 220px", width: "auto" }}
-            aria-label="Search inventory"
-            value={inventoryQuery}
-            onChange={(event) => { setInventoryQuery(event.target.value); setPage(1) }}
-            placeholder="Search URL, title, topic or service…"
-          />
-          <select className="inp" style={{ width: 140 }} aria-label="Status filter" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }}>
-            <option value="all">All statuses</option>
-            <option value="active">Active</option>
-            <option value="redirected">Redirected</option>
-            <option value="broken">Broken</option>
-            <option value="unchecked">Unchecked</option>
-            <option value="queued">Queued</option>
-            <option value="checking">Checking</option>
-          </select>
-          <select className="inp" style={{ width: 140 }} aria-label="Page type filter" value={typeFilter} onChange={(event) => { setTypeFilter(event.target.value); setPage(1) }}>
-            <option value="all">All page types</option>
-            <option value="blog">Blog</option>
-            <option value="service">Service</option>
-            <option value="portfolio">Portfolio</option>
-            <option value="landing">Landing</option>
-            <option value="about">About</option>
-            <option value="commercial">Commercial</option>
-          </select>
-        </div>
-        <div className="box website-inventory-list">
-          {filteredRecords.length === 0 ? (
-            <div className="box-row" style={{ justifyContent: "center", color: "var(--f3)", padding: "24px 12px" }}>
-              {records.length ? "No pages match the current filters." : "No website pages indexed."}
-            </div>
-          ) : (
-            visibleRecords.map((record) => {
-              const expanded = expandedIds.has(record.id)
-              return (
-                <div key={record.id} className="box-row website-inventory-row" style={{ display: "block" }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    <div className="grow" style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={record.title}>
-                        {record.title || "Untitled page"}
-                      </div>
-                      <a
-                        href={record.redirectTarget || record.canonicalUrl || record.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={record.url}
-                        style={{ ...muted, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                      >
-                        {record.url}
-                      </a>
-                    </div>
-                    <span className={`tag t-${statusColor[record.status] ?? "gray"}`} aria-hidden="true" style={{ textTransform: "capitalize" }}>{record.status}</span>
-                    <select
-                      className="inp"
-                      style={{ width: 120 }}
-                      aria-label="Status"
-                      value={record.status}
-                      disabled={record.status === "queued" || record.status === "checking"}
-                      title={record.lastError}
-                      onChange={(event) => {
-                        const status = event.target.value as WebsiteContentRecord["status"]
-                        const patch = {
-                          status,
-                          eligibleForInternalLink: status === "active" || status === "redirected",
-                        }
-                        update(record.id, patch)
-                        void persistUpdate(record.id, patch)
-                      }}
-                    >
-                      <option value="queued">Queued</option>
-                      <option value="checking">Checking</option>
-                      <option value="unchecked">Unchecked</option>
-                      <option value="active">Active</option>
-                      <option value="redirected">Redirected</option>
-                      <option value="broken">Broken</option>
-                    </select>
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      onClick={() => toggleExpanded(record.id)}
-                      aria-expanded={expanded}
-                      aria-label={expanded ? "Close details" : "View details"}
-                      title={expanded ? "Close details" : "View details"}
-                    >
-                      <I n={expanded ? "x" : "search"} />
-                    </button>
-                  </div>
-
-                  {record.summary && !expanded && (
-                    <div style={{ ...muted, marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={record.summary}>{record.summary}</div>
-                  )}
-
-                  {expanded && <>
-                    {record.summary && <p style={{ color: "var(--f2)", margin: "8px 0 0", whiteSpace: "pre-wrap" }}>{record.summary}</p>}
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                      <label style={field}>
-                        Page type
-                        <select
-                          className="inp"
-                          value={record.contentType}
-                          onChange={(event) => {
-                            const patch = { contentType: event.target.value as WebsiteContentRecord["contentType"] }
-                            update(record.id, patch)
-                            void persistUpdate(record.id, patch)
-                          }}
-                        >
-                          <option value="blog">Blog</option>
-                          <option value="service">Service</option>
-                          <option value="portfolio">Portfolio</option>
-                          <option value="landing">Landing</option>
-                          <option value="about">About</option>
-                          <option value="commercial">Commercial</option>
-                        </select>
-                      </label>
-                      <label style={field}>
-                        Topics
-                        <input
-                          className="inp"
-                          value={record.topics.join(", ")}
-                          onChange={(event) => update(record.id, { topics: splitList(event.target.value) })}
-                          onBlur={(event) => void persistUpdate(record.id, { topics: splitList(event.target.value) })}
-                        />
-                      </label>
-                      <label style={field}>
-                        Services
-                        <input
-                          className="inp"
-                          value={(record.services ?? []).join(", ")}
-                          onChange={(event) => update(record.id, { services: splitList(event.target.value) })}
-                          onBlur={(event) => void persistUpdate(record.id, { services: splitList(event.target.value) })}
-                        />
-                      </label>
-                    </div>
-                  </>}
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--b3)", ...muted }}>
-                    <span>Checked {record.lastChecked ? new Date(record.lastChecked).toLocaleString() : "—"}</span>
-                    {record.summarizedAt && <span>{record.summaryCacheHit ? "Cached" : record.aiModel || "AI"} · {new Date(record.summarizedAt).toLocaleDateString()}</span>}
-                    {record.searchIntent && <span className="rchip" style={{ textTransform: "capitalize" }}>{record.searchIntent}</span>}
-                    <span style={{ flex: 1 }} />
-                    <button type="button" className="btn ghost" onClick={() => void recheck(record)} aria-label="Recheck URL" title="Recheck URL">
-                      <I n="refresh" />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      style={{ color: "var(--danger)" }}
-                      onClick={() => {
-                        if (!window.confirm(tr(`Xoá ${record.url} khỏi Website Inventory? AI sẽ không đề xuất URL này làm internal link nữa.`, `Remove ${record.url} from Website Inventory? AI will stop suggesting it as an internal link.`))) return
-                        void deleteWebsiteInventoryRecord(record.id, railwayUrl)
-                          .then(() => onChange(records.filter((item) => item.id !== record.id)))
-                          .catch((error) => toastErr(error))
-                      }}
-                      aria-label="Remove URL"
-                      title="Remove URL"
-                    >
-                      <I n="trash" />
-                    </button>
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </div>
-        {filteredRecords.length > pageSize && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 12, ...muted }}>
-            <span style={{ flex: 1 }}>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredRecords.length)} of {filteredRecords.length}</span>
-            <button type="button" className="btn" disabled={page === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</button>
-            <span>Page {page} / {totalPages}</span>
-            <button type="button" className="btn" disabled={page === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Next</button>
+      </div>
+      <div>
+        <div className="fsec"><I n="refresh" />&nbsp;{tr("Cập nhật trang đã có", "Update existing pages")}</div>
+        <p style={{ color: "var(--f3)", fontSize: 12, margin: "0 0 8px" }}>{tr(`${records.length} trang · ${records.filter((item) => item.eligibleForInternalLink && ["active", "redirected"].includes(item.status)).length} được dùng làm internal link`, `${records.length} pages · ${records.filter((item) => item.eligibleForInternalLink && ["active", "redirected"].includes(item.status)).length} usable as internal links`)}</p>
+        <div className="box">
+          <div className="box-row" style={{ flexWrap: "wrap" }}>
+            <div className="grow" style={{ minWidth: 200 }}>{tr("Quét lại tất cả", "Recheck all")}<div className="s">{tr("Kiểm tra lại trạng thái và nội dung mọi trang.", "Checks the status and content of every page again.")}</div></div>
+            <button type="button" className="btn" disabled={scanning || !records.length} onClick={() => void recheckAll()}><I n="refresh" />{tr("Quét lại", "Recheck")}</button>
           </div>
-        )}
-      </section>
+          <div className="box-row" style={{ flexWrap: "wrap" }}>
+            <div className="grow" style={{ minWidth: 200 }}>{tr("Tóm tắt trang còn thiếu", "Summarise missing pages")}<div className="s">{tr("AI tóm tắt các trang chưa có summary.", "AI summarises pages that have no summary yet.")}</div></div>
+            <button type="button" className="btn" disabled={scanning || !records.some((item) => !item.summary && item.status !== "broken")} onClick={() => void summarizeMissing()}><I n="sparkles" />{tr("Tóm tắt", "Summarise")}</button>
+          </div>
+        </div>
+      </div>
     </>
   )
+}
+
+const PAGE_TYPES: WebsiteContentRecord["contentType"][] = ["blog", "service", "portfolio", "landing", "about", "commercial"]
+const EDITABLE_STATUSES: WebsiteContentRecord["status"][] = ["active", "redirected", "unchecked", "broken"]
+const splitList = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean)
+
+/** One inventory page in the Website Inventory side panel: what AI knows about it, edits, recheck and delete. */
+export function PageDetails({ record, railwayUrl, canEdit, onChange, onDelete }: {
+  record: WebsiteContentRecord
+  railwayUrl: string
+  canEdit: boolean
+  onChange: (record: WebsiteContentRecord) => void
+  onDelete: () => void
+}) {
+  const { tr } = useI18n()
+  const [busy, setBusy] = useState(false)
+  const [topics, setTopics] = useState(record.topics.join(", "))
+  const [services, setServices] = useState((record.services ?? []).join(", "))
+  useEffect(() => { setTopics(record.topics.join(", ")); setServices((record.services ?? []).join(", ")) }, [record.id, record.topics, record.services])
+  const save = async (patch: Partial<WebsiteContentRecord>) => {
+    const previous = record
+    onChange({ ...record, ...patch })
+    try { await updateWebsiteInventoryRecord(record.id, patch, railwayUrl) } catch (error) { onChange(previous); toastErr(error) }
+  }
+  const recheck = async () => {
+    setBusy(true)
+    try { onChange({ ...(await scanWebsiteUrl(record.url, railwayUrl, true)), id: record.id }) }
+    catch (error) { toastErr(error) }
+    finally { setBusy(false) }
+  }
+  const remove = async () => {
+    if (!window.confirm(tr(`Xoá ${record.url} khỏi Website Inventory? AI sẽ không đề xuất URL này làm internal link nữa.`, `Remove ${record.url} from Website Inventory? AI will stop suggesting it as an internal link.`))) return
+    setBusy(true)
+    try { await deleteWebsiteInventoryRecord(record.id, railwayUrl); onDelete() } catch (error) { toastErr(error) } finally { setBusy(false) }
+  }
+  const usable = record.eligibleForInternalLink && ["active", "redirected"].includes(record.status)
+  const source = record.summarySource === "llms.txt" || record.aiModel === "llms.txt" ? "llms.txt" : record.summarizedAt ? (record.summaryCacheHit ? tr("AI (cache)", "AI (cached)") : record.aiModel || "AI") : null
+  return <>
+    <div className="fsec"><I n="world" />&nbsp;{tr("Trang", "Page")}</div>
+    <div className="fields" style={{ paddingTop: 0 }}>
+      <div className="frow"><div className="flabel"><I n="link" />URL</div><div className="fval"><a href={record.url} target="_blank" rel="noreferrer" title={record.url} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{record.url}</a></div></div>
+      {(record.redirectTarget || (record.canonicalUrl && record.canonicalUrl !== record.url)) && <div className="frow"><div className="flabel"><I n="arrow-forward" />{record.redirectTarget ? "Redirect" : "Canonical"}</div><div className="fval"><span className="muted" title={record.redirectTarget || record.canonicalUrl}>{record.redirectTarget || record.canonicalUrl}</span></div></div>}
+      <div className="frow"><div className="flabel"><I n="progress-check" />Status</div><div className="fval">{canEdit && EDITABLE_STATUSES.includes(record.status) ? <select aria-label="Status" value={record.status} disabled={busy} onChange={(event) => { const status = event.target.value as WebsiteContentRecord["status"]; void save({ status, eligibleForInternalLink: status === "active" || status === "redirected" }) }}>{EDITABLE_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</select> : record.status}</div></div>
+      <div className="frow"><div className="flabel"><I n="category" />{tr("Loại trang", "Page type")}</div><div className="fval">{canEdit ? <select aria-label={tr("Loại trang", "Page type")} value={record.contentType} disabled={busy} onChange={(event) => void save({ contentType: event.target.value as WebsiteContentRecord["contentType"] })}>{PAGE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}</select> : record.contentType}</div></div>
+      <div className="frow"><div className="flabel"><I n="link-plus" />Internal link</div><div className="fval"><button role="switch" aria-checked={record.eligibleForInternalLink} aria-label={tr("Cho AI dùng trang này làm internal link", "Let AI use this page as an internal link")} disabled={!canEdit || busy} className={`toggle${record.eligibleForInternalLink ? " on" : ""}`} onClick={() => void save({ eligibleForInternalLink: !record.eligibleForInternalLink })} />{record.eligibleForInternalLink && !usable && <span className="s" style={{ marginLeft: 6 }}>{tr("chưa dùng được: trang không hoạt động", "not usable: page is not live")}</span>}</div></div>
+      <div className="frow"><div className="flabel"><I n="target" />{tr("Chủ đề chính", "Primary topic")}</div><div className="fval">{record.primaryTopic || <span className="empty">Empty</span>}</div></div>
+      <div className="frow"><div className="flabel"><I n="tags" />Topics</div><div className="fval"><input aria-label="Topics" disabled={!canEdit || busy} value={topics} onChange={(event) => setTopics(event.target.value)} onBlur={() => { const next = splitList(topics); if (next.join(",") !== record.topics.join(",")) void save({ topics: next }) }} /></div></div>
+      <div className="frow"><div className="flabel"><I n="briefcase" />Services</div><div className="fval"><input aria-label="Services" disabled={!canEdit || busy} value={services} onChange={(event) => setServices(event.target.value)} onBlur={() => { const next = splitList(services); if (next.join(",") !== (record.services ?? []).join(",")) void save({ services: next }) }} /></div></div>
+      <div className="frow"><div className="flabel"><I n="search" />Intent</div><div className="fval">{record.searchIntent ?? <span className="empty">Empty</span>}</div></div>
+      <div className="frow"><div className="flabel"><I n="calendar" />{tr("Kiểm tra lúc", "Checked")}</div><div className="fval">{record.lastChecked ? new Date(record.lastChecked).toLocaleString() : "—"}{record.httpStatus ? <span className="muted">&nbsp;· HTTP {record.httpStatus}</span> : null}</div></div>
+      {record.lastError && <div className="frow"><div className="flabel"><I n="alert-triangle" />{tr("Lỗi", "Error")}</div><div className="fval"><span style={{ color: "var(--danger)" }} title={record.lastError}>{record.lastError}</span></div></div>}
+    </div>
+    <div className="fsec"><I n="file-description" />&nbsp;{tr("AI đọc gì về trang này", "What AI knows about this page")}</div>
+    <div className="fields" style={{ paddingTop: 0 }}>
+      <div className="frow"><div className="flabel"><I n="sparkles" />{tr("Nguồn tóm tắt", "Summary source")}</div><div className="fval">{source ?? <span className="empty">{tr("Chưa có", "None")}</span>}</div></div>
+    </div>
+    <p style={{ color: "var(--f2)", margin: "4px 0 8px", whiteSpace: "pre-wrap" }}>{record.summary || record.description || <span style={{ color: "var(--f4)" }}>{tr("Chưa có tóm tắt.", "No summary yet.")}</span>}</p>
+    {(record.internalLinkAnchors?.length ?? 0) > 0 && <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>{record.internalLinkAnchors!.map((anchor) => <span key={anchor} className="tag t-blue">{anchor}</span>)}</div>}
+    <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
+      <button className="btn" disabled={busy} onClick={() => void recheck()}><I n={busy ? "loader-2" : "refresh"} />{tr("Quét lại", "Recheck")}</button>
+      {canEdit && <button className="btn" style={{ marginLeft: "auto", color: "var(--danger)" }} disabled={busy} onClick={() => void remove()}><I n="trash" />{tr("Xoá", "Delete")}</button>}
+    </div>
+  </>
 }

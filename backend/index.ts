@@ -5123,7 +5123,8 @@ async function processWebsiteInventoryUrl(url: string, summarize = true, provide
     delete record.extractedContent
     const summaryModel = websiteSummaryModel(await kvGet<any>("writer:config"))
     if (record.status !== "broken" && provided?.description) {
-      record = { ...record, summary: provided.description.split(/\s+/).slice(0, 90).join(" "), summarySource: "llms.txt", summarizedAt: new Date().toISOString() }
+      // ai_model is the stored column that says where the summary came from.
+      record = { ...record, summary: provided.description.split(/\s+/).slice(0, 90).join(" "), summarySource: "llms.txt", aiModel: "llms.txt", summarizedAt: new Date().toISOString() }
     } else if (record.status !== "broken" && summarize && getAvailableProviders()[summaryModel.provider]) {
       try {
         const cacheKey = `writer:website-summary:${WEBSITE_SUMMARY_VERSION}:${record.contentFingerprint}`

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react"
-import type { AppConfig, Article, ContentPlan, ContentPlanItem, DocumentFile, PipelineSettings } from "../types"
+import type { AppConfig, Article, ContentPlan, ContentPlanItem, DocumentFile, PipelineSettings, WebsiteContentRecord } from "../types"
 import type { OutlineStructureSnapshot } from "../../shared/outlineStructures"
 import type { ThemePreference } from "../lib/theme"
 import { useI18n } from "../lib/i18n"
@@ -17,7 +17,7 @@ import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../lib/qcGroups"
 import StructureSelect from "./StructureSelect"
 import { ModelsSettings, SystemStatus, WorkflowAiSettings } from "./AiSettings"
 import { AddDocForm, DocDetails, LegacyArchive } from "./StorageDocs"
-import WebsiteInventory from "./WebsiteInventory"
+import WebsiteInventory, { PageDetails } from "./WebsiteInventory"
 import WorkflowRules from "./WorkflowRules"
 import ContentPlanRules from "./ContentPlanRules"
 import { isLegacyActionPlan } from "../lib/legacyCompatibility"
@@ -36,6 +36,7 @@ const OBJ_META = {
   articles: { label: "Articles", icon: "file-text", color: "#c25700" },
   reviews: { label: "Review Workspace", icon: "checklist", color: "#14806e" },
   storage: { label: "Storage", icon: "folders", color: "#317299" },
+  website: { label: "Website Inventory", icon: "world", color: "#307f52" },
 } as const
 type Obj = keyof typeof OBJ_META
 
@@ -96,7 +97,7 @@ export type CrmProps = {
   onMigrateLegacy: (article: Article) => void
 }
 
-type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "plan-upload" } | { kind: "run-items"; id: string; ids?: string[] } | { kind: "step"; i: number } | { kind: "cmd" } | null
+type Panel = { kind: "plan" } | { kind: "review"; id: string } | { kind: "doc"; id: string } | { kind: "add-doc" } | { kind: "page"; id: string } | { kind: "add-page" } | { kind: "plan-upload" } | { kind: "run-items"; id: string; ids?: string[] } | { kind: "step"; i: number } | { kind: "cmd" } | null
 type Ctx = CrmProps & {
   settings: PipelineSettings
   list: CrmArticle[]
@@ -108,6 +109,9 @@ type Ctx = CrmProps & {
   panel: Panel
   setPanel: (panel: Panel) => void
   route: string[]
+  /** Website Inventory pages; the server saves each record, this is the live list for the CRM. */
+  inventory: WebsiteContentRecord[]
+  setInventory: (records: WebsiteContentRecord[]) => void
 }
 
 const roleKey = (role: string) => role === "admin" ? "admin" : role === "reviewer" ? "reviewer" : "operator"
@@ -127,6 +131,8 @@ export default function CrmApp(props: CrmProps) {
   usePlanClassificationWatch(props)
   const [hash, setHash] = useState(() => window.location.hash)
   const [panel, setPanel] = useState<Panel>(null)
+  const [inventory, setInventory] = useState<WebsiteContentRecord[]>(props.config.websiteInventory ?? [])
+  useEffect(() => { setInventory(props.config.websiteInventory ?? []) }, [props.config.websiteInventory])
   const [navOpen, setNavOpen] = useState(false)
   useEffect(() => {
     let current = window.location.hash, reverting = false
@@ -160,14 +166,16 @@ export default function CrmApp(props: CrmProps) {
   const isAdmin = props.user.role === "admin"
   // Operator runs the pipeline; Reviewer reviews and picks Approved Articles; Admin does everything.
   const can = (what: string) => isAdmin || (props.user.role === "reviewer" ? ["review", "approveArticles", "copy"] : ["plans", "retry", "copy", "manual"]).includes(what)
-  const ctx: Ctx = { ...props, settings, list, plans, batches, docs, can, isAdmin, panel, setPanel, route }
+  const ctx: Ctx = { ...props, settings, list, plans, batches, docs, can, isAdmin, panel, setPanel, route, inventory, setInventory }
 
   let page: ReactNode
   if (a === "objects" && b in OBJ_META) page = <ObjectIndex ctx={ctx} o={b as Obj} />
   else if (a === "object" && b === "articles") page = <ArticleShow ctx={ctx} id={c} initialTab={new URLSearchParams(query).get("tab") ?? "final"} />
   else if (a === "object" && b === "plans") page = <PlanShow ctx={ctx} id={c} />
   else if (a === "object" && b === "batches") page = <BatchShow ctx={ctx} id={c} />
-  else if (a === "storage" && (b === "website" || b === "legacy")) page = <StorageSubPage ctx={ctx} p={b} />
+  // Old Storage sub-page address of Website Inventory, kept for bookmarks.
+  else if (a === "storage" && b === "website") page = <ObjectIndex ctx={ctx} o="website" />
+  else if (a === "storage" && b === "legacy") page = <StorageSubPage ctx={ctx} />
   else if (a === "workflows") page = <PipelineCanvas ctx={ctx} />
   else if (a === "dashboards") page = <Dashboard ctx={ctx} />
   else if (a === "settings") page = <SettingsPage ctx={ctx} p={b} />
@@ -184,6 +192,8 @@ export default function CrmApp(props: CrmProps) {
       {panel?.kind === "review" && <ReviewPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "doc" && <DocPanel ctx={ctx} id={panel.id} />}
       {panel?.kind === "add-doc" && <AddDocPanel ctx={ctx} />}
+      {panel?.kind === "page" && <PagePanel ctx={ctx} id={panel.id} />}
+      {panel?.kind === "add-page" && <AddPagePanel ctx={ctx} />}
       {panel?.kind === "run-items" && <RunItemsPanel ctx={ctx} planId={panel.id} ids={panel.ids} />}
       {panel?.kind === "step" && <StepPanel ctx={ctx} i={panel.i} />}
       {panel?.kind === "cmd" && <CommandMenu ctx={ctx} />}
@@ -198,7 +208,7 @@ function NavDrawer({ ctx }: { ctx: Ctx }) {
   const item = (href: string, icon: ReactNode, label: ReactNode, on: boolean, extra?: ReactNode) =>
     <a key={href} className={`nav-item${on ? " on" : ""}`} href={href} aria-current={on ? "page" : undefined}>{icon}<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>{extra}</a>
   const objIco = (o: Obj) => <span className="nav-ico" style={{ background: OBJ_META[o].color }}><I n={OBJ_META[o].icon} s={{ fontSize: 11 }} /></span>
-  const nav: Array<[Obj, string]> = [["plans", "plans"], ["batches", "plans"], ["articles", "plans"], ["reviews", "review"], ["storage", "storage"]]
+  const nav: Array<[Obj, string]> = [["plans", "plans"], ["batches", "plans"], ["articles", "plans"], ["reviews", "review"], ["storage", "storage"], ["website", "settings"]]
   const campaigns = ctx.plans.filter(p => p.articles.length && p.plan.status !== "archived")
   return <nav className="nav" aria-label={tr("Điều hướng chính", "Main navigation")}>
     <div className="ws"><span className="ws-logo" style={{ background: "#ff8f2b", color: "#fff" }}>F</span>Writer Studio</div>
@@ -206,7 +216,7 @@ function NavDrawer({ ctx }: { ctx: Ctx }) {
     <a className="nav-item" href={ctx.can("settings") ? "#/settings/pipeline" : "#/settings/experience"}><I n="settings" /><span>{tr("Cài đặt", "Settings")}</span></a>
     {ctx.can("plans") && <button className="nav-item" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="circle-plus" /><span>Add Plan</span></button>}
     <div className="nav-sec">Pipeline</div>
-    {nav.filter(([, need]) => ctx.can(need)).map(([o]) => item("#/objects/" + o, objIco(o), OBJ_META[o].label, ((a === "objects" || a === "object") && b === o) || (a === "storage" && o === "storage"), o === "reviews" && pending ? <span className="kbd">{pending}</span> : undefined))}
+    {nav.filter(([, need]) => ctx.can(need)).map(([o]) => item("#/objects/" + o, objIco(o), OBJ_META[o].label, ((a === "objects" || a === "object") && b === o) || (a === "storage" && (b === "website" ? o === "website" : o === "storage")), o === "reviews" && pending ? <span className="kbd">{pending}</span> : undefined))}
     {item("#/workflows", <span className="nav-ico" style={{ background: "#307f52" }}><I n="settings-automation" s={{ fontSize: 11 }} /></span>, tr("Quy trình 3 gate", "3-gate pipeline"), a === "workflows")}
     {item("#/dashboards", <span className="nav-ico" style={{ background: "#b23887" }}><I n="layout-dashboard" s={{ fontSize: 11 }} /></span>, "Dashboards", a === "dashboards")}
     {campaigns.length > 0 && <div className="nav-sec">Campaign</div>}
@@ -276,7 +286,9 @@ const PersonChip = ({ n }: { n?: string }) => n ? <span className="rchip"><Av na
 
 type Field = { key: string; label: string; icon: string; num?: boolean; render?: (r: any) => ReactNode; sortVal?: (r: any) => string | number; text?: (r: any) => string }
 const docStatus = (d: StorageDoc) => ({ ok: ["Ready", "green"], partial: ["Partial", "orange"], draft: ["Draft", "orange"], missing: ["Missing", "red"], running: ["Analyzing", "blue"] } as const)[d.st]
-const nameOf = (o: Obj, r: any): string => o === "batches" ? `Batch ${r.idx}` : r.name ?? r.title
+const nameOf = (o: Obj, r: any): string => o === "batches" ? `Batch ${r.idx}` : o === "website" ? r.title || r.url : r.name ?? r.title
+const PAGE_STATUS_COLOR: Record<string, string> = { active: "green", redirected: "blue", broken: "red", queued: "orange", checking: "orange", unchecked: "gray" }
+const PAGE_STATUS_ORDER: WebsiteContentRecord["status"][] = ["active", "redirected", "unchecked", "queued", "checking", "broken"]
 
 function fieldsFor(ctx: Ctx, o: Obj, ago: (d?: string | null) => string, tr: (vi: string, en: string) => string): Field[] {
   const t = ctx.settings.threshold
@@ -319,6 +331,15 @@ function fieldsFor(ctx: Ctx, o: Obj, ago: (d?: string | null) => string, tr: (vi
     { key: "reviewer", label: "Reviewer", icon: "user-circle", render: (r: CrmArticle) => <PersonChip n={person(r.human.reviewer)} /> },
     { key: "approvedArticle", label: "Approved Article", icon: "star", render: (r: CrmArticle) => r.a.approvedArticle ? <Tag c="yellow">Yes</Tag> : <Tag c="gray">No</Tag> },
   ]
+  if (o === "website") return [
+    { key: "name", label: "Page", icon: "abc", text: (r: WebsiteContentRecord) => r.title || r.url },
+    { key: "status", label: "Status", icon: "progress-check", render: (r: WebsiteContentRecord) => <Tag c={PAGE_STATUS_COLOR[r.status] ?? "gray"}>{["queued", "checking"].includes(r.status) && <I n="loader-2" />}{r.status}</Tag> },
+    { key: "contentType", label: "Type", icon: "category", render: (r: WebsiteContentRecord) => <Tag c="gray">{r.contentType}</Tag> },
+    { key: "topic", label: "Topic", icon: "target", render: (r: WebsiteContentRecord) => <span className="muted">{r.primaryTopic || r.topics.slice(0, 2).join(", ")}</span>, sortVal: (r: WebsiteContentRecord) => r.primaryTopic ?? "" },
+    { key: "link", label: "Internal link", icon: "link-plus", render: (r: WebsiteContentRecord) => r.eligibleForInternalLink && ["active", "redirected"].includes(r.status) ? <Tag c="green">{tr("Được dùng", "Usable")}</Tag> : <Tag c="gray">{tr("Không", "No")}</Tag>, sortVal: (r: WebsiteContentRecord) => r.eligibleForInternalLink ? 1 : 0 },
+    { key: "summary", label: "Summary", icon: "sparkles", render: (r: WebsiteContentRecord) => r.aiModel === "llms.txt" || r.summarySource === "llms.txt" ? <Tag c="turq">llms.txt</Tag> : r.summary ? <Tag c="blue">AI</Tag> : <span className="muted">—</span>, sortVal: (r: WebsiteContentRecord) => r.summary ? 1 : 0 },
+    { key: "lastChecked", label: "Last checked", icon: "calendar", render: (r: WebsiteContentRecord) => <span className="muted">{r.lastChecked ? ago(r.lastChecked) : ""}</span>, sortVal: (r: WebsiteContentRecord) => r.lastChecked ?? "" },
+  ]
   return [
     { key: "name", label: "Document", icon: "abc", text: (r: StorageDoc) => r.name },
     { key: "g", label: "Group", icon: "folder", render: (r: StorageDoc) => <><Tag c={STORAGE_GROUPS.find(g => g[0] === r.g)?.[1] ?? "gray"}>{r.g}</Tag>{r.guessed && <span className="s" title="Nhóm đang được đoán theo tên file. Mở tài liệu và chọn nhóm để xác nhận."> · đoán</span>}{r.file && knowledgeKindOf(r.file) && <span className="s"> · {knowledgeKindOf(r.file)}</span>}</> },
@@ -336,16 +357,17 @@ let lastArticleOrder: string[] = []
 function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
   const { tr } = useI18n()
   const ago = useAgo()
-  const need = ({ plans: "plans", batches: "plans", articles: "plans", reviews: "review", storage: "storage" } as const)[o]
+  const need = ({ plans: "plans", batches: "plans", articles: "plans", reviews: "review", storage: "storage", website: "settings" } as const)[o]
   const [filter, setFilter] = useState("")
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null)
   const [kanban, setKanban] = useState(() => { try { return localStorage.getItem(VIEW_KEY) !== "table" } catch { return true } })
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, kanban ? "kanban" : "table") } catch { /* per-viewer convenience */ } }, [kanban])
   if (!ctx.can(need)) return <Forbidden role={ctx.user.role} />
   const m = OBJ_META[o], fields = fieldsFor(ctx, o, ago, tr)
-  const data: any[] = o === "plans" ? ctx.plans : o === "batches" ? ctx.batches : o === "articles" ? ctx.list : o === "reviews" ? ctx.list.filter(x => x.status === "completed") : ctx.docs
+  const data: any[] = o === "plans" ? ctx.plans : o === "batches" ? ctx.batches : o === "articles" ? ctx.list : o === "reviews" ? ctx.list.filter(x => x.status === "completed") : o === "website" ? ctx.inventory : ctx.docs
   const q = filter.toLowerCase()
-  let rows = data.filter(r => !q || nameOf(o, r).toLowerCase().includes(q) || String(r.keyword ?? r.g ?? "").toLowerCase().includes(q))
+  let rows = data.filter(r => !q || nameOf(o, r).toLowerCase().includes(q) || String(r.keyword ?? r.g ?? "").toLowerCase().includes(q)
+    || (o === "website" && [r.url, r.primaryTopic, ...(r.topics ?? []), ...(r.services ?? [])].some(v => String(v ?? "").toLowerCase().includes(q))))
   if (sort) {
     const f = fields.find(x => x.key === sort.key)!
     const val = (r: any) => f.sortVal ? f.sortVal(r) : f.key === "name" ? nameOf(o, r) : f.text ? f.text(r) : r[f.key]
@@ -357,17 +379,18 @@ function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
   // Picks from the review sample (Settings › Pipeline, %) first; falls back to any unreviewed article.
   const randomReview = () => { const open = ctx.list.filter(a => a.status === "completed" && a.human.status === "not"), sampled = open.filter(a => inReviewSample(a.id, ctx.settings.reviewSample)), pool = sampled.length ? sampled : open; if (!pool.length) return toast(tr("Không còn bài chưa review", "No unreviewed articles")); ctx.setPanel({ kind: "review", id: pool[Math.floor(Math.random() * pool.length)].id }) }
   const addDoc = () => ctx.setPanel({ kind: "add-doc" })
+  const addPage = () => ctx.setPanel({ kind: "add-page" })
   const legacyCount = ctx.files.filter(isLegacyActionPlan).length
   const primary = o === "storage" ? <>
       {legacyCount > 0 && <button className="btn" aria-label="Legacy Action Plans" onClick={() => go("#/storage/legacy")}><I n="archive" /><span>Legacy</span></button>}
-      {ctx.isAdmin && <button className="btn" aria-label="Website Inventory" onClick={() => go("#/storage/website")}><I n="world" /><span>Website Inventory</span></button>}
       {ctx.can("plans") && <button className="btn" aria-label={tr("Thêm Content Plan", "Add Content Plan")} onClick={() => ctx.setPanel({ kind: "plan-upload" })}><I n="file-analytics" /><span>{tr("Thêm Content Plan", "Add Content Plan")}</span></button>}
       {ctx.isAdmin && <button className="btn" aria-label={tr("Thêm tài liệu", "Add document")} onClick={addDoc}><I n="upload" /><span>{tr("Thêm tài liệu", "Add document")}</span></button>}
     </>
+    : o === "website" ? <button className="btn" aria-label={tr("Thêm trang", "Add pages")} onClick={addPage}><I n="download" /><span>{tr("Thêm trang", "Add pages")}</span></button>
     : o === "reviews" ? <button className="btn" aria-label={tr("Chọn ngẫu nhiên", "Random pick")} onClick={randomReview}><I n="dice-5" /><span>{tr("Chọn ngẫu nhiên", "Random pick")} · {tr("mẫu", "sample")} {ctx.settings.reviewSample}%</span></button>
     : <button className="btn primary" aria-label="Add Plan" onClick={() => ctx.setPanel({ kind: "plan" })}><I n="plus" /><span>Add Plan</span></button>
   const gaps = o === "storage" ? ctx.docs.filter(d => d.st !== "ok") : []
-  const desc = ({ reviews: tr("Thư viện bài đã AI Approved. Chọn bài bất kỳ, không cần phân công. Human review không chặn việc bài hoàn thành.", "Library of AI-approved articles. Pick any; no assignment needed. Human review never blocks completion."), storage: tr("Shipper chỉ nạp phần tài liệu cần cho từng gate và article type.", "The Shipper loads only what each gate and article type needs.") } as Partial<Record<Obj, string>>)[o]
+  const desc = ({ reviews: tr("Thư viện bài đã AI Approved. Chọn bài bất kỳ, không cần phân công. Human review không chặn việc bài hoàn thành.", "Library of AI-approved articles. Pick any; no assignment needed. Human review never blocks completion."), storage: tr("Shipper chỉ nạp phần tài liệu cần cho từng gate và article type.", "The Shipper loads only what each gate and article type needs."), website: tr("Các trang của site. AI chỉ chèn internal link tới trang đang hoạt động và được bật Internal link.", "Your site's pages. AI only links to pages that are live and have Internal link on.") } as Partial<Record<Obj, string>>)[o]
   const sortField = sort && fields.find(f => f.key === sort.key)
   return <>
     <Header title={<><span className="nav-ico" style={{ background: m.color }}><I n={m.icon} s={{ fontSize: 11 }} /></span>{m.label}</>} actions={primary} />
@@ -385,23 +408,17 @@ function ObjectIndex({ ctx, o }: { ctx: Ctx; o: Obj }) {
         <b style={{ fontWeight: 600 }}><I n="alert-triangle" /> Open gaps · {gaps.length}</b>
         <div style={{ color: "var(--f2)", marginTop: 4 }}>{gaps.map(d => <span key={d.id} className="rchip" style={{ margin: "2px 4px 2px 0", background: "var(--bg1)" }}>{d.name}</span>)}</div>
       </div>}
-      {isKanban ? <KanbanView ctx={ctx} rows={rows} /> : <TableView key={o} ctx={ctx} o={o} rows={rows} fields={fields} sort={sort} sortBy={sortBy} onFoot={o === "storage" ? addDoc : o === "reviews" ? randomReview : () => ctx.setPanel({ kind: "plan" })} />}
+      {isKanban ? <KanbanView ctx={ctx} rows={rows} /> : <TableView key={o} ctx={ctx} o={o} rows={rows} fields={fields} sort={sort} sortBy={sortBy} onFoot={o === "storage" ? addDoc : o === "website" ? addPage : o === "reviews" ? randomReview : () => ctx.setPanel({ kind: "plan" })} />}
     </div>
   </>
 }
 
-function StorageSubPage({ ctx, p }: { ctx: Ctx; p: "website" | "legacy" }) {
-  const { tr } = useI18n()
-  // The server owns inventory records (saved per record); keep the live list on this page only.
-  const [records, setRecords] = useState(ctx.config.websiteInventory ?? [])
-  if (p === "website" && !ctx.isAdmin) return <Forbidden role={ctx.user.role} />
-  const title = p === "website" ? "Website Inventory" : "Legacy Action Plans"
+function StorageSubPage({ ctx }: { ctx: Ctx }) {
   return <>
-    <Header title={<><a className="crumb" href="#/objects/storage">Storage</a><span className="crumb">/</span>{title}</>} />
+    <Header title={<><a className="crumb" href="#/objects/storage">Storage</a><span className="crumb">/</span>Legacy Action Plans</>} />
     <div className="card"><div className="set"><div className="set-inner" style={{ maxWidth: 960 }}>
-      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>{title}</h1>
-      {p === "website" ? <><p className="desc" style={{ color: "var(--f3)", margin: 0 }}>{tr("Danh sách URL duy nhất AI được phép đề xuất làm internal link.", "The only URLs AI may suggest as internal links.")}</p><WebsiteInventory records={records} railwayUrl={ctx.config.railwayUrl} onChange={setRecords} /></>
-        : <LegacyArchive files={ctx.files.filter(isLegacyActionPlan)} />}
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Legacy Action Plans</h1>
+      <LegacyArchive files={ctx.files.filter(isLegacyActionPlan)} />
     </div></div></div>
   </>
 }
@@ -411,7 +428,7 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
   const m = OBJ_META[o]
   // Bulk delete: admins, on the Articles, Batches and Storage tables. Selection only counts rows still visible.
   // In Storage only real documents can be picked, not Content Plans.
-  const selectable = ctx.isAdmin && (o === "articles" || o === "batches" || o === "storage")
+  const selectable = ctx.isAdmin && (o === "articles" || o === "batches" || o === "storage" || o === "website")
   const canPick = (r: any) => o !== "storage" || Boolean(r.file)
   const pickable = rows.filter(canPick)
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -421,7 +438,7 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
   const toggle = (id: string) => setPicked(prev => { const next = new Set(prev); if (!next.delete(id)) next.add(id); return next })
   const removeChosen = async () => {
     setDeleting(true)
-    try { await (o === "storage" ? deleteDocs(chosen) : o === "batches" ? ctx.onDeleteMany([], chosen.map(r => r.id)) : ctx.onDeleteMany(chosen.map(r => r.a), [])) }
+    try { await (o === "storage" ? deleteDocs(chosen) : o === "website" ? deletePages(chosen) : o === "batches" ? ctx.onDeleteMany([], chosen.map(r => r.id)) : ctx.onDeleteMany(chosen.map(r => r.a), [])) }
     finally { setDeleting(false); setPicked(new Set()) }
   }
   const deleteDocs = async (docs: StorageDoc[]) => {
@@ -434,15 +451,30 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
       toast(tr(`Đã xoá ${result.deletedIds.length} tài liệu`, `Deleted ${result.deletedIds.length} document(s)`))
     } catch (err) { toastErr(err) }
   }
+  const deletePages = async (pages: WebsiteContentRecord[]) => {
+    const names = pages.slice(0, 8).map(p => `• ${p.url}`).join("\n") + (pages.length > 8 ? `\n• … ${pages.length - 8} ${tr("trang khác", "more")}` : "")
+    if (!window.confirm(tr(`Xoá ${pages.length} trang khỏi Website Inventory?\n\n${names}\n\nAI sẽ không đề xuất các URL này làm internal link nữa.`, `Remove ${pages.length} page(s) from Website Inventory?\n\n${names}\n\nAI will stop suggesting these URLs as internal links.`))) return
+    const removed = new Set<string>()
+    // One request per page, in order: what was removed stays removed even if a later one fails.
+    try { await trackHandoff(performance.now(), async () => { for (const page of pages) { await db.deleteWebsiteInventoryRecord(page.id, ctx.config.railwayUrl); removed.add(page.id) } }) }
+    catch (err) { toastErr(err) }
+    finally {
+      ctx.setInventory(ctx.inventory.filter(p => !removed.has(p.id)))
+      if (ctx.panel?.kind === "page" && removed.has(ctx.panel.id)) ctx.setPanel(null)
+      if (removed.size) toast(tr(`Đã xoá ${removed.size} trang`, `Removed ${removed.size} page(s)`))
+    }
+  }
   const box = (r: any) => !canPick(r) ? null : <input type="checkbox" checked={picked.has(r.id)} aria-label={`${tr("Chọn", "Select")} ${nameOf(o, r)}`} onClick={e => e.stopPropagation()} onChange={() => toggle(r.id)} />
   if (!rows.length) return <div className="empty-state"><I n={m.icon} /><h3>{tr("Không có dữ liệu", "Nothing here")}</h3><span>{tr("Thử bộ lọc khác.", "Try another filter.")}</span></div>
   const groups: Array<{ label?: ReactNode; rows: any[] }> = o === "reviews" ? (Object.keys(HUMAN) as HumanStatus[]).map(k => ({ label: <HumanTag h={k} />, rows: rows.filter(r => r.human.status === k) }))
     : o === "storage" ? STORAGE_GROUPS.map(([g, c]) => ({ label: <Tag c={c}>{g}</Tag>, rows: rows.filter(r => r.g === g) }))
+    : o === "website" ? PAGE_STATUS_ORDER.map(st => ({ label: <Tag c={PAGE_STATUS_COLOR[st]}>{st}</Tag>, rows: rows.filter(r => r.status === st) })).filter(g => g.rows.length)
     : o === "batches" ? [...new Set(rows.map(r => r.planId))].map(id => ({ label: ctx.plans.some(p => p.id === id) ? <PlanChip ctx={ctx} id={id} /> : <span className="muted">—</span>, rows: rows.filter(r => r.planId === id) }))
     : [{ rows }]
-  const click = (r: any) => o === "reviews" ? ctx.setPanel({ kind: "review", id: r.id }) : o === "storage" ? (r.planId ? go(`#/object/plans/${enc(r.planId)}`) : ctx.setPanel({ kind: "doc", id: r.id })) : go(`#/object/${o}/${enc(r.id)}`)
+  const click = (r: any) => o === "reviews" ? ctx.setPanel({ kind: "review", id: r.id }) : o === "storage" ? (r.planId ? go(`#/object/plans/${enc(r.planId)}`) : ctx.setPanel({ kind: "doc", id: r.id })) : o === "website" ? ctx.setPanel({ kind: "page", id: r.id }) : go(`#/object/${o}/${enc(r.id)}`)
   const name = (r: any) => {
     if (o === "storage") return <span className="rchip plain"><I n="file-description" />{r.name}</span>
+    if (o === "website") return <span className="rchip plain" title={r.url} style={{ maxWidth: 420 }}><I n="world" /><span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{r.title || r.url}<span className="muted"> · {r.url.replace(/^https?:\/\/(www\.)?/, "")}</span></span></span>
     if (o === "reviews") return <span className="rchip plain"><Av name={r.title} />{r.title}</span>
     if (o === "batches") return <a className="rchip" href={`#/object/batches/${enc(r.id)}`}><I n="stack-2" />Batch {r.idx}</a>
     return <a className="rchip" href={`#/object/${o}/${enc(r.id)}`}><Av name={nameOf(o, r)} />{nameOf(o, r)}</a>
@@ -452,7 +484,7 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
     {chosen.length > 0 && <div className="bulk-bar" role="region" aria-label={tr("Thao tác hàng loạt", "Bulk actions")}>
       <b>{chosen.length}</b> {tr("đã chọn", "selected")}
       <button className="btn" onClick={() => setPicked(new Set())}>{tr("Bỏ chọn", "Clear")}</button>
-      <button className="btn danger" disabled={deleting} onClick={() => void removeChosen()}><I n={deleting ? "loader-2" : "trash"} />{o === "storage" ? tr(`Xoá ${chosen.length} tài liệu`, `Delete ${chosen.length} document${chosen.length > 1 ? "s" : ""}`) : o === "batches" ? tr(`Xoá ${chosen.length} batch`, `Delete ${chosen.length} batch${chosen.length > 1 ? "es" : ""}`) : tr(`Xoá ${chosen.length} bài`, `Delete ${chosen.length} article${chosen.length > 1 ? "s" : ""}`)}</button>
+      <button className="btn danger" disabled={deleting} onClick={() => void removeChosen()}><I n={deleting ? "loader-2" : "trash"} />{o === "website" ? tr(`Xoá ${chosen.length} trang`, `Remove ${chosen.length} page${chosen.length > 1 ? "s" : ""}`) : o === "storage" ? tr(`Xoá ${chosen.length} tài liệu`, `Delete ${chosen.length} document${chosen.length > 1 ? "s" : ""}`) : o === "batches" ? tr(`Xoá ${chosen.length} batch`, `Delete ${chosen.length} batch${chosen.length > 1 ? "es" : ""}`) : tr(`Xoá ${chosen.length} bài`, `Delete ${chosen.length} article${chosen.length > 1 ? "s" : ""}`)}</button>
     </div>}
     <div className="tbl-wrap"><table className="tbl">
       <thead><tr>{selectable && <th className="cb"><input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = chosen.length > 0 && !all }} aria-label={tr("Chọn tất cả", "Select all")} onChange={() => setPicked(all ? new Set() : new Set(pickable.map(r => r.id)))} /></th>}{fields.map((f, i) => <th key={f.key} className={i === 0 ? "first" : ""} aria-sort={sort?.key === f.key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined}><button className="th-btn" onClick={() => sortBy(f.key)}><I n={f.icon} />{f.label}{sort?.key === f.key && <> <I n={sort.dir === "asc" ? "arrow-up" : "arrow-down"} /></>}</button></th>)}</tr></thead>
@@ -463,7 +495,7 @@ function TableView({ ctx, o, rows, fields, sort, sortBy, onFoot }: { ctx: Ctx; o
         </tr>)}
       </GroupRows>)}</tbody>
     </table></div>
-    {(o !== "storage" || ctx.isAdmin) && o !== "batches" && <button type="button" className="foot" style={{ width: "100%", textAlign: "left", border: 0, background: "none", font: "inherit" }} onClick={onFoot}><I n={o === "reviews" ? "dice-5" : "plus"} /> {o === "storage" ? tr("Thêm tài liệu", "Add document") : o === "reviews" ? tr("Chọn ngẫu nhiên 1 bài", "Pick a random article") : "Add Plan"}</button>}
+    {(!["storage", "website"].includes(o) || ctx.isAdmin) && o !== "batches" && <button type="button" className="foot" style={{ width: "100%", textAlign: "left", border: 0, background: "none", font: "inherit" }} onClick={onFoot}><I n={o === "reviews" ? "dice-5" : "plus"} /> {o === "website" ? tr("Thêm trang", "Add pages") : o === "storage" ? tr("Thêm tài liệu", "Add document") : o === "reviews" ? tr("Chọn ngẫu nhiên 1 bài", "Pick a random article") : "Add Plan"}</button>}
   </>
 }
 function GroupRows({ label, count, span, cb, children }: { label?: ReactNode; count: number; span: number; cb?: boolean; children: ReactNode }) {
@@ -1121,6 +1153,25 @@ function AddDocPanel({ ctx }: { ctx: Ctx }) {
   return <SidePanel ctx={ctx} title={tr("Thêm tài liệu", "Add document")} icon={<I n="upload" />}><AddDocForm railwayUrl={ctx.config.railwayUrl} onAdded={onAdded} onSourceData={ctx.can("plans") ? () => ctx.setPanel({ kind: "plan-upload" }) : undefined} /></SidePanel>
 }
 
+/** Website Inventory page record, same side panel layout as a Storage document. */
+function PagePanel({ ctx, id }: { ctx: Ctx; id: string }) {
+  const page = ctx.inventory.find(p => p.id === id)
+  if (!page) return null
+  const replace = (next: WebsiteContentRecord) => ctx.setInventory(ctx.inventory.map(p => p.id === id ? next : p))
+  return <SidePanel ctx={ctx} title="Page" icon={<I n="world" />}>
+    <div className="sp-title">{page.title || page.url}</div>
+    <PageDetails key={page.id} record={page} railwayUrl={ctx.config.railwayUrl} canEdit={ctx.isAdmin} onChange={replace} onDelete={() => { ctx.setInventory(ctx.inventory.filter(p => p.id !== id)); ctx.setPanel(null) }} />
+  </SidePanel>
+}
+/** Add pages to Website Inventory: sitemap / llms.txt, pasted URLs, rescan. */
+function AddPagePanel({ ctx }: { ctx: Ctx }) {
+  const { tr } = useI18n()
+  if (!ctx.isAdmin) return null
+  return <SidePanel ctx={ctx} title={tr("Thêm trang", "Add pages")} icon={<I n="download" />}>
+    <WebsiteInventory records={ctx.inventory} railwayUrl={ctx.config.railwayUrl} onChange={ctx.setInventory} />
+  </SidePanel>
+}
+
 /* ─── command menu ─────────────────────────────────────────────────────── */
 
 function CommandMenu({ ctx }: { ctx: Ctx }) {
@@ -1137,7 +1188,7 @@ function CommandMenu({ ctx }: { ctx: Ctx }) {
     if (ps.length) groups.push(["Content Plans", ps])
   }
   const act: Item[] = [{ label: "Add Plan", run: () => ctx.setPanel({ kind: "plan" }), icon: "plus" }, { label: "Toggle dark mode", run: () => ctx.onThemeChange(ctx.themePreference === "dark" ? "light" : "dark"), icon: "moon" }, { label: "Switch language (vi/en)", run: toggleLanguage, icon: "world" }].filter(x => m(x.label))
-  const nav: Item[] = ([["Go to Articles", "#/objects/articles", "file-text"], ["Go to Content Plans", "#/objects/plans", "list-details"], ["Go to Batches", "#/objects/batches", "stack-2"], ["Go to Review Workspace", "#/objects/reviews", "checklist"], ["Go to Storage", "#/objects/storage", "folders"], ["Go to 3-gate pipeline", "#/workflows", "settings-automation"], ["Go to Dashboards", "#/dashboards", "layout-dashboard"], ["Go to Settings", ctx.can("settings") ? "#/settings/pipeline" : "#/settings/experience", "settings"]] as const).filter(n => m(n[0]) && (n[1] !== "#/objects/storage" || ctx.can("storage"))).map(([label, h, icon]) => ({ label, run: () => go(h), icon }))
+  const nav: Item[] = ([["Go to Articles", "#/objects/articles", "file-text"], ["Go to Content Plans", "#/objects/plans", "list-details"], ["Go to Batches", "#/objects/batches", "stack-2"], ["Go to Review Workspace", "#/objects/reviews", "checklist"], ["Go to Storage", "#/objects/storage", "folders"], ["Go to Website Inventory", "#/objects/website", "world"], ["Go to 3-gate pipeline", "#/workflows", "settings-automation"], ["Go to Dashboards", "#/dashboards", "layout-dashboard"], ["Go to Settings", ctx.can("settings") ? "#/settings/pipeline" : "#/settings/experience", "settings"]] as const).filter(n => m(n[0]) && (n[1] !== "#/objects/storage" || ctx.can("storage"))).map(([label, h, icon]) => ({ label, run: () => go(h), icon }))
   if (act.length) groups.push(["Actions", act])
   if (nav.length) groups.push(["Navigate", nav])
   const flat = groups.flatMap(g => g[1])

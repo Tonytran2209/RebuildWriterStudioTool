@@ -141,6 +141,8 @@ export interface WebsiteContentRecord {
   aiSummaryVersion?: string
   summarizedAt?: string
   summaryCacheHit?: boolean
+  /** "llms.txt" when the summary is the site's own llms.txt description (no AI call). */
+  summarySource?: string
   aiSummarySkippedReason?: "daily-limit"
 }
 
