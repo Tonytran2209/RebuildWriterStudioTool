@@ -1,4 +1,6 @@
 import type { Article } from '../types';
+import { seoMetadataOf } from './specMaps.ts';
+import { writerBriefMarkdown } from './writerBrief.ts';
 
 const encoder = new TextEncoder();
 function crc32(data: Uint8Array) { let crc = 0xffffffff; for (const byte of data) { crc ^= byte; for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1)); } return (crc ^ 0xffffffff) >>> 0; }
@@ -9,9 +11,10 @@ function safeName(value: string, fallback: string) { return value.normalize('NFK
 
 export function buildBatchZip(articles: Article[]): Blob {
   const completed = articles.filter(article => article.draft?.trim());
-  const manifest = articles.map(article => { const usage = Object.values(article.aiUsageByStep ?? {}).flat(); return ({ id: article.id, title: article.topic || article.title, status: article.batchStatus ?? article.status, step: article.currentStep, keywords: article.keywords ?? '', models: usage.map(call => call.model), totalTokens: usage.reduce((sum, call) => sum + call.totalTokens, 0), knownCostUsd: usage.reduce((sum, call) => sum + Number(call.costUsd ?? 0), 0), costComplete: usage.every(call => call.costUsd != null), error: article.batchError ?? null }); });
+  const manifest = articles.map(article => { const usage = Object.values(article.aiUsageByStep ?? {}).flat(); return ({ id: article.id, title: article.topic || article.title, status: article.batchStatus ?? article.status, step: article.currentStep, keywords: article.keywords ?? '', models: usage.map(call => call.model), totalTokens: usage.reduce((sum, call) => sum + call.totalTokens, 0), knownCostUsd: usage.reduce((sum, call) => sum + Number(call.costUsd ?? 0), 0), costComplete: usage.every(call => call.costUsd != null), error: article.batchError ?? null, seoMetadata: seoMetadataOf(article) }); });
   const entries = [
     ...completed.map((article, index) => ({ name: `${String(index + 1).padStart(2, '0')}-${safeName(article.topic || article.title, `article-${index + 1}`)}.md`, data: encoder.encode(article.draft!) })),
+    ...completed.flatMap((article, index) => !article.articleSpec ? [] : [{ name: `briefs/${String(index + 1).padStart(2, '0')}-${safeName(article.topic || article.title, `article-${index + 1}`)}-brief.md`, data: encoder.encode(writerBriefMarkdown(article)) }]),
     { name: 'manifest.json', data: encoder.encode(JSON.stringify(manifest, null, 2)) },
   ];
   const local: Uint8Array[] = []; const central: Uint8Array[] = []; let offset = 0;

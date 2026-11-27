@@ -8,6 +8,8 @@ import StructureSelect from "./StructureSelect"
 import StepLog from "./StepLog"
 import { selectIdeaPatch } from "./model"
 import { gateReviewState } from "../lib/gateReview"
+import { seoMetadataOf } from "../lib/specMaps"
+import { writerBriefMarkdown } from "../lib/writerBrief"
 import { I, markUnsaved, toast, toastErr, trackHandoff } from "./ui"
 
 type Props = {
@@ -32,7 +34,9 @@ function ResearchBox({ article }: { article: Article }) {
     [tr("Khoảng trống của đối thủ", "Competitor gaps"), spec?.contentGaps],
     [tr("Điểm khác biệt của thương hiệu", "Brand information gain"), spec?.informationGain],
     [tr("Câu đáng được trích dẫn", "Citation targets"), spec?.citationTargets],
-    ["Entities", spec?.entities],
+    ["Entities", spec?.entityMap?.length ? spec.entityMap.map(e => `${e.name}${e.attributes.length ? ` (${e.attributes.join("; ")})` : ""}${e.related.length ? ` → ${e.related.join(", ")}` : ""}`) : spec?.entities],
+    [tr("Tài sản thương hiệu nên xuất hiện", "Brand assets to show"), spec?.brandAssets?.map(b => b.use ? `${b.asset}: ${b.use}` : b.asset)],
+    [tr("Nguồn & thực thể của câu trích dẫn", "Citation sources"), spec?.citations?.map(c => `“${c.statement}”${c.source ? ` · ${c.source}` : ""}${c.entity ? ` · ${c.entity}` : ""}`)],
   ]
   const shown = gain.filter(([, items]) => items?.length)
   if (!matches.length && !analysis && !shown.length && !spec?.pageType) return null
@@ -54,10 +58,33 @@ function ResearchBox({ article }: { article: Article }) {
     </div>}
     {(spec?.pageType || shown.length > 0) && <div className="box-row" style={{ alignItems: "flex-start" }}>
       <I n="bulb" /><div className="grow">{tr("Information gain trong Article Spec", "Information gain in the Article Spec")}{spec?.pageType && <span className="s"> · {tr("Page type", "Page type")}: {spec.pageType}</span>}
+        {spec?.pageTypeReason && <div className="s"><b>{tr("Lý do chọn page type", "Why this page type")}:</b> {spec.pageTypeReason}</div>}
         {shown.map(([label, items]) => <div key={label} className="s"><b>{label}:</b> {items!.join(" · ")}</div>)}
       </div>
     </div>}
   </div>
+}
+
+/** SEO metadata (title from the draft H1, G1 meta description, slug, schema) and the Writer Brief download. */
+function SeoBriefBox({ article }: { article: Article }) {
+  const { tr } = useI18n()
+  const meta = seoMetadataOf(article)
+  if (!meta) return null
+  const copy = (text: string) => void navigator.clipboard?.writeText(text).then(() => toast(tr("Đã copy", "Copied")), () => toastErr(new Error(tr("Không copy được", "Copy failed"))))
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([writerBriefMarkdown(article)], { type: "text/markdown;charset=utf-8" }))
+    const link = document.createElement("a"); link.href = url; link.download = `writer-brief-${meta.slug || "article"}.md`; link.click(); URL.revokeObjectURL(url)
+  }
+  const row = (icon: string, label: string, value: string, note?: string, warn?: boolean) => <div className="frow"><div className="flabel"><I n={icon} />{label}</div><div className="fval" style={{ whiteSpace: "normal" }}>{value || <span className="empty" style={{ color: "var(--f4)" }}>—</span>}{note && <span className={warn ? "tag t-orange" : "muted"} style={warn ? { marginLeft: 6 } : { color: "var(--f3)" }}>{warn ? note : ` · ${note}`}</span>}{value && <button className="icon-btn" aria-label={`Copy ${label}`} onClick={() => copy(value)}><I n="copy" /></button>}</div></div>
+  return <>
+    <div className="fsec"><I n="tags" />&nbsp;SEO Metadata<span className="grow" /><button className="btn" onClick={download}><I n="download" />{tr("Tải Writer Brief", "Download Writer Brief")}</button></div>
+    <div className="fields" style={{ paddingTop: 0 }}>
+      {row("heading", "Title", meta.title, `${meta.titleLength}/60`, meta.titleLength > 60)}
+      {row("align-left", "Meta description", meta.metaDescription, meta.metaDescription ? `${meta.metaLength}/160` : tr("Spec cũ, chạy lại G1 để có", "older Spec; rerun G1"), meta.metaLength > 160)}
+      {row("link", "Slug", `/${meta.slug}`)}
+      {row("code", "Schema", meta.schemaTypes.join(", "), article.articleSpec?.schemaTypes?.length ? undefined : tr("gợi ý theo page type", "from the page type"))}
+    </div>
+  </>
 }
 
 /** G1/G2 AI self-review result (Settings › Workflow rules): shown under the Gate, never blocks it. */
@@ -175,5 +202,6 @@ export default function ManualTab({ article: a, settings, files, config, onUpdat
     <textarea key={a.draft?.trim() ? "draft" : "empty"} className="inp plog-in" aria-label={tr("Bản nháp", "Draft")} style={{ height: 320, padding: 10, lineHeight: 1.6, fontFamily: "inherit" }} disabled={locked} value={draft} onChange={e => setDraft(e.target.value)} placeholder={tr("Bắt đầu viết thủ công…", "Start writing manually…")} />
     {draft !== (a.draft ?? "") && !locked && <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginTop: 8 }}><button className="btn" onClick={() => setDraft(a.draft ?? "")}>{tr("Huỷ", "Discard")}</button><button className="btn primary" onClick={e => void saveDraft(e.timeStamp)}><I n="device-floppy" />{tr("Lưu draft", "Save draft")}</button></div>}
     <StepLog article={a} step={4} />
+    <SeoBriefBox article={a} />
   </>
 }

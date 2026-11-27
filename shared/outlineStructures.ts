@@ -129,7 +129,7 @@ export function buildOutlineTask(input: { spec: unknown; direction: unknown; str
     'Return ordered H2/H3 sections with heading, notes, rationale, keywords, searchIntent, evidenceRefs and ruleRefs. Use an evidenceRegistry to avoid repeating quotes.',
     'Use only exact quotes from supplied sources; never invent evidence. Preserve required headings in the selected structure in their exact order and level.',
     // Information-gain fields of the Spec (when present) must each land in a section, inside the selected layout.
-    'When the Article Spec has questions, contentGaps, informationGain or citationTargets, place each one in the section that answers or delivers it and name it in that section\'s notes. Do not add sections outside the selected structure for them.',
+    'When the Article Spec has questions, contentGaps, informationGain, citationTargets or brandAssets, place each one in the section that answers or delivers it and name it in that section\'s notes. Do not add sections outside the selected structure for them.',
   ].join('\n');
 }
 

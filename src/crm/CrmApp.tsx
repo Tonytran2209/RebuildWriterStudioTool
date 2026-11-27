@@ -13,7 +13,7 @@ import { draftWithoutImagePlaceholders, step4ChecklistDocs } from "../lib/qualit
 
 // Drafts saved before the image step was removed may still hold image placeholders.
 const readable = (draft?: string) => normalizeDraftOutput(draftWithoutImagePlaceholders(draft ?? ""))
-import { QC_GROUPS, QC_LABELS_VI, qcGroupOf } from "../lib/qcGroups"
+import { QC_GROUPS, QC_LABELS_VI, qcGroupOf, qcGroupScore } from "../lib/qcGroups"
 import StructureSelect from "./StructureSelect"
 import { ModelsSettings, SystemStatus, WorkflowAiSettings } from "./AiSettings"
 import { AddDocForm, DocDetails, LegacyArchive } from "./StorageDocs"
@@ -644,7 +644,7 @@ function FinalTab({ a }: { a: CrmArticle }) {
   </div>
 }
 
-const GROUP_COLOR: Record<string, string> = { structure: "blue", seo: "purple", content: "turq", checklist: "pink" }
+const GROUP_COLOR: Record<string, string> = { seo: "purple", brand: "pink", evidence: "turq", differentiation: "orange", ai: "blue" }
 function ReviewTab({ ctx, a }: { ctx: Ctx; a: CrmArticle }) {
   const { tr, language } = useI18n()
   const checks = a.a.qualityReport?.checks ?? []
@@ -653,7 +653,7 @@ function ReviewTab({ ctx, a }: { ctx: Ctx; a: CrmArticle }) {
   const groups = QC_GROUPS.filter(g => checks.some(c => qcGroupOf(c.id) === g.key))
   return <div className="dash" style={{ padding: 0, gridTemplateColumns: "repeat(4,1fr)" }}>
     <div className="widget"><h4><I n="gauge" />Score</h4><div className="kpi" style={{ color: pass ? "var(--c-green)" : "var(--danger)" }}>{a.score}%</div><div className="kpi-sub">{met}/{checks.length} · {tr("ngưỡng", "threshold")} {ctx.settings.threshold}% <Tag c="orange">{tr("chưa chốt", "not final")}</Tag></div></div>
-    {groups.map(g => { const it = checks.filter(c => qcGroupOf(c.id) === g.key), ok = it.filter(c => c.status === "pass").length; return <div key={g.key} className="widget"><h4><I n="list-check" />{language === "vi" ? g.vi : g.en}</h4><div className="kpi">{ok}/{it.length}</div><div className="kpi-sub">{ok === it.length ? tr("đạt toàn bộ", "all met") : `${it.length - ok} ${tr("tiêu chí chưa đạt", "not met")}`}</div></div> })}
+    {groups.map(g => { const it = checks.filter(c => qcGroupOf(c.id) === g.key), ok = it.filter(c => c.status === "pass").length; return <div key={g.key} className="widget"><h4><I n="list-check" />{language === "vi" ? g.vi : g.en}</h4><div className="kpi">{qcGroupScore(it)}%</div><div className="kpi-sub">{ok}/{it.length} · {ok === it.length ? tr("đạt toàn bộ", "all met") : `${it.length - ok} ${tr("tiêu chí chưa đạt", "not met")}`}</div></div> })}
     <div className="widget w4"><h4><I n="list-check" />{tr("Kết quả theo tiêu chí", "Criteria results")}</h4><table className="tbl"><thead><tr><th style={{ position: "static" }}>Section</th><th style={{ position: "static" }}>Criterion</th><th style={{ position: "static" }}>Result</th><th style={{ position: "static" }}>Note</th></tr></thead><tbody>
       {checks.map(c => { const g = QC_GROUPS.find(x => x.key === qcGroupOf(c.id))!; return <tr key={c.id}><td><Tag c={GROUP_COLOR[g.key]}>{language === "vi" ? g.vi : g.en}</Tag></td><td>{(language === "vi" && QC_LABELS_VI[c.id]) || c.label}</td><td>{c.status === "pass" ? <Tag c="green">Pass</Tag> : c.status === "warning" ? <Tag c="orange">Warn</Tag> : <Tag c="red">Fail</Tag>}</td><td className="muted" style={{ whiteSpace: "normal", maxWidth: 420 }}>{c.status === "pass" ? "" : c.reason}</td></tr> })}
     </tbody></table></div>
@@ -987,7 +987,7 @@ function ReviewPanel({ ctx, id }: { ctx: Ctx; id: string }) {
     <div className="sp-title" style={{ paddingBottom: 4 }}>{a.title}</div><div style={{ color: "var(--f3)", marginBottom: 12 }}>{a.keyword}</div>
     <div className="fields" style={{ paddingTop: 0 }}>
       <div className="frow"><div className="flabel"><I n="gauge" />AI score</div><div className="fval"><ScoreTag s={a.score} t={ctx.settings.threshold} />&nbsp;<span style={{ color: "var(--f3)" }}>{checks.filter(c => c.status === "pass").length}/{checks.length}</span></div></div>
-      {QC_GROUPS.filter(g => checks.some(c => qcGroupOf(c.id) === g.key)).map(g => { const it = checks.filter(c => qcGroupOf(c.id) === g.key), ok = it.filter(c => c.status === "pass").length; return <div key={g.key} className="frow"><div className="flabel"><I n="list-check" />{tr(g.vi, g.en)}</div><div className="fval"><Tag c={ok === it.length ? "green" : "orange"}>{ok}/{it.length}</Tag></div></div> })}
+      {QC_GROUPS.filter(g => checks.some(c => qcGroupOf(c.id) === g.key)).map(g => { const it = checks.filter(c => qcGroupOf(c.id) === g.key), ok = it.filter(c => c.status === "pass").length; return <div key={g.key} className="frow"><div className="flabel"><I n="list-check" />{tr(g.vi, g.en)}</div><div className="fval"><Tag c={ok === it.length ? "green" : "orange"}>{qcGroupScore(it)}%</Tag>&nbsp;<span style={{ color: "var(--f3)" }}>{ok}/{it.length}</span></div></div> })}
       <div className="frow"><div className="flabel"><I n="user-check" />Human review</div><div className="fval"><HumanTag h={a.human.status} />{a.human.reviewer && <>&nbsp;<span style={{ color: "var(--f3)" }}>{person(a.human.reviewer)}</span></>}</div></div>
       <div className="frow"><div className="flabel"><I n="list-details" />Content Plan</div><div className="fval"><PlanChip ctx={ctx} id={a.planId} /></div></div>
     </div>
@@ -1302,7 +1302,7 @@ function Dashboard({ ctx }: { ctx: Ctx }) {
   const hs = (Object.keys(HUMAN) as HumanStatus[]).map(k => done.filter(a => a.human.status === k).length), tot = Math.max(1, done.length), hcol = ["var(--c-gray)", "var(--c-green)", "var(--c-orange)"]
   let acc = 0
   const grad = hs.map((n, i) => { const a0 = acc; acc += n / tot * 360; return `${hcol[i]} ${a0}deg ${acc}deg` }).join(",")
-  const secAvg = QC_GROUPS.map(g => { const r = scored.map(a => { const it = (a.a.qualityReport?.checks ?? []).filter(c => qcGroupOf(c.id) === g.key); return it.length ? it.filter(c => c.status === "pass").length / it.length : null }).filter((v): v is number => v != null); return [language === "vi" ? g.vi : g.en, r.length ? Math.round(r.reduce((x, y) => x + y, 0) / r.length * 100) : 0] as const })
+  const secAvg = QC_GROUPS.map(g => { const r = scored.map(a => { const it = (a.a.qualityReport?.checks ?? []).filter(c => qcGroupOf(c.id) === g.key); return it.length ? qcGroupScore(it) : null }).filter((v): v is number => v != null); return [language === "vi" ? g.vi : g.en, r.length ? Math.round(r.reduce((x, y) => x + y, 0) / r.length) : 0] as const })
   return <>
     <Header title={<><span className="nav-ico" style={{ background: "#b23887" }}><I n="layout-dashboard" s={{ fontSize: 11 }} /></span>Dashboards<span className="crumb">/</span>Pipeline overview</>} />
     <div className="card"><div className="dash">

@@ -379,6 +379,17 @@ export interface ArticleSpec {
   informationGain?: string[]
   /** Short self-contained statements worth being quoted by search and AI answers. */
   citationTargets?: string[]
+  /** Why this page type wins for the query. */
+  pageTypeReason?: string
+  /** Brand Opportunity Map: brand assets (case, proof, USP, product) and where/how the article uses them. */
+  brandAssets?: Array<{ asset: string; use: string }>
+  /** Semantic & Entity Map: each key entity with its attributes and related entities. */
+  entityMap?: Array<{ name: string; attributes: string[]; related: string[] }>
+  /** AI Citation Map: each citation target with its supporting source and the entity it is attributed to. */
+  citations?: Array<{ statement: string; source: string; entity: string }>
+  /** SEO metadata proposed at G1. Title comes from the draft H1, slug from the primary query. */
+  metaDescription?: string
+  schemaTypes?: string[]
   createdAt: string
 }
 

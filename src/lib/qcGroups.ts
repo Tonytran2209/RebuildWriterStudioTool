@@ -25,15 +25,24 @@ export const QC_LABELS_VI: Record<string, string> = {
   'brand-pov': 'Đúng góc nhìn thương hiệu',
 };
 
+/** Quality Scorecard axes. Standards checks (checklist-compliance) count as Brand; Spec questions, gaps and information gain are judged in reader-outcome. */
 export const QC_GROUPS = [
-  { key: 'structure', vi: 'Cấu trúc & độ dài', en: 'Structure & length' },
-  { key: 'seo', vi: 'SEO & liên kết', en: 'SEO & links' },
-  { key: 'content', vi: 'Nội dung & dẫn chứng', en: 'Content & evidence' },
-  { key: 'checklist', vi: 'SEO checklist', en: 'SEO checklist' },
+  { key: 'seo', vi: 'SEO', en: 'SEO' },
+  { key: 'brand', vi: 'Thương hiệu', en: 'Brand' },
+  { key: 'evidence', vi: 'Dẫn chứng', en: 'Evidence' },
+  { key: 'differentiation', vi: 'Khác biệt', en: 'Differentiation' },
+  { key: 'ai', vi: 'Sẵn sàng cho AI', en: 'AI readiness' },
 ] as const;
-export function qcGroupOf(id: string): typeof QC_GROUPS[number]['key'] {
-  if (id === 'checklist-compliance') return 'checklist';
-  if (['introduction-word-budget', 'outline-structure', 'outline-fidelity', 'complete-structure', 'duplicate-headings', 'word-budget', 'single-conclusion', 'placeholders', 'conclusion-word-budget'].includes(id)) return 'structure';
-  if (['primary-query', 'title-keyword', 'keyword-naturalness', 'must-cover', 'intent-satisfied', 'link-correctness'].includes(id) || id.startsWith('internal-link')) return 'seo';
-  return 'content';
+export type QcGroupKey = typeof QC_GROUPS[number]['key'];
+export function qcGroupOf(id: string): QcGroupKey {
+  if (['brand-pov', 'checklist-compliance', 'source-confidentiality'].includes(id)) return 'brand';
+  if (['evidence-support', 'evidence-mapping', 'placeholders'].includes(id)) return 'evidence';
+  if (id === 'reader-outcome') return 'differentiation';
+  if (['introduction-word-budget', 'outline-structure', 'outline-fidelity', 'complete-structure', 'duplicate-headings', 'single-conclusion', 'conclusion-word-budget', 'intro-quality'].includes(id)) return 'ai';
+  return 'seo';
+}
+/** Axis score 0-100 with the AI Review weights: pass 1, warning 0.5, fail 0. */
+export function qcGroupScore(checks: Array<{ status: string }>): number {
+  if (!checks.length) return 0;
+  return Math.round(checks.reduce((sum, check) => sum + (check.status === 'pass' ? 1 : check.status === 'warning' ? 0.5 : 0), 0) / checks.length * 100);
 }
