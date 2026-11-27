@@ -1,5 +1,6 @@
 import type { Article, QualityGateCheck } from '../types/index.ts';
 import { outlineStructurePrompt, validateOutlineStructure } from '../../shared/outlineStructures.ts';
+import { introductionInstruction } from './introductionPolicy.ts';
 import { conclusionHeadingOf } from './draftFormat.ts';
 
 export function outlineReviewInstruction(article: Partial<Article>): string {
@@ -9,7 +10,9 @@ export function outlineReviewInstruction(article: Partial<Article>): string {
     outlineStructurePrompt(article.outlineStructure, 'draft'),
     `APPROVED HEADING HIERARCHY: ${JSON.stringify((article.outline ?? []).map(({ heading, level }) => ({ heading, level })))}`,
     'Within reader-outcome, assess the argument sequence and reader guidance against this selected form. Do not demand sections or comparison devices belonging to another form. Narrative, Q&A, pattern and myth-busting layouts are not automatically comparison articles.',
-    'An outline structure governs the body, not the introduction budget. The shared introduction contract still wins: one paragraph, 60–85 English words. Desktop line count is a reading target, never a responsive pixel-level pass/fail rule.',
+    introductionInstruction(article.introductionBudget),
+    `CLOSING EXCEPTION: the platform appends exactly one final H2 named "${conclusionHeadingOf(article)}". It is allowed outside the approved body outline. A prohibition on planning a conclusion applies to outline generation only; never fail the final draft for this appended closing.`,
+    'Editorial-only lead-in sentence-count deviations are warnings unless a specific material reader harm is established. Report a structure finding once in checklist-compliance, not again in reader-outcome. Reader-outcome judges the useful reader decision and argument.',
     'Use actual supported content to assess applicability. Do not invent cases, evidence, headings or an H3 quota. For a material structure violation, identify the section, violated MD instruction and a specific correction; advisory preferences must not block completion.',
   ].join('\n');
 }

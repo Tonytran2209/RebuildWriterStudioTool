@@ -90,16 +90,22 @@ export function outlineStructurePrompt(snapshot: OutlineStructureSnapshot | null
     `SOURCE (internal metadata, never print in article): ${snapshot.sourceName} / ${snapshot.sourceHash}`,
     stage === 'outline' ? snapshot.outlineInstructions : snapshot.draftInstructions,
     `Required headings in order: ${JSON.stringify(snapshot.requiredHeadings)}`,
-    stage === 'draft' ? 'Preserve every approved outline heading and its order. Do not add unplanned headings or select a different structure.' : 'Use this definition for layout; preserve the Article Spec, approved evidence and output JSON contract.',
+    stage === 'draft' ? 'Preserve every approved body outline heading and its order. Do not add unplanned body headings. The platform appends one closing H2 outside this body outline; its heading is governed by Gate Settings, not the Playbook.' : 'Use this definition for layout; preserve the Article Spec, approved evidence and output JSON contract.',
   ].join('\n');
+}
+/** Literal headings with explicit [placeholder] slots; all other punctuation stays literal. */
+export function requiredHeadingMatches(actual: string, template: string): boolean {
+  const normalize = (value: string) => value.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
+  const parts = normalize(template).split(/(\[[^\]]+\])/g);
+  const pattern = parts.map(part => /^\[[^\]]+\]$/.test(part) ? '.+?' : part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('');
+  return new RegExp(`^${pattern}$`, 'u').test(normalize(actual));
 }
 export function validateOutlineStructure(sections: Array<{ heading: string; level?: string }>, snapshot?: OutlineStructureSnapshot | null): string[] {
   if (!snapshot) return [];
   let cursor = 0;
   const errors: string[] = [];
-  const normalize = (text: string) => text.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase();
   for (const required of snapshot.requiredHeadings) {
-    const offset = sections.slice(cursor).findIndex(s => normalize(s.heading) === normalize(required.heading) && s.level === required.level);
+    const offset = sections.slice(cursor).findIndex(s => requiredHeadingMatches(s.heading, required.heading) && s.level === required.level);
     if (offset < 0) errors.push(`Missing or out-of-order ${required.level.toUpperCase()}: ${required.heading}`);
     else cursor += offset + 1;
   }

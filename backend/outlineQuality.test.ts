@@ -22,9 +22,9 @@ test('semantic guidance includes frozen selected form and preserves introduction
  const instruction=outlineReviewInstruction(article);
  assert.match(instruction,/Answer the main question/);
  assert.match(instruction,/reader-outcome/);
- assert.match(instruction,/one paragraph, 60–85/);
+ assert.match(instruction,/one compact paragraph of 60–85/);
  assert.match(instruction,/not automatically comparison/);
- assert.match(instruction,/never a responsive pixel-level/);
+ assert.match(instruction,/responsive screen line count/);
 });
 test('both review fingerprints change with the frozen structure, not later changes to its source MD',()=>{
  const files=[{id:'md',name:'outline-generator.md',category:'rules',content:'Old MD'}] as DocumentFile[];

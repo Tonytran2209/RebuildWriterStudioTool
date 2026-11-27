@@ -65,7 +65,7 @@ import { gateReviewHash, gateReviewOutput, gateReviewStatus } from "../src/lib/g
 import { applyOutlineFix, applySpecFix, competitorAnalysisJsonSchema, gateReviewJsonSchema, outlineFixJsonSchema, sanitizeBatchArticleSpec, specFixJsonSchema } from "./gateReviewFix.ts"
 import { RULE_ROLES, gateStandardsDocs, gateBrandContextDocs } from "../shared/gateDocuments.ts"
 import { resolveGateSettings, sanitizeGateSettings } from "../shared/gateSettings.ts"
-import { DEFAULT_CONCLUSION_HEADING, conclusionHeadingOf, conclusionHeadingPattern, titleKeywordRequired } from "../src/lib/draftFormat.ts"
+import { DEFAULT_CONCLUSION_HEADING, conclusionHeadingOf, conclusionHeadingPattern } from "../src/lib/draftFormat.ts"
 import { SPEC_MAP_INSTRUCTION, specMapFields } from "../src/lib/specMaps.ts"
 import { INVENTORY_LIST_COLUMNS, discoverSiteUrls, fetchPublicPage, inventoryListRecord, scanWebsiteUrl, selectWebsiteCandidates } from "./websiteInventory.ts"
 import {
@@ -1727,9 +1727,10 @@ function batchDraftBudget(
     minimumPool,
     targetMax - introduction.max - conclusion.max - headingOverhead,
   )
+  const sectionWeight = (section: any, index: number) => section.level === "h2" && outline[index + 1]?.level === "h3" ? 0.15 : section.level === "h3" ? 0.65 : 1
   const totalWeight =
     outline.reduce(
-      (sum, section) => sum + (section.level === "h3" ? 0.65 : 1),
+      (sum, section, index) => sum + sectionWeight(section, index),
       0,
     ) || 1
   return {
@@ -1747,14 +1748,16 @@ function batchDraftBudget(
       acceptedMax: conclusionAccepted.max,
     },
     conclusionHeading,
-    sections: outline.map((section) => {
-      const weight = section.level === "h3" ? 0.65 : 1
+    sections: outline.map((section, index) => {
+      const weight = sectionWeight(section, index)
+      const leadInOnly = section.level === "h2" && outline[index + 1]?.level === "h3"
       return {
         id: section.id,
         heading: section.heading,
         level: section.level,
-        minWords: Math.max(35, Math.floor((minimumPool * weight) / totalWeight)),
-        maxWords: Math.max(45, Math.floor((maximumPool * weight) / totalWeight)),
+        minWords: leadInOnly ? 10 : Math.max(35, Math.floor((minimumPool * weight) / totalWeight)),
+        maxWords: leadInOnly ? 65 : Math.max(45, Math.floor((maximumPool * weight) / totalWeight)),
+        ...(leadInOnly ? { instruction: "Only 1-3 lead-in sentences. Put substantive detail under the child H3 sections." } : {}),
       }
     }),
   }
@@ -2039,23 +2042,9 @@ function assembleBatchDraft(raw: string, article: any) {
       `Structured draft completed only ${sections.filter((section: any) => String(section?.content ?? "").trim()).length}/${expected.length} sections.`,
     )
   }
-  const idea =
-    article.coreIdeaSuggestions?.find(
-      (item: any) => item.id === article.selectedCoreIdeaId,
-    ) ?? article.coreIdeaSuggestions?.[0]
-  const keyword = String(
-    article.articleSpec?.primaryQuery ??
-      idea?.primaryKeyword ??
-      String(article.keywords ?? "").split(",")[0] ??
-      article.topic ??
-      "",
-  ).trim()
   const parsedTitle = sanitizeBatchStructuredField(parsed.title)
-  const title = !titleKeywordRequired(article) || parsedTitle
-    .toLocaleLowerCase()
-    .includes(keyword.toLocaleLowerCase())
-    ? parsedTitle
-    : `${parsedTitle}: ${keyword}`
+  // Preserve the authored title; missing exact keywords are repaired by the existing QC loop.
+  const title = parsedTitle
   const conclusionHeading = conclusionHeadingOf(article)
   const draft = [
     `# ${title}`,
